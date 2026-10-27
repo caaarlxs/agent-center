@@ -22,6 +22,7 @@ export function toggleSound() {
   const next = sound.get() === "on" ? "off" : "on"
   sound.set(next)
   if (next === "on") chime("done") // what you will hear
+  toast(next === "on" ? "Sound on: a chime when a session finishes or asks you something" : "Sound off")
 }
 
 // The quick switch: off, or back to the last choice.
@@ -30,6 +31,7 @@ export function toggleSpeech() {
   const next: Speech = now.mode === "off" ? { ...now, mode: now.lastMode ?? "all" } : { ...now, mode: "off", lastMode: now.mode }
   speech.set(next)
   if (next.mode === "off") void post("/api/speak/stop").catch(() => {}) // and quiet now
+  toast(next.mode === "off" ? "Read aloud off" : `Read aloud on: ${next.mode === "all" ? "every session" : "only sessions with the bell"}`)
 }
 
 export function toggleWatch(card: { id: string; title: string }) {
@@ -51,11 +53,11 @@ export function showNotice(title: string, body: string, onClick?: () => void) {
 
 export async function toggleNotify() {
   if (notify.get() === "on") return notify.set("off")
-  if (!("Notification" in window)) return void toast.error("This browser does not support notifications")
+  if (!("Notification" in window)) return void toast("This browser does not support notifications")
   const answer = permission() === "default" ? await Notification.requestPermission() : permission()
-  if (answer !== "granted") return (notify.set("blocked"), void toast.error("The browser blocks notifications here: allow them in the site settings"))
+  if (answer !== "granted") return (notify.set("blocked"), void toast("Chrome blocks notifications here: turn them on in the site settings"))
   notify.set("on")
   // A first notice right away: proof that the browser and macOS let it through.
   const error = showNotice("Notifications on", "This is how a notification arrives when a session asks you something.")
-  if (error) toast.error(`The browser could not show it: ${error}`)
+  toast(error ? `Chrome could not show the notification: ${error}` : "Test notification sent. If you do not see it, check the macOS notification settings for this app")
 }

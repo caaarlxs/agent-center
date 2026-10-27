@@ -29,5 +29,6 @@ export function Dialogs() {
   if (open.kind === "new") return <NewSessionDialog onClose={closeDialog} />
   if (open.kind === "setup") return <SetupDialog onClose={() => (setupSeen.set(true), closeDialog())} />
   if (open.kind === "digest") return <DigestDialog onClose={closeDialog} />
-  return <RunDialog card={open.card} onClose={closeDialog} />
+  if (open.kind === "run") return <RunDialog card={open.card} onClose={closeDialog} />
+  return null // help: the keyboard help dialog draws itself
 }
