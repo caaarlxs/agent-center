@@ -1,13 +1,15 @@
 // Files sent with a message. The bridge can only send text: each file is
 // saved on this Mac first (lib/uploads.ts), and the message names its path for
-// Claude to open. A change to these lines must also go in the conversation's
-// ATTACH_LINES, which hides them again when the message is shown.
+// Claude to open. The conversation reads those paths back (sentFiles) to show
+// pictures and named files instead of the line.
 import type { FileUIPart } from "ai"
 
 export const MAX_FILES = 10
 export const MAX_BYTES = 500 * 1024 * 1024 // as lib/uploads.ts
-const IMAGE_FILE = /\.(?:png|jpe?g|gif|webp)$/i
+export const IMAGE_FILE = /\.(?:png|jpe?g|gif|webp)$/i
 
+// A change to these lines must also go in ATTACH_LINES, which still finds the
+// old ones (and the Spanish lines of older transcripts).
 export function withFiles(text: string, paths: string[]) {
   if (!paths.length) return text
   const what = paths.every(p => IMAGE_FILE.test(p)) ? ["image", "images"] : ["file", "files"]
@@ -40,4 +42,17 @@ export async function messageWith(folder: string, text: string, files: FileUIPar
   const paths: string[] = []
   for (const f of files) paths.push(await uploadFile(folder, f))
   return withFiles(text, paths)
+}
+
+const UPLOAD_RE = /\/\.claude\/agent-center\/uploads\/([\w-]+\/[\w.-]+)/g
+const ATTACH_LINES = /\n*(?:Attached (?:image|file) \([^)]*\): \S+|Attached (?:images|files) \([^)]*\):(?:\n- \S+)+|(?:Imagen|Archivo) adjunt[ao] \([^)]*\): \S+|(?:Imágenes|Archivos) adjunt[ao]s \([^)]*\):(?:\n- \S+)+)\s*$/
+
+// The name the file had: the saved name minus its "<time>-<random>-".
+export const fileName = (rel: string) => rel.split("/").pop()!.replace(/^\d+-[0-9a-f]{6}-?/, "") || rel.split("/").pop()!
+
+// A message as sent: its text without the line that names the files, and the
+// files (paths under uploads/, served at /api/uploads/<rel>).
+export function sentFiles(raw: string) {
+  const rels = [...raw.matchAll(UPLOAD_RE)].map(m => m[1])
+  return { text: rels.length ? raw.replace(ATTACH_LINES, "") : raw, images: rels.filter(r => IMAGE_FILE.test(r)), files: rels.filter(r => !IMAGE_FILE.test(r)) }
 }

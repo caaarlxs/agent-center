@@ -12,7 +12,8 @@ import type { Card } from "@/lib/api-types"
 import { cn } from "@/lib/utils"
 import { openDialog } from "@/app/open-dialog"
 import { watched } from "@/features/alerts/prefs"
-import { answer, permit, sendText } from "./actions"
+import { sendMessage } from "@/features/conversation/send"
+import { answer, permit } from "./actions"
 import { CardMenu } from "./CardMenu"
 import { StateIcon } from "./StateIcon"
 import { ageOf, contextOf, hueOf, stateOf } from "./state"
@@ -35,7 +36,7 @@ function Replies({ card }: { card: Card }) {
         ]
       : card.askKind === "dialog" && only && question
         ? only.options.map(o => ({ label: o.label, act: () => run(answer(card.id, question.id, { [only.question]: o.label }), "Answer sent") }))
-        : card.choices.map(c => ({ label: c.label, act: () => run(sendText(card.id, c.message || c.label), "Reply sent") }))
+        : card.choices.map(c => ({ label: c.label, act: () => sendMessage(card.id, c.message || c.label, "Reply sent").catch((err: Error) => toast.error(err.message)) }))
   if (!buttons.length) return null
   return (
     <div className="nodrag flex flex-wrap gap-1.5" onClick={e => e.stopPropagation()}>

@@ -12,3 +12,8 @@ export type { PlanStep } from "@server/plan-op"
 export type { Digest, DigestEntry, DigestGroup } from "@server/digest"
 export type { RunState } from "@server/runner"
 export type { Step, StepState } from "@server/setup"
+export type { BridgeStatus } from "@server/bridge"
+import type { BridgeStatus } from "@server/bridge"
+// GET /api/sessions/:id/bridge: the mod's state, the background wake, and
+// whether the app archived the session.
+export type Bridge = BridgeStatus & { wake: { tries: number; untrusted: boolean; isOver: boolean } | null; isArchived: boolean }

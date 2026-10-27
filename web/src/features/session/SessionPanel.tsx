@@ -14,8 +14,7 @@ import { type Tab, WORKSPACES, openSession, showTab } from "@/app/open-session"
 import { Changes } from "@/features/changes/Changes"
 import { CodeWorkspace } from "@/features/code/CodeWorkspace"
 import { Files } from "@/features/files/Files"
-import { Composer } from "@/features/conversation/Composer"
-import { ConversationView } from "@/features/conversation/ConversationView"
+import { Chat } from "@/features/conversation/Chat"
 import { Prs } from "@/features/prs/Prs"
 import { Tasks } from "@/features/tasks/Tasks"
 import { StateIcon, TONE } from "./StateIcon"
@@ -60,7 +59,7 @@ export function SessionPanel({ id, tab }: { id: string; tab: Tab }) {
           </TabsList>
         </Tabs>
       </header>
-      {tab === "chat" && <><ConversationView key={id} sessionId={id} />{card && <div className="px-4 pb-4"><Composer card={card} /></div>}</>}
+      {tab === "chat" && <Chat key={id} id={id} card={card} />}
       {tab === "changes" && <Changes key={id} id={id} />}
       {tab === "prs" && <Prs key={id} id={id} />}
       {tab === "tasks" && <Tasks key={id} id={id} />}

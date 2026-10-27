@@ -1,11 +1,28 @@
 // What the page asks a session to do, through the board's API
 // (routes/session.ts). Each one throws ApiError with the server's reason.
 import { post } from "@/lib/api"
+import { addPending, dropPending } from "@/features/conversation/pending"
 
 const at = (id: string, action: string) => `/api/sessions/${encodeURIComponent(id)}/${action}`
 
-// A message for the session (a reply Claude offered, or any text).
-export const sendText = (id: string, text: string) => post<{ ok: boolean; messageId: string }>(at(id, "send"), { text })
+// A message for the session (a reply Claude offered, or any text). It shows
+// as pending in the conversation until the transcript has it.
+export async function sendText(id: string, text: string) {
+  const res = await post<{ ok: boolean; messageId: string; isOpen?: boolean; activated?: boolean }>(at(id, "send"), { text })
+  addPending(id, { id: res.messageId, text, at: Date.now() })
+  return res
+}
+
+// Takes a message back before the session gets it.
+export async function unsend(id: string, messageId: string) {
+  await post(at(id, "unsend"), { messageId })
+  dropPending(id, [messageId])
+}
+
+// Wakes the session in Claude, in the background, so it gets messages; or
+// ends its running turn, like Esc in the app.
+export const wake = (id: string) => post(at(id, "activate"))
+export const stop = (id: string) => post(at(id, "stop"))
 
 // Allow or deny the tool approval the session waits for.
 export const permit = (id: string, permissionId: string, decision: "allow" | "deny") => post(at(id, "permit"), { id: permissionId, decision })

@@ -15,7 +15,7 @@ import { get } from "@/lib/api"
 import type { Changes as ChangesData, FileDiff } from "@/lib/api-types"
 import { monacoTheme, useMonaco } from "@/lib/monaco"
 import { cn } from "@/lib/utils"
-import { sendText } from "@/features/session/actions"
+import { sendMessage } from "@/features/conversation/send"
 import { type LineComment, keyOf, reviewMessage } from "./review"
 
 const FOLLOW_MS = 5000
@@ -182,7 +182,7 @@ export function Changes({ id }: { id: string }) {
   const add = data.files.reduce((s, f) => s + f.additions, 0)
   const del = data.files.reduce((s, f) => s + f.deletions, 0)
   const list = Object.values(comments)
-  const send = () => sendText(id, reviewMessage(list, data.branch)).then(() => (setComments(() => ({})), toast("Comments sent")), (err: Error) => toast.error(err.message))
+  const send = () => sendMessage(id, reviewMessage(list, data.branch), "Comments sent").then(() => setComments(() => ({})), (err: Error) => toast.error(err.message))
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex items-center gap-3 border-b px-4 py-2 text-xs text-muted-foreground">

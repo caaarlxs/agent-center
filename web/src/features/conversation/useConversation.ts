@@ -49,6 +49,15 @@ export function useConversation(id: string) {
     setState(s => (s.page ? { ...s, page: { ...s.page, items: append(earlier.items, s.page.items), start: earlier.start, hasMore: earlier.hasMore } } : s))
   }, [id, state.page?.start])
 
+  // Read the last part again: an answer lands on items already shown, which
+  // the follow-up reads never touch.
+  const refresh = useCallback(async () => {
+    const latest = await get<Page>(url(id)).catch(() => null)
+    if (!latest) return
+    const fresh = new Map(latest.items.map(i => [i.key, i]))
+    setState(s => (s.page ? { ...s, page: { ...s.page, items: s.page.items.map(i => fresh.get(i.key) ?? i) } } : s))
+  }, [id])
+
   const shown = useMemo(() => (state.page ? normalize(state.page.items) : []), [state.page])
-  return { shown, isLoaded: !!state.page, error: state.error, hasMore: !!state.page?.hasMore, loadEarlier }
+  return { shown, isLoaded: !!state.page, error: state.error, hasMore: !!state.page?.hasMore, loadEarlier, refresh }
 }
