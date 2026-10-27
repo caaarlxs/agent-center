@@ -12,7 +12,7 @@ import { MessageResponse } from "@/components/ai-elements/message"
 import { FileIcon } from "@/components/common/FileIcon"
 import { Button } from "@/components/ui/button"
 import { get, post } from "@/lib/api"
-import { monacoTheme, useMonaco } from "@/lib/monaco"
+import { useMonaco, useMonacoTheme } from "@/lib/monaco"
 import { useNow } from "@/lib/now"
 import { cn } from "@/lib/utils"
 import { ago } from "@/features/session/state"
@@ -39,6 +39,7 @@ function Viewer({ id, file }: { id: string; file: Listed }) {
   const fileUrl = at(id, "file", file.path)
   const text = useText(["markdown", "code", "table"].includes(kind) ? fileUrl : null)
   const monaco = useMonaco()
+  const theme = useMonacoTheme()
   const rows = useMemo(() => (kind === "table" && text ? parseDelimited(text, file.name.endsWith(".tsv") ? "\t" : ",", 500) : []), [kind, text, file.name])
   const [isBroken, setBroken] = useState(false)
   useEffect(() => setBroken(false), [file.path])
@@ -48,7 +49,7 @@ function Viewer({ id, file }: { id: string; file: Listed }) {
       return <div className="min-h-0 flex-1 overflow-auto px-8 py-6"><div className="mx-auto max-w-3xl">{text === null ? "…" : <MessageResponse>{text}</MessageResponse>}</div></div>
     case "code":
       return monaco.ready && text !== null
-        ? <div className="min-h-0 flex-1"><Editor value={text} path={`files/${file.path}`} theme={monacoTheme()} options={{ readOnly: true, fontSize: 13, minimap: { enabled: false }, automaticLayout: true }} /></div>
+        ? <div className="min-h-0 flex-1"><Editor value={text} path={`files/${file.path}`} theme={theme} options={{ readOnly: true, fontSize: 13, minimap: { enabled: false }, automaticLayout: true }} /></div>
         : <p className="p-6 text-sm text-muted-foreground">Opening…</p>
     case "image":
       return <div className="grid min-h-0 flex-1 place-items-center overflow-auto bg-[repeating-conic-gradient(#ffffff08_0_25%,transparent_0_50%)] bg-[length:20px_20px] p-6"><img src={fileUrl} alt={file.name} className="max-h-full max-w-full rounded shadow" /></div>

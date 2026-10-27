@@ -1,5 +1,5 @@
 import { expect, test } from "vitest"
-import { changedFolders, compactTree, parentsOf, rankFiles, treeOf } from "./tree"
+import { changedFolders, compactTree, parentsOf, rankFiles, spanOf, treeOf } from "./tree"
 
 test("paths become folders and files, each folder with its path", () => {
   const root = treeOf(["README.md", "src/a.ts", "src/lib/b.ts"])
@@ -34,4 +34,12 @@ test("compactTree joins a folder that holds only one folder", () => {
     expect(root.dirs.get("src/models")!.files).toEqual(["src/models/a.ts", "src/models/b.ts"])
     expect(root.files).toEqual(["top.md"])
   }
+})
+
+test("spanOf finds the first match, by case and pattern", () => {
+  expect(spanOf("const Foo = foo()", "foo", { isCase: false, isRegex: false })).toEqual([6, 9])
+  expect(spanOf("const Foo = foo()", "foo", { isCase: true, isRegex: false })).toEqual([12, 15])
+  expect(spanOf("a.b axb", "a.b", { isCase: false, isRegex: false })).toEqual([0, 3])
+  expect(spanOf("axb", "a.b", { isCase: false, isRegex: true })).toEqual([0, 3])
+  expect(spanOf("x", "(", { isCase: false, isRegex: true })).toBeNull()
 })

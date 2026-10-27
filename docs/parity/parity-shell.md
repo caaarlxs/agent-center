@@ -203,16 +203,16 @@ Legend: missing = not in the new app; partial = present but differs (what differ
 
 ## Code
 
-- [ ] Tree column — classic: css:1690 (`minmax(210px, 28%)`) — new: partial (`CodeWorkspace.tsx:287` `minmax(220px, 22%)`).
-- [ ] Folder rows — classic: code.js:132-144, css:1695-1709 (chevron rotates in 120ms; folder icon `#c99a3b`, open `#dcb67a`, fill 25%; changed dot 6px `--ask` .7 with title "Has changes") — new: partial (`CodeWorkspace.tsx:51-56` one colour, no title).
-- [ ] File status tooltips — classic: code.js:130, 149 ("Modified", "Added", "New, not in git yet", "Renamed") — new: missing.
-- [ ] Selected row — classic: css:1707 (`--select`) — new: partial (bg-accent).
-- [ ] Truncated tree — classic: code.js:513 ("Only the first N files show.") — new: missing.
-- [ ] Editor tabs — classic: code.js:517-523, css:1717-1725 (32px; on: `--surface` + inset −2px accent; git status letter in the tab; dirty 8px dot that becomes × on hover; titles "Not saved (⌘S saves)" / "Close") — new: partial (`CodeWorkspace.tsx:309-321` no status letter, no titles).
-- [ ] Editor waiting texts — classic: code.js:532-534 ("Downloading the editor (VS Code's Monaco, once)… N%", "Loading the editor…", "The editor could not load: X", "Open a file from the tree, or press ⌘P" with kbd) — new: partial ("Getting the editor ready… N%").
-- [ ] Quick open ⌘P — classic: code.js:156-193, css:1737-1744 (panel under the tabs, 560px; fuzzy ranking (name match first); ↑↓ ↵ Esc; closes on blur) — new: partial (`CodeWorkspace.tsx:343-366` cmdk dialog, cmdk's own filter order).
-- [ ] Search panel — classic: code.js:209-262, css:1750-1762 (⌘⇧F selects the field; per-file fold; dir path; "N result(s) in N file(s)" singular forms; hit text with match `<mark>` ask-soft and leading "…"; opening selects the exact match; kept mounted so the query stays) — new: partial (`CodeWorkspace.tsx:72-112` no highlight, no fold, no dir, selects whole line, unmounts on switch).
-- [ ] Theme follows the OS live — classic: code.js:38-39, 316-317 — new: partial (fixed dark).
+- [x] Tree column — classic: css:1690 (`minmax(210px, 28%)`) — new: partial (`CodeWorkspace.tsx:287` `minmax(220px, 22%)`).
+- [x] Folder rows — classic: code.js:132-144, css:1695-1709 (chevron rotates in 120ms; folder icon `#c99a3b`, open `#dcb67a`, fill 25%; changed dot 6px `--ask` .7 with title "Has changes") — new: partial (`CodeWorkspace.tsx:51-56` one colour, no title).
+- [x] File status tooltips — classic: code.js:130, 149 ("Modified", "Added", "New, not in git yet", "Renamed") — new: missing.
+- [x] Selected row — classic: css:1707 (`--select`) — new: partial (bg-accent).
+- [x] Truncated tree — classic: code.js:513 ("Only the first N files show.") — new: missing.
+- [x] Editor tabs — classic: code.js:517-523, css:1717-1725 (32px; on: `--surface` + inset −2px accent; git status letter in the tab; dirty 8px dot that becomes × on hover; titles "Not saved (⌘S saves)" / "Close") — new: partial (`CodeWorkspace.tsx:309-321` no status letter, no titles).
+- [x] Editor waiting texts — classic: code.js:532-534 ("Downloading the editor (VS Code's Monaco, once)… N%", "Loading the editor…", "The editor could not load: X", "Open a file from the tree, or press ⌘P" with kbd) — new: partial ("Getting the editor ready… N%").
+- [x] Quick open ⌘P — classic: code.js:156-193, css:1737-1744 (panel under the tabs, 560px; fuzzy ranking (name match first); ↑↓ ↵ Esc; closes on blur) — new: partial (`CodeWorkspace.tsx:343-366` cmdk dialog, cmdk's own filter order).
+- [x] Search panel — classic: code.js:209-262, css:1750-1762 (⌘⇧F selects the field; per-file fold; dir path; "N result(s) in N file(s)" singular forms; hit text with match `<mark>` ask-soft and leading "…"; opening selects the exact match; kept mounted so the query stays) — new: partial (`CodeWorkspace.tsx:72-112` no highlight, no fold, no dir, selects whole line, unmounts on switch).
+- [x] Theme follows the OS live — classic: code.js:38-39, 316-317 — new: partial (fixed dark).
 - [x] File type labels — classic: code.js:70-95 (also Makefile MK, ipynb NB, mts/cts/cjs, jsonc/jsonl, ini, mdx, log, tsv, htm, less, astro, gql, bash, fish, ps1, prisma, proto, h, hpp, icns; lock uses the lock glyph) — new: partial (`components/common/FileIcon.tsx:5-24` subset).
 - [ ] Save, conflict notice, compare, follow disk, remembered tabs, margin marks, beforeunload — new: done.
 
@@ -303,7 +303,7 @@ Legend: missing = not in the new app; partial = present but differs (what differ
 - [x] Shimmer skeleton 1.2s — css:1014-1017 — new: partial (animate-pulse).
 - [x] Status dot pulse 1.6s, run dot `run-beat 1.4s`, rec dot 1.2s, waiting blink 1s, plan spin 1s — css:259-260, 1429-1434, 1464-1465, 1478, 974 — new: missing (except an animate-pulse rec dot).
 - [x] Mic pill open 260ms — css:1455-1457 — new: missing.
-- [ ] Chevron turns (150ms file head, 120ms tree, 150ms picker 180°) — css:1213-1214, 1708-1709, 1486-1488 — new: partial.
+- [x] Chevron turns (150ms file head, 120ms tree, 150ms picker 180°) — css:1213-1214, 1708-1709, 1486-1488 — new: partial.
 - [x] Hover reveals (pencil, fork link, code copy .75 → 1) 120ms — css:946-947, 1266-1267, 552-554 — new: missing.
 - [ ] Card flash — new: done (`index.css:137-140`).
 - [ ] Reduced motion everywhere — css:1138-1140, 326, 1434, 1466, 1832 — new: missing.

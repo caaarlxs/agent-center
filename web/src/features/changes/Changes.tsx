@@ -13,7 +13,7 @@ import { Kbd } from "@/components/ui/kbd"
 import { get } from "@/lib/api"
 import { persistedStore } from "@/lib/store"
 import type { Changes as ChangesData, FileDiff } from "@/lib/api-types"
-import { monacoTheme, useMonaco } from "@/lib/monaco"
+import { useMonaco, useMonacoTheme } from "@/lib/monaco"
 import { cn } from "@/lib/utils"
 import { showTab } from "@/app/open-session"
 import { sendMessage } from "@/features/conversation/send"
@@ -137,6 +137,7 @@ function FileBlock({ file, comments, editing, setEditing, save, remove }: {
 // left, as it is now on the right; the tree of changed files beside it.
 function SideBySide({ id, files }: { id: string; files: FileDiff[] }) {
   const monaco = useMonaco()
+  const theme = useMonacoTheme()
   const shown = files.filter(f => !f.binary && !f.collapsed)
   const [chosen, setChosen] = useState<FileDiff | null>(shown[0] ?? null)
   const [versions, setVersions] = useState<{ original: string; modified: string } | null>(null)
@@ -156,7 +157,7 @@ function SideBySide({ id, files }: { id: string; files: FileDiff[] }) {
         {wait ? <p className="grid flex-1 place-items-center text-text-muted">{wait}</p> : versions && chosen && (
           <div className="min-h-0 flex-1">
             <DiffEditor original={versions.original} modified={versions.modified} originalModelPath={`base/${chosen.oldPath ?? chosen.path}`} modifiedModelPath={`now/${chosen.path}`}
-              theme={monacoTheme()} options={{ readOnly: true, fontSize: 13, automaticLayout: true, useInlineViewWhenSpaceIsLimited: true, renderSideBySide: true }} />
+              theme={theme} options={{ readOnly: true, fontSize: 13, automaticLayout: true, useInlineViewWhenSpaceIsLimited: true, renderSideBySide: true }} />
           </div>
         )}
       </section>

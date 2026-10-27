@@ -62,3 +62,15 @@ export function compactTree(paths: string[]): Folder {
   }
   return squash(treeOf(paths))
 }
+
+// Where a search's query is in a line: [start, end] of its first match, or
+// null (code.js spanOf). A broken regular expression matches nothing.
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+export function spanOf(text: string, query: string, opts: { isCase: boolean; isRegex: boolean }): [number, number] | null {
+  try {
+    const m = new RegExp(opts.isRegex ? query : escapeRe(query), opts.isCase ? "" : "i").exec(text)
+    return m && m[0].length ? [m.index, m.index + m[0].length] : null
+  } catch {
+    return null
+  }
+}

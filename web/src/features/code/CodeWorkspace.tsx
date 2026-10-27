@@ -6,24 +6,27 @@
 // marks what changed since the branch started. Open files and folders are
 // remembered per session; unsaved text is not.
 import Editor, { DiffEditor, type Monaco, type OnMount } from "@monaco-editor/react"
-import { ChevronRight, Folder as FolderIcon, Search, X } from "lucide-react"
+import { ChevronRight, Folder as FolderIcon, FolderOpen, Search, X } from "lucide-react"
 import type { editor } from "monaco-editor"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 import { FileIcon } from "@/components/common/FileIcon"
 import { Button } from "@/components/ui/button"
-import { Command, CommandDialog, CommandEmpty, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
-import { Input } from "@/components/ui/input"
+import { Kbd } from "@/components/ui/kbd"
 import { ApiError, get, post } from "@/lib/api"
 import { keep, load } from "@/lib/store"
 import type { CodeTree, Mark, Match } from "@/lib/api-types"
-import { monacoTheme, useMonaco } from "@/lib/monaco"
+import { useMonaco, useMonacoTheme } from "@/lib/monaco"
 import { cn } from "@/lib/utils"
-import { type Folder, changedFolders, parentsOf, rankFiles, treeOf } from "./tree"
+import { type Folder, changedFolders, parentsOf, rankFiles, spanOf, treeOf } from "./tree"
 
 const WATCH_MS = 3000
 const TREE_MS = 10_000
-const STATUS_TONE: Record<string, string> = { M: "text-amber-400", A: "text-emerald-400", U: "text-emerald-400", R: "text-sky-400" }
+const STATUS_TONE: Record<string, string> = { M: "text-ask", A: "text-work", U: "text-work", R: "text-review" }
+const STATUS_TITLE: Record<string, string> = { M: "Modified", A: "Added", U: "New, not in git yet", R: "Renamed" }
+const dirOf = (p: string) => p.split("/").slice(0, -1).join("/")
+const sideBtn = "inline-grid size-6 place-items-center rounded-md text-text-muted hover:bg-press hover:text-text [&_svg]:size-[13px]"
+const row = "flex h-6 w-full items-center rounded-[5px] pr-1.5 text-left text-[12.5px] text-text hover:bg-hover"
 const MARK_CLASS = { add: "gm-add", mod: "gm-mod", del: "gm-del" }
 const nameOf = (p: string) => p.split("/").pop() ?? p
 
@@ -49,62 +52,88 @@ function TreeRows({ node, depth, open, toggle, status, changed, active, onOpen }
     <>
       {dirs.map(([name, dir]) => (
         <div key={dir.path}>
-          <button onClick={() => toggle(dir.path)} className="flex h-6 w-full items-center gap-1 rounded px-1.5 text-left text-[12.5px] hover:bg-accent" style={{ paddingLeft: 6 + depth * 12 }}>
-            <ChevronRight className={cn("size-3 shrink-0 text-muted-foreground transition-transform", open.has(dir.path) && "rotate-90")} />
-            <FolderIcon className="size-3.5 shrink-0 fill-amber-400/25 text-amber-400/80" />
-            <span className="truncate">{name}</span>
-            {changed.has(dir.path) && <i className="ml-auto size-1.5 shrink-0 rounded-full bg-amber-400/70" />}
+          <button onClick={() => toggle(dir.path)} className={cn(row, "gap-[5px]")} style={{ paddingLeft: 8 + depth * 12 }} aria-expanded={open.has(dir.path)}>
+            <ChevronRight className={cn("size-3 shrink-0 text-text-muted transition-transform duration-[120ms] ease-(--ease-out)", open.has(dir.path) && "rotate-90")} />
+            {open.has(dir.path) ? <FolderOpen className="size-3.5 shrink-0 fill-[#dcb67a]/25 text-[#dcb67a]" /> : <FolderIcon className="size-3.5 shrink-0 fill-[#c99a3b]/25 text-[#c99a3b]" />}
+            <span className="min-w-0 flex-1 truncate">{name}</span>
+            {changed.has(dir.path) && <i className="size-1.5 shrink-0 rounded-full bg-ask opacity-70" title="Has changes" />}
           </button>
           {open.has(dir.path) && <TreeRows node={dir} depth={depth + 1} open={open} toggle={toggle} status={status} changed={changed} active={active} onOpen={onOpen} />}
         </div>
       ))}
       {node.files.map(path => (
-        <button key={path} onClick={() => onOpen(path)} title={path} style={{ paddingLeft: 22 + depth * 12 }}
-          className={cn("flex h-6 w-full items-center gap-1.5 rounded px-1.5 text-left text-[12.5px] hover:bg-accent", path === active && "bg-accent")}>
+        <button key={path} onClick={() => onOpen(path)} title={path} style={{ paddingLeft: 24 + depth * 12 }}
+          className={cn(row, "gap-1.5", path === active && "bg-select hover:bg-select")}>
           <FileIcon path={path} />
-          <span className={cn("truncate", STATUS_TONE[status[path]])}>{nameOf(path)}</span>
-          {status[path] && <span className={cn("ml-auto font-mono text-[10.5px] font-semibold", STATUS_TONE[status[path]])}>{status[path]}</span>}
+          <span className={cn("min-w-0 flex-1 truncate", STATUS_TONE[status[path]])}>{nameOf(path)}</span>
+          {status[path] && <span className={cn("shrink-0 font-mono text-[10.5px] font-semibold", STATUS_TONE[status[path]])} title={STATUS_TITLE[status[path]] ?? status[path]}>{status[path]}</span>}
         </button>
       ))}
     </>
   )
 }
 
-function SearchPanel({ id, onOpen }: { id: string; onOpen: (path: string, line: number) => void }) {
+// ⌘⇧F: every file's lines that hold the query, by file (each folds), the
+// match marked; a click opens the file with the match selected. It stays
+// mounted, so the query is still there when you come back.
+function SearchPanel({ id, field, onOpen }: { id: string; field: React.RefObject<HTMLInputElement | null>; onOpen: (path: string, line: number, span: [number, number] | null) => void }) {
   const [query, setQuery] = useState("")
   const [isCase, setCase] = useState(false)
   const [isRegex, setRegex] = useState(false)
   const [res, setRes] = useState<{ matches: Match[]; truncated: boolean; error?: string } | null>(null)
+  const [folded, setFolded] = useState<Set<string>>(() => new Set())
   useEffect(() => {
     if (!query.trim()) return setRes(null)
+    let alive = true
     const timer = setTimeout(() => {
       get<{ matches: Match[]; truncated: boolean }>(api(id, "codesearch", { q: query, ...(isCase ? { case: "1" } : {}), ...(isRegex ? { regex: "1" } : {}) }))
-        .then(setRes, (err: Error) => setRes({ matches: [], truncated: false, error: err.message }))
+        .then(r => alive && setRes(r), (err: Error) => alive && setRes({ matches: [], truncated: false, error: err.message }))
     }, 250)
-    return () => clearTimeout(timer)
+    return () => ((alive = false), clearTimeout(timer))
   }, [id, query, isCase, isRegex])
   const byFile = useMemo(() => {
     const out = new Map<string, Match[]>()
     for (const m of res?.matches ?? []) out.set(m.path, [...(out.get(m.path) ?? []), m])
     return [...out]
   }, [res])
+  const fold = (path: string) => setFolded(f => {
+    const next = new Set(f)
+    if (!next.delete(path)) next.add(path)
+    return next
+  })
+  const opt = (isOn: boolean) => cn("h-7 w-[26px] shrink-0 rounded-md font-mono text-[11px] font-semibold text-text-muted hover:bg-hover", isOn && "bg-brand-soft text-brand hover:bg-brand-soft")
+  const n = res?.matches.length ?? 0
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex gap-1 px-2 pb-2">
-        <Input autoFocus value={query} placeholder="Search in every file" onChange={e => setQuery(e.target.value)} className="h-7 text-xs" />
-        <Button size="icon-sm" variant={isCase ? "secondary" : "ghost"} title="Match case" onClick={() => setCase(c => !c)} className="font-mono text-[11px]">Aa</Button>
-        <Button size="icon-sm" variant={isRegex ? "secondary" : "ghost"} title="Regular expression" onClick={() => setRegex(r => !r)} className="font-mono text-[11px]">.*</Button>
+      <div className="flex gap-1 px-2 pb-1.5">
+        <input ref={field} value={query} placeholder="Search in every file" spellCheck={false} onChange={e => setQuery(e.target.value)}
+          className="h-7 min-w-0 flex-1 rounded-md border border-line-strong bg-surface px-2 text-[12.5px] focus:border-brand focus:shadow-[0_0_0_3px_var(--brand-soft)] focus:outline-none" />
+        <button className={opt(isCase)} title="Match case" onClick={() => setCase(c => !c)}>Aa</button>
+        <button className={opt(isRegex)} title="Regular expression" onClick={() => setRegex(r => !r)}>.*</button>
       </div>
-      {res && <p className="px-3 pb-1.5 text-[11px] text-muted-foreground">{res.error ?? (res.matches.length ? `${res.matches.length}${res.truncated ? "+" : ""} results in ${byFile.length} files` : "No results.")}</p>}
+      {res?.error && <p className="p-3 text-text-muted">{res.error}</p>}
+      {res && !res.error && <p className="m-0 px-3 pb-1.5 text-[11.5px] text-text-muted">{n === 0 ? "No results." : `${n}${res.truncated ? "+" : ""} ${n === 1 ? "result" : "results"} in ${byFile.length} ${byFile.length === 1 ? "file" : "files"}`}</p>}
       <div className="min-h-0 flex-1 overflow-auto px-1 pb-3">
         {byFile.map(([path, list]) => (
-          <div key={path} className="mb-1">
-            <div className="flex items-center gap-1.5 px-1.5 py-1 text-[12px]" title={path}><FileIcon path={path} /><span className="truncate font-medium">{nameOf(path)}</span><span className="ml-auto rounded bg-muted px-1.5 text-[10.5px] text-muted-foreground">{list.length}</span></div>
-            {list.map(m => (
-              <button key={m.line} onClick={() => onOpen(m.path, m.line)} className="block w-full truncate rounded py-0.5 pr-2 pl-7 text-left font-mono text-[11.5px] text-muted-foreground hover:bg-accent hover:text-foreground">
-                {m.text.trim()}
-              </button>
-            ))}
+          <div key={path}>
+            <button className={cn(row, "gap-[5px] pl-2")} onClick={() => fold(path)} title={path}>
+              <ChevronRight className={cn("size-3 shrink-0 text-text-muted transition-transform duration-[120ms] ease-(--ease-out)", !folded.has(path) && "rotate-90")} />
+              <FileIcon path={path} /><span className="max-w-[60%] shrink-0 truncate">{nameOf(path)}</span>
+              <span className="min-w-0 flex-1 truncate text-[11.5px] text-faint">{dirOf(path)}</span>
+              <span className="ml-auto shrink-0 rounded-lg bg-press px-1.5 text-[10.5px] text-text-muted">{list.length}</span>
+            </button>
+            {!folded.has(path) && list.map(m => {
+              const span = spanOf(m.text, query, { isCase, isRegex })
+              const from = span ? Math.max(0, span[0] - 12) : 0
+              return (
+                <button key={m.line} className={cn(row, "h-[22px] pl-[34px] font-mono text-xs text-text-muted")} onClick={() => onOpen(m.path, m.line, span)} title={`Line ${m.line}`}>
+                  <span className="min-w-0 flex-1 truncate whitespace-pre">
+                    {from > 0 ? "…" : ""}
+                    {span ? <>{m.text.slice(from, span[0])}<mark className="rounded-[2px] bg-ask-soft text-text shadow-[0_0_0_1px_color-mix(in_srgb,var(--ask)_40%,transparent)]">{m.text.slice(span[0], span[1])}</mark>{m.text.slice(span[1])}</> : m.text.trimStart()}
+                  </span>
+                </button>
+              )
+            })}
           </div>
         ))}
       </div>
@@ -112,8 +141,38 @@ function SearchPanel({ id, onOpen }: { id: string; onOpen: (path: string, line: 
   )
 }
 
+// ⌘P: a field under the tabs; the files whose path holds the letters in
+// order, the name first; ↑↓ ↵, Esc or a click elsewhere closes it.
+function QuickOpen({ files, onPick, onClose }: { files: string[]; onPick: (path: string) => void; onClose: () => void }) {
+  const [query, setQuery] = useState("")
+  const [index, setIndex] = useState(0)
+  const list = useMemo(() => rankFiles(files, query), [files, query])
+  const onKey = (e: React.KeyboardEvent) => {
+    if (e.key === "ArrowDown") (e.preventDefault(), setIndex(i => Math.min(i + 1, list.length - 1)))
+    else if (e.key === "ArrowUp") (e.preventDefault(), setIndex(i => Math.max(i - 1, 0)))
+    else if (e.key === "Enter") (e.preventDefault(), list[index] && onPick(list[index]))
+    else if (e.key === "Escape") (e.preventDefault(), e.stopPropagation(), onClose())
+  }
+  return (
+    <div onKeyDown={onKey} className="absolute top-10 left-1/2 z-20 w-[min(560px,calc(100%-32px))] -translate-x-1/2 rounded-[10px] border border-line bg-raised p-2 shadow-pop">
+      <input autoFocus value={query} placeholder="Go to file…" spellCheck={false} onChange={e => (setQuery(e.target.value), setIndex(0))} onBlur={() => setTimeout(onClose, 150)}
+        className="w-full rounded-md border border-line-strong bg-surface px-2.5 py-[7px] text-[13.5px] focus:border-brand focus:shadow-[0_0_0_3px_var(--brand-soft)] focus:outline-none" />
+      <div className="mt-1.5 max-h-80 overflow-auto">
+        {list.map((path, i) => (
+          <button key={path} onPointerDown={e => (e.preventDefault(), onPick(path))}
+            className={cn("flex w-full items-baseline gap-2 rounded-md px-2 py-1.5 text-left text-[12.5px] text-text", i === index && "bg-select")}>
+            <FileIcon path={path} /><span className="max-w-1/2 shrink-0 truncate">{nameOf(path)}</span><span className="min-w-0 flex-1 truncate text-[11.5px] text-faint">{dirOf(path)}</span>
+          </button>
+        ))}
+        {!list.length && <p className="m-2 text-[12.5px] text-text-muted">No file matches.</p>}
+      </div>
+    </div>
+  )
+}
+
 export function CodeWorkspace({ id }: { id: string }) {
   const monacoState = useMonaco()
+  const theme = useMonacoTheme()
   const saved = useMemo(() => remembered(id), [id])
   const [tree, setTree] = useState<CodeTree | null>(null)
   const [treeError, setTreeError] = useState<string | null>(null)
@@ -161,7 +220,7 @@ export function CodeWorkspace({ id }: { id: string }) {
     })))
   }, [id])
 
-  const open = useCallback(async (path: string, line?: number, focus = true) => {
+  const open = useCallback(async (path: string, line?: number, focus = true, span: [number, number] | null = null) => {
     const m = mon.current
     const e = ed.current
     if (!m || !e) return
@@ -180,7 +239,9 @@ export function CodeWorkspace({ id }: { id: string }) {
     setOpenDirs(d => new Set([...d, ...parentsOf(path)]))
     const model = docs.current.get(path)!.model
     e.setModel(model)
-    if (line && line <= model.getLineCount()) (e.revealLineInCenter(line), e.setSelection(new m.Range(line, 1, line, model.getLineMaxColumn(line))))
+    // A search hit: the match itself selected, else the whole line.
+    if (line && line <= model.getLineCount())
+      (e.revealLineInCenter(line), e.setSelection(span ? new m.Range(line, span[0] + 1, line, span[1] + 1) : new m.Range(line, 1, line, model.getLineMaxColumn(line))))
     if (focus) e.focus()
     now.current.active = path
     setActive(path)
@@ -266,7 +327,7 @@ export function CodeWorkspace({ id }: { id: string }) {
     marks.current = e.createDecorationsCollection()
     e.addCommand(m.KeyMod.CtrlCmd | m.KeyCode.KeyS, () => void saveNow.current())
     e.addCommand(m.KeyMod.CtrlCmd | m.KeyCode.KeyP, () => setQuick(true))
-    e.addCommand(m.KeyMod.CtrlCmd | m.KeyMod.Shift | m.KeyCode.KeyF, () => setSide("search"))
+    e.addCommand(m.KeyMod.CtrlCmd | m.KeyMod.Shift | m.KeyCode.KeyF, () => showSearch())
     void (async () => {
       for (const path of saved.open) await open(path, undefined, false)
       if (saved.active) await open(saved.active, undefined, false)
@@ -281,88 +342,78 @@ export function CodeWorkspace({ id }: { id: string }) {
 
   const root = useMemo(() => (tree ? treeOf(tree.files) : null), [tree?.files])
   const changed = useMemo(() => changedFolders(tree?.status ?? {}), [tree?.status])
+  // ⌘⇧F: the search, its field selected.
+  const searchField = useRef<HTMLInputElement>(null)
+  const showSearch = () => (setSide("search"), requestAnimationFrame(() => searchField.current?.select()))
   const toggle = (p: string) => setOpenDirs(d => (d.has(p) ? new Set([...d].filter(x => x !== p)) : new Set([...d, p])))
 
   if (treeError) return <p className="p-6 text-sm text-muted-foreground">{treeError}</p>
   return (
-    <div className="grid min-h-0 flex-1 grid-cols-[minmax(220px,22%)_minmax(0,1fr)]"
+    <div className="relative grid min-h-0 flex-1 grid-cols-[minmax(210px,28%)_minmax(0,1fr)]"
       onKeyDown={e => {
         if (!(e.metaKey || e.ctrlKey)) return
         if (e.key === "p") (e.preventDefault(), setQuick(true))
         else if (e.key === "s") (e.preventDefault(), void save())
-        else if (e.key.toLowerCase() === "f" && e.shiftKey) (e.preventDefault(), setSide("search"))
+        else if (e.key.toLowerCase() === "f" && e.shiftKey) (e.preventDefault(), showSearch())
       }}>
-      <aside className="flex min-h-0 flex-col border-r bg-sidebar/40">
-        <header className="flex items-center gap-1 px-3 py-2 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
-          <span className="truncate" title={tree?.root}>{side === "search" ? "Search" : (tree?.name ?? "…")}</span>
-          <span className="ml-auto flex">
-            <Button size="icon-xs" variant={side === "files" ? "secondary" : "ghost"} onClick={() => setSide("files")} title="Files"><FolderIcon /></Button>
-            <Button size="icon-xs" variant={side === "search" ? "secondary" : "ghost"} onClick={() => setSide("search")} title="Search in every file (⌘⇧F)"><Search /></Button>
+      <aside className="flex min-h-0 flex-col border-r border-line bg-side" aria-label="Files">
+        <header className="flex items-center justify-between gap-1.5 pt-2 pr-2 pb-1.5 pl-3 text-[11.5px] tracking-[0.04em] text-text-muted uppercase">
+          <b className="truncate font-semibold" title={tree?.root}>{side === "search" ? "Search" : (tree?.name ?? "…")}</b>
+          <span className="flex gap-0.5">
+            <button className={cn(sideBtn, side === "files" && "bg-press text-text")} onClick={() => setSide("files")} title="Files"><FolderIcon /></button>
+            <button className={cn(sideBtn, side === "search" && "bg-press text-text")} onClick={showSearch} title="Search in every file (⌘⇧F)"><Search /></button>
           </span>
         </header>
-        {side === "search" ? <SearchPanel id={id} onOpen={(p, l) => void open(p, l)} /> : (
-          <div className="min-h-0 flex-1 overflow-auto px-1 pb-3">
-            {root ? <TreeRows node={root} depth={0} open={openDirs} toggle={toggle} status={tree!.status} changed={changed} active={active} onOpen={p => void open(p)} /> : <p className="p-3 text-xs text-muted-foreground">Reading the folder…</p>}
-          </div>
-        )}
+        <div className={cn("flex min-h-0 flex-1 flex-col", side !== "search" && "hidden")}><SearchPanel id={id} field={searchField} onOpen={(p, l, span) => void open(p, l, true, span)} /></div>
+        <div className={cn("min-h-0 flex-1 overflow-auto px-1 pb-3", side !== "files" && "hidden")}>
+          {root ? <TreeRows node={root} depth={0} open={openDirs} toggle={toggle} status={tree!.status} changed={changed} active={active} onOpen={p => void open(p)} /> : <p className="p-3 text-text-muted">Reading the folder…</p>}
+          {tree?.truncated && <p className="p-3 text-text-muted">Only the first {tree.files.length} files show.</p>}
+        </div>
       </aside>
-      <section className="flex min-h-0 min-w-0 flex-col">
+      <section className="relative flex min-h-0 min-w-0 flex-col">
+      {isQuick && <QuickOpen files={tree?.files ?? []} onPick={p => void open(p)} onClose={() => setQuick(false)} />}
         {tabs.length > 0 && (
-          <nav className="flex shrink-0 overflow-x-auto border-b bg-sidebar/40">
-            {tabs.map(t => (
-              <div key={t.path} title={t.path} className={cn("group flex h-8 shrink-0 items-center gap-1.5 border-r pr-1 pl-3 text-[12.5px] text-muted-foreground", t.path === active && "bg-background text-foreground shadow-[inset_0_-2px_0_var(--color-orange-500)]")}>
-                <button onClick={() => void open(t.path)} className="flex items-center gap-1.5"><FileIcon path={t.path} />{nameOf(t.path)}</button>
-                <button onClick={() => close(t.path)} className="grid size-5 place-items-center rounded hover:bg-accent" aria-label="Close">
-                  {t.dirty ? <i className="size-2 rounded-full bg-foreground group-hover:hidden" /> : null}
-                  <X className={cn("size-3", t.dirty && "hidden group-hover:block")} />
-                </button>
-              </div>
-            ))}
+          <nav className="flex shrink-0 overflow-x-auto border-b border-line bg-side [scrollbar-width:none]">
+            {tabs.map(t => {
+              const st = tree?.status[t.path]
+              return (
+                <div key={t.path} title={t.path} className={cn("flex h-8 shrink-0 items-center gap-1.5 border-r border-line pr-2 pl-3 text-[12.5px] whitespace-nowrap text-text-muted", t.path === active && "bg-surface text-text shadow-[inset_0_-2px_0_var(--brand)]")}>
+                  <button onClick={() => void open(t.path)} className="flex items-center gap-1.5"><FileIcon path={t.path} />{nameOf(t.path)}</button>
+                  {st && <span className={cn("font-mono text-[10.5px] font-semibold", STATUS_TONE[st])}>{st}</span>}
+                  <button onClick={() => close(t.path)} className="group/close grid size-[18px] place-items-center rounded hover:bg-press" title={t.dirty ? "Not saved (⌘S saves)" : "Close"} aria-label="Close">
+                    {t.dirty && <i className="size-2 rounded-full bg-text group-hover/close:hidden" />}
+                    <X className={cn("size-3", t.dirty && "hidden group-hover/close:block")} />
+                  </button>
+                </div>
+              )
+            })}
           </nav>
         )}
         {notice && (
-          <div className="flex flex-wrap items-center gap-2 border-b bg-amber-400/10 px-3 py-2 text-[12.5px]">
-            <span className="flex-1">{nameOf(notice.path)} {notice.kind === "conflict" ? "changed on disk after you opened it (Claude may have edited it). Saving now would undo that change." : "changed on disk, and you have changes of your own."}</span>
-            <Button size="sm" variant="outline" onClick={() => void reload(notice.path)}>Reload theirs</Button>
-            <Button size="sm" variant="outline" onClick={() => (compare ? setCompare(null) : void showCompare(notice.path))}>{compare ? "Close compare" : "Compare"}</Button>
-            <Button size="sm" onClick={() => void save(true)}>Keep mine</Button>
+          <div className="flex flex-wrap items-center gap-2 border-b border-line bg-ask-soft px-3 py-2 text-[12.5px]">
+            <span className="flex-[1_1_260px]">{nameOf(notice.path)} {notice.kind === "conflict" ? "changed on disk after you opened it (Claude may have edited it). Saving now would undo that change." : "changed on disk, and you have changes of your own."}</span>
+            <Button variant="outline" onClick={() => void reload(notice.path)}>Reload theirs</Button>
+            <Button variant="outline" onClick={() => (compare ? setCompare(null) : void showCompare(notice.path))}>{compare ? "Close compare" : "Compare"}</Button>
+            <Button onClick={() => void save(true)}>Keep mine</Button>
           </div>
         )}
         <div className="relative min-h-0 flex-1">
-          {!monacoState.ready && <p className="absolute inset-0 grid place-items-center text-sm text-muted-foreground">{monacoState.error ?? `Getting the editor ready… ${Math.round((monacoState.progress ?? 0) * 100)}%`}</p>}
+          {!monacoState.ready && (
+            <p className="absolute inset-0 z-[1] grid place-items-center bg-surface p-6 text-center text-[13px] text-text-muted">
+              {monacoState.error ? `The editor could not load: ${monacoState.error}` : monacoState.progress != null ? `Downloading the editor (VS Code's Monaco, once)… ${Math.round(monacoState.progress * 100)}%` : "Loading the editor…"}
+            </p>
+          )}
           {monacoState.ready && (
             <>
               <div className={cn("absolute inset-0", compare && "invisible")}>
-                <Editor theme={monacoTheme()} onMount={onMount} options={{ fontSize: 13, minimap: { enabled: true }, automaticLayout: true, scrollBeyondLastLine: false }} />
+                <Editor theme={theme} onMount={onMount} options={{ fontSize: 13, minimap: { enabled: true }, automaticLayout: true, scrollBeyondLastLine: false }} />
               </div>
-              {compare && <div className="absolute inset-0"><DiffEditor theme={monacoTheme()} original={compare.original} modified={compare.modified} options={{ readOnly: true, fontSize: 13, automaticLayout: true }} /></div>}
-              {!active && !compare && <p className="pointer-events-none absolute inset-0 grid place-items-center bg-background text-sm text-muted-foreground">Open a file from the tree, or press ⌘P.</p>}
+              {compare && <div className="absolute inset-0"><DiffEditor theme={theme} original={compare.original} modified={compare.modified} options={{ readOnly: true, fontSize: 13, automaticLayout: true }} /></div>}
+              {!active && !compare && <p className="pointer-events-none absolute inset-0 grid place-items-center bg-surface text-[13px] text-text-muted"><span>Open a file from the tree, or press <Kbd>⌘P</Kbd>.</span></p>}
             </>
           )}
         </div>
       </section>
-      <CommandDialog open={isQuick} onOpenChange={setQuick} title="Go to file" description="Open a file by its name">
-        <Command>
-          <CommandInput placeholder="Go to file…" />
-          <CommandList>
-            <CommandEmpty>No file matches.</CommandEmpty>
-            <QuickList files={tree?.files ?? []} onPick={p => void open(p)} />
-          </CommandList>
-        </Command>
-      </CommandDialog>
     </div>
-  )
-}
-
-// cmdk filters by itself; it gets the files in our ranking's order.
-function QuickList({ files, onPick }: { files: string[]; onPick: (p: string) => void }) {
-  return (
-    <>
-      {rankFiles(files, "", 2000).map(p => (
-        <CommandItem key={p} value={p} onSelect={() => onPick(p)}>
-          <FileIcon path={p} /><span>{nameOf(p)}</span><span className="truncate text-xs text-muted-foreground">{p.split("/").slice(0, -1).join("/")}</span>
-        </CommandItem>
-      ))}
-    </>
   )
 }

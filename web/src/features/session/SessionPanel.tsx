@@ -207,7 +207,7 @@ export function SessionPanel({ id, tab: asked, file }: { id: string; tab: Tab; f
   const repo = card?.repo ?? fromSearch?.repo
   const counts: Partial<Record<Tab, number>> = { prs: card?.prs?.length ?? 0, tasks: card?.taskCount ?? 0 }
   return (
-    <aside aria-label="Conversation" className="flex h-full min-h-0 min-w-0 flex-col border-l border-line bg-surface">
+    <aside aria-label="Conversation" className="flex h-full min-h-0 min-w-0 flex-1 flex-col border-l border-line bg-surface">
       <header className="flex flex-col gap-1.5 py-2.5 pr-3 pl-5 max-[860px]:px-3 max-[860px]:pl-4">
         <div className="flex min-h-[30px] min-w-0 items-center gap-2.5 max-[860px]:flex-wrap">
           {card && <StatusChip card={card} />}
