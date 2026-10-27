@@ -10,8 +10,9 @@ import { ZOOM, minZoomOf, zoomTarget } from "./zoom"
 
 export const savedZoom = persistedStore<number | null>("canvasZoom", null)
 export const DONE_H = 48 + 144 // the "Done" band at the foot: its head and one row of cards
+const TOP_H = 56 // the page's tools over the canvas's top (search, Zone, Next up)
 
-// The zoom that shows every node above "Done", and the view that does it.
+// The zoom that shows every node between the tools and "Done", and the view that does it.
 function useFit() {
   const rf = useReactFlow()
   const w = useStore(s => s.width)
@@ -19,8 +20,8 @@ function useFit() {
   return useCallback(() => {
     const nodes = rf.getNodes().filter(n => !n.hidden)
     if (!nodes.length || !w || !h) return { zoom: 1, view: null }
-    const view = getViewportForBounds(getNodesBounds(nodes), w, Math.max(120, h - DONE_H), 0.05, 1, 0.04)
-    return { zoom: Math.min(1, view.zoom), view }
+    const fit = getViewportForBounds(getNodesBounds(nodes), w, Math.max(120, h - DONE_H - TOP_H), 0.05, 1, 0.04)
+    return { zoom: Math.min(1, fit.zoom), view: { ...fit, y: fit.y + TOP_H } }
   }, [rf, w, h])
 }
 

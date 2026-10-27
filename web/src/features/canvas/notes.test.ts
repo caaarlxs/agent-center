@@ -1,7 +1,7 @@
 import { expect, test } from "vitest"
 import type { Note } from "@/lib/api-types"
 import { CARD_W } from "./geometry"
-import { attachTo, linesOf, noteAt, placeNote, toggleItem } from "./notes"
+import { attachTo, continueList, linesOf, noteAt, placeNote, tally, toggleItem, withItem } from "./notes"
 
 const note = (extra: Partial<Note> = {}): Note => ({ id: "n", text: "", x: 10, y: 20, w: 200, h: 100, color: "yellow", cardId: null, ...extra })
 const cardAt = (key: string) => (key === "c" ? { x: 480, y: 240 } : null)
@@ -27,4 +27,17 @@ test("boxes to tick", () => {
   expect(linesOf("Plan\n- [ ] one\n- [x] two")).toEqual([{ kind: "text", text: "Plan" }, { kind: "item", text: "one", done: false }, { kind: "item", text: "two", done: true }])
   expect(toggleItem("- [ ] one\n- [x] two", 0)).toBe("- [x] one\n- [x] two")
   expect(toggleItem("- [ ] one\n- [x] two", 1)).toBe("- [ ] one\n- [ ] two")
+})
+
+test("Enter on a list line starts the next box; on an empty box it ends the list", () => {
+  expect(continueList("- [ ] one", 9)).toEqual({ text: "- [ ] one\n- [ ] ", caret: 16 })
+  expect(continueList("- [x] one\n- [ ] ", 16)).toEqual({ text: "- [x] one\n", caret: 10 })
+  expect(continueList("plain", 5)).toBeNull()
+})
+
+test("a note counts its ticked boxes, and adds one at the end", () => {
+  expect(tally("a\n- [x] b\n- [ ] c")).toBe("1/2")
+  expect(tally("a")).toBeNull()
+  expect(withItem("a\n")).toBe("a\n- [ ] ")
+  expect(withItem("")).toBe("- [ ] ")
 })

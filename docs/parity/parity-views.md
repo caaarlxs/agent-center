@@ -80,7 +80,7 @@ Tarjeta del canvas `.ccard` (`canvas.js:84-160`, `styles.css:789-898`) frente a 
 - [x] Estrella de fijada — classic: `canvas.js:137` icono star 12px, color `--ask`, `margin-left: auto`, title "Pinned" — new: partial (`SessionCard.tsx:119` estrella rellena ámbar 14px; sin `title`).
 - [x] Línea de contexto "Now:" al trabajar — classic: `components.js:102-103` `<span>Now:</span>` en `--work`, peso 600 (`styles.css:302`) — new: missing (`state.ts:30-34` devuelve el texto sin prefijo).
 - [x] Pregunta en `--text` peso 500 — classic: `styles.css:301,810-811`, 12.5px/1.4 — new: done (`SessionCard.tsx:124`).
-- [ ] Tarjeta Done sin contexto ni señales — classic: `canvas.js:140,144` — new: n/a (el canvas nuevo no dibuja tarjetas Done; ver Done strip).
+- [x] Tarjeta Done sin contexto ni señales — classic: `canvas.js:140,144` — new: n/a (el canvas nuevo no dibuja tarjetas Done; ver Done strip).
 - [x] Respuestas rápidas con estilo "ask" — classic: `styles.css:902-911` `.choice` alto 26px (24px en canvas, `styles.css:811`), radio 13px, 12px peso 600, borde `color-mix(var(--ask) 45%)`, color `--ask`, fondo `--ask-soft`; la primera `background: var(--ask); color: var(--surface)`; `:active scale(.96)`; hover `color-mix(var(--ask) 22%)` o `brightness(1.08)`; `transition: transform 120ms var(--ease-out), background-color 120ms ease` — new: partial (`SessionCard.tsx:44` botones shadcn `default`/`outline` neutros, sin color ask, sin escala).
 - [x] Respuestas: casos de reserva — classic: `components.js:159-165` botón "Reply" (pregunta con varias partes, abre el lector) y "Answer in Claude ↗" con title "You can answer this session only in Claude desktop" — new: missing (`SessionCard.tsx:31-40` devuelve nada en esos casos).
 - [x] Respuestas: plantilla que termina en ":" o "…" va al campo de respuesta — classic: `main.js:501-506` — new: missing (`sendMessage` envía siempre).
@@ -125,13 +125,13 @@ Tarjeta del canvas `.ccard` (`canvas.js:84-160`, `styles.css:789-898`) frente a 
 - [x] Destacar la tarjeta destino al arrastrar una nota — classic: `canvas-notes.js:68-73`, `styles.css:1183` `.ccard.note-target { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft) }` — new: missing.
 - [x] Notas adjuntas siguen a la tarjeta durante el arrastre — classic: `canvas-notes.js:18-30` `follow()` en cada movimiento — new: partial (`Canvas.tsx:111-118` la nota se recoloca al soltar).
 - [x] Caja de selección con estilo accent — classic: `styles.css:1313-1316` borde `1.5px solid var(--accent)`, fondo `color-mix(var(--accent) 12%)`, radio 4px; se dibuja con arrastre simple sobre el vacío (`canvas.js:600-635`) — new: partial (React Flow: arrastre con Shift y estilo azul por defecto).
-- [ ] Elemento elegido — classic: `styles.css:1317-1318` `.ccard.picked { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft) }`, `.note.picked { box-shadow: 0 0 0 3px var(--accent-soft), 0 0 0 1.5px var(--accent) }` — new: partial (tarjetas: done vía `selected`; notas: sin anillo).
+- [x] Elemento elegido — classic: `styles.css:1317-1318` `.ccard.picked { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft) }`, `.note.picked { box-shadow: 0 0 0 3px var(--accent-soft), 0 0 0 1.5px var(--accent) }` — new: partial (tarjetas: done vía `selected`; notas: sin anillo).
 - [x] ⌘/⇧-clic elige sin abrir — classic: `canvas.js:127` — new: partial (`Canvas.tsx:224` `onNodeClick` abre la sesión siempre).
 - [x] Esc suelta la selección — classic: `canvas.js:900` — new: missing.
 - [x] Clic en el vacío cierra el panel y suelta la tarjeta — classic: `main.js:535-545` (excepto `.reader, .card, .ccard, .note, .row, .menu, dialog, .toasts, button, a, input…`) — new: missing (sin `onPaneClick`).
 - [x] Suelta sobre una carpeta: la tarjeta entra — classic: `canvas.js:795-828` vuela hacia la carpeta (`translate + scale(0.3)`, opacidad 0, 200 ms, `cubic-bezier(0.22,1,0.36,1)`); la carpeta da un golpe (`scale(1.05)` en offset .6, 300 ms, delay 120 ms); toast "Added to <zone>" / "N added to <zone>"; la carpeta bajo el puntero se marca `.zone.folder.drop { box-shadow: inset 0 0 0 2px var(--accent), 0 0 0 4px var(--accent-soft) }` (`styles.css:1602`) — new: missing.
-- [ ] Doble clic en el vacío crea una nota — classic: `canvas.js:974-980` — new: done (`Canvas.tsx:217-220`).
-- [ ] Teclas Delete/Backspace — classic: no borran nada — new: partial/riesgo (`components/ai-elements/canvas.tsx:11,15` `deleteKeyCode=["Backspace","Delete"]` quita nodos del estado local vía `applyNodeChanges`). Pon `deleteKeyCode={null}`.
+- [x] Doble clic en el vacío crea una nota — classic: `canvas.js:974-980` — new: done (`Canvas.tsx:217-220`).
+- [x] Teclas Delete/Backspace — classic: no borran nada — new: partial/riesgo (`components/ai-elements/canvas.tsx:11,15` `deleteKeyCode=["Backspace","Delete"]` quita nodos del estado local vía `applyNodeChanges`). Pon `deleteKeyCode={null}`.
 - [ ] Lienzo con límites — classic: `canvas.js:752-757` el lienzo ocupa la ventana; tarjetas y zonas no salen ni bajan de Done (`canvas.js:252-260,829-832`) — new: partial (lienzo infinito de React Flow; decisión de diseño, documéntala). Decisión: el lienzo abierto de React Flow se queda; "Done" es una banda fija al pie de la vista y "Fit" ajusta lo que queda por encima de ella.
 - [x] Minimapa — classic: no existe — new: extra (`Canvas.tsx:233-234`). Mantén o quita según el dueño. Quitado: el clásico no lo tiene y tapaba la banda Done.
 
@@ -155,22 +155,22 @@ Tarjeta del canvas `.ccard` (`canvas.js:84-160`, `styles.css:789-898`) frente a 
 
 ## Notes
 
-- [ ] Colores y caja — classic: `styles.css:1149-1160` colores `--note` yellow #eab308, pink #ec4899, blue #3b82f6, green #22c55e; `background: color-mix(in srgb, var(--note) 16%, var(--surface))`; `border: 1px solid color-mix(var(--note) 45%, var(--line))`; radio 10px; sombra `0 1px 2px rgb(0 0 0/.08)`; `transition: box-shadow 120ms, left/top 340ms var(--ease-out)` — new: partial (`NoteNode.tsx:20-22,31` pasteles opacos `bg-amber-200/90 text-amber-950`…, `rounded-md`, `shadow-lg`; no siguen el tema).
-- [ ] Cabecera — classic: `styles.css:1163-1167,1184-1191` alto 22px, padding `0 4px 0 8px`, `border-radius: 9px 9px 0 0`, fondo `color-mix(var(--note) 28%)` (adjunta 40%), `cursor: grab`; title "Drag to move the note; drop it next to a card to attach it" o "Attached to “<title>”: it moves with the card. Drag it away to detach it" — new: partial (`NoteNode.tsx:34` alto 20px, sin fondo propio, sin title).
-- [ ] Punto de color — classic: `styles.css:1168` 11px, color sólido `var(--note)`, title "Change the colour", a la izquierda — new: partial (`NoteNode.tsx:35-36` `currentColor` al 25 %, a la derecha, title "Colour: <next>").
-- [ ] Icono de enlace en nota adjunta — classic: `canvas-notes.js:148`, `styles.css:1187` icono link 11px, color `color-mix(var(--note) 70%, var(--text))` — new: missing (solo `ring-1 ring-black/10`).
-- [ ] Contador de casillas "2/5" — classic: `canvas-notes.js:149`, `styles.css:1188` 11px peso 650 `--muted` tabular — new: missing.
-- [ ] Botón "Add a checkbox" — classic: `canvas-notes.js:134-138,151` icono tasks 12px, añade `- [ ] ` y abre la edición — new: missing.
-- [ ] Botones con `opacity 0` → 1 en hover o foco — classic: `styles.css:1169-1170,1189-1190` 18px — new: partial (`NoteNode.tsx:37` X siempre al 50 %).
-- [ ] Texto — classic: `styles.css:1171-1175,1191` 13px/1.45, padding `7px 10px 12px`; placeholder "Write a note… (- [ ] for a checkbox)"; `spellcheck=false` — new: partial (`NoteNode.tsx:40` `px-2.5 pb-2`, `leading-snug`, placeholder "Write a note…").
-- [ ] Enter continúa la lista; Enter en casilla vacía la termina — classic: `canvas-notes.js:121-133` — new: missing.
-- [ ] Casilla hecha — classic: `styles.css:1195-1196` texto `--faint` tachado; `accent-color: color-mix(var(--note) 80%, var(--text))` — new: partial (`NoteNode.tsx:46` tachado + `opacity-60`, sin accent-color).
-- [ ] Nota arrastrada — classic: `canvas-notes.js:78` `rotate(-1deg)`; `styles.css:1161` `z-index: 31; box-shadow: var(--shadow-pop)` — new: missing.
-- [ ] Foco — classic: `styles.css:1162` `z-index: 24; box-shadow: 0 0 0 2px color-mix(var(--note) 55%, transparent)` — new: missing.
-- [ ] Esquina de redimensión — classic: `canvas-notes.js:158`, `styles.css:1176-1180` 16px × `--unscale`, `linear-gradient(135deg, transparent 50%, color-mix(var(--note) 60%) 50%)`, radio `0 0 8px 0`; mínimo 144×96, máximo 800×800, ajuste `floor` a 24px — new: partial (`NoteNode.tsx:32-33` NodeResizer solo con selección, mínimo 140×80, sin ajuste a la rejilla, sin máximo).
+- [x] Colores y caja — classic: `styles.css:1149-1160` colores `--note` yellow #eab308, pink #ec4899, blue #3b82f6, green #22c55e; `background: color-mix(in srgb, var(--note) 16%, var(--surface))`; `border: 1px solid color-mix(var(--note) 45%, var(--line))`; radio 10px; sombra `0 1px 2px rgb(0 0 0/.08)`; `transition: box-shadow 120ms, left/top 340ms var(--ease-out)` — new: partial (`NoteNode.tsx:20-22,31` pasteles opacos `bg-amber-200/90 text-amber-950`…, `rounded-md`, `shadow-lg`; no siguen el tema).
+- [x] Cabecera — classic: `styles.css:1163-1167,1184-1191` alto 22px, padding `0 4px 0 8px`, `border-radius: 9px 9px 0 0`, fondo `color-mix(var(--note) 28%)` (adjunta 40%), `cursor: grab`; title "Drag to move the note; drop it next to a card to attach it" o "Attached to “<title>”: it moves with the card. Drag it away to detach it" — new: partial (`NoteNode.tsx:34` alto 20px, sin fondo propio, sin title).
+- [x] Punto de color — classic: `styles.css:1168` 11px, color sólido `var(--note)`, title "Change the colour", a la izquierda — new: partial (`NoteNode.tsx:35-36` `currentColor` al 25 %, a la derecha, title "Colour: <next>").
+- [x] Icono de enlace en nota adjunta — classic: `canvas-notes.js:148`, `styles.css:1187` icono link 11px, color `color-mix(var(--note) 70%, var(--text))` — new: missing (solo `ring-1 ring-black/10`).
+- [x] Contador de casillas "2/5" — classic: `canvas-notes.js:149`, `styles.css:1188` 11px peso 650 `--muted` tabular — new: missing.
+- [x] Botón "Add a checkbox" — classic: `canvas-notes.js:134-138,151` icono tasks 12px, añade `- [ ] ` y abre la edición — new: missing.
+- [x] Botones con `opacity 0` → 1 en hover o foco — classic: `styles.css:1169-1170,1189-1190` 18px — new: partial (`NoteNode.tsx:37` X siempre al 50 %).
+- [x] Texto — classic: `styles.css:1171-1175,1191` 13px/1.45, padding `7px 10px 12px`; placeholder "Write a note… (- [ ] for a checkbox)"; `spellcheck=false` — new: partial (`NoteNode.tsx:40` `px-2.5 pb-2`, `leading-snug`, placeholder "Write a note…").
+- [x] Enter continúa la lista; Enter en casilla vacía la termina — classic: `canvas-notes.js:121-133` — new: missing.
+- [x] Casilla hecha — classic: `styles.css:1195-1196` texto `--faint` tachado; `accent-color: color-mix(var(--note) 80%, var(--text))` — new: partial (`NoteNode.tsx:46` tachado + `opacity-60`, sin accent-color).
+- [x] Nota arrastrada — classic: `canvas-notes.js:78` `rotate(-1deg)`; `styles.css:1161` `z-index: 31; box-shadow: var(--shadow-pop)` — new: missing.
+- [x] Foco — classic: `styles.css:1162` `z-index: 24; box-shadow: 0 0 0 2px color-mix(var(--note) 55%, transparent)` — new: missing.
+- [x] Esquina de redimensión — classic: `canvas-notes.js:158`, `styles.css:1176-1180` 16px × `--unscale`, `linear-gradient(135deg, transparent 50%, color-mix(var(--note) 60%) 50%)`, radio `0 0 8px 0`; mínimo 144×96, máximo 800×800, ajuste `floor` a 24px — new: partial (`NoteNode.tsx:32-33` NodeResizer solo con selección, mínimo 140×80, sin ajuste a la rejilla, sin máximo).
 - [x] Nota nueva — classic: `canvas-notes.js:163-177` siempre amarilla, 216×144; con doble clic en `(x-24, y-12)`; con el botón, a la derecha de Incoming con desfase `(n % 5) * 24`; el foco va al texto — new: partial (`notes.ts:39-41` color rota por cantidad; centrada en el punto).
 - [ ] Borrar con deshacer — classic: `canvas.js:637-641` toast "Note deleted" con Undo — new: done (`Canvas.tsx:89-93`).
-- [ ] Botón "Note" — classic: `main.js:742-744` title "Add a note (or double-click the empty canvas)" — new: partial (`Canvas.tsx:229` sin title).
+- [x] Botón "Note" — classic: `main.js:742-744` title "Add a note (or double-click the empty canvas)" — new: partial (`Canvas.tsx:229` sin title).
 
 ## Done strip
 
@@ -190,10 +190,10 @@ Tarjeta del canvas `.ccard` (`canvas.js:84-160`, `styles.css:789-898`) frente a 
 - [x] Pasos y límites — classic: `canvas.js:16-17,853-862` paso ×1.2, máximo 1.5, mínimo 0.4 (o el ajuste si es menor); el zoom se para en "Fit" al cruzarlo; ancla en el cursor — new: partial (`Canvas.tsx:225` 0.3–1.6).
 - [x] Zoom guardado — classic: `canvas.js:429-430` `canvasZoom` en localStorage; `null` = ajustar a la ventana — new: missing (`fitView` solo al iniciar).
 - [x] Niveles de detalle (semantic zoom) — classic: `canvas.js:20` far < 0.62, mid < 0.85, near; CSS `styles.css:1809-1817`: mid: contexto 1 línea, oculta etiquetas salvo overlap y el uso; far: `gap 6px; padding 12px 14px`, oculta contexto que no pregunta, respuestas, edad y señales, pregunta en 2 líneas a `12.5px*min(unscale,1.8)`, título `14px*min(unscale,2)` alto de línea 1.2, icono `22px*min(unscale,1.8)`, pie `11.5px*min(unscale,1.8)` — new: partial (`Canvas.tsx:32` mid < 0.9; `SessionCard.tsx:117-133`: en mid oculta respuestas y señales, que el clásico muestra; en far oculta la pregunta, que el clásico muestra en 2 líneas; padding far no cambia).
-- [ ] Pellizco y ⌘ + rueda hacen zoom; la rueda sola desplaza — classic: `canvas.js:875-890` — new: done (React Flow `zoomOnPinch` + `panOnScroll`).
+- [x] Pellizco y ⌘ + rueda hacen zoom; la rueda sola desplaza — classic: `canvas.js:875-890` — new: done (React Flow `zoomOnPinch` + `panOnScroll`).
 - [x] Espacio + arrastre o botón central desplaza; cursor `grab`/`grabbing` — classic: `canvas.js:893-898,947-967`, `styles.css:752,1321` — new: partial (React Flow desplaza con arrastre simple; el arrastre simple ya no dibuja la caja).
-- [ ] Ir a una tarjeta ("Next up") con destello — classic: `canvas.js:921-945`, `styles.css:1820-1822` `flash 1.4s var(--ease-out)` `0% { box-shadow: 0 0 0 0 color-mix(var(--accent) 70%) } 100% { 0 0 0 18px transparent }` — new: done (`Canvas.tsx:199-213`, `index.css:137-140`, color naranja fijo).
-- [ ] Desplazamiento en el borde al arrastrar — classic: `canvas.js:47-74` 48px, 14 px/frame — new: done (auto-pan de React Flow).
+- [x] Ir a una tarjeta ("Next up") con destello — classic: `canvas.js:921-945`, `styles.css:1820-1822` `flash 1.4s var(--ease-out)` `0% { box-shadow: 0 0 0 0 color-mix(var(--accent) 70%) } 100% { 0 0 0 18px transparent }` — new: done (`Canvas.tsx:199-213`, `index.css:137-140`, color naranja fijo).
+- [x] Desplazamiento en el borde al arrastrar — classic: `canvas.js:47-74` 48px, 14 px/frame — new: done (auto-pan de React Flow).
 - [x] "Next up" — classic: `main.js:746-748` badge `--ask` con texto `--surface` 18px (`styles.css:1647-1650`), `kbd` al 70 %; title "Open what waits for you next: N (approvals, questions, then what is new) · F" / "Nothing waits for you · F"; toast "Nothing else waits for you" si solo queda la abierta (`main.js:484`) — new: partial (`App.tsx:71-76` badge `bg-orange-500`, title corto, sin el segundo toast).
 
 ## Keyboard shortcuts

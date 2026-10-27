@@ -55,3 +55,28 @@ export function linesOf(text: string): ({ kind: "text"; text: string } | { kind:
 export function toggleItem(text: string, i: number): string {
   return text.split("\n").map((line, k) => (k === i ? line.replace(ITEM, (_, a, mark, b, rest) => `${a}${mark === " " ? "x" : " "}${b}${rest}`) : line)).join("\n")
 }
+
+// Enter on a list line (canvas-notes.js onKeyDown): the next item starts; on
+// an empty item the list ends. The new text and caret, or null (a plain Enter).
+export function continueList(text: string, caret: number): { text: string; caret: number } | null {
+  const start = text.lastIndexOf("\n", caret - 1) + 1
+  const m = text.slice(start, caret).match(ITEM)
+  if (!m) return null
+  if (m[4].trim()) {
+    const add = `\n${m[1]} ${m[3]}`
+    return { text: text.slice(0, caret) + add + text.slice(caret), caret: caret + add.length }
+  }
+  return { text: text.slice(0, start) + text.slice(caret), caret: start }
+}
+
+// "2/5": the boxes ticked of all, or null with none.
+export function tally(text: string): string | null {
+  const items = linesOf(text).filter(l => l.kind === "item")
+  return items.length ? `${items.filter(l => l.kind === "item" && l.done).length}/${items.length}` : null
+}
+
+// "Add a checkbox": a new box at the end.
+export const withItem = (text: string) => {
+  const t = text.replace(/\s*$/, "")
+  return `${t}${t ? "\n" : ""}- [ ] `
+}

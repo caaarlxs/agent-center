@@ -200,14 +200,14 @@ export function Canvas() {
         const p = noteAt(n, cardAt)
         if (!p || (!n.cardId && folded.some(z => isInZone(z, p)))) return []
         return [keep({
-          id: `note:${n.id}`, type: "note", position: p, dragHandle: ".note-drag", zIndex: 2, style: { width: n.w, height: n.h },
-          data: { note: n, isNew: fresh === n.id, onText: textNote, onChange: changeNote, onRemove: removeNote } satisfies NoteNodeData,
+          id: `note:${n.id}`, type: "note", position: p, dragHandle: ".note-drag", zIndex: 3, style: { width: n.w, height: n.h },
+          data: { note: n, cardTitle: n.cardId ? (byKey.get(n.cardId)?.title ?? null) : null, isNew: fresh === n.id, onText: textNote, onChange: changeNote, onRemove: removeNote } satisfies NoteNodeData,
         })]
       })
       const cardNodes = shownCards.map(c => keep({ id: c.id, type: "session", position: at[c.id], zIndex: 1, data: { card: c, now, isNoteTarget: noteTarget === c.id } satisfies SessionNodeData }))
       return [incoming, ...zoneNodes, ...cardNodes, ...noteNodes]
     })
-  }, [zones, notes, shownCards, all, at, now, fresh, folded, cardAt, changeZone, removeZone, changeNote, textNote, removeNote, entry, noteTarget, folderOver])
+  }, [zones, notes, shownCards, all, at, now, fresh, folded, cardAt, byKey, changeZone, removeZone, changeNote, textNote, removeNote, entry, noteTarget, folderOver])
   const onNodesChange = useCallback((changes: NodeChange[]) => setNodes(ns => applyNodeChanges(changes, ns)), [])
 
   // A zone carries the cards and free notes inside it when the drag starts.
