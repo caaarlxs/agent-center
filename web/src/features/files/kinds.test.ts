@@ -16,3 +16,5 @@ test("CSV: quoted cells keep their commas and doubled quotes", () => {
 test("CSV: stops at the row limit", () => {
   expect(parseDelimited("1\n2\n3\n", ",", 2)).toEqual([["1"], ["2"]])
 })
+
+test("sound plays as audio", () => expect(kindOf("memo.mp3")).toBe("audio"))

@@ -289,3 +289,11 @@
 
 /* The board's spinner: a brand ring with a gap (styles.css:1141). */
 @layer components { .spinner { display: inline-block; flex: none; width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--brand); border-right-color: transparent; animation: spin 0.8s linear infinite; } }
+
+/* A Markdown file in Files: a page to read (styles.css:1581-1586). */
+.md.file-md { font-size: 14.5px; line-height: 1.65; }
+.md.file-md h1 { font-size: 24px; line-height: 1.25; margin: 0 0 14px; }
+.md.file-md h2 { font-size: 19px; margin: 24px 0 10px; }
+.md.file-md h3 { font-size: 16px; margin: 18px 0 8px; }
+.md.file-md table { font-size: 13px; }
+.md.file-md th, .md.file-md td { padding: 5px 8px; }

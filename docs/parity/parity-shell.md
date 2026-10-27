@@ -218,17 +218,17 @@ Legend: missing = not in the new app; partial = present but differs (what differ
 
 ## Files
 
-- [ ] Layout — classic: css:1566-1590 (list on top, max 30% height; viewer below) — new: partial (`Files.tsx:88` side list; acceptable as a choice).
-- [ ] Type label — classic: files.js:24-33, css:1553-1556, 1675-1679 (18px mono 9.5 uppercase tag coloured by family: sheet green, doc blue, slides orange, pdf red, media accent) — new: partial (FileIcon labels).
-- [ ] List rows — classic: files.js:104-106, css:1567-1573 (30px; "sent · 5 min" small; on `--select`; "Looking…"; empty "This session has not sent or written any file yet.") — new: partial (adds size).
+- [x] Layout — classic: css:1566-1590 (list on top, max 30% height; viewer below) — new: partial (`Files.tsx:88` side list; acceptable as a choice).
+- [x] Type label — classic: files.js:24-33, css:1553-1556, 1675-1679 (18px mono 9.5 uppercase tag coloured by family: sheet green, doc blue, slides orange, pdf red, media accent) — new: partial (FileIcon labels).
+- [x] List rows — classic: files.js:104-106, css:1567-1573 (30px; "sent · 5 min" small; on `--select`; "Looking…"; empty "This session has not sent or written any file yet.") — new: partial (adds size).
 - [x] Refresh every 10 s — classic: files.js:92-98 — new: missing (`Files.tsx:81-83` once).
-- [ ] Open a given file (from conversation) — classic: files.js:89, 99 — new: missing.
-- [ ] Viewer head — classic: files.js:195-202, css:1575-1578 (name bold 13.5 + path with `~` and size; "Source"/"Rendered" toggle for Markdown; copy path icon "Copy the path"; "Show in Finder"; "Open on the Mac"; toast "Could not open it") — new: partial (`Files.tsx:103-112` raw path, no size, no Source toggle).
-- [ ] Viewable check — classic: files.js:145-153, 164-169 (`/fileinfo`: "Too large to show here (X)."; errors) — new: partial (client 30 MB cut, `Files.tsx:45`).
-- [ ] Markdown page — classic: css:1581-1586 (max 760px, padding 18px 22px 40px, 14.5px/1.65; h1 24, h2 19, h3 16) — new: partial (max-w-3xl Streamdown).
-- [ ] Tables — classic: files.js:172-174, css:1684-1687 (sticky header row on `--side`; 1000 rows with "Only the first 1000 rows show here.") — new: partial (`Files.tsx:42, 62-69` 500 rows, no note, header not sticky).
-- [ ] Audio — classic: files.js:16, 189-190 (`mp3|wav` → `<audio controls>`) — new: missing.
-- [ ] Quick Look fallback — classic: files.js:191-194, css:1681-1683 (caption "The first page, as Quick Look shows it. Open it on the Mac for all of it."; failure "macOS has no preview for this kind of file: open it on the Mac.") — new: partial (no caption; different failure text).
+- [x] Open a given file (from conversation) — classic: files.js:89, 99 — new: missing.
+- [x] Viewer head — classic: files.js:195-202, css:1575-1578 (name bold 13.5 + path with `~` and size; "Source"/"Rendered" toggle for Markdown; copy path icon "Copy the path"; "Show in Finder"; "Open on the Mac"; toast "Could not open it") — new: partial (`Files.tsx:103-112` raw path, no size, no Source toggle).
+- [x] Viewable check — classic: files.js:145-153, 164-169 (`/fileinfo`: "Too large to show here (X)."; errors) — new: partial (client 30 MB cut, `Files.tsx:45`).
+- [x] Markdown page — classic: css:1581-1586 (max 760px, padding 18px 22px 40px, 14.5px/1.65; h1 24, h2 19, h3 16) — new: partial (max-w-3xl Streamdown).
+- [x] Tables — classic: files.js:172-174, css:1684-1687 (sticky header row on `--side`; 1000 rows with "Only the first 1000 rows show here.") — new: partial (`Files.tsx:42, 62-69` 500 rows, no note, header not sticky).
+- [x] Audio — classic: files.js:16, 189-190 (`mp3|wav` → `<audio controls>`) — new: missing.
+- [x] Quick Look fallback — classic: files.js:191-194, css:1681-1683 (caption "The first page, as Quick Look shows it. Open it on the Mac for all of it."; failure "macOS has no preview for this kind of file: open it on the Mac.") — new: partial (no caption; different failure text).
 - [ ] Text as Monaco, images, video, PDF, sandboxed HTML, Office in shadow root — new: done.
 
 ## PRs
@@ -313,4 +313,4 @@ Legend: missing = not in the new app; partial = present but differs (what differ
 - [x] Storage keys shared with classic — classic: util.js:18-31 (`ac.<key>`) — new: partial (`lib/store.ts` uses `ac.`, but `Sidebar.tsx:20` `sideFolded`, `Changes.tsx:47, 175, 192` `review.<id>` and `changesView`, `CodeWorkspace.tsx:37, 144` `code.<id>` write raw keys: choices do not carry between boards).
 - [x] `mark` style — css:484 (ask-soft bg, radius 3, 1px ring) — new: missing (no highlight in use).
 - [ ] `.link-btn` — css:1144 (accent, underline offset 2) — new: partial (plain underline-on-hover buttons).
-- [ ] Copy handler fallback (execCommand) — util.js:94-107 — new: missing (`Files.tsx:107` clipboard API only).
+- [x] Copy handler fallback (execCommand) — util.js:94-107 — new: missing (`Files.tsx:107` clipboard API only).
