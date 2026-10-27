@@ -169,7 +169,7 @@ Tarjeta del canvas `.ccard` (`canvas.js:84-160`, `styles.css:789-898`) frente a 
 - [x] Foco — classic: `styles.css:1162` `z-index: 24; box-shadow: 0 0 0 2px color-mix(var(--note) 55%, transparent)` — new: missing.
 - [x] Esquina de redimensión — classic: `canvas-notes.js:158`, `styles.css:1176-1180` 16px × `--unscale`, `linear-gradient(135deg, transparent 50%, color-mix(var(--note) 60%) 50%)`, radio `0 0 8px 0`; mínimo 144×96, máximo 800×800, ajuste `floor` a 24px — new: partial (`NoteNode.tsx:32-33` NodeResizer solo con selección, mínimo 140×80, sin ajuste a la rejilla, sin máximo).
 - [x] Nota nueva — classic: `canvas-notes.js:163-177` siempre amarilla, 216×144; con doble clic en `(x-24, y-12)`; con el botón, a la derecha de Incoming con desfase `(n % 5) * 24`; el foco va al texto — new: partial (`notes.ts:39-41` color rota por cantidad; centrada en el punto).
-- [ ] Borrar con deshacer — classic: `canvas.js:637-641` toast "Note deleted" con Undo — new: done (`Canvas.tsx:89-93`).
+- [x] Borrar con deshacer — classic: `canvas.js:637-641` toast "Note deleted" con Undo — new: done (`Canvas.tsx:89-93`).
 - [x] Botón "Note" — classic: `main.js:742-744` title "Add a note (or double-click the empty canvas)" — new: partial (`Canvas.tsx:229` sin title).
 
 ## Done strip
@@ -200,8 +200,8 @@ Tarjeta del canvas `.ccard` (`canvas.js:84-160`, `styles.css:789-898`) frente a 
 
 Clásico: `main.js:552-658` y `canvas.js:891-912`. Nuevo: `app/App.tsx:51-60`, `SessionPanel.tsx:28-35`.
 
-- [ ] `⌘K` / `/` buscar — classic: `main.js:557-563` — new: done.
-- [ ] `F` Next up — classic: `main.js:650` — new: done.
+- [x] `⌘K` / `/` buscar — classic: `main.js:557-563` — new: done.
+- [x] `F` Next up — classic: `main.js:650` — new: done.
 - [x] `?` ayuda (también Shift+/) — classic: `main.js:559` — new: missing.
 - [x] `j` / `↓`, `k` / `↑` mover la selección en el orden de la vista; el foco sigue y hace `scrollIntoView({block:"nearest"})`; con el panel abierto cambia la sesión — classic: `main.js:595-614`; orden del canvas: arriba-abajo, luego izquierda-derecha (`canvas-layout.js:36-40`) — new: missing.
 - [x] `Enter` abre la seleccionada (no sobre botones ni roles interactivos, `main.js:26`); Enter/Espacio sobre una tarjeta con foco la abre (`components.js:35-39`) — new: missing.
@@ -225,7 +225,7 @@ Clásico: `main.js:552-658` y `canvas.js:891-912`. Nuevo: `app/App.tsx:51-60`, `
 - [x] Canvas `Espacio` (mantener) para desplazar, salvo en controles y el panel (`canvas.js:387`) — classic: `canvas.js:893-899,908-912` — new: missing.
 - [x] Canvas `Esc` suelta la selección múltiple — classic: `canvas.js:900` — new: missing.
 - [x] Esc cancela el dibujo de zona — classic: `canvas.js:658-663` — new: missing (no hay modo dibujo).
-- [ ] Sin teclas con un diálogo abierto — classic: `main.js:555`, `canvas.js:892` — new: done (`App.tsx:54`).
+- [x] Sin teclas con un diálogo abierto — classic: `main.js:555`, `canvas.js:892` — new: done (`App.tsx:54`).
 
 ## Animations
 
@@ -250,10 +250,10 @@ Clásico: `main.js:552-658` y `canvas.js:891-912`. Nuevo: `app/App.tsx:51-60`, `
 
 ## Toasts
 
-- [ ] Diseño — classic: `styles.css:1021-1031` abajo a la derecha (`right: 20px; bottom: 20px; z-index: 50`), columna con gap 8px; toast con fondo `--text` y texto `--bg` (invertido), radio 10px, padding `10px 12px 10px 14px`, 13px, `--shadow-pop`, ancho máx. `min(460px, 100vw - 40px)`, texto en una línea con elipsis; entrada `opacity 0, translateY(8px)` → normal, 220 ms `var(--ease-out)` — new: partial (`components/ui/sonner.tsx:29-36` Sonner con `--popover` y borde; no invertido).
-- [ ] Botón "Undo" con `kbd` Z — classic: `toasts.js:12`, `styles.css:1030-1031` peso 650, color `--accent`; `kbd` transparente con borde `color-mix(var(--bg) 30%)` — new: partial (solo en "Note deleted", sin Z ni color accent).
-- [ ] Duración y cantidad — classic: `main.js:356-361` 3.5 s; 7 s con Undo; como máximo 3 a la vez — new: partial (valores por defecto de Sonner).
-- [ ] `role="status" aria-live="polite"` — classic: `toasts.js:8` — new: done (Sonner).
+- [x] Diseño — classic: `styles.css:1021-1031` abajo a la derecha (`right: 20px; bottom: 20px; z-index: 50`), columna con gap 8px; toast con fondo `--text` y texto `--bg` (invertido), radio 10px, padding `10px 12px 10px 14px`, 13px, `--shadow-pop`, ancho máx. `min(460px, 100vw - 40px)`, texto en una línea con elipsis; entrada `opacity 0, translateY(8px)` → normal, 220 ms `var(--ease-out)` — new: partial (`components/ui/sonner.tsx:29-36` Sonner con `--popover` y borde; no invertido).
+- [x] Botón "Undo" con `kbd` Z — classic: `toasts.js:12`, `styles.css:1030-1031` peso 650, color `--accent`; `kbd` transparente con borde `color-mix(var(--bg) 30%)` — new: partial (solo en "Note deleted", sin Z ni color accent).
+- [x] Duración y cantidad — classic: `main.js:356-361` 3.5 s; 7 s con Undo; como máximo 3 a la vez — new: partial (valores por defecto de Sonner).
+- [x] `role="status" aria-live="polite"` — classic: `toasts.js:8` — new: done (Sonner).
 
 ## Other
 
@@ -262,6 +262,6 @@ Clásico: `main.js:552-658` y `canvas.js:891-912`. Nuevo: `app/App.tsx:51-60`, `
 - [x] Clase `is-dragging` atenúa los destinos no válidos — classic: `main.js:721`, `styles.css:414,711` — new: missing.
 - [x] Al quitar una tarjeta de la lista (Done sin `showDone`, Later) la selección pasa a la siguiente — classic: `main.js:396-400` — new: missing.
 - [ ] Marcar como leída al abrir y mantener "no leída" tras "Mark to review" — classic: `main.js:440-447,474-475,493-496` — new: fuera de alcance (panel); verifícalo allí.
-- [ ] Campana de aviso en la tarjeta — classic: `components.js:283-285` botón en la barra de acciones — new: done (`CardMenu.tsx:30`; además `SessionCard.tsx:71` muestra una señal de campana, que el clásico no tiene).
+- [x] Campana de aviso en la tarjeta — classic: `components.js:283-285` botón en la barra de acciones — new: done (`CardMenu.tsx:30`; además `SessionCard.tsx:71` muestra una señal de campana, que el clásico no tiene).
 - [ ] Clic en tarjeta abre el panel con el cursor en el campo de respuesta (solo puntero, no en móvil) — classic: `main.js:464-478` — new: fuera de alcance (panel); verifícalo allí.
 - [ ] Iconos — classic: `icons.js:4-67` trazo propio 24px, `stroke-width 2`, 60 nombres — new: partial (lucide; formas parecidas, pero distintas: p. ej. `question` clásico es un globo con "?", `Minimize2` frente a `shrink`).

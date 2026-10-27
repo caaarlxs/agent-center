@@ -17,6 +17,7 @@ import type { Card, Note, Zone } from "@/lib/api-types"
 import { useLive } from "@/lib/live"
 import { useNow } from "@/lib/now"
 import { isTyping } from "@/lib/keys"
+import { undoable } from "@/lib/toast"
 import { cn } from "@/lib/utils"
 import { openSession, useOpenSession } from "@/app/open-session"
 import { focusRequest, repoFilter } from "@/app/view-state"
@@ -168,7 +169,7 @@ export function Canvas() {
   const removeNote = useCallback((n: Note) => {
     const before = notes
     saveNotes(notes.filter(x => x.id !== n.id))
-    if (n.text.trim()) toast("Note deleted", { action: { label: "Undo", onClick: () => saveNotes(before) } })
+    if (n.text.trim()) undoable("Note deleted", () => saveNotes(before))
   }, [notes, saveNotes])
 
   // While something is dragged: the card a note would attach to, the folder

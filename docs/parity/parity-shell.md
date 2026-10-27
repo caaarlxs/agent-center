@@ -81,8 +81,8 @@ Legend: missing = not in the new app; partial = present but differs (what differ
 ## Keyboard shortcuts & help
 
 - [x] `?` opens help (also Shift+/) — classic: main.js:559 — new: missing.
-- [ ] `⌘K` and `/` search — classic: main.js:557-564 — new: done (`App.tsx:53-55`).
-- [ ] `F` Next up — classic: main.js:650 — new: done (`App.tsx:56`).
+- [x] `⌘K` and `/` search — classic: main.js:557-564 — new: done (`App.tsx:53-55`).
+- [x] `F` Next up — classic: main.js:650 — new: done (`App.tsx:56`).
 - [x] `N` new session — classic: main.js:649 — new: missing.
 - [x] `D` Catch me up — classic: main.js:651 — new: missing.
 - [x] `J`/`K`, `↓`/`↑` move the selection (scroll into view, open panel follows, card focus follows) — classic: main.js:595-614 — new: missing.
@@ -99,7 +99,7 @@ Legend: missing = not in the new app; partial = present but differs (what differ
 - [x] `S` stop the running turn — classic: main.js:652 — new: missing.
 - [x] `U` mark to review — classic: main.js:653 — new: missing.
 - [x] `Esc` chain — classic: main.js:565-574 (in a field: blur; else close Later menu; else colour menu; else workspace → Conversation; else close panel and deselect) — new: partial (`features/session/SessionPanel.tsx:28-36` ignores focus: `Esc` inside the reply box closes the whole panel).
-- [ ] Shortcuts off while a dialog/search is open; typing detection incl. Monaco — classic: main.js:555-556, util.js:194-195 — new: done (`App.tsx:33-34, 54`).
+- [x] Shortcuts off while a dialog/search is open; typing detection incl. Monaco — classic: main.js:555-556, util.js:194-195 — new: done (`App.tsx:33-34, 54`).
 - [x] Help dialog — classic: dialogs.js:127-166, css:1052-1058 (title "Keyboard shortcuts"; width `min(440px, 100vw−32px)`; rows 7px 0 with 1px `--line` divider; label muted; keys as kbd joined by "or" (11px muted); 22 rows: Move J K or ↓ ↑ · Open conversation ↵ · Reply R · Rename T · Open in Claude O · Pin P · Colour C or 0–7 · Later A or 1–5 · Mark as done E · Undo Z · Search / or ⌘ K · Inbox · Board · Canvas · Tiers 1 2 3 4 · Tiers: one row up · down [ ] · Lanes per repo G · Next up: what waits for you F · New session N · Catch me up D · Stop the running turn S · Mark to review U · Canvas: zoom in · zoom out · fit + − 0 · Canvas: move the view (hold and drag) Space · Close Esc; backdrop click closes) — new: missing (list only the shortcuts the new app has).
 
 ## Reader panel (session panel)

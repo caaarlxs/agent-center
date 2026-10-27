@@ -7,6 +7,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
       theme="system"
       position="bottom-right"
       visibleToasts={3}
+      duration={3500}
       offset={20}
       className="toaster group"
       icons={{
@@ -38,7 +39,8 @@ const Toaster = ({ ...props }: ToasterProps) => {
       toastOptions={{
         classNames: {
           toast: "cn-toast !w-auto !max-w-[min(460px,calc(100vw-40px))] !gap-3.5 !py-2.5 !pr-3 !pl-3.5 !text-[13px] !shadow-pop",
-          actionButton: "!bg-transparent !px-0 !text-[13px] !font-[650] !text-brand",
+          title: "truncate",
+          actionButton: "!bg-transparent !px-0 !text-[13px] !font-[650] !text-brand !gap-1.5",
         },
       }}
       {...props}

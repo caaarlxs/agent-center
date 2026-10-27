@@ -1,12 +1,13 @@
 // Notes about what just happened, with Undo when it can be taken back: the
 // last one stays reachable with Z (keys.ts) while its toast shows.
 import { toast } from "sonner"
+import { Kbd } from "@/components/ui/kbd"
 
 const UNDO_MS = 7000
 let last: { undo: () => void; until: number } | null = null
 
 export function undoable(text: string, undo: () => void) {
-  const id = toast(text, { duration: UNDO_MS, action: { label: "Undo", onClick: () => ((last = null), undo()) } })
+  const id = toast(text, { duration: UNDO_MS, action: { label: <>Undo <Kbd className="border-current/30 bg-transparent text-current">Z</Kbd></>, onClick: () => ((last = null), undo()) } })
   last = { undo: () => (toast.dismiss(id), undo()), until: Date.now() + UNDO_MS }
 }
 
