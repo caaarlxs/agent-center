@@ -158,6 +158,7 @@ export function Reader({ id, card, result, tab: asked, file, isWide, isWorkspace
               isOpen=${!!bridge?.isOpen} untrusted=${!!bridge?.wake?.untrusted} atCap=${!!bridge?.wake?.atCap} question=${bridge?.question}
               isBusy=${!!bridge?.busy && Date.now() - (bridge?.lastSeen ?? 0) < 15 * 60_000}
               permission=${bridge?.permission} failed=${bridge?.failed ?? []}
+              noMod=${bridge?.blocker === "no-mod"} cliVersion=${bridge?.cliVersion}
               onDelivered=${pid => setPending(ps => ps.filter(p => p.id !== pid))} />
             <${Composer} id=${id} card=${card} bridge=${bridge} isWorking=${card?.column === "working"} onSent=${sent} />`
         : html`<${Tasks} id=${id} />`}

@@ -137,6 +137,7 @@ says what it changes and runs only when you press it:
 | Notifications | macOS notifications when a session asks while you are in another window. | optional |
 | Sound | A short chime when a session finishes its turn or asks you something, also while you look at the board. The speaker in the sidebar turns it on and off. | optional |
 | Read aloud | The Mac says what a session did when its turn ends (its recap), for every session or only the ones with the bell, in the voice and speed you pick. | optional |
+| Diagnostics | Messages or answers that do not reach a session: "Copy report" copies this Mac's setup and each session's bridge mod (no conversation in it) to send to whoever helps. | tool |
 
 Sessions that were already open load the mod the next time they start.
 

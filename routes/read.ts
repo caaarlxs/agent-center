@@ -13,6 +13,7 @@ import { lastDigest } from "../lib/digest"
 import { detail as prDetail, lookup as prLookup, openThreads } from "../lib/github"
 import { json } from "../lib/http"
 import { latestJson, latestState, stream } from "../lib/live"
+import { blockerFor, report } from "../lib/diagnose"
 import { freshness } from "../lib/freshness"
 import { monacoState } from "../lib/monaco"
 import { documentHtml, quickLook, WORD, WORKBOOK, workbookHtml } from "../lib/office"
@@ -159,7 +160,7 @@ async function sessionRead(id: string, what: string, url: URL) {
       return result ? json(result) : json({ error: "This session's folder is not a git repository" }, 404)
     }
     case "bridge":
-      return json({ ...(await bridgeStatus(id)), wake: wakeState(id), isArchived: await isArchivedInApp(group?.ids ?? [id]) })
+      return json({ ...(await bridgeStatus(id)), ...(await blockerFor(id)), wake: wakeState(id), isArchived: await isArchivedInApp(group?.ids ?? [id]) })
     case "prs": {
       const refs = group ? await prRefs(group.ids, group.root, group.branch) : await prRefs([id], HOME, null)
       // The branch's PR resolves to a URL through the summary cache.
@@ -235,6 +236,7 @@ export async function handleRead(url: URL): Promise<Response | null> {
   if (path === "/api/setup") return json(await setupStatus())
   if (path === "/api/monaco") return json(await monacoState())
   if (path === "/api/update") return json(await freshness({ fresh: true }))
+  if (path === "/api/diagnostics") return json({ text: await report() })
   if (path === "/api/voices") return json({ voices: await listVoices(), default: defaultVoice() })
   const file = path.match(/^\/api\/uploads\/(.+)$/)
   if (file) return sentFile(decodeURIComponent(file[1]!))

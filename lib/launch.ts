@@ -8,7 +8,7 @@ import { join } from "node:path"
 import { DESKTOP_DIR } from "./config"
 import { claudeEnv } from "./proc"
 
-const APP_CLI = join(DESKTOP_DIR, "claude-code")
+export const APP_CLI = join(DESKTOP_DIR, "claude-code")
 const ID_TIMEOUT_MS = 30_000
 
 // Sessions whose headless first turn still runs: opening them in the app now

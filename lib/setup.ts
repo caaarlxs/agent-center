@@ -32,7 +32,7 @@ const HOOK_EVENTS = ["UserPromptSubmit", "Stop", "Notification", "SessionEnd"]
 // The tools that hold the turn until the person answers in the app.
 const WAITING_TOOLS = "AskUserQuestion|ExitPlanMode|mcp__ccd_directory__propose_branch|mcp__ccd_directory__change_directory|mcp__ccd_directory__request_directory|mcp__ccd_session__start_session"
 const UPLOADS_RULE = "Read(~/.claude/agent-center/uploads/**)"
-const PLUGIN = "agent-center-bridge@agent-center"
+export const PLUGIN = "agent-center-bridge@agent-center"
 const MODEL = "ggml-large-v3-turbo-q5_0.bin"
 const MODEL_URL = `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/${MODEL}`
 const ORGANIZER_DIR = join(HOME, "organizer")

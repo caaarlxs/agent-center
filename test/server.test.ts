@@ -320,6 +320,23 @@ describe("board", () => {
   })
 })
 
+describe("diagnosis", () => {
+  test("says a working session runs without the bridge mod, until its mod beats", async () => {
+    expect((await jsonOf(fetch(`${base()}/api/sessions/${WATCHER}/bridge`))).blocker).toBe("no-mod")
+    const protocol = Number((await readFile(join(import.meta.dir, "..", "bridge", "hooks", "register.ts"), "utf8")).match(/const VERSION = (\d+)/)![1])
+    await mkdir(join(home, ".claude", "agent-center", "alive"), { recursive: true })
+    await writeFile(join(home, ".claude", "agent-center", "alive", `${WATCHER}.json`), JSON.stringify({ at: Date.now(), busy: false, v: protocol }))
+    expect((await jsonOf(fetch(`${base()}/api/sessions/${WATCHER}/bridge`))).blocker).toBeNull()
+  })
+
+  test("copies a report without conversations in it", async () => {
+    const { text } = await jsonOf(fetch(`${base()}/api/diagnostics`))
+    expect(text).toContain("Agent Center report")
+    expect(text).toContain(WATCHER.slice(0, 8))
+    expect(text).not.toContain("Write the zebra report") // a prompt of a session
+  })
+})
+
 describe("updates after a pull", () => {
   test("puts back a hook older than the repository's, and says when nothing is left", async () => {
     expect((await jsonOf(post("/api/setup/hook", { options: {} }))).ok).toBe(true)

@@ -103,6 +103,31 @@ function ReadAloud() {
   </li>`
 }
 
+// When messages or answers do not reach a session on someone's Mac: a report
+// of this Mac's setup and of each session's bridge mod (lib/diagnose.ts), to
+// paste in a message. It holds no conversation, title or message.
+function Diagnostics() {
+  const ui = useContext(Ctx)
+  const [isBusy, setBusy] = useState(false)
+  const copy = async () => {
+    setBusy(true)
+    const res = await get("/api/diagnostics")
+    setBusy(false)
+    if (!res?.text) return ui.toast("Could not make the report")
+    try {
+      await navigator.clipboard.writeText(res.text)
+      ui.toast("Report copied: paste it in a message")
+    } catch {
+      ui.toast("Could not copy it: the browser refused the clipboard")
+    }
+  }
+  return html`<li class="setup-step">
+    <div class="setup-head"><b>Diagnostics</b></div>
+    <p class="setup-text">Messages or answers that do not reach a session? Copy a report of this Mac and of each session's bridge mod, and send it to whoever helps you.</p>
+    <div class="setup-actions"><button class="btn" disabled=${isBusy} onClick=${copy}>${isBusy ? "One moment…" : "Copy report"}</button></div>
+  </li>`
+}
+
 export function Setup({ onClose, notify, sound }) {
   const ui = useContext(Ctx)
   const dialog = useRef()
@@ -188,6 +213,7 @@ export function Setup({ onClose, notify, sound }) {
         <div class="setup-actions"><button class=${`btn ${ui.shake === "on" ? "" : "primary"}`} onClick=${() => ui.setShake(ui.shake === "on" ? "off" : "on")}>${ui.shake === "on" ? "Turn off" : "Turn on"}</button></div>
       </li>`}
       ${status && html`<${ReadAloud} />`}
+      ${status && html`<${Diagnostics} />`}
     </ol>
     <div class="dialog-actions">
       <span class="muted">${status && !status.isReady ? "Required steps are missing: without them the board cannot see or answer the sessions." : ""}</span>

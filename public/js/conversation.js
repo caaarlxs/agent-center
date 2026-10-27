@@ -398,7 +398,9 @@ function PermissionCard({ sessionId, permission }) {
   </div>`
 }
 
-export function Conversation({ id, card, pending, onDelivered, onUnsend, stuck = [], isOpen, isBusy, untrusted, atCap, question, permission, failed = [] }) {
+const ANSWER_RECEIPT_MS = 12_000 // an answer the session has not taken by then did not reach it
+
+export function Conversation({ id, card, pending, onDelivered, onUnsend, stuck = [], isOpen, isBusy, untrusted, atCap, question, permission, failed = [], noMod, cliVersion }) {
   const ui = useContext(Ctx)
   // Answers to the question the session asks gather here until every question
   // of the call has one, then go together (one question: at the first click).
@@ -429,6 +431,14 @@ export function Conversation({ id, card, pending, onDelivered, onUnsend, stuck =
     const res = await post(`/api/sessions/${id}/answer`, { id: question.id, answers: next })
     if (!res.body.ok) return (setPicks(picks), ui.toast(res.body.error ?? "Could not answer"))
     ui.toast("Answer sent")
+    // The session takes it within seconds (its mod clears the question);
+    // still waiting after that, it did not reach it.
+    const asked = question.id
+    setTimeout(() => {
+      if (lastQuestion.current !== asked) return
+      setPicks({})
+      ui.toast("The answer did not reach the session: answer it in Claude")
+    }, ANSWER_RECEIPT_MS)
   }
   const [forking, setForking] = useState(null)
   const [page, setPage] = useState({ items: [], start: 0, end: 0, hasMore: false, loaded: false, error: null })
@@ -528,6 +538,10 @@ export function Conversation({ id, card, pending, onDelivered, onUnsend, stuck =
         ${failed.some(f => f.id === p.id)
           ? html`<span class="stamp stuck">Could not deliver: ${failed.find(f => f.id === p.id).reason} ·
               <button class="link-btn" onClick=${() => onUnsend(p)} title="Remove the message and put it back in the field">Undo</button></span>`
+          : noMod
+          ? html`<span class="stamp stuck">This session runs without the bridge mod${cliVersion ? ` (Claude Code ${cliVersion})` : ""}: update Claude desktop, then close the session and open it again ·
+              <button class="link-btn" onClick=${() => ui.launch(id)}>Open in Claude</button> ·
+              <button class="link-btn" onClick=${() => onUnsend(p)}>Undo</button></span>`
           : stuck.includes(p.id) || untrusted || (atCap && !isOpen)
           ? html`<span class="stamp stuck">${untrusted ? "Claude does not trust this session's folder: open it in Claude and accept"
               : atCap ? "Claude is at its limit of open sessions for this Mac's memory and did not wake it: write it in Claude, or close sessions you are not using"
