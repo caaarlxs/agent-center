@@ -12,6 +12,8 @@ import { useLive } from "@/lib/live"
 import { cn } from "@/lib/utils"
 import { type Tab, WORKSPACES, openSession, showTab } from "@/app/open-session"
 import { Changes } from "@/features/changes/Changes"
+import { CodeWorkspace } from "@/features/code/CodeWorkspace"
+import { Files } from "@/features/files/Files"
 import { Composer } from "@/features/conversation/Composer"
 import { ConversationView } from "@/features/conversation/ConversationView"
 import { Prs } from "@/features/prs/Prs"
@@ -20,10 +22,6 @@ import { StateIcon, TONE } from "./StateIcon"
 import { STATE_LABEL, hueOf, stateOf } from "./state"
 
 const TABS: [Tab, string][] = [["chat", "Conversation"], ["changes", "Changes"], ["code", "Code"], ["files", "Files"], ["prs", "PRs"], ["tasks", "Tasks"]]
-
-function Soon({ name }: { name: string }) {
-  return <p className="grid flex-1 place-items-center text-sm text-muted-foreground">{name} is still on the classic board: it comes here next.</p>
-}
 
 export function SessionPanel({ id, tab }: { id: string; tab: Tab }) {
   const card = useLive(l => l.snapshot?.cards.find(c => c.id === id))
@@ -66,8 +64,8 @@ export function SessionPanel({ id, tab }: { id: string; tab: Tab }) {
       {tab === "changes" && <Changes key={id} id={id} />}
       {tab === "prs" && <Prs key={id} id={id} />}
       {tab === "tasks" && <Tasks key={id} id={id} />}
-      {tab === "code" && <Soon name="Code" />}
-      {tab === "files" && <Soon name="Files" />}
+      {tab === "code" && <CodeWorkspace key={id} id={id} />}
+      {tab === "files" && <Files key={id} id={id} />}
     </aside>
   )
 }
