@@ -17,6 +17,7 @@ import { EFFORTS, MODELS, MODES, Pick, ReadOnly, modelKey } from "@/features/pro
 import { MAX_BYTES, MAX_FILES, messageWith } from "@/features/prompt/files"
 import { launch, stopTurn, wake } from "@/features/session/actions"
 import { UsageMeter } from "@/features/session/UsageMeter"
+import { isBusyNow, isStuckNow, reachOf } from "./reach"
 import { composerFill, composerFocus, sendMessage } from "./send"
 
 export { EFFORTS, MODELS, MODES, Pick } // New session uses them too
@@ -34,19 +35,6 @@ function keepDraft(id: string, text: string) {
 // The files picked, per session, while the page stays open.
 const draftFiles = new Map<string, (FileUIPart & { id: string })[]>()
 
-// What a message would meet now (composer.js:158-173). The mod's heartbeat
-// pauses while a tool runs: a recent beat with a turn running means busy.
-type Reach = { tone: "on" | "busy" | "bad" | "off"; text: string }
-export function reachOf(bridge: Bridge | null, isWorking: boolean, isWaking = false): Reach {
-  if (!bridge) return { tone: "off", text: "Checking the session…" }
-  if (bridge.isArchived) return { tone: "bad", text: "Archived in Claude: it does not wake until you unarchive it there (Open in Claude)" }
-  if (bridge.wake?.untrusted) return { tone: "bad", text: "Claude does not trust this session's folder: open it in Claude and accept" }
-  if (bridge.stuck.length) return { tone: "bad", text: "The session did not wake: open it in Claude" }
-  if (bridge.isOpen) return { tone: "on", text: "Session open: it arrives in a few seconds" }
-  if (isWorking && bridge.lastSeen && Date.now() - bridge.lastSeen < 15 * 60_000) return { tone: "busy", text: "Busy: delivered when the turn ends" }
-  if (bridge.pending || isWaking) return { tone: "busy", text: "Waking the session in the background…" }
-  return { tone: "off", text: "Session asleep: when you send, it wakes in the background" }
-}
 const DOT = { on: "bg-work shadow-[0_0_0_3px_var(--work-soft)]", busy: "bg-ask shadow-[0_0_0_3px_var(--ask-soft)]", bad: "bg-bad", off: "bg-faint" }
 const subtle = "inline-flex h-[30px] shrink-0 items-center gap-[5px] rounded-md px-2.5 text-[13px] font-medium text-text-muted transition-[background-color,color,transform] duration-[120ms] hover:bg-hover active:scale-[0.97] [&_svg]:size-3"
 
@@ -60,8 +48,13 @@ function Settings({ card, bridge }: { card: Card; bridge: Bridge | null }) {
     setAsked(null)
   }, [bridge?.settings?.id])
   const change = (key: "mode" | "model", value: string) =>
-    post<{ requestId: string; isOpen: boolean }>(`/api/sessions/${encodeURIComponent(card.id)}/settings`, { [key]: value }).then(
-      res => (setAsked({ requestId: res.requestId, key, value }), toast(res.isOpen ? "Change sent: it applies as soon as the session is free" : "Change saved: it applies when the session opens")),
+    post<{ requestId: string; isOpen: boolean; messageId?: string }>(`/api/sessions/${encodeURIComponent(card.id)}/settings`, { [key]: value }).then(
+      res => {
+        // A session in Auto changes its mode when the conversation asks: sent as a message.
+        if (res.messageId) return void toast("Sent as a message: in Auto, Claude changes the mode when the conversation asks")
+        setAsked({ requestId: res.requestId, key, value })
+        toast(res.isOpen ? "Change sent: it applies as soon as the session is free" : "Change saved: it applies when the session opens")
+      },
       (err: Error) => toast(err.message || "Could not request the change"),
     )
   const isOld = !!bridge && bridge.version < 4
@@ -112,8 +105,8 @@ function Box({ id, card, bridge }: { id: string; card: Card | undefined; bridge:
 
   const isWorking = card?.column === "working"
   const reach = reachOf(bridge, isWorking, isWaking)
-  const isStuck = !!bridge && (bridge.stuck.length > 0 || !!bridge.wake?.untrusted || bridge.isArchived)
-  const isBusy = isWorking && !!bridge?.lastSeen && Date.now() - bridge.lastSeen < 15 * 60_000
+  const isStuck = isStuckNow(bridge)
+  const isBusy = isBusyNow(bridge, isWorking)
   const canWake = !!bridge && !bridge.isOpen && !isBusy && !isWaking && !bridge.pending
   const startWake = () => {
     setWaking(true)

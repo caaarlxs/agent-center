@@ -230,7 +230,7 @@ function PrChip({ pr, card, isCompact }: { pr: Pr; card: Card; isCompact?: boole
 function PendingChip({ card, isCompact }: { card: Card; isCompact?: boolean }) {
   const pending = card.bridge?.pending ?? 0
   if (!pending) return null
-  const stuck = card.bridge.stuck?.length || (card.bridge.wake?.untrusted ? pending : 0)
+  const stuck = card.bridge.stuck?.length || (card.bridge.wake?.untrusted || card.bridge.wake?.atCap ? pending : 0)
   return (
     <Tag tone={stuck ? "bg-bad-soft text-bad" : "bg-ask-soft text-ask"} isCompact={isCompact} onClick={() => openTab(card.id)}
       title={stuck ? "The session did not wake: open the conversation to deliver them" : "Your messages waiting for the session"}>
@@ -280,7 +280,7 @@ const when = (ms: number) => new Date(ms).toLocaleString("en-GB", { weekday: "sh
 export function Meta({ card, now, className }: { card: Card; now: number; className?: string }) {
   return (
     <div className={cn("flex min-w-0 flex-wrap items-center gap-[5px]", className)}>
-      {card.isLaunching && <Tag tone="bg-work-soft text-work" title="The first turn runs headless; open it in Claude when it ends">headless</Tag>}
+      {card.isLaunching && <Tag tone="bg-work-soft text-work" title="A turn runs here, headless (a new session's first one, or messages Claude desktop did not start the session for); open it in Claude when it ends">headless</Tag>}
       {card.state === "permission" && card.column === "asking" && <Tag tone="bg-bad-soft text-bad">needs approval</Tag>}
       <OverlapChip card={card} />
       <BackgroundChip card={card} now={now} />

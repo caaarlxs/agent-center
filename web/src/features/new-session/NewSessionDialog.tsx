@@ -1,9 +1,11 @@
 // "New session" (dialogs.js NewSession): a folder (the repos and folders used
 // before, filtered as you type, ↑↓ to move, or any folder with "Browse…"),
 // what to ask, files and dictation, and the first turn's mode, model and effort
-// (remembered). Send (⌘↵) runs the first turn here, headless, and opens the
-// conversation; "Open in Claude" leaves it in a new session of the desktop app.
-import { Search } from "lucide-react"
+// (remembered), and, in a git repository, a new worktree for it. Send (⌘↵) runs
+// the first turn here, headless, and opens the conversation; "Open in Claude"
+// leaves it in a new session of the desktop app. `draft`: a task a session
+// suggested, started from its card (its folder and prompt, in a new worktree).
+import { GitBranch, Search } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 import { PromptInput, PromptInputBody, PromptInputProvider, PromptInputTextarea, usePromptInputAttachments, usePromptInputController } from "@/components/ai-elements/prompt-input"
@@ -14,6 +16,7 @@ import { get, post } from "@/lib/api"
 import { persistedStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
 import { openSession } from "@/app/open-session"
+import type { NewDraft } from "@/app/open-dialog"
 import { repoFilter } from "@/app/view-state"
 import { AttachButton, MicButton, PickedFiles, fileErrors } from "@/features/prompt/PromptExtras"
 import { EFFORTS, MODELS, MODES, Pick } from "@/features/prompt/Settings"
@@ -22,12 +25,15 @@ import { hasWhisper } from "@/features/prompt/voice"
 import { repoDot } from "@/features/session/state"
 
 type Repo = { root: string; name: string }
-const prefs = persistedStore("newPrefs", { mode: "bypassPermissions", model: "claude-fable-5-1", effort: "high" })
+const prefs = persistedStore("newPrefs", { mode: "auto", model: "claude-fable-5-1", effort: "high" })
 const field = "w-full rounded-md border border-line-strong bg-surface px-2.5 py-[7px] text-[13.5px] focus:border-brand focus:shadow-[0_0_0_3px_var(--brand-soft)] focus:outline-none"
+
+const repoOf = (root: string): Repo => ({ root, name: root.split("/").pop() || root })
 
 function Folders({ root, onPick }: { root: string | null; onPick: (root: string) => void }) {
   const [repos, setRepos] = useState<Repo[] | null>(null)
-  const [picked, setPicked] = useState<Repo | null>(null) // a folder chosen with "Browse…"
+  // a folder chosen with "Browse…" (or the suggested task's)
+  const [picked, setPicked] = useState<Repo | null>(() => (root ? repoOf(root) : null))
   const [filter, setFilter] = useState("")
   const list = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -43,7 +49,7 @@ function Folders({ root, onPick }: { root: string | null; onPick: (root: string)
   const browse = () =>
     post<{ folder: string | null }>("/api/pick-folder").then(res => {
       if (!res.folder) return
-      setPicked({ root: res.folder, name: res.folder.split("/").pop() || res.folder })
+      setPicked(repoOf(res.folder))
       setFilter("")
       onPick(res.folder)
     }, (err: Error) => toast(err.message || "Could not open the folder picker"))
@@ -81,12 +87,13 @@ function Folders({ root, onPick }: { root: string | null; onPick: (root: string)
 }
 
 // The prompt with its tools, the explanation and the two ways to start.
-function Prompt({ root, onClose }: { root: string | null; onClose: () => void }) {
+function Prompt({ root, draft, onClose }: { root: string | null; draft?: NewDraft; onClose: () => void }) {
   const chosen = prefs.use()
   const { textInput } = usePromptInputController()
   const { files } = usePromptInputAttachments()
   const [isSending, setSending] = useState(false)
   const [isWhisper, setWhisper] = useState(false)
+  const [worktree, setWorktree] = useState(!!draft?.worktree)
   useEffect(() => void hasWhisper().then(setWhisper), [])
   const hasContent = !!textInput.value.trim() || files.length > 0
   const launch = async (send: boolean) => {
@@ -95,9 +102,10 @@ function Prompt({ root, onClose }: { root: string | null; onClose: () => void })
     try {
       // The session has no id yet: its files wait in a folder of their own.
       const prompt = await messageWith(`new-${crypto.randomUUID().slice(0, 8)}`, textInput.value.trim(), files)
-      const res = await post<{ ok: boolean; id?: string }>("/api/new", { folder: root, prompt, send, ...chosen })
+      const isWorktree = send && worktree
+      const res = await post<{ ok: boolean; id?: string }>("/api/new", { folder: root, prompt, send, ...chosen, worktree: isWorktree, suggestion: send ? draft?.suggestion : undefined })
       onClose()
-      if (res.id) (toast("Session created: Claude is working"), setTimeout(() => openSession(res.id!), 600))
+      if (res.id) (toast(isWorktree ? "Session created in a new worktree: Claude is working" : "Session created: Claude is working"), setTimeout(() => openSession(res.id!), 600))
       else toast("New session opened in Claude")
     } catch (err) {
       setSending(false)
@@ -125,6 +133,10 @@ function Prompt({ root, onClose }: { root: string | null; onClose: () => void })
           <Pick icon="mode" value={chosen.mode} options={MODES} onPick={mode => prefs.set({ ...chosen, mode })} title="Permission mode for the first turn" />
           <Pick icon="model" value={chosen.model} options={MODELS} onPick={model => prefs.set({ ...chosen, model })} title="Model" />
           <Pick icon="effort" value={chosen.effort} options={EFFORTS} onPick={effort => prefs.set({ ...chosen, effort })} title="Effort for the first turn" />
+          <label className="inline-flex cursor-pointer items-center gap-[5px] rounded-[7px] px-2 py-[3px] text-xs text-text-muted select-none hover:bg-hover"
+            title="Runs in a new git worktree of the folder (.claude/worktrees), on a branch of its own, as Claude desktop does: your checkout is left as it is. Only when you send.">
+            <input type="checkbox" className="m-0 accent-brand" checked={worktree} onChange={e => setWorktree(e.target.checked)} /><GitBranch className="size-[13px]" />Worktree
+          </label>
         </div>
       </PromptInput>
       <div className="mt-1 flex items-center gap-2">
@@ -140,15 +152,15 @@ function Prompt({ root, onClose }: { root: string | null; onClose: () => void })
   )
 }
 
-export function NewSessionDialog({ onClose }: { onClose: () => void }) {
-  const [root, setRoot] = useState<string | null>(null)
+export function NewSessionDialog({ draft, onClose }: { draft?: NewDraft; onClose: () => void }) {
+  const [root, setRoot] = useState<string | null>(draft?.root ?? null)
   return (
     <Dialog open onOpenChange={o => !o && onClose()}>
       <DialogContent showCloseButton={false} className="gap-2.5">
-        <DialogTitle className="mb-1">New session</DialogTitle>
+        <DialogTitle className="mb-1">{draft?.suggestion ? "Start the suggested task" : "New session"}</DialogTitle>
         <Folders root={root} onPick={setRoot} />
-        <PromptInputProvider>
-          <Prompt root={root} onClose={onClose} />
+        <PromptInputProvider initialInput={draft?.prompt ?? ""}>
+          <Prompt root={root} draft={draft} onClose={onClose} />
         </PromptInputProvider>
       </DialogContent>
     </Dialog>
