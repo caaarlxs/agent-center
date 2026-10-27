@@ -26,7 +26,7 @@ export function Dialogs() {
     get<{ isReady: boolean }>("/api/setup").then(res => !res.isReady && !setupSeen.get() && !dialog.get() && openDialog({ kind: "setup" }), () => {})
   }, [])
   if (!open) return null
-  if (open.kind === "new") return <NewSessionDialog onClose={closeDialog} />
+  if (open.kind === "new") return <NewSessionDialog draft={open.draft} onClose={closeDialog} />
   if (open.kind === "setup") return <SetupDialog onClose={() => (setupSeen.set(true), closeDialog())} />
   if (open.kind === "digest") return <DigestDialog onClose={closeDialog} />
   if (open.kind === "run") return <RunDialog card={open.card} onClose={closeDialog} />

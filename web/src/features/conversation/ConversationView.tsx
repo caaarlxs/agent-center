@@ -3,7 +3,8 @@
 // and chips, the time and a Fork link under each), Claude's answers in
 // Markdown, the tool runs folded, its task list, the "next step" box, the
 // questions it asks (answered here while it waits), the app's own dialogs,
-// the files and pages it sent, what still runs in the background, the reply
+// the files and pages it sent, the tasks it suggests for a session of their
+// own (started from here), what still runs in the background, the reply
 // choices it offers, the approval it asks for, and your messages it has not
 // received yet, each with Undo. A "New messages" pill shows when more arrives
 // while you read further up.
@@ -12,22 +13,23 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { get, post } from "@/lib/api"
-import type { Bridge, Card, Permission, Snapshot } from "@/lib/api-types"
+import type { Bridge, Card, Permission, Snapshot, SuggestionState } from "@/lib/api-types"
 import { bytesText, clock, memText, MEMORY_WARN } from "@/lib/format"
 import { useLive } from "@/lib/live"
 import { useNow } from "@/lib/now"
 import { cn } from "@/lib/utils"
-import { showFile } from "@/app/open-session"
+import { openDialog } from "@/app/open-dialog"
+import { openSession, showFile } from "@/app/open-session"
 import { fileName, sentFiles } from "@/features/prompt/files"
 import { ago } from "@/features/session/state"
 import { answer, launch, permit } from "@/features/session/actions"
 import { ForkDialog } from "./ForkDialog"
-import type { Shown } from "./items"
+import type { Shown, SuggestionItem } from "./items"
 import { Markdown, SessionOf } from "./Markdown"
 import { type Pending, deliveredOf, dropPending, stampOf, takenBack, usePending, waitingOf } from "./pending"
 import { reply, takeBack } from "./send"
 import { dialogAnswer, extOf, familyOf, linesText, nameOf, partsOf, type Family } from "./text"
-import { useConversation } from "./useConversation"
+import { type Suggestions, useConversation } from "./useConversation"
 
 const linkBtn = "text-brand underline underline-offset-2"
 // The "?" disc before a question (.next-ask span).
@@ -246,6 +248,47 @@ function AppDialog({ item, sessionId }: { item: Extract<Shown, { kind: "dialog" 
   )
 }
 
+// A task Claude suggests for a session of its own (spawn_task), as the chip
+// in Claude desktop: Start opens "New session" with its prompt and folder (in
+// a new worktree), Dismiss puts it away. `state`: what became of it, here or
+// in the app.
+function Suggestion({ item, sessionId, state, onDismiss }: { item: SuggestionItem; sessionId: string; state?: SuggestionState; onDismiss: (taskId: string) => void }) {
+  const repo = item.folder?.split("/").pop()
+  const start = () => openDialog({ kind: "new", draft: { root: item.folder, prompt: item.prompt, worktree: true, suggestion: { from: sessionId, taskId: item.taskId } } })
+  return (
+    <div className={cn(card, "w-[min(520px,100%)] self-start", (state || item.isGone) && "opacity-75")}>
+      <p className="m-0 flex items-center gap-1.5 text-[11.5px] text-faint"><GitFork className="size-3" />Suggested task{repo && <> · in <b className="font-semibold text-text-muted">{repo}</b></>}</p>
+      <p className="mt-1 text-[13.5px] font-semibold">{item.title}</p>
+      {item.tldr && <p className="mt-1 text-[12.5px]/[1.45] text-text-muted">{item.tldr}</p>}
+      <details className="group/prompt my-1.5 rounded-lg border border-[color-mix(in_srgb,var(--brand)_22%,transparent)] bg-surface">
+        <summary className="cursor-pointer list-none px-[9px] py-[5px] text-xs font-semibold text-text-muted">
+          <span className="text-faint group-open/prompt:hidden">{"▸ "}</span><span className="hidden text-faint group-open/prompt:inline">{"▾ "}</span>Prompt
+        </summary>
+        <pre className="m-0 max-h-80 overflow-auto border-t border-line px-2.5 py-2 font-mono text-[11.5px]/[1.5] whitespace-pre-wrap">{item.prompt}</pre>
+      </details>
+      <div className="mt-2 flex items-center gap-2">
+        {item.isGone && !state ? <span className="text-xs text-text-muted">Claude took this suggestion back</span>
+          : state?.state === "started" ? (
+            <>
+              <span className="text-xs font-semibold text-work">Started</span>
+              {state.session && <Button variant="ghost" onClick={() => openSession(state.session!)}>Open the session</Button>}
+            </>
+          ) : (
+            <>
+              {state?.state === "dismissed" && <span className="text-xs text-text-muted">Dismissed</span>}
+              <span className="flex-1" />
+              {!state && item.taskId && <Button variant="ghost" onClick={() => onDismiss(item.taskId!)}>Dismiss</Button>}
+              <Button onClick={start} disabled={!item.folder}
+                title={item.folder ? `A new session in a new worktree of ${item.folder}, with this prompt: you can change it before it starts` : "The session's folder is unknown"}>
+                {state ? "Start anyway" : "Start"}…
+              </Button>
+            </>
+          )}
+      </div>
+    </div>
+  )
+}
+
 // The tool approval Claude asks for now.
 function PermissionCard({ sessionId, permission }: { sessionId: string; permission: Permission }) {
   const { command, file_path, url, description } = permission.input as Record<string, string | undefined>
@@ -343,8 +386,9 @@ function RunningNow({ sessionId }: { sessionId: string }) {
 }
 
 type Asked = { canAnswer: (text: string) => boolean; picks: Record<string, string>; onPick: (text: string, value: string) => void }
+type Suggested = { states: Suggestions; onDismiss: (taskId: string) => void }
 
-function ShownItem({ item, sessionId, asked, onFork }: { item: Shown; sessionId: string; asked: Asked; onFork: (item: Extract<Shown, { kind: "user" }>) => void }) {
+function ShownItem({ item, sessionId, asked, suggested, onFork }: { item: Shown; sessionId: string; asked: Asked; suggested: Suggested; onFork: (item: Extract<Shown, { kind: "user" }>) => void }) {
   switch (item.kind) {
     case "user":
       return <YourMessage item={item} onFork={() => onFork(item)} />
@@ -372,6 +416,8 @@ function ShownItem({ item, sessionId, asked, onFork }: { item: Shown; sessionId:
       return <Question item={item} sessionId={sessionId} canAnswer={asked.canAnswer(item.text)} picked={asked.picks[item.text]} onPick={asked.onPick} />
     case "dialog":
       return <AppDialog item={item} sessionId={sessionId} />
+    case "suggestion":
+      return <Suggestion item={item} sessionId={sessionId} state={item.taskId ? suggested.states[item.taskId] : undefined} onDismiss={suggested.onDismiss} />
     case "files":
       return (
         <div className="flex flex-col gap-1">
@@ -395,7 +441,7 @@ function ShownItem({ item, sessionId, asked, onFork }: { item: Shown; sessionId:
 }
 
 export function ConversationView({ sessionId, card: session, bridge }: { sessionId: string; card: Card | undefined; bridge: Bridge | null }) {
-  const { shown, isLoaded, error, hasMore, loadEarlier, refresh } = useConversation(sessionId)
+  const { shown, suggestions, markDismissed, isLoaded, error, hasMore, loadEarlier, refresh } = useConversation(sessionId)
   const mine = usePending(sessionId)
   const gone = takenBack.use()
   const waiting = useMemo(() => waitingOf(mine, bridge?.queued ?? [], gone), [mine, bridge?.queued, gone])
@@ -436,6 +482,14 @@ export function ConversationView({ sessionId, card: session, bridge }: { session
       setPicks(next)
       if (!question || !question.questions.every(q => next[q.question])) return
       await answer(sessionId, question.id, next).then(() => toast("Answer sent"), (err: Error) => (setPicks(picks), toast(err.message || "Could not answer")))
+    },
+  }
+
+  const suggested: Suggested = {
+    states: suggestions,
+    onDismiss: taskId => {
+      markDismissed(taskId)
+      post(`/api/sessions/${encodeURIComponent(sessionId)}/suggestion`, { taskId }).catch((err: Error) => toast(err.message || "Could not dismiss it"))
     },
   }
 
@@ -489,7 +543,7 @@ export function ConversationView({ sessionId, card: session, bridge }: { session
         )}
         {error && <p className="text-center text-text-muted">{error}</p>}
         {hasMore && <Button variant="ghost" className="self-center" onClick={earlier}>Load earlier messages</Button>}
-        {shown.map(item => <ShownItem key={item.key} item={item} sessionId={sessionId} asked={asked} onFork={setForking} />)}
+        {shown.map(item => <ShownItem key={item.key} item={item} sessionId={sessionId} asked={asked} suggested={suggested} onFork={setForking} />)}
         {choices.length > 0 && (
           <div className="flex flex-wrap justify-end gap-1.5">
             {choices.map((c, i) => (

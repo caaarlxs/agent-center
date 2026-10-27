@@ -20,3 +20,4 @@ import type { BridgeStatus } from "@server/bridge"
 // GET /api/sessions/:id/bridge: the mod's state, the background wake, and
 // whether the app archived the session.
 export type Bridge = BridgeStatus & { wake: { tries: number; untrusted: boolean; isOver: boolean } | null; isArchived: boolean }
+export type { SuggestionState } from "@server/desktop"

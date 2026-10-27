@@ -4,7 +4,9 @@ import { applyPlanOp } from "@server/plan-op"
 import type { Item } from "@/lib/api-types"
 
 export type NextItem = Extract<Item, { kind: "next" }> & { picked?: string }
-export type Shown = Exclude<Item, { kind: "next" | "planStep" }> | NextItem
+// A suggested task Claude took back (dismiss_task) says so: `isGone`.
+export type SuggestionItem = Extract<Item, { kind: "suggestion" }> & { isGone?: boolean }
+export type Shown = Exclude<Item, { kind: "next" | "planStep" | "suggestion" | "suggestionGone" }> | NextItem | SuggestionItem
 
 // Items read later join the list: a task list's step moves the list it
 // belongs to, and tool runs that follow each other are one run.
@@ -27,7 +29,7 @@ const squash = (t: unknown) => String(t ?? "").replace(/\s+/g, " ").trim()
 // of the turn, with the button the person picked when their next message is
 // that button's text (a template counts when the message starts with it);
 // one task list per turn, the newest; tool runs split only by invisible steps
-// are one run.
+// are one run; a suggested task Claude took back says so.
 export function normalize(items: Item[]): Shown[] {
   const out: Shown[] = []
   let next: NextItem | null = null
@@ -41,10 +43,12 @@ export function normalize(items: Item[]): Shown[] {
     next = null
   }
   let planAt = -1
+  const gone = new Set(items.flatMap(i => (i.kind === "suggestionGone" ? [i.taskId] : [])))
   for (const item of items) {
     const last = out.at(-1)
-    if (item.kind === "next") next = item
-    else if (item.kind === "planStep") continue
+    if (item.kind === "suggestionGone" || item.kind === "planStep") continue
+    if (item.kind === "suggestion" && item.taskId && gone.has(item.taskId)) out.push({ ...item, isGone: true })
+    else if (item.kind === "next") next = item
     else if (item.kind === "user" && !item.isMidTurn) (close(item), out.push(item), (planAt = -1))
     else if (item.kind === "plan") {
       if (planAt >= 0) out.splice(planAt, 1)

@@ -26,3 +26,9 @@ test("a turn keeps only its newest task list", () => {
   const plan = (key: string, content: string): Item => ({ key, kind: "plan", steps: [{ content, status: "pending" }] })
   expect(normalize([user("u", "go"), plan("p1", "old"), plan("p2", "new")]).map(i => i.key)).toEqual(["u", "p2"])
 })
+
+test("a suggested task Claude took back says so, and the take-back shows nothing", () => {
+  const task = (key: string, taskId: string): Item => ({ key, kind: "suggestion", taskId, title: "t", tldr: null, prompt: "p", folder: null })
+  const shown = normalize([task("a", "task_1"), task("b", "task_2"), { key: "g", kind: "suggestionGone", taskId: "task_1" }])
+  expect(shown.map(i => [i.key, "isGone" in i && i.isGone])).toEqual([["a", true], ["b", false]])
+})
