@@ -63,12 +63,12 @@ const select = "h-[30px] rounded-md border border-line-strong bg-surface px-2 te
 const text = "mt-1.5 text-[12.5px] leading-normal text-text-muted [&_code]:rounded-[5px] [&_code]:bg-hover [&_code]:px-[5px] [&_code]:py-px [&_code]:font-mono [&_code]:text-xs [&_code]:text-text"
 
 // One card per step: done ones on the sidebar's tone.
-function Row({ title, need, state, isDone, children, actions }: { title: string; need: Need; state: ReactNode; isDone: boolean; children: ReactNode; actions?: ReactNode }) {
+function Row({ title, need, state, isDone, children, actions }: { title: string; need?: Need; state?: ReactNode; isDone: boolean; children: ReactNode; actions?: ReactNode }) {
   return (
     <li className={cn("rounded-[10px] border border-line px-[13px] py-[11px]", isDone ? "bg-side" : "bg-surface")}>
       <div className="flex items-center gap-2">
         <b className="text-[13.5px] font-semibold">{title}</b>
-        <span className={cn("rounded-full px-[7px] py-px text-[11px] font-semibold", need === "Required" ? "bg-brand-soft text-brand" : "bg-hover text-text-muted")}>{need}</span>
+        {need && <span className={cn("rounded-full px-[7px] py-px text-[11px] font-semibold", need === "Required" ? "bg-brand-soft text-brand" : "bg-hover text-text-muted")}>{need}</span>}
         <span className="ml-auto inline-flex items-center gap-[5px] text-xs font-semibold">{state}</span>
       </div>
       {children}
@@ -114,6 +114,30 @@ function ReadAloud() {
           </Field>
         </>
       )}
+    </Row>
+  )
+}
+
+// When messages or answers do not reach a session on someone's Mac: a report
+// of this Mac's setup and of each session's bridge mod (lib/diagnose.ts), to
+// paste in a message. It holds no conversation, title or message.
+function Diagnostics() {
+  const [isBusy, setBusy] = useState(false)
+  const copy = async () => {
+    setBusy(true)
+    const res = await get<{ text?: string }>("/api/diagnostics").catch(() => null)
+    setBusy(false)
+    if (!res?.text) return void toast("Could not make the report")
+    try {
+      await navigator.clipboard.writeText(res.text)
+      toast("Report copied: paste it in a message")
+    } catch {
+      toast("Could not copy it: the browser refused the clipboard")
+    }
+  }
+  return (
+    <Row title="Diagnostics" isDone={false} actions={<Button variant="outline" disabled={isBusy} onClick={copy}>{isBusy ? "One moment…" : "Copy report"}</Button>}>
+      <p className={text}>Messages or answers that do not reach a session? Copy a report of this Mac and of each session's bridge mod, and send it to whoever helps you.</p>
     </Row>
   )
 }
@@ -207,6 +231,7 @@ export function SetupDialog({ onClose }: { onClose: () => void }) {
                 <p className={text}>A card that asks you something or waits for your approval gives a short shake every few seconds, faster the longer it waits. Turned off, it stays still and only its colour and the time it has waited tell you.</p>
               </Row>
               <ReadAloud />
+              <Diagnostics />
             </>
           )}
         </ol>

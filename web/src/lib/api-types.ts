@@ -17,7 +17,10 @@ export type { RunState } from "@server/runner"
 export type { Step, StepState } from "@server/setup"
 export type { BridgeStatus } from "@server/bridge"
 import type { BridgeStatus } from "@server/bridge"
-// GET /api/sessions/:id/bridge: the mod's state, the background wake, and
-// whether the app archived the session.
-export type Bridge = BridgeStatus & { wake: { tries: number; untrusted: boolean; isOver: boolean } | null; isArchived: boolean }
+import type { blockerFor } from "@server/diagnose"
+import type { wakeState } from "@server/wake"
+// GET /api/sessions/:id/bridge: the mod's state, what keeps messages from it
+// (no mod) and its Claude Code version, the background wake, and whether the
+// app archived the session.
+export type Bridge = BridgeStatus & Awaited<ReturnType<typeof blockerFor>> & { wake: ReturnType<typeof wakeState>; isArchived: boolean }
 export type { SuggestionState } from "@server/desktop"

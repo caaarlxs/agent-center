@@ -33,19 +33,31 @@ export function waitingOf(mine: Pending[], queued: Bridge["queued"], gone: strin
   return [...mine, ...held].filter(p => !gone.includes(p.id))
 }
 
-// The pending messages the transcript now has, by their text.
+// The pending messages the transcript now has, by their text. The board
+// delivers several at once, in one prompt, when Claude desktop does not start
+// the session: a message inside a longer one counts too.
 export function deliveredOf(pending: Pending[], newUserTexts: string[]): string[] {
-  const texts = new Set(newUserTexts.map(t => t.trim()))
-  return pending.filter(p => texts.has(p.text.trim())).map(p => p.id)
+  const texts = newUserTexts.map(t => t.trim())
+  return pending.filter(p => {
+    const mine = p.text.trim()
+    return texts.some(t => t === mine || (!!mine && t.includes(mine)))
+  }).map(p => p.id)
 }
 
 // What a pending message is doing, and whether only Claude desktop can help.
+// A session that runs without the bridge mod never takes it; one at Claude's
+// cap of sessions is not woken in the background.
 export type Stamp = { text: string; isBad: boolean }
-export function stampOf(p: Pending, bridge: Bridge | null, isWorking: boolean): Stamp {
+export function stampOf(p: Pending, bridge: Bridge | null, isWorking: boolean, now = Date.now()): Stamp {
   const refused = bridge?.failed.find(f => f.id === p.id)
   if (refused) return { text: `Could not deliver: ${refused.reason}`, isBad: true }
+  if (bridge?.blocker === "no-mod")
+    return { text: `This session runs without the bridge mod${bridge.cliVersion ? ` (Claude Code ${bridge.cliVersion})` : ""}: update Claude desktop, then close the session and open it again`, isBad: true }
   if (bridge?.wake?.untrusted) return { text: "Claude does not trust this session's folder: open it in Claude and accept", isBad: true }
+  if (bridge?.wake?.atCap && !bridge.isOpen)
+    return { text: "Claude is at its limit of open sessions for this Mac's memory and did not wake it: write it in Claude, or close sessions you are not using", isBad: true }
   if (bridge?.stuck.includes(p.id)) return { text: "The session did not wake: open it in Claude", isBad: true }
-  if (isWorking) return { text: "Queued: delivered when the turn ends", isBad: false }
+  const isBusy = !!bridge?.busy && now - (bridge.lastSeen ?? 0) < 15 * 60_000
+  if (isWorking || isBusy) return { text: "Queued: delivered when the turn ends", isBad: false }
   return { text: bridge?.isOpen ? "Sending…" : "Waking the session in the background…", isBad: false }
 }

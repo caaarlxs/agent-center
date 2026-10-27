@@ -385,6 +385,8 @@ function RunningNow({ sessionId }: { sessionId: string }) {
   )
 }
 
+const ANSWER_RECEIPT_MS = 12_000 // an answer the session has not taken by then did not reach it
+
 type Asked = { canAnswer: (text: string) => boolean; picks: Record<string, string>; onPick: (text: string, value: string) => void }
 type Suggested = { states: Suggestions; onDismiss: (taskId: string) => void }
 
@@ -481,7 +483,16 @@ export function ConversationView({ sessionId, card: session, bridge }: { session
       const next = { ...picks, [text]: value }
       setPicks(next)
       if (!question || !question.questions.every(q => next[q.question])) return
-      await answer(sessionId, question.id, next).then(() => toast("Answer sent"), (err: Error) => (setPicks(picks), toast(err.message || "Could not answer")))
+      const ok = await answer(sessionId, question.id, next).then(() => (toast("Answer sent"), true), (err: Error) => (setPicks(picks), toast(err.message || "Could not answer"), false))
+      if (!ok) return
+      // The session takes it within seconds (its mod clears the question);
+      // still waiting after that, it did not reach it.
+      const asked = question.id
+      setTimeout(() => {
+        if (lastQuestion.current !== asked) return
+        setPicks({})
+        toast("The answer did not reach the session: answer it in Claude")
+      }, ANSWER_RECEIPT_MS)
     },
   }
 
