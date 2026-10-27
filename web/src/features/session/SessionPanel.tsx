@@ -18,7 +18,7 @@ import { Chat } from "@/features/conversation/Chat"
 import { Prs } from "@/features/prs/Prs"
 import { Tasks } from "@/features/tasks/Tasks"
 import { StateIcon, TONE } from "./StateIcon"
-import { STATE_LABEL, hueOf, stateOf } from "./state"
+import { STATE_LABEL, repoDot, stateOf } from "./state"
 
 const TABS: [Tab, string][] = [["chat", "Conversation"], ["changes", "Changes"], ["code", "Code"], ["files", "Files"], ["prs", "PRs"], ["tasks", "Tasks"]]
 
@@ -43,7 +43,7 @@ export function SessionPanel({ id, tab }: { id: string; tab: Tab }) {
       <header className="flex flex-col gap-1.5 border-b px-5 pt-3">
         <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
           {card && state && <><StateIcon card={card} size={18} /><span className={TONE[state].split(" ")[0]}>{STATE_LABEL[state]}</span></>}
-          {card && <span className="inline-flex items-center gap-1.5"><i className="size-[7px] rounded-[2px]" style={{ background: `oklch(0.72 0.14 ${hueOf(card.repo)})` }} />{card.repo}</span>}
+          {card && <span className="inline-flex items-center gap-1.5"><i className="size-[7px] rounded-[2px]" style={{ background: repoDot(card.repo) }} />{card.repo}</span>}
           {card?.branch && <span className="inline-flex min-w-0 items-center gap-1 truncate font-mono"><GitBranch className="size-3 shrink-0" />{card.branch}</span>}
           <span className="ml-auto flex shrink-0 items-center gap-1">
             <Button size="sm" className="bg-orange-500 text-white hover:bg-orange-500/90" onClick={openInClaude}>Open in Claude<ArrowUpRight /></Button>

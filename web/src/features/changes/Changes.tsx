@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { get } from "@/lib/api"
+import { keep, load } from "@/lib/store"
 import type { Changes as ChangesData, FileDiff } from "@/lib/api-types"
 import { monacoTheme, useMonaco } from "@/lib/monaco"
 import { cn } from "@/lib/utils"
@@ -47,14 +48,14 @@ function useComments(id: string) {
   const key = `review.${id}`
   const [comments, setComments] = useState<Record<string, LineComment>>(() => {
     try {
-      return JSON.parse(localStorage.getItem(key) ?? "{}")
+      return load(key, {})
     } catch {
       return {}
     }
   })
   useEffect(() => {
     try {
-      localStorage.setItem(key, JSON.stringify(comments))
+      keep(key, comments)
     } catch {}
   }, [key, comments])
   return [comments, setComments] as const
@@ -172,7 +173,7 @@ function SideBySide({ id, file }: { id: string; file: FileDiff | null }) {
 
 export function Changes({ id }: { id: string }) {
   const { data, error } = useChanges(id)
-  const [view, setView] = useState<"lines" | "side">(() => (localStorage.getItem("changesView") === "side" ? "side" : "lines"))
+  const [view, setView] = useState<"lines" | "side">(() => (load<string>("changesView", "lines") === "side" ? "side" : "lines"))
   const [chosen, setChosen] = useState<FileDiff | null>(null)
   const [comments, setComments] = useComments(id)
   const notes = useMemo(() => Object.values(comments).reduce<Record<string, number>>((n, c) => ((n[c.path] = (n[c.path] ?? 0) + 1), n), {}), [comments])
@@ -189,7 +190,7 @@ export function Changes({ id }: { id: string }) {
         <span><b className="text-foreground">{data.files.length}</b> files · <b className="text-emerald-400">+{add}</b> <b className="text-rose-400">−{del}</b></span>
         <span className="truncate">{data.branch ? `${data.branch} against ${data.base}` : `against ${data.base}`}, with uncommitted changes</span>
         <ToggleGroup type="single" size="sm" variant="outline" value={view} className="ml-auto"
-          onValueChange={v => v && (setView(v as "lines" | "side"), localStorage.setItem("changesView", v))}>
+          onValueChange={v => v && (setView(v as "lines" | "side"), keep("changesView", v))}>
           <ToggleGroupItem value="lines">Lines</ToggleGroupItem>
           <ToggleGroupItem value="side">Side by side</ToggleGroupItem>
         </ToggleGroup>

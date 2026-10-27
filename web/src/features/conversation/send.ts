@@ -3,6 +3,7 @@
 // back in that session's reply box.
 import { toast } from "sonner"
 import { createStore } from "@/lib/store"
+import { undoable } from "@/lib/toast"
 import { sendText, unsend } from "@/features/session/actions"
 import { takenBack } from "./pending"
 
@@ -21,5 +22,5 @@ export async function takeBack(id: string, p: { id: string; text: string }) {
 // Throws the server's reason, so a caller can keep what was typed.
 export async function sendMessage(id: string, text: string, done = "Message sent") {
   const res = await sendText(id, text)
-  toast(res.activated ? `${done}: waking the session` : done, { action: { label: "Undo", onClick: () => void takeBack(id, { id: res.messageId, text }) } })
+  undoable(res.activated ? "The session was asleep: waking it in the background" : done, () => void takeBack(id, { id: res.messageId, text }))
 }

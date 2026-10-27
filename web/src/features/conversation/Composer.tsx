@@ -1,8 +1,9 @@
 // The reply box: text, files (picked, pasted or dropped) and dictation go to
-// the session through the bridge mod; a draft stays for three days. The mode,
-// model and effort change in the session (it asks for approval when a mode
-// asks less). Under it, what the session can do with a message now.
-import { Square } from "lucide-react"
+// the session through the bridge mod; a draft stays for three days. The mode
+// and model change in the session (it asks for approval when a mode asks
+// less); the effort only shows, as the app sends its own with every message.
+// Under it, what the session can do with a message now.
+import { Gauge, Square } from "lucide-react"
 import { useEffect, useState } from "react"
 import { toast } from "sonner"
 import {
@@ -81,7 +82,7 @@ function Box({ card, bridge }: { card: Card; bridge: Bridge | null }) {
     else toast("Change applied")
     setAsked(null)
   }, [settled])
-  const change = (key: "mode" | "model" | "effort", value: string) =>
+  const change = (key: "mode" | "model", value: string) =>
     post<{ requestId: string; isOpen: boolean }>(`/api/sessions/${encodeURIComponent(card.id)}/settings`, { [key]: value }).then(
       res => (setAsked(res.requestId), toast(res.isOpen ? "Change sent" : "Change saved: it applies when the session opens")),
       (err: Error) => toast.error(err.message),
@@ -89,6 +90,7 @@ function Box({ card, bridge }: { card: Card; bridge: Bridge | null }) {
   const fail = (err: Error) => toast.error(err.message)
   const isWorking = card.column === "working"
   const reach = reachOf(bridge, isWorking)
+  const effort = EFFORTS.find(([e]) => e === card.effort)?.[1]
   const model = MODELS.find(([m]) => card.usage?.model?.startsWith(m))?.[0]
   return (
     <div className="space-y-1.5">
@@ -115,7 +117,7 @@ function Box({ card, bridge }: { card: Card; bridge: Bridge | null }) {
             <MicButton />
             <Pick value={card.mode ?? undefined} options={MODES} placeholder="Mode" onPick={v => change("mode", v)} />
             <Pick value={model} options={MODELS} placeholder="Model" onPick={v => change("model", v)} />
-            <Pick value={card.effort ?? undefined} options={EFFORTS} placeholder="Effort" onPick={v => change("effort", v)} />
+            {effort && <span className="inline-flex h-8 items-center gap-1 px-2 text-xs text-muted-foreground" title="Effort (read-only). Change it in Claude desktop: it sends its own with every message"><Gauge className="size-3.5" />{effort}</span>}
           </PromptInputTools>
           <span className="flex items-center gap-1">
             {isWorking && <Button type="button" variant="ghost" size="sm" onClick={() => stop(card.id).then(() => toast("Stopping…"), fail)}><Square />Stop</Button>}

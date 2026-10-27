@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button"
 import { Command, CommandDialog, CommandEmpty, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { Input } from "@/components/ui/input"
 import { ApiError, get, post } from "@/lib/api"
+import { keep, load } from "@/lib/store"
 import type { CodeTree, Mark, Match } from "@/lib/api-types"
 import { monacoTheme, useMonaco } from "@/lib/monaco"
 import { cn } from "@/lib/utils"
@@ -34,7 +35,7 @@ const api = (id: string, what: string, q: Record<string, string> = {}) => `/api/
 
 function remembered(id: string): { open: string[]; active: string | null; dirs: string[] } {
   try {
-    return JSON.parse(localStorage.getItem(`code.${id}`) ?? "") ?? { open: [], active: null, dirs: [] }
+    return load<{ open: string[]; active: string | null; dirs: string[] } | null>(`code.${id}`, null) ?? { open: [], active: null, dirs: [] }
   } catch {
     return { open: [], active: null, dirs: [] }
   }
@@ -141,7 +142,7 @@ export function CodeWorkspace({ id }: { id: string }) {
   }, [id])
 
   useEffect(() => {
-    if (monacoState.ready) localStorage.setItem(`code.${id}`, JSON.stringify({ open: tabs.map(t => t.path), active, dirs: [...openDirs] }))
+    if (monacoState.ready) keep(`code.${id}`, { open: tabs.map(t => t.path), active, dirs: [...openDirs] })
   }, [id, tabs, active, openDirs, monacoState.ready])
 
   const isDirty = (path: string) => {

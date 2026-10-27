@@ -49,9 +49,12 @@ export function ago(at: number, now: number): string {
   return `${Math.round(h / 24)} d`
 }
 
-// A repo's colour, the same on every view: a hue from its name.
+// A repo's colour, the same on every view and in both boards: a hue from
+// its name (util.js hue), its dot and its name in that hue.
 export function hueOf(name: string): number {
   let h = 0
-  for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) >>> 0
-  return h % 360
+  for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) % 360
+  return h
 }
+export const repoDot = (name: string) => `hsl(${hueOf(name)} 62% 55%)`
+export const repoText = (name: string) => `hsl(${hueOf(name)} 55% var(--repo-l))`

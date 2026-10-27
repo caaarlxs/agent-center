@@ -16,7 +16,7 @@ import { sendMessage } from "@/features/conversation/send"
 import { answer, permit } from "./actions"
 import { CardMenu } from "./CardMenu"
 import { StateIcon } from "./StateIcon"
-import { ageOf, contextOf, hueOf, stateOf } from "./state"
+import { ageOf, contextOf, repoDot, stateOf } from "./state"
 
 export type Level = "far" | "mid" | "near"
 
@@ -126,7 +126,7 @@ function SessionCardView({ card, level = "near", now, isSelected = false, textSc
           {level === "near" && isAsking && <Replies card={card} />}
           <footer className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px] text-muted-foreground/70" style={far ? { fontSize: 11.5 * Math.min(textScale, 1.8) } : undefined}>
             <span className="inline-flex min-w-0 items-center gap-1.5 truncate" title={card.branch ? `${card.repo} · ${card.branch}` : card.repo}>
-              <i className="size-[7px] shrink-0 rounded-[2px]" style={{ background: `oklch(0.72 0.14 ${hueOf(card.repo)})` }} />{card.repo}
+              <i className="size-[7px] shrink-0 rounded-[2px]" style={{ background: repoDot(card.repo) }} />{card.repo}
             </span>
             {level !== "far" && <span className="shrink-0">{ageOf(card, now)}</span>}
             {level === "near" && <Signals card={card} />}

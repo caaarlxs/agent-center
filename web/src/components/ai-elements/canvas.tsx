@@ -8,11 +8,10 @@ type CanvasProps = ReactFlowProps & {
   children?: ReactNode;
 };
 
-const deleteKeyCode = ["Backspace", "Delete"];
 
 export const Canvas = ({ children, ...props }: CanvasProps) => (
   <ReactFlow
-    deleteKeyCode={deleteKeyCode}
+    deleteKeyCode={null}
     fitView
     panOnDrag={false}
     panOnScroll

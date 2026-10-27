@@ -17,22 +17,25 @@ export function createStore<T>(initial: T) {
   }
 }
 
+// A value kept in this browser as the classic board keeps it ("ac.<key>",
+// JSON), so a choice made in one board holds in the other.
+export function load<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(`ac.${key}`)
+    return raw === null ? fallback : (JSON.parse(raw) as T)
+  } catch {
+    return fallback
+  }
+}
+export function keep(key: string, value: unknown) {
+  try {
+    localStorage.setItem(`ac.${key}`, JSON.stringify(value))
+  } catch {}
+}
+
 // A store kept in this browser, under the key the classic board uses too
 // ("ac.<key>", JSON): a choice made in one board holds in the other.
 export function persistedStore<T>(key: string, fallback: T) {
-  let initial = fallback
-  try {
-    const raw = localStorage.getItem(`ac.${key}`)
-    if (raw !== null) initial = JSON.parse(raw) as T
-  } catch {}
-  const store = createStore(initial)
-  return {
-    ...store,
-    set(next: T) {
-      store.set(next)
-      try {
-        localStorage.setItem(`ac.${key}`, JSON.stringify(next))
-      } catch {}
-    },
-  }
+  const store = createStore(load(key, fallback))
+  return { ...store, set: (next: T) => (store.set(next), keep(key, next)) }
 }

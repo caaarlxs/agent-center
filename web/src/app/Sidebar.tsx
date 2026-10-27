@@ -1,35 +1,22 @@
 // The left column: new session, the repos to filter the canvas by, the plan's
 // limits, and the live connection with Setup at the foot. It folds to icons.
 import { AudioLines, Bell, BellOff, ExternalLink, LayoutGrid, PanelLeft, Plus, Settings, Sun, Volume2, VolumeX } from "lucide-react"
-import { createStore } from "@/lib/store"
+import { persistedStore } from "@/lib/store"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useLive } from "@/lib/live"
 import { useNow } from "@/lib/now"
 import { cn } from "@/lib/utils"
-import { hueOf } from "@/features/session/state"
+import { repoDot } from "@/features/session/state"
 import { notify, sound, speech, toggleNotify, toggleSound, toggleSpeech } from "@/features/alerts/prefs"
 import { openDialog } from "./open-dialog"
 import { repoFilter } from "./view-state"
 
 const LIMIT_NAME: Record<string, string> = { five_hour: "5 hours", seven_day: "Week", seven_day_opus: "Week · Opus", seven_day_sonnet: "Week · Sonnet" }
 
-function readFolded() {
-  try {
-    return localStorage.getItem("sideFolded") === "1"
-  } catch {
-    return false
-  }
-}
-export const sideFolded = createStore(readFolded())
-const toggleFolded = () => {
-  const next = !sideFolded.get()
-  sideFolded.set(next)
-  try {
-    localStorage.setItem("sideFolded", next ? "1" : "0")
-  } catch {}
-}
+export const sideFolded = persistedStore("sideSlim", false) // the classic board's name for it
+const toggleFolded = () => sideFolded.set(!sideFolded.get())
 
 function untilText(ms: number) {
   const min = Math.max(0, Math.ceil(ms / 60_000))
@@ -110,7 +97,7 @@ export function Sidebar() {
             <TooltipTrigger asChild>
               <button onClick={() => repoFilter.set(chosen === r.root ? null : r.root)}
                 className={cn("flex h-7 w-full items-center gap-2.5 rounded-md px-2 text-muted-foreground hover:bg-accent hover:text-foreground", chosen === r.root && "bg-accent text-foreground", isFolded && "justify-center px-0")}>
-                <i className="size-2.5 shrink-0 rounded-[3px]" style={{ background: `oklch(0.72 0.14 ${hueOf(r.name)})` }} />
+                <i className="size-2.5 shrink-0 rounded-[3px]" style={{ background: repoDot(r.name) }} />
                 {!isFolded && <><span className="truncate">{r.name}</span><span className="ml-auto text-xs tabular-nums text-muted-foreground/70">{r.count || ""}</span></>}
               </button>
             </TooltipTrigger>
