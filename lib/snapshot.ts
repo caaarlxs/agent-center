@@ -25,6 +25,7 @@ import { refreshLinks, sessionOf } from "./task-links"
 import { isInterrupted, transcriptPath } from "./transcript"
 import { folderSize } from "./uploads"
 import { usageOf } from "./usage"
+import { version } from "./version"
 import { wakeState } from "./wake"
 
 const QUIET_MS = 10 * 60_000 // "working" with an untouched transcript for this long: stopped
@@ -301,6 +302,7 @@ export async function snapshot() {
     memory: { total: visible.reduce((sum, c) => sum + (c.memory?.total ?? 0), 0), pressure: memory.pressure },
     features: { organizer },
     update: await freshness(),
+    version,
   }
 }
 
