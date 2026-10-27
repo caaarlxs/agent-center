@@ -329,6 +329,34 @@ describe("board", () => {
   })
 })
 
+describe("session events", () => {
+  // What an open conversation hears, without asking: its transcript grows, its mod writes.
+  test("tells when the transcript grows and when the mod writes for the session", async () => {
+    const res = await fetch(`${base()}/api/sessions/${ID}/events`)
+    expect(res.headers.get("content-type")).toContain("text/event-stream")
+    const reader = res.body!.getReader()
+    const heard: string[] = []
+    const listen = (async () => {
+      let text = ""
+      while (heard.length < 2) {
+        const { value, done } = await reader.read()
+        if (done) return
+        text += new TextDecoder().decode(value)
+        for (const m of text.matchAll(/event: (\w+)/g)) if (!heard.includes(m[1]!)) heard.push(m[1]!)
+      }
+    })()
+    await Bun.sleep(300) // the watches are set
+    const transcript = join(home, ".claude", "projects", "demo", `${ID}.jsonl`)
+    await writeFile(transcript, (await readFile(transcript, "utf8")) + JSON.stringify({ type: "assistant", uuid: "ev1", timestamp: new Date().toISOString(), message: { role: "assistant", content: [{ type: "text", text: "More." }] } }) + "\n")
+    await Bun.sleep(300)
+    await mkdir(join(home, ".claude", "agent-center", "acks"), { recursive: true })
+    await writeFile(join(home, ".claude", "agent-center", "acks", `${ID}.json`), JSON.stringify({ delivered: [] }))
+    await Promise.race([listen, Bun.sleep(4000)])
+    await reader.cancel()
+    expect(heard.sort()).toEqual(["bridge", "messages"])
+  })
+})
+
 describe("diagnosis", () => {
   test("says a working session runs without the bridge mod, until its mod beats", async () => {
     expect((await jsonOf(fetch(`${base()}/api/sessions/${WATCHER}/bridge`))).blocker).toBe("no-mod")

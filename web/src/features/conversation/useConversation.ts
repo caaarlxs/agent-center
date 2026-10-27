@@ -1,13 +1,15 @@
 // A session's conversation, read from its transcript (GET .../messages):
-// the last part first, then what it adds every two seconds while it is open,
+// the last part first, then what it adds as soon as the transcript grows
+// (session-events.ts; every 15 s besides, every 2 s while that is down),
 // and earlier parts on demand. Every read also says what became of the tasks
 // the session suggested (started or dismissed, here or in Claude desktop).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { get } from "@/lib/api"
 import type { Item, SuggestionState } from "@/lib/api-types"
 import { append, normalize } from "./items"
+import { useSessionEvents } from "./session-events"
 
-const FOLLOW_MS = 2000
+const FOLLOW = { connected: 15_000, lost: 2000 }
 
 type Page = { items: Item[]; start: number; end: number; hasMore: boolean; suggestions?: Record<string, SuggestionState> }
 type State = { page: Page | null; error: string | null }
@@ -18,12 +20,14 @@ const url = (id: string, q = "") => `/api/sessions/${encodeURIComponent(id)}/mes
 export function useConversation(id: string) {
   const [state, setState] = useState<State>({ page: null, error: null })
   const end = useRef(0)
+  const shownId = useRef(id)
   const [suggestions, setSuggestions] = useState<Suggestions>({})
   const takeSuggestions = (next: Suggestions | undefined) =>
     next && setSuggestions(s => (JSON.stringify(s) === JSON.stringify(next) ? s : next))
 
   useEffect(() => {
     let alive = true
+    shownId.current = id
     setState({ page: null, error: null })
     setSuggestions({})
     end.current = 0
@@ -36,19 +40,30 @@ export function useConversation(id: string) {
       },
       (err: Error) => alive && setState({ page: null, error: err.message }),
     )
-    const timer = setInterval(async () => {
-      if (!end.current) return
-      const more = await get<Page>(url(id, `?after=${end.current}`)).catch(() => null)
-      if (alive) takeSuggestions(more?.suggestions)
-      if (!alive || !more || more.end === end.current) return
+    return () => void (alive = false)
+  }, [id])
+
+  // What the transcript added since the last read. One read at a time; news
+  // that comes while one runs makes it read once more when it ends.
+  const isReading = useRef(false)
+  const hasNews = useRef(false)
+  const follow = async (): Promise<void> => {
+    const asked = id
+    if (!end.current) return
+    if (isReading.current) return void (hasNews.current = true)
+    isReading.current = true
+    hasNews.current = false
+    const more = await get<Page>(url(asked, `?after=${end.current}`)).catch(() => null)
+    isReading.current = false
+    if (shownId.current !== asked) return
+    takeSuggestions(more?.suggestions)
+    if (more && more.end !== end.current) {
       end.current = more.end
       if (more.items.length) setState(s => (s.page ? { ...s, page: { ...s.page, items: append(s.page.items, more.items), end: more.end } } : s))
-    }, FOLLOW_MS)
-    return () => {
-      alive = false
-      clearInterval(timer)
     }
-  }, [id])
+    if (hasNews.current) void follow()
+  }
+  useSessionEvents(id, "messages", follow, FOLLOW)
 
   const loadEarlier = useCallback(async () => {
     const start = state.page?.start

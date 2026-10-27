@@ -21,6 +21,7 @@ import { readTasks } from "../lib/organizer"
 import { branchState, knownRepos, repoInfo } from "../lib/repo"
 import { commandFor, status as runStatus, suggest as suggestRun } from "../lib/runner"
 import { fold, search } from "../lib/search"
+import { sessionEvents } from "../lib/session-events"
 import { sessionFile, sessionFiles } from "../lib/session-files"
 import { defaultVoice, listVoices } from "../lib/speech"
 import { setupStatus } from "../lib/setup"
@@ -159,6 +160,9 @@ async function sessionRead(id: string, what: string, url: URL) {
       const result = group ? await changesOf(group.lead.cwd) : null
       return result ? json(result) : json({ error: "This session's folder is not a git repository" }, 404)
     }
+    // What changes in it, as it happens, for its open conversation (lib/session-events.ts).
+    case "events":
+      return sessionEvents(group?.ids ?? [id], group?.id ?? id)
     case "bridge":
       return json({ ...(await bridgeStatus(id)), ...(await blockerFor(id)), wake: wakeState(id), isArchived: await isArchivedInApp(group?.ids ?? [id]) })
     case "prs": {
