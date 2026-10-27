@@ -117,7 +117,8 @@ cd agent-center
 ./install.sh
 ```
 
-The installer starts the server as a launchd agent (`local.agent-center`, it starts with your
+The installer builds the board's page (it downloads its packages the first time, a minute or
+two), starts the server as a launchd agent (`local.agent-center`, it starts with your
 Mac and restarts if it stops) and opens <http://localhost:7777>. Install it as an app from
 Chrome's address bar if you like (a PWA: its own window, notifications, Dock badge).
 
@@ -148,8 +149,9 @@ git pull
 ```
 
 The board then shows "A newer version of Agent Center is on disk" with an **Update** button. It
-brings up to date what still runs older code (the hook, the bridge mod, the server, the page),
-restarts the server and reloads the page. Sessions already open load a newer mod when they restart.
+brings up to date what still runs older code (the hook, the bridge mod, the server), builds the
+page again when its sources changed, restarts the server and reloads the page. Your board (cards,
+zones, notes, names) lives in your data folder, not in the repository: a pull never touches it. Sessions already open load a newer mod when they restart.
 
 ### Uninstall
 
@@ -187,7 +189,9 @@ Claude desktop ──runs──▶ Claude Code sessions ──hook──▶ ~/.c
   session records (titles, archived, starred), the transcripts and the mod's files into one
   snapshot, pushed to the page over server-sent events. Your own decisions (pins, columns,
   canvas places, zones, notes, names) live in its `data/board.json`.
-- **The page** (`public/`) is plain ES modules with Preact and htm, no build step.
+- **The page** (`web/`) is a React app (TypeScript, Vite, Tailwind, shadcn/ui, React Flow),
+  built into `web/dist` and served by the server. It imports the server's types from `lib/`, so a
+  change on one side that breaks the other fails to compile.
 
 Waking a sleeping session uses the desktop app's own link (`claude://code/continue`), retried
 every 20 s up to 4 times. If the app no longer trusts the session's folder, it refuses to start
@@ -254,9 +258,13 @@ for them to stay in Auto once they move into the app, set it in `~/.claude/setti
 ## Development
 
 ```bash
-bun install          # TypeScript and Bun's types, for the checks only (the app has no dependencies)
-bun run check        # type-check, strict
+bun install          # TypeScript and Bun's types, for the server's checks
+bun run check        # type-check the server, strict
 bun test             # end-to-end: starts a server on a free port with a temporary home
+cd web && bun install
+bun run dev          # the page on http://localhost:7795, live, against the board on 7777
+bun run check && bun run test && bun run lint   # the page: types, unit tests, lint
+bun run build        # into web/dist, which the server serves
 launchctl kickstart -k gui/$(id -u)/local.agent-center    # restart after editing the server
 tail -f ~/Library/Application\ Support/Agent\ Center/logs/server.log
 ```
@@ -268,7 +276,7 @@ sessions; the screenshots above come from it.
 The tests use `AGENT_CENTER_DATA` (another data folder) and `AGENT_CENTER_DRY_RUN` (no
 `claude://` link is opened); both work for a manual test server too.
 
-The page reloads its files on every load (no cache): edit `public/` and reload. The bridge mod
+`/design` shows every component the page uses, with made-up data. The bridge mod
 is checked with `claude plugin validate bridge`; after changing it, bump its version in
 `bridge/.claude-plugin/plugin.json` and press Update in Setup.
 
@@ -283,5 +291,6 @@ is checked with `claude plugin validate bridge`; after changing it, bump its ver
 
 ## License
 
-MIT — see [LICENSE](LICENSE). The libraries in `public/vendor/` keep their own licences
-([NOTICE](public/vendor/NOTICE.md)).
+MIT — see [LICENSE](LICENSE). The page's packages (`web/package.json`) keep their own licences;
+the Code tab's editor, [Monaco](https://github.com/microsoft/monaco-editor) (MIT, © Microsoft), is
+downloaded from npm on first use (lib/monaco.ts).

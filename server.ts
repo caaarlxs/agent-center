@@ -19,7 +19,7 @@ import { mkdir } from "node:fs/promises"
 import { resolve, sep } from "node:path"
 import { loadBoard } from "./lib/board"
 import { activate } from "./lib/client"
-import { HOSTS, ORIGINS, PORT, PUBLIC_DIR, SESSIONS_DIR, WEB_DIST } from "./lib/config"
+import { HOSTS, ORIGINS, PORT, SESSIONS_DIR, WEB_DIST } from "./lib/config"
 import { json } from "./lib/http"
 import { refreshSoon, startLive } from "./lib/live"
 import { monacoFile } from "./lib/monaco"
@@ -73,26 +73,32 @@ async function route(req: Request): Promise<Response> {
     return asset ? new Response(asset, { headers: { "cache-control": "max-age=86400" } }) : new Response("Not found", { status: 404 })
   }
 
-  // The new web app (web/, built into web/dist), at /next while it replaces
-  // the page below. Its files have hashed names: kept; any other path is the
-  // app's own route, answered with its index.
-  if (path === "/next" || path.startsWith("/next/")) {
-    const rel = decodeURIComponent(path.slice("/next".length)) || "/"
-    const file = resolve(WEB_DIST, `.${rel}`)
-    const asset = file.startsWith(WEB_DIST + sep) ? Bun.file(file) : null
-    if (asset && (await asset.exists()))
-      return new Response(asset, { headers: { "cache-control": rel.startsWith("/assets/") ? "max-age=31536000, immutable" : "no-cache" } })
-    const index = Bun.file(resolve(WEB_DIST, "index.html"))
-    return (await index.exists()) ? new Response(index, { headers: { "cache-control": "no-cache" } })
-      : new Response("The web app is not built: run bun run web:build", { status: 404 })
-  }
-
-  // The page itself. no-cache: every load asks for the current files (they are local and small).
-  const file = resolve(PUBLIC_DIR, `.${path === "/" ? "/index.html" : decodeURIComponent(path)}`)
-  if (!file.startsWith(PUBLIC_DIR + sep)) return new Response("Not found", { status: 404 })
+  // The page: the web app (web/, built into web/dist). Its files have hashed
+  // names: kept; any other path is one of its own routes, answered with its
+  // index. /next was its address while it replaced the classic page.
+  if (path === "/next" || path.startsWith("/next/")) return Response.redirect(`${url.origin}${path.slice("/next".length) || "/"}${url.search}`, 302)
+  const rel = decodeURIComponent(path)
+  const file = resolve(WEB_DIST, `.${rel}`)
+  if (!file.startsWith(WEB_DIST + sep) && file !== WEB_DIST) return new Response("Not found", { status: 404 })
   const asset = Bun.file(file)
-  return (await asset.exists()) ? new Response(asset, { headers: { "cache-control": "no-cache" } }) : new Response("Not found", { status: 404 })
+  if (rel !== "/" && (await asset.exists()))
+    return new Response(asset, { headers: { "cache-control": rel.startsWith("/assets/") ? "max-age=31536000, immutable" : "no-cache" } })
+  if (/\.\w+$/.test(rel) && rel !== "/index.html") return new Response("Not found", { status: 404 })
+  const index = Bun.file(resolve(WEB_DIST, "index.html"))
+  if (await index.exists()) return new Response(index, { headers: { "cache-control": "no-cache" } })
+  return new Response(BUILDING_PAGE, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache" } })
 }
+
+// Before the page is built (a fresh clone, or the pull that brought it): a
+// page that builds it with Update and reloads when it is ready.
+const BUILDING_PAGE = `<!doctype html><meta charset="utf-8"><meta name="color-scheme" content="light dark"><title>Agent Center</title>
+<body style="font:14px/1.5 -apple-system,system-ui,sans-serif;display:grid;place-items:center;height:100vh;margin:0">
+<div style="max-width:420px;text-align:center"><b>Agent Center is building its page</b><p id="m">This takes about a minute the first time.</p></div>
+<script>
+fetch("/api/update",{method:"POST",headers:{"x-agent-center":"1","content-type":"application/json"},body:"{}"})
+  .then(r=>r.json()).then(r=>{if(r.error)throw new Error(r.error);setTimeout(()=>location.reload(),r.isRestarting?2500:300)})
+  .catch(e=>{document.getElementById("m").textContent="Could not build it: "+e.message+". In a terminal, in the Agent Center folder: ./install.sh"})
+</script>`
 
 await loadBoard()
 await mkdir(SESSIONS_DIR, { recursive: true })

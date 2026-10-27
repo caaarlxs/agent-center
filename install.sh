@@ -38,6 +38,16 @@ if [[ -z "$BUN" ]]; then
   fi
 fi
 
+# ---------- the page ----------
+
+# The board's page is a web app (web/): its packages, then its build. The
+# first time it downloads them (a minute or two); after a pull, only what changed.
+say "Building the board's page…"
+(cd "$APP_DIR/web" && "$BUN" install --frozen-lockfile && "$BUN" x --bun vite build) >/dev/null || {
+  say "Could not build the page. Run it by hand to see why: cd \"$APP_DIR/web\" && bun install && bun run build"
+  exit 1
+}
+
 # ---------- the port ----------
 
 # Taken by another program (not an Agent Center already running there): stop

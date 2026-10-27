@@ -12,7 +12,6 @@ import { join } from "node:path"
 
 export const HOME = process.env.HOME ?? ""
 export const APP_DIR = join(import.meta.dir, "..")
-export const PUBLIC_DIR = join(APP_DIR, "public")
 export const WEB_DIST = join(APP_DIR, "web", "dist") // the new web app, built (web/)
 
 export const STATE_DIR = process.env.AGENT_CENTER_HOME || join(HOME, "Library", "Application Support", "Agent Center")

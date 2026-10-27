@@ -1,4 +1,4 @@
-// The app's shell. /next/design shows the design system (every component the
+// The app's shell. /design shows the design system (every component the
 // board uses, with made-up data); everything else is the board: the sidebar,
 // the top bar with the view's name, the search and "Next up", the view, and
 // a session's panel sliding over them from the right.

@@ -1,19 +1,16 @@
 <!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Agent Center</title>
-  <link rel="manifest" href="/manifest.webmanifest">
-  <link rel="icon" href="/icon.svg" type="image/svg+xml">
-  <meta name="theme-color" content="#141416" media="(prefers-color-scheme: dark)">
-  <meta name="theme-color" content="#f6f5f2" media="(prefers-color-scheme: light)">
-  <link rel="stylesheet" href="/styles.css">
-</head>
-<body>
-  <div id="app"></div>
-  <script src="/vendor/marked.min.js"></script>
-  <script src="/vendor/purify.min.js"></script>
-  <script type="module" src="/js/main.js"></script>
-</body>
-</html>
+<!-- A bridge for one update: a server still running the code from before the
+     pull that moved the page to web/ serves this file. It asks that server to
+     update (it restarts with the new code), then reloads: the new server
+     builds the page and shows it. Remove once every install has updated. -->
+<meta charset="utf-8">
+<meta name="color-scheme" content="light dark">
+<title>Agent Center</title>
+<body style="font:14px/1.5 -apple-system,system-ui,sans-serif;display:grid;place-items:center;height:100vh;margin:0">
+<div style="max-width:420px;text-align:center"><b>Agent Center is updating</b><p id="m">It restarts and builds its new page. This takes about a minute.</p></div>
+<script>
+fetch("/api/update", { method: "POST", headers: { "x-agent-center": "1", "content-type": "application/json" }, body: "{}" })
+  .then(r => r.json())
+  .then(r => { if (r.error) throw new Error(r.error); setTimeout(() => location.reload(), 4000) })
+  .catch(e => { document.getElementById("m").textContent = "Could not update: " + e.message + ". In a terminal, in the Agent Center folder: ./install.sh" })
+</script>

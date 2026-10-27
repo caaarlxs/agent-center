@@ -149,12 +149,21 @@ afterAll(() => {
 })
 
 describe("page and guard", () => {
-  test("serves the page", async () => {
-    expect((await fetch(base())).status).toBe(200)
-    expect((await fetch(`${base()}/js/main.js`)).status).toBe(200)
+  test("serves the page, built or about to be", async () => {
+    const page = await fetch(base())
+    expect(page.status).toBe(200)
+    expect(await page.text()).toContain("Agent Center")
+    expect((await fetch(`${base()}/some/route`)).status).toBe(200) // one of the app's own routes
+    expect((await fetch(`${base()}/assets/missing.js`)).status).toBe(404)
   })
 
-  test("never serves files outside public/", async () => {
+  test("sends the old /next address to the page", async () => {
+    const res = await fetch(`${base()}/next/?open=x`, { redirect: "manual" })
+    expect(res.status).toBe(302)
+    expect(res.headers.get("location")).toBe(`${base()}/?open=x`)
+  })
+
+  test("never serves files outside web/dist", async () => {
     expect((await fetch(`${base()}/%2e%2e/server.ts`)).status).toBe(404)
   })
 
