@@ -11,12 +11,13 @@ import { post } from "@/lib/api"
 import type { Card } from "@/lib/api-types"
 import { openDialog } from "@/app/open-dialog"
 import { toggleWatch, watched } from "@/features/alerts/prefs"
-import { type BoardAction, LATER, act } from "./actions"
+import { type BoardAction, LATER, actOn } from "./actions"
 
 const run = (work: Promise<unknown>, done: string) => work.then(() => toast(done), (err: Error) => toast.error(err.message))
 
 export function CardMenu({ card }: { card: Card }) {
-  const doIt = (action: BoardAction, done: string, body?: Record<string, unknown>) => run(act(card.id, action, body), done)
+  // Said as the classic board says it, with Undo where it can be taken back (actOn).
+  const doIt = (action: BoardAction, _done: string, body?: Record<string, unknown>) => void actOn(card, action, body)
   const isDone = card.column === "done"
   const isWatched = watched.use().includes(card.id)
   return (

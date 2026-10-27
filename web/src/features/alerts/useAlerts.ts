@@ -5,12 +5,14 @@ import { useEffect, useRef } from "react"
 import { toast } from "sonner"
 import { post } from "@/lib/api"
 import { useLive } from "@/lib/live"
-import { openNow, openSession } from "@/app/open-session"
+import { openNow } from "@/app/open-session"
 import { chime } from "./chime"
 import { WHAT, eventsOf, seenOf, type Seen } from "./events"
 import { canNotify, showNotice, sound, speech, watched } from "./prefs"
 
 const upper = (s: string) => s[0].toUpperCase() + s.slice(1)
+// What a notification says when the session's question is not known.
+const NOTICE = { done: "Finished", ask: "Asking you something", permission: "Needs approval to continue" }
 
 export function useAlerts() {
   const cards = useLive(l => l.snapshot?.cards)
@@ -42,13 +44,13 @@ export function useAlerts() {
       if (sound.get() !== "on") chime(told.some(e => e.kind !== "done") ? "ask" : "done")
       for (const { card, kind } of told) {
         toast(`“${card.title}” ${WHAT[kind]}`)
-        if (canNotify() && !document.hasFocus()) showNotice(card.title, upper(WHAT[kind]), () => openSession(card.id))
+        if (canNotify() && !document.hasFocus()) void showNotice(card.title, upper(WHAT[kind]), card.id)
       }
       watched.set(watched.get().filter(id => !told.some(e => e.card.id === id)))
     }
 
     if (!canNotify() || document.hasFocus()) return
     for (const { card, kind } of events)
-      if (kind !== "done" && !bell.has(card.id)) showNotice(card.title, card.ask || upper(WHAT[kind]), () => openSession(card.id))
+      if (kind !== "done" && !bell.has(card.id)) void showNotice(card.title, card.ask || NOTICE[kind], card.id)
   }, [cards])
 }

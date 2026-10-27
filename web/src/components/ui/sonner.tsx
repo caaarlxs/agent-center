@@ -7,6 +7,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
       theme="system"
       position="bottom-right"
       visibleToasts={3}
+      duration={3500}
       offset={20}
       className="toaster group"
       icons={{
@@ -32,13 +33,14 @@ const Toaster = ({ ...props }: ToasterProps) => {
           "--normal-bg": "var(--text)",
           "--normal-text": "var(--bg)",
           "--normal-border": "transparent",
+          "--toast-button-margin-start": "auto",
           "--border-radius": "10px",
         } as React.CSSProperties
       }
       toastOptions={{
         classNames: {
           toast: "cn-toast !w-auto !max-w-[min(460px,calc(100vw-40px))] !gap-3.5 !py-2.5 !pr-3 !pl-3.5 !text-[13px] !shadow-pop",
-          actionButton: "!bg-transparent !px-0 !text-[13px] !font-[650] !text-brand",
+          actionButton: "!bg-transparent !px-0 !text-[13px] !font-[650] !text-brand [&_kbd]:!border-[color-mix(in_srgb,var(--bg)_30%,transparent)] [&_kbd]:!bg-transparent [&_kbd]:!text-current",
         },
       }}
       {...props}

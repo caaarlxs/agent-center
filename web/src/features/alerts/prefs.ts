@@ -5,6 +5,8 @@ import { toast } from "sonner"
 import { post } from "@/lib/api"
 import { persistedStore } from "@/lib/store"
 import { chime } from "./chime"
+import { openSession } from "@/app/open-session"
+import { focusCard } from "@/app/view-state"
 
 export type Speech = { mode: "off" | "watched" | "all"; voice: string | null; rate: number | null; lastMode?: "watched" | "all" }
 
@@ -43,10 +45,17 @@ export function toggleWatch(card: { id: string; title: string }) {
   toast(isOn ? `You will hear when “${card.title}” finishes or asks you` : "No more notice for it")
 }
 
-export function showNotice(title: string, body: string, onClick?: () => void) {
+// Through the service worker, whose click opens the session (sw.js); straight
+// from the page when there is none within 2 s. Resolves to an error, or null.
+export async function showNotice(title: string, body: string, id: string | null = null): Promise<string | null> {
+  const options = { body, tag: id ?? "test", data: { id }, icon: "/icon-192.png", renotify: true } as NotificationOptions
   try {
-    const n = new Notification(title, { body, tag: title, icon: "/icon-192.png" })
-    n.onclick = () => (window.focus(), onClick?.(), n.close())
+    const reg = await Promise.race([navigator.serviceWorker?.ready, new Promise<undefined>(r => setTimeout(r, 2000))])
+    if (reg?.showNotification) await reg.showNotification(title, options)
+    else {
+      const n = new Notification(title, options)
+      n.onclick = () => (window.focus(), id && (openSession(id), focusCard(id)), n.close())
+    }
     return null
   } catch (err) {
     return String((err as Error)?.message ?? err)
@@ -60,6 +69,6 @@ export async function toggleNotify() {
   if (answer !== "granted") return (notify.set("blocked"), void toast("Chrome blocks notifications here: turn them on in the site settings"))
   notify.set("on")
   // A first notice right away: proof that the browser and macOS let it through.
-  const error = showNotice("Notifications on", "This is how a notification arrives when a session asks you something.")
+  const error = await showNotice("Notifications on", "This is how a notification arrives when a session asks you something.")
   toast(error ? `Chrome could not show the notification: ${error}` : "Test notification sent. If you do not see it, check the macOS notification settings for this app")
 }

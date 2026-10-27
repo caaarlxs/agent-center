@@ -8,3 +8,6 @@ createRoot(document.getElementById("root")!).render(
     <App />
   </StrictMode>,
 )
+
+// Installable, a copy for when the server is down, and notification clicks (public/sw.js).
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("/next/sw.js", { scope: "/next/" }).catch(() => {})

@@ -283,21 +283,21 @@ Legend: missing = not in the new app; partial = present but differs (what differ
 
 ## Notifications / PWA
 
-- [ ] Manifest and theme colour — classic: index.html:7-10, manifest.webmanifest (standalone, `#16161a`, icons 192/512/svg) — new: missing (`web/index.html` favicon only).
-- [ ] Service worker — classic: main.js:801, sw.js:1-40 (installable; network-first copy of the page for when the server is down; notification click focuses a window and posts `{open:id}`, or opens `/?open=id`) — new: missing.
-- [ ] Notification delivery — classic: main.js:219-230 (through `registration.showNotification` with 2 s fallback to `new Notification`; `tag` = id, `renotify: true`, icon `/icon-192.png`) — new: partial (`prefs.ts:42-50` page Notification only; tag = title).
-- [ ] Notice body — classic: main.js:213 ("Needs approval to continue" / "Asking you something") — new: partial (`useAlerts.ts:52` "Needs your approval", "Asks you something").
-- [ ] Chime, read aloud, bell once, badge — new: done (`features/alerts/*`).
-- [ ] Toast look — classic: toasts.js, css:1021-1031 (bottom-right 20px; inverted `--text` bg / `--bg` text; radius 10; 10px 12px 10px 14px; 13px; `--shadow-pop`; enter 220ms translateY(8px) ease-out; max 3) — new: partial (`components/ui/sonner.tsx` popover colours, border, sonner motion).
-- [ ] Toast Undo — classic: toasts.js:12, main.js:356-361 (Undo button accent 650 with kbd Z; 7 s with undo, 3.5 s without) — new: partial (sonner action, no Z, default durations).
-- [ ] Undo on board actions — classic: main.js:373-414, 424-433 ("Marked as done: …", "Moved to Later: …", "Pinned/Unpinned: …", "Archived: …", "Marked to review: …", "N sessions archived" with Undo) — new: partial (`CardMenu.tsx:16-45` "Done", "Pinned"… without Undo).
+- [x] Manifest and theme colour — classic: index.html:7-10, manifest.webmanifest (standalone, `#16161a`, icons 192/512/svg) — new: missing (`web/index.html` favicon only).
+- [x] Service worker — classic: main.js:801, sw.js:1-40 (installable; network-first copy of the page for when the server is down; notification click focuses a window and posts `{open:id}`, or opens `/?open=id`) — new: missing.
+- [x] Notification delivery — classic: main.js:219-230 (through `registration.showNotification` with 2 s fallback to `new Notification`; `tag` = id, `renotify: true`, icon `/icon-192.png`) — new: partial (`prefs.ts:42-50` page Notification only; tag = title).
+- [x] Notice body — classic: main.js:213 ("Needs approval to continue" / "Asking you something") — new: partial (`useAlerts.ts:52` "Needs your approval", "Asks you something").
+- [x] Chime, read aloud, bell once, badge — new: done (`features/alerts/*`).
+- [x] Toast look — classic: toasts.js, css:1021-1031 (bottom-right 20px; inverted `--text` bg / `--bg` text; radius 10; 10px 12px 10px 14px; 13px; `--shadow-pop`; enter 220ms translateY(8px) ease-out; max 3) — new: partial (`components/ui/sonner.tsx` popover colours, border, sonner motion).
+- [x] Toast Undo — classic: toasts.js:12, main.js:356-361 (Undo button accent 650 with kbd Z; 7 s with undo, 3.5 s without) — new: partial (sonner action, no Z, default durations).
+- [x] Undo on board actions — classic: main.js:373-414, 424-433 ("Marked as done: …", "Moved to Later: …", "Pinned/Unpinned: …", "Archived: …", "Marked to review: …", "N sessions archived" with Undo) — new: partial (`CardMenu.tsx:16-45` "Done", "Pinned"… without Undo).
 
 ## Animations
 
 - [x] Reader slide 420ms `cubic-bezier(0.25,1,0.5,1)` in and out — css:170-176 — new: partial (see Reader).
 - [x] Menu pop — css:332-338, 1493-1494 (150ms ease-out, from scale .96 translateY −2px (up menus +4px), origin top-right / bottom-left) — new: partial (Radix zoom-in-95).
 - [x] Dialog 160ms scale .97 — css:1036-1037 — new: partial.
-- [ ] Toast 220ms translateY 8px — css:1026-1027 — new: partial.
+- [x] Toast 220ms translateY 8px — css:1026-1027 — new: partial.
 - [x] Button press scale .97 / icon .92 / choice .96 / option .99 — css:119, 135, 909, 964 — new: partial (translate-y-px).
 - [x] Spinner — css:1141 (16px, 2px accent ring, right side transparent, `spin .8s linear`) — new: partial (lucide Loader).
 - [x] Shimmer skeleton 1.2s — css:1014-1017 — new: partial (animate-pulse).
