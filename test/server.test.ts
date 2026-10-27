@@ -299,6 +299,20 @@ describe("board", () => {
   })
 })
 
+describe("updates after a pull", () => {
+  test("puts back a hook older than the repository's, and says when nothing is left", async () => {
+    expect((await jsonOf(post("/api/setup/hook", { options: {} }))).ok).toBe(true)
+    expect((await jsonOf(fetch(`${base()}/api/update`))).hook).toBe(false)
+    const copy = join(home, ".claude", "hooks", "session-inbox.py")
+    await writeFile(copy, (await readFile(copy, "utf8")) + "\n# an older copy\n")
+    expect((await jsonOf(fetch(`${base()}/api/update`))).hook).toBe(true)
+    const res = await jsonOf(post("/api/update"))
+    expect(res).toMatchObject({ ok: true, isRestarting: false }) // the tests' server is not under launchd
+    expect((await jsonOf(fetch(`${base()}/api/update`))).hook).toBe(false)
+    expect(await readFile(copy, "utf8")).toBe(await readFile(join(import.meta.dir, "..", "hooks", "session-inbox.py"), "utf8"))
+  })
+})
+
 describe("messages to the session", () => {
   test("queues a message for the bridge mod and takes it back", async () => {
     const sent = await jsonOf(post(`/api/sessions/${ID}/send`, { text: "hello from the test" }))

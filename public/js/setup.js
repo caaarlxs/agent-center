@@ -23,6 +23,7 @@ const STEPS = {
     need: "Required",
     text: "Copies a hook to ~/.claude/hooks and adds it to ~/.claude/settings.json (it saves a backup first). This way the board knows what each session does and whether it asks you something.",
     action: "Install",
+    outdated: "Update",
   },
   bridge: {
     title: "Bridge mod",

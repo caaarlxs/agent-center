@@ -1,5 +1,5 @@
 // Agent Center front end: state, live data, keyboard, and the layout.
-import { html, render, useCallback, useEffect, useMemo, useRef, useState } from "../vendor/preact-htm.js"
+import { html, render, useCallback, useContext, useEffect, useMemo, useRef, useState } from "../vendor/preact-htm.js"
 import { Board, Inbox } from "./board.js"
 import { Canvas } from "./canvas.js"
 import { canvasOrder } from "./canvas-layout.js"
@@ -749,6 +749,7 @@ function App() {
           <button class="btn primary only-narrow" onClick=${() => setDialog("new")} title="New session (N)"><${Icon} name="plus" size=${15} /></button>
         </header>
         <${Offline} lostAt=${lostAt} hasData=${!!data} />
+        <${UpdateBanner} update=${data?.update} />
         <div class="content" ref=${contentRef}>
           ${!data
             ? html`<div class="skeleton-rows">${[1, 2, 3, 4, 5].map(i => html`<i key=${i}></i>`)}</div>`
@@ -795,6 +796,41 @@ function Offline({ lostAt, hasData }) {
     ${hasData ? " What you see may be out of date." : ""} macOS restarts it on its own; the page retries every few seconds.
     If it stays down, check <code>~/organizer/agent-center/logs/server.log</code>.
   </div>`
+}
+
+// After a `git pull`: something runs older code than the repository holds
+// (lib/freshness.ts): the server, this page, the hook or the bridge mod.
+// One click brings it all up to date, then the page reloads once the
+// server answers again.
+const isStale = (update, loadedPage) => update.server || update.hook || update.bridge || update.page !== loadedPage
+
+function UpdateBanner({ update }) {
+  const ui = useContext(Ctx)
+  const loadedPage = useRef(null)
+  const [isBusy, setBusy] = useState(false)
+  if (update && loadedPage.current === null) loadedPage.current = update.page
+  if (!update || !isStale(update, loadedPage.current)) return null
+  const run = async () => {
+    setBusy(true)
+    const res = await post("/api/update")
+    if (!res.body.ok) return (setBusy(false), ui.toast(res.body.error ?? "Could not update"))
+    if (res.body.needsRestart) return (setBusy(false), ui.toast("Restart the server to finish"))
+    if (res.body.isRestarting) await serverBack()
+    location.reload()
+  }
+  return html`<div class="banner update" role="status">
+    <span>A newer version of Agent Center is on disk.</span>
+    <button class="btn primary" disabled=${isBusy} onClick=${run}>${isBusy ? "Updating…" : "Update"}</button>
+  </div>`
+}
+
+// The server restarting: answered again, or given up after half a minute.
+async function serverBack() {
+  await new Promise(r => setTimeout(r, 800))
+  for (let i = 0; i < 60; i++) {
+    if (await get("/api/update")) return
+    await new Promise(r => setTimeout(r, 500))
+  }
 }
 
 render(html`<${App} />`, document.getElementById("app"))

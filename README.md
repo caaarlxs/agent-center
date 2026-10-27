@@ -137,10 +137,12 @@ Sessions that were already open load the mod the next time they start.
 ### Update
 
 ```bash
-git pull && ./install.sh
+git pull
 ```
 
-Then open Setup: a newer bridge mod shows as "Update".
+The board then shows "A newer version of Agent Center is on disk" with an **Update** button. It
+brings up to date what still runs older code (the hook, the bridge mod, the server, the page),
+restarts the server and reloads the page. Sessions already open load a newer mod when they restart.
 
 ### Uninstall
 

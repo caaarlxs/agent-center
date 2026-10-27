@@ -1098,6 +1098,8 @@ mark { background: var(--ask-soft); color: var(--text); border-radius: 3px; padd
 .ghost-btn.on { color: var(--accent); }
 .banner.offline { padding: 8px 20px; font-size: 12.5px; line-height: 1.5; }
 .banner.offline code { font: 11.5px var(--mono); }
+.banner.update { display: flex; align-items: center; gap: 12px; padding: 6px 20px; font-size: 12.5px; background: var(--accent-soft); color: var(--text); }
+.banner.update .btn { height: 26px; }
 
 .scrim { display: none; }
 

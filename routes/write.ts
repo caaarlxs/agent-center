@@ -15,6 +15,7 @@ import { latestState, refreshSoon } from "../lib/live"
 import { rescan, stopForgotten } from "../lib/memory"
 import { addTask, closeTask, reopenTask } from "../lib/organizer"
 import { repoInfo } from "../lib/repo"
+import { update } from "../lib/freshness"
 import { runStep, setupStatus } from "../lib/setup"
 import { cleanPrompt } from "../lib/sessions"
 import { speakSample, stopSpeaking } from "../lib/speech"
@@ -142,6 +143,13 @@ export async function handleWrite(path: string, body: Record<string, unknown>): 
       setTimeout(() => void rescan(knownSessionIds()).then(refreshSoon), 1500)
       return json({ ok: true, stopped })
     }
+    // After a `git pull`: what runs old code, brought up to date (lib/freshness.ts).
+    case "/api/update":
+      try {
+        return json(await update())
+      } catch (err) {
+        return json({ error: errorMessage(err) }, 500)
+      }
     // The read-aloud setting's "Try it".
     case "/api/speak/sample":
       await speakSample({ voice: body.voice, rate: body.rate })

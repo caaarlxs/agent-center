@@ -12,6 +12,7 @@ import { lastDigest } from "../lib/digest"
 import { detail as prDetail, lookup as prLookup, openThreads } from "../lib/github"
 import { json } from "../lib/http"
 import { latestJson, latestState, stream } from "../lib/live"
+import { freshness } from "../lib/freshness"
 import { monacoState } from "../lib/monaco"
 import { documentHtml, quickLook, WORD, WORKBOOK, workbookHtml } from "../lib/office"
 import { readTasks } from "../lib/organizer"
@@ -227,6 +228,7 @@ export async function handleRead(url: URL): Promise<Response | null> {
   if (path === "/api/transcribe") return json({ ready: await voiceReady() })
   if (path === "/api/setup") return json(await setupStatus())
   if (path === "/api/monaco") return json(await monacoState())
+  if (path === "/api/update") return json(await freshness({ fresh: true }))
   if (path === "/api/voices") return json({ voices: await listVoices(), default: defaultVoice() })
   const file = path.match(/^\/api\/uploads\/(.+)$/)
   if (file) return sentFile(decodeURIComponent(file[1]!))

@@ -77,6 +77,15 @@ function hookEntriesMissing(s: ClaudeSettings) {
   return [...HOOK_EVENTS, "PreToolUse", "PostToolUse"].filter(event => !has(event))
 }
 
+// Installed, and the same as this repository's copy (a `git pull` can bring
+// a newer one: then "outdated").
+export async function hookState(s?: ClaudeSettings): Promise<StepState> {
+  const mine = s ?? (await readClaudeSettings().catch(() => ({}) as ClaudeSettings))
+  if (!(await exists(HOOK_PATH)) || hookEntriesMissing(mine).length > 0) return "missing"
+  const [source, copy] = await Promise.all([readFile(HOOK_SOURCE, "utf8"), readFile(HOOK_PATH, "utf8")])
+  return source === copy ? "done" : "outdated"
+}
+
 async function installHook() {
   await mkdir(join(CLAUDE_DIR, "hooks"), { recursive: true })
   await copyFile(HOOK_SOURCE, HOOK_PATH)
@@ -107,6 +116,11 @@ async function pluginVersions() {
     installed = all.plugins?.[PLUGIN]?.[0]?.version ?? null
   } catch {}
   return { wanted, installed }
+}
+
+export async function bridgeState(): Promise<StepState> {
+  const { wanted, installed } = await pluginVersions()
+  return !installed ? "missing" : Bun.semver.order(installed, wanted) < 0 ? "outdated" : "done"
 }
 
 async function claude(args: string[]) {
@@ -207,13 +221,13 @@ export async function saveSettings(change: Partial<Settings>) {
 
 export async function setupStatus(): Promise<{ steps: Step[]; isReady: boolean; voiceLanguage: string; organizerNote: string }> {
   const s = await readClaudeSettings().catch(() => ({}) as ClaudeSettings)
-  const { wanted, installed } = await pluginVersions()
+  const { installed } = await pluginVersions()
   const ghAuth = which("gh") ? (await exec([which("gh")!, "auth", "status"], { timeoutMs: 8000 })).code === 0 : false
   const whisperReady = !!which("whisper-cli") && !!which("ffmpeg") && (await exists(join(MODELS_DIR, MODEL)))
   const steps: Step[] = [
     { id: "claude", state: (await exists("/Applications/Claude.app")) ? "done" : "unavailable" },
-    { id: "hook", state: (await exists(HOOK_PATH)) && hookEntriesMissing(s).length === 0 ? "done" : "missing" },
-    { id: "bridge", state: !installed ? "missing" : Bun.semver.order(installed, wanted) < 0 ? "outdated" : "done", detail: installed ?? undefined },
+    { id: "hook", state: await hookState(s) },
+    { id: "bridge", state: await bridgeState(), detail: installed ?? undefined },
     { id: "uploads", state: s.permissions?.allow?.includes(UPLOADS_RULE) ? "done" : "missing" },
     whisperJob
       ? { id: "whisper", state: whisperJob.error ? "missing" : "working", detail: whisperJob.error ?? whisperJob.phase, progress: whisperJob.progress }
