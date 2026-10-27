@@ -40,7 +40,7 @@ export function SessionPanel({ id, tab }: { id: string; tab: Tab }) {
   const counts: Partial<Record<Tab, number>> = { prs: card?.prs?.length ?? 0, tasks: card?.taskCount ?? 0 }
   return (
     <aside aria-label="Session"
-      className={cn("flex h-full flex-col border-l bg-card shadow-2xl transition-[width] duration-300 ease-out", isWorkspace ? "w-screen" : "w-[min(680px,46vw)] min-w-[420px]")}>
+      className={cn("flex h-full flex-col border-l bg-card shadow-2xl transition-[width] duration-300 ease-out", isWorkspace ? "w-[calc(100vw-var(--side-w,0px))]" : "w-[min(680px,46vw)] min-w-[420px]")}>
       <header className="flex flex-col gap-1.5 border-b px-5 pt-3">
         <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
           {card && state && <><StateIcon card={card} size={18} /><span className={TONE[state].split(" ")[0]}>{STATE_LABEL[state]}</span></>}

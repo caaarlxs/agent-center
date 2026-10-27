@@ -3,7 +3,7 @@
 // the grid and its place is saved; a zone dragged carries the cards inside it.
 // What a card shows follows the zoom (SessionCard's level).
 import {
-  type Node, type NodeChange, type NodeProps, type OnNodeDrag, MiniMap, applyNodeChanges, useStore,
+  type Node, type NodeChange, type NodeProps, type OnNodeDrag, type ReactFlowInstance, MiniMap, applyNodeChanges, useStore,
 } from "@xyflow/react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
@@ -14,10 +14,11 @@ import type { Card, Zone } from "@/lib/api-types"
 import { useLive } from "@/lib/live"
 import { useNow } from "@/lib/now"
 import { openSession, useOpenSession } from "@/app/open-session"
+import { focusRequest, repoFilter } from "@/app/view-state"
 import { moveTo } from "@/features/session/actions"
 import { type Level, SessionCard } from "@/features/session/SessionCard"
 import { hueOf } from "@/features/session/state"
-import { type Point, isInZone, onCanvas, placeCards, snap } from "./geometry"
+import { CARD_W, type Point, isInZone, onCanvas, placeCards, snap } from "./geometry"
 
 type SessionNodeData = { card: Card; now: number }
 type ZoneNodeData = { zone: Zone }
@@ -53,7 +54,10 @@ export function Canvas() {
   const cards = useLive(l => l.snapshot?.cards)
   const zones = useLive(l => l.snapshot?.zones)
   const now = useNow()
-  const open = useMemo(() => onCanvas(cards ?? []), [cards])
+  const repo = repoFilter.use()
+  // The places count every card, so filtering by repo moves none of them.
+  const all = useMemo(() => onCanvas(cards ?? []), [cards])
+  const open = useMemo(() => (repo ? all.filter(c => c.repoRoot === repo) : all), [all, repo])
   // Places moved here and not saved yet: the server's copy is older until it
   // reports the same place back.
   const [moved, setMoved] = useState<Record<string, Point>>({})
@@ -64,7 +68,7 @@ export function Canvas() {
       return next
     })
   }, [open])
-  const at = useMemo(() => placeCards(open, moved), [open, moved])
+  const at = useMemo(() => placeCards(all, moved), [all, moved])
 
   // The nodes React Flow draws: rebuilt from the live state, keeping what the
   // person is doing (a drag under way, the selection).
@@ -119,10 +123,30 @@ export function Canvas() {
     carried.current = null
   }
 
+  // "Next up" and the search ask the canvas to go to a card: it zooms in to at
+  // least the card's real size, centres it in the room the panel leaves, and
+  // the card flashes once.
+  const flow = useRef<ReactFlowInstance | null>(null)
+  const focus = focusRequest.use()
+  const [flashId, setFlashId] = useState<string | null>(null)
+  useEffect(() => {
+    const p = focus && at[focus.id]
+    const rf = flow.current
+    if (!focus || !p || !rf) return
+    const zoom = Math.max(rf.getZoom(), 1)
+    const panel = document.querySelector("aside[aria-label=Session]")?.getBoundingClientRect().width ?? 0
+    rf.setCenter(p.x + CARD_W / 2 + panel / 2 / zoom, p.y + 70, { zoom, duration: 500 })
+    setFlashId(focus.id)
+    const timer = setTimeout(() => setFlashId(null), 1600)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focus])
+  const shown = useMemo(() => (flashId ? nodes.map(n => (n.id === flashId ? { ...n, className: "flash" } : n)) : nodes), [nodes, flashId])
+
   if (!cards) return <div className="grid h-full place-items-center text-sm text-muted-foreground">Connecting…</div>
   return (
     <FlowCanvas
-      nodes={nodes} edges={[]} nodeTypes={nodeTypes} onNodesChange={onNodesChange}
+      nodes={shown} edges={[]} onInit={rf => (flow.current = rf)} nodeTypes={nodeTypes} onNodesChange={onNodesChange}
       onNodeDragStart={onNodeDragStart} onNodeDrag={onNodeDrag} onNodeDragStop={onNodeDragStop}
       onNodeClick={(_, node) => node.type === "session" && openSession(node.id)}
       panOnDrag minZoom={0.3} maxZoom={1.6} snapToGrid snapGrid={[24, 24]} proOptions={{ hideAttribution: true }}

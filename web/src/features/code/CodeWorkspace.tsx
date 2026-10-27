@@ -12,7 +12,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 import { FileIcon } from "@/components/common/FileIcon"
 import { Button } from "@/components/ui/button"
-import { CommandDialog, CommandEmpty, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
+import { Command, CommandDialog, CommandEmpty, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { Input } from "@/components/ui/input"
 import { ApiError, get, post } from "@/lib/api"
 import type { CodeTree, Mark, Match } from "@/lib/api-types"
@@ -341,11 +341,13 @@ export function CodeWorkspace({ id }: { id: string }) {
         </div>
       </section>
       <CommandDialog open={isQuick} onOpenChange={setQuick} title="Go to file" description="Open a file by its name">
-        <CommandInput placeholder="Go to file…" />
-        <CommandList>
-          <CommandEmpty>No file matches.</CommandEmpty>
-          <QuickList files={tree?.files ?? []} onPick={p => void open(p)} />
-        </CommandList>
+        <Command>
+          <CommandInput placeholder="Go to file…" />
+          <CommandList>
+            <CommandEmpty>No file matches.</CommandEmpty>
+            <QuickList files={tree?.files ?? []} onPick={p => void open(p)} />
+          </CommandList>
+        </Command>
       </CommandDialog>
     </div>
   )

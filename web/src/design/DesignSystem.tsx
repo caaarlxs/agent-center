@@ -7,7 +7,7 @@ import { useEffect, useState } from "react"
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandShortcut } from "@/components/ui/command"
+import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandShortcut } from "@/components/ui/command"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Kbd } from "@/components/ui/kbd"
 import { Progress } from "@/components/ui/progress"
@@ -182,6 +182,7 @@ export function DesignSystem() {
         </main>
 
         <CommandDialog open={isPalette} onOpenChange={setPalette}>
+          <Command>
           <CommandInput placeholder="Search every conversation…" />
           <CommandList>
             <CommandEmpty>Nothing found.</CommandEmpty>
@@ -193,6 +194,7 @@ export function DesignSystem() {
               <CommandItem><CommandIcon />Next up<CommandShortcut>F</CommandShortcut></CommandItem>
             </CommandGroup>
           </CommandList>
+          </Command>
         </CommandDialog>
         <Toaster />
       </div>
