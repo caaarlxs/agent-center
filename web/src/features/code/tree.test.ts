@@ -1,5 +1,5 @@
 import { expect, test } from "vitest"
-import { changedFolders, parentsOf, rankFiles, treeOf } from "./tree"
+import { changedFolders, compactTree, parentsOf, rankFiles, treeOf } from "./tree"
 
 test("paths become folders and files, each folder with its path", () => {
   const root = treeOf(["README.md", "src/a.ts", "src/lib/b.ts"])
@@ -24,4 +24,14 @@ test("go to file: letters in order, the name first, then the shortest", () => {
   expect(rankFiles(paths, "readme")).toEqual(["README.md", "src/feature/readme-util.ts"])
   expect(rankFiles(paths, "rdm")).toEqual(["README.md", "docs/read.md", "src/feature/readme-util.ts"]) // same rank: the shortest first
   expect(rankFiles(paths, "zzz")).toEqual([])
+})
+
+test("compactTree joins a folder that holds only one folder", () => {
+  {
+    const root = compactTree(["src/models/a.ts", "src/models/b.ts", "web/x/y/z.ts", "web/k.ts", "top.md"])
+    expect([...root.dirs.keys()]).toEqual(["src/models", "web"])
+    expect([...root.dirs.get("web")!.dirs.keys()]).toEqual(["x/y"])
+    expect(root.dirs.get("src/models")!.files).toEqual(["src/models/a.ts", "src/models/b.ts"])
+    expect(root.files).toEqual(["top.md"])
+  }
 })

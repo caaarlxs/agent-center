@@ -1,213 +1,235 @@
-// The "Changes" workspace: the session's diff against where its branch
-// started (with what is not committed yet), read again every 5 seconds. The
-// changed files on the left; on the right, line by line (a click on a line
-// leaves a comment; the comments go to the session as one message) or side by
-// side in Monaco's diff view.
+// The "Changes" workspace (changes.js): the session's diff against where its
+// branch started (with what is not committed yet), read again every 5 s while
+// the page shows. Line by line, file by file (a click on a line leaves a
+// comment; the comments go to the session as one message, then the
+// conversation shows; a draft survives closing the panel), with the tree of
+// changed files beside it (it folds away); or side by side in Monaco's diff view.
 import { DiffEditor } from "@monaco-editor/react"
-import { MessageSquarePlus, Send } from "lucide-react"
+import { ChevronRight, PanelLeft, Pencil, Send, X } from "lucide-react"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
-import { FileIcon } from "@/components/common/FileIcon"
 import { Button } from "@/components/ui/button"
-import { Textarea } from "@/components/ui/textarea"
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
+import { Kbd } from "@/components/ui/kbd"
 import { get } from "@/lib/api"
-import { keep, load } from "@/lib/store"
+import { persistedStore } from "@/lib/store"
 import type { Changes as ChangesData, FileDiff } from "@/lib/api-types"
 import { monacoTheme, useMonaco } from "@/lib/monaco"
 import { cn } from "@/lib/utils"
+import { showTab } from "@/app/open-session"
 import { sendMessage } from "@/features/conversation/send"
+import { ChangedTree } from "./ChangedTree"
 import { type LineComment, keyOf, reviewMessage } from "./review"
 
 const FOLLOW_MS = 5000
-const STATUS = { added: ["A", "text-emerald-400"], deleted: ["D", "text-rose-400"], renamed: ["R", "text-sky-400"], modified: ["M", "text-amber-400"] } as const
+const MAX_LINES = 400 // a longer file opens folded
+const changesView = persistedStore<"lines" | "side">("changesView", "lines")
+const changesTree = persistedStore("changesTree", true)
 
 function useChanges(id: string) {
   const [data, setData] = useState<ChangesData | null>(null)
   const [error, setError] = useState<string | null>(null)
   const last = useRef("")
+  const read = () =>
+    get<ChangesData>(`/api/sessions/${encodeURIComponent(id)}/changes`).then(
+      res => {
+        setError(null)
+        const text = JSON.stringify(res)
+        if (text !== last.current) ((last.current = text), setData(res)) // unchanged: nothing redraws
+      },
+      (err: Error) => setError(err.message || "Could not read the changes"),
+    )
   useEffect(() => {
-    let alive = true
-    const read = () =>
-      get<ChangesData>(`/api/sessions/${encodeURIComponent(id)}/changes`).then(
-        res => {
-          const text = JSON.stringify(res)
-          if (alive && text !== last.current) ((last.current = text), setData(res), setError(null))
-        },
-        (err: Error) => alive && setError(err.message),
-      )
-    read()
+    void read()
     const timer = setInterval(() => document.visibilityState === "visible" && read(), FOLLOW_MS)
-    return () => ((alive = false), clearInterval(timer))
+    return () => clearInterval(timer)
   }, [id])
-  return { data, error }
+  return { data, error, read }
 }
 
-// A comment draft survives closing the panel, per session.
+// A comment draft survives closing the panel, per session (ac.review.<id>).
 function useComments(id: string) {
-  const key = `review.${id}`
-  const [comments, setComments] = useState<Record<string, LineComment>>(() => {
-    try {
-      return load(key, {})
-    } catch {
-      return {}
-    }
-  })
-  useEffect(() => {
-    try {
-      keep(key, comments)
-    } catch {}
-  }, [key, comments])
-  return [comments, setComments] as const
+  const store = useMemo(() => persistedStore<Record<string, LineComment>>(`review.${id}`, {}), [id])
+  return [store.use(), store.set] as const
 }
 
-function FileList({ files, chosen, onPick, notes }: { files: FileDiff[]; chosen: string | null; onPick: (f: FileDiff) => void; notes: Record<string, number> }) {
+function CommentEditor({ initial, onSave, onCancel }: { initial: string; onSave: (text: string) => void; onCancel: () => void }) {
+  const area = useRef<HTMLTextAreaElement>(null)
+  useEffect(() => area.current?.focus(), [])
+  const save = () => onSave(area.current?.value ?? "")
   return (
-    <aside className="flex min-h-0 flex-col border-r bg-sidebar/40">
-      <header className="px-3 py-2 text-xs font-medium text-muted-foreground">{files.length} {files.length === 1 ? "file" : "files"} changed</header>
-      <div className="min-h-0 flex-1 overflow-auto px-1.5 pb-3">
-        {files.map(f => {
-          const [letter, tone] = STATUS[f.status]
-          const dir = f.path.split("/").slice(0, -1).join("/")
-          return (
-            <button key={f.path} onClick={() => onPick(f)} title={f.oldPath ? `${f.oldPath} → ${f.path}` : f.path}
-              className={cn("flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12.5px] hover:bg-accent", chosen === f.path && "bg-accent")}>
-              <FileIcon path={f.path} />
-              <span className="min-w-0 flex-1 truncate">
-                <span className={cn(f.status === "deleted" && "line-through")}>{f.path.split("/").pop()}</span>
-                {dir && <span className="ml-1.5 text-[11px] text-muted-foreground">{dir}</span>}
-              </span>
-              {notes[f.path] > 0 && <span className="text-[11px] text-amber-400"><MessageSquarePlus className="inline size-3" />{notes[f.path]}</span>}
-              <span className="font-mono text-[10.5px] text-emerald-400">{f.additions > 0 && `+${f.additions}`}</span>
-              <span className="font-mono text-[10.5px] text-rose-400">{f.deletions > 0 && `−${f.deletions}`}</span>
-              <span className={cn("w-3 text-center font-mono text-[10.5px] font-semibold", tone)}>{letter}</span>
-            </button>
-          )
-        })}
-      </div>
-    </aside>
-  )
-}
-
-function CommentBox({ initial, onSave, onCancel }: { initial: string; onSave: (text: string) => void; onCancel: () => void }) {
-  const [text, setText] = useState(initial)
-  return (
-    <div className="space-y-2 border-y bg-card p-2 font-sans" onClick={e => e.stopPropagation()}>
-      <Textarea autoFocus rows={2} value={text} placeholder="What needs to change here?" onChange={e => setText(e.target.value)}
+    <div className="mt-1 mr-2.5 mb-1.5 ml-24 flex flex-col gap-1.5 font-sans" onClick={e => e.stopPropagation()}>
+      <textarea ref={area} rows={2} defaultValue={initial} placeholder="What needs to change here?"
+        className="resize-y rounded-lg border border-brand bg-surface px-[9px] py-[7px] text-[13px]/[1.45] text-text shadow-[0_0_0_3px_var(--brand-soft)] outline-none"
         onKeyDown={e => {
-          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) (e.preventDefault(), onSave(text))
+          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) (e.preventDefault(), save())
           if (e.key === "Escape") (e.preventDefault(), e.stopPropagation(), onCancel())
         }} />
-      <div className="flex justify-end gap-2"><Button size="sm" variant="ghost" onClick={onCancel}>Cancel</Button><Button size="sm" onClick={() => onSave(text)}>Save</Button></div>
+      <div className="flex items-center gap-1.5">
+        <span className="flex flex-1 items-center gap-1 text-[11.5px] text-text-muted"><Kbd>⌘</Kbd><Kbd>↵</Kbd> save · <Kbd>Esc</Kbd> cancel</span>
+        <Button variant="ghost" onClick={onCancel}>Cancel</Button><Button onClick={save}>Save</Button>
+      </div>
     </div>
   )
 }
 
-function Lines({ files, comments, setComments }: { files: FileDiff[]; comments: Record<string, LineComment>; setComments: (f: (c: Record<string, LineComment>) => Record<string, LineComment>) => void }) {
-  const [editing, setEditing] = useState<string | null>(null)
-  const save = (c: LineComment) => {
-    const key = keyOf(c)
-    setComments(cs => {
-      const { [key]: _, ...rest } = cs
-      return c.text.trim() ? { ...rest, [key]: c } : rest
-    })
-    setEditing(null)
-  }
+const STATUS_WORD = { added: ["new", "text-work"], deleted: ["deleted", "text-bad"], renamed: ["renamed", "text-review"], modified: ["", ""] } as const
+
+function FileBlock({ file, comments, editing, setEditing, save, remove }: {
+  file: FileDiff; comments: Record<string, LineComment>; editing: string | null; setEditing: (key: string | null) => void
+  save: (c: LineComment) => void; remove: (key: string) => void
+}) {
+  const total = file.hunks.reduce((n, h) => n + h.lines.length, 0)
+  const [isOpen, setOpen] = useState(!file.collapsed && total <= MAX_LINES)
+  const count = Object.values(comments).filter(c => c.path === file.path).length
+  const [word, tone] = STATUS_WORD[file.status]
   return (
-    <div className="min-h-0 flex-1 space-y-3 overflow-auto p-3">
-      {files.map(f => (
-        <section key={f.path} id={`diff-${f.path}`} className="overflow-hidden rounded-lg border">
-          <header className="flex items-center gap-2 border-b bg-muted/40 px-3 py-1.5 text-xs"><FileIcon path={f.path} /><span className="truncate font-medium">{f.path}</span></header>
-          {f.binary ? <p className="p-3 text-xs text-muted-foreground">Binary file.</p> : f.collapsed ? <p className="p-3 text-xs text-muted-foreground">Generated or dependency file: not shown.</p> : (
-            <div className="overflow-x-auto font-mono text-[12px] leading-[1.55]">
-              {f.hunks.map((h, i) => (
-                <div key={i}>
-                  {h.header && <div className="bg-sky-400/5 px-3 text-[11px] text-sky-300/70">{h.header}</div>}
-                  {h.lines.map((l, j) => {
-                    const side = l.kind === "del" ? "old" : "new"
-                    const no = (side === "old" ? l.old : l.new) ?? 0
-                    const key = keyOf({ path: f.path, side, no })
-                    const comment = comments[key]
-                    return (
-                      <div key={j}>
-                        <div onClick={() => setEditing(key)} title="Click to comment on this line"
-                          className={cn("grid cursor-pointer grid-cols-[40px_40px_16px_max-content] hover:brightness-125",
-                            l.kind === "add" && "bg-emerald-500/10", l.kind === "del" && "bg-rose-500/10", comment && "outline outline-1 outline-amber-400/50")}>
-                          <span className="pr-2 text-right text-muted-foreground/50 select-none">{l.old ?? ""}</span>
-                          <span className="pr-2 text-right text-muted-foreground/50 select-none">{l.new ?? ""}</span>
-                          <span className={cn("select-none", l.kind === "add" ? "text-emerald-400" : l.kind === "del" ? "text-rose-400" : "")}>{l.kind === "add" ? "+" : l.kind === "del" ? "−" : " "}</span>
-                          <span className="whitespace-pre pr-4">{l.text || " "}</span>
-                        </div>
-                        {editing === key ? <CommentBox initial={comment?.text ?? ""} onCancel={() => setEditing(null)} onSave={text => save({ path: f.path, side, no, code: l.text, text })} />
-                          : comment && <button onClick={() => setEditing(key)} className="block w-full border-y bg-amber-400/5 px-3 py-1.5 text-left font-sans text-xs text-amber-200">{comment.text}</button>}
-                      </div>
-                    )
-                  })}
+    <section id={`df-${file.path}`} className="rounded-[10px] border border-line bg-surface">
+      <header onClick={() => setOpen(!isOpen)}
+        className="sticky -top-2.5 z-[1] flex cursor-pointer items-center gap-2 rounded-t-[10px] border-b border-line bg-raised px-2.5 py-[7px] text-[12.5px]">
+        <ChevronRight className={cn("size-3 shrink-0 text-faint transition-transform duration-150 ease-(--ease-out)", isOpen && "rotate-90")} />
+        {word && <span className={cn("text-[10.5px] font-bold tracking-[0.04em] uppercase", tone)}>{word}</span>}
+        <span className="min-w-0 flex-1 truncate text-left font-mono text-xs [direction:rtl]" title={file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}>{file.path}</span>
+        {count > 0 && <span className="rounded-md bg-ask-soft px-1.5 py-px text-[11px] font-medium text-ask">{count} {count === 1 ? "comment" : "comments"}</span>}
+        <span className="text-xs whitespace-nowrap"><b className="font-[650] text-work">+{file.additions}</b> <b className="font-[650] text-bad">−{file.deletions}</b></span>
+      </header>
+      {isOpen && (file.binary ? <p className="m-0 px-3 py-2.5 text-xs text-text-muted">Binary file.</p>
+        : file.collapsed ? <p className="m-0 px-3 py-2.5 text-xs text-text-muted">Generated or dependency file: not shown.</p>
+        : file.hunks.map((h, i) => (
+          <div key={i} className="overflow-x-auto [&+&]:border-t [&+&]:border-dashed [&+&]:border-line">
+            {h.header && <div className="bg-hover px-2.5 py-[3px] font-mono text-[11.5px] text-faint">{h.header}</div>}
+            {h.lines.map((l, j) => {
+              const side = l.kind === "del" ? "old" : "new"
+              const no = (side === "old" ? l.old : l.new) ?? 0
+              const key = keyOf({ path: file.path, side, no })
+              const comment = comments[key]
+              return (
+                <div key={j}>
+                  <div onClick={() => setEditing(key)} title="Click to comment on this line"
+                    className={cn("grid min-w-full cursor-pointer grid-cols-[40px_40px_16px_max-content] font-mono text-xs/[1.55] hover:shadow-[inset_3px_0_0_var(--brand)]",
+                      l.kind === "add" && "bg-[color-mix(in_srgb,var(--work)_11%,transparent)]", l.kind === "del" && "bg-[color-mix(in_srgb,var(--bad)_11%,transparent)]",
+                      comment && "shadow-[inset_3px_0_0_var(--ask)]")}>
+                    <span className="pr-2 text-right text-faint select-none">{l.old ?? ""}</span>
+                    <span className="pr-2 text-right text-faint select-none">{l.new ?? ""}</span>
+                    <span className={cn("text-faint select-none", l.kind === "add" && "text-work", l.kind === "del" && "text-bad")}>{l.kind === "add" ? "+" : l.kind === "del" ? "−" : " "}</span>
+                    <span className="pr-4 whitespace-pre">{l.text || " "}</span>
+                  </div>
+                  {editing === key ? (
+                    <CommentEditor initial={comment?.text ?? ""} onCancel={() => setEditing(null)}
+                      onSave={text => (text.trim() ? save({ path: file.path, side, no, code: l.text, text }) : comment ? remove(key) : setEditing(null))} />
+                  ) : comment && (
+                    <div onClick={() => setEditing(key)} title="Click to edit it"
+                      className="mt-1 mr-2.5 mb-1.5 ml-24 flex cursor-pointer items-start gap-[7px] rounded-lg border border-[color-mix(in_srgb,var(--ask)_35%,transparent)] bg-ask-soft py-[7px] pr-2 pl-2.5 text-[12.5px] whitespace-pre-wrap">
+                      <Pencil className="mt-0.5 size-3 shrink-0" /><span className="flex-1">{comment.text}</span>
+                      <button className="inline-grid size-5 place-items-center rounded-md text-text-muted hover:bg-press hover:text-text" title="Remove the comment"
+                        onClick={e => (e.stopPropagation(), remove(key))}><X className="size-3" /></button>
+                    </div>
+                  )}
                 </div>
-              ))}
-            </div>
-          )}
-        </section>
-      ))}
+              )
+            })}
+          </div>
+        )))}
+    </section>
+  )
+}
+
+// Monaco's diff view of the chosen file: where the branch started on the
+// left, as it is now on the right; the tree of changed files beside it.
+function SideBySide({ id, files }: { id: string; files: FileDiff[] }) {
+  const monaco = useMonaco()
+  const shown = files.filter(f => !f.binary && !f.collapsed)
+  const [chosen, setChosen] = useState<FileDiff | null>(shown[0] ?? null)
+  const [versions, setVersions] = useState<{ original: string; modified: string } | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => {
+    if (!chosen) return
+    const q = new URLSearchParams({ path: chosen.path, ...(chosen.oldPath ? { old: chosen.oldPath } : {}) })
+    get<{ original: string; modified: string }>(`/api/sessions/${encodeURIComponent(id)}/codeversions?${q}`).then(v => (setVersions(v), setError(null)), (err: Error) => setError(err.message || "Could not read it"))
+  }, [id, chosen?.path, files])
+  const wait = !monaco.ready ? (monaco.error ? `The editor could not load: ${monaco.error}` : monaco.progress != null ? `Downloading the editor (VS Code's Monaco, once)… ${Math.round(monaco.progress * 100)}%` : "Loading the editor…")
+    : error ?? (!chosen ? "No text file changed." : null)
+  return (
+    <div className="grid min-h-0 flex-1 grid-cols-[minmax(210px,28%)_minmax(0,1fr)]">
+      <ChangedTree files={shown} chosen={chosen?.path ?? null} onPick={setChosen} />
+      <section className="flex min-h-0 min-w-0 flex-col">
+        {chosen && <div className="shrink-0 truncate border-b border-line px-3 py-1.5 font-mono text-xs text-text-muted" title={chosen.path}>{chosen.oldPath ? `${chosen.oldPath} → ` : ""}{chosen.path}</div>}
+        {wait ? <p className="grid flex-1 place-items-center text-text-muted">{wait}</p> : versions && chosen && (
+          <div className="min-h-0 flex-1">
+            <DiffEditor original={versions.original} modified={versions.modified} originalModelPath={`base/${chosen.oldPath ?? chosen.path}`} modifiedModelPath={`now/${chosen.path}`}
+              theme={monacoTheme()} options={{ readOnly: true, fontSize: 13, automaticLayout: true, useInlineViewWhenSpaceIsLimited: true, renderSideBySide: true }} />
+          </div>
+        )}
+      </section>
     </div>
   )
 }
 
-function SideBySide({ id, file }: { id: string; file: FileDiff | null }) {
-  const monaco = useMonaco()
-  const [versions, setVersions] = useState<{ original: string; modified: string } | null>(null)
-  useEffect(() => {
-    if (!file) return
-    const q = new URLSearchParams({ path: file.path, ...(file.oldPath ? { old: file.oldPath } : {}) })
-    get<{ original: string; modified: string }>(`/api/sessions/${encodeURIComponent(id)}/codeversions?${q}`).then(setVersions, (err: Error) => toast.error(err.message))
-  }, [id, file])
-  if (!monaco.ready) return <p className="grid flex-1 place-items-center text-sm text-muted-foreground">{monaco.error ?? `Getting the editor ready… ${Math.round((monaco.progress ?? 0) * 100)}%`}</p>
-  if (!file || !versions) return <p className="grid flex-1 place-items-center text-sm text-muted-foreground">Pick a file.</p>
-  return (
-    <div className="min-h-0 flex-1">
-      <DiffEditor original={versions.original} modified={versions.modified} originalModelPath={`base/${file.oldPath ?? file.path}`} modifiedModelPath={`now/${file.path}`}
-        theme={monacoTheme()} options={{ readOnly: true, fontSize: 13, automaticLayout: true, useInlineViewWhenSpaceIsLimited: true, renderSideBySide: true }} />
-    </div>
-  )
-}
+const seg = (isOn: boolean) => cn("h-6 rounded-md px-2.5 text-xs text-text-muted", isOn && "bg-surface text-text shadow-card")
 
 export function Changes({ id }: { id: string }) {
-  const { data, error } = useChanges(id)
-  const [view, setView] = useState<"lines" | "side">(() => (load<string>("changesView", "lines") === "side" ? "side" : "lines"))
-  const [chosen, setChosen] = useState<FileDiff | null>(null)
+  const { data, error, read } = useChanges(id)
+  const view = changesView.use()
+  const hasTree = changesTree.use()
   const [comments, setComments] = useComments(id)
+  const [editing, setEditing] = useState<string | null>(null)
+  const [picked, setPicked] = useState<string | null>(null)
+  const [isSending, setSending] = useState(false)
   const notes = useMemo(() => Object.values(comments).reduce<Record<string, number>>((n, c) => ((n[c.path] = (n[c.path] ?? 0) + 1), n), {}), [comments])
-  if (error) return <p className="p-6 text-sm text-muted-foreground">{error}</p>
-  if (!data) return <p className="p-6 text-sm text-muted-foreground">Reading the changes…</p>
-  const pick = (f: FileDiff) => (setChosen(f), view === "lines" && document.getElementById(`diff-${f.path}`)?.scrollIntoView({ block: "start", behavior: "smooth" }))
+  if (error && !data) return <p className="grid flex-1 place-items-center p-8 text-text-muted">{error}</p>
+  if (!data) return <p className="grid flex-1 place-items-center p-8"><span className="spinner" /></p>
+  const goTo = (f: FileDiff) => (setPicked(f.path), document.getElementById(`df-${f.path}`)?.scrollIntoView({ block: "start", behavior: "smooth" }))
+  const save = (c: LineComment) => (setComments({ ...comments, [keyOf(c)]: c }), setEditing(null))
+  const remove = (key: string) => {
+    const { [key]: _, ...rest } = comments
+    setComments(rest)
+    setEditing(null)
+  }
   const add = data.files.reduce((s, f) => s + f.additions, 0)
   const del = data.files.reduce((s, f) => s + f.deletions, 0)
   const list = Object.values(comments)
-  const send = () => sendMessage(id, reviewMessage(list, data.branch), "Comments sent").then(() => setComments(() => ({})), (err: Error) => toast.error(err.message))
+  const send = async () => {
+    setSending(true)
+    try {
+      await sendMessage(id, reviewMessage(list, data.branch))
+      setComments({})
+      showTab("chat")
+    } catch (err) {
+      toast((err as Error).message || "Could not send")
+    }
+    setSending(false)
+  }
+  const n = data.files.length
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex items-center gap-3 border-b px-4 py-2 text-xs text-muted-foreground">
-        <span><b className="text-foreground">{data.files.length}</b> files · <b className="text-emerald-400">+{add}</b> <b className="text-rose-400">−{del}</b></span>
-        <span className="truncate">{data.branch ? `${data.branch} against ${data.base}` : `against ${data.base}`}, with uncommitted changes</span>
-        <ToggleGroup type="single" size="sm" variant="outline" value={view} className="ml-auto"
-          onValueChange={v => v && (setView(v as "lines" | "side"), keep("changesView", v))}>
-          <ToggleGroupItem value="lines">Lines</ToggleGroupItem>
-          <ToggleGroupItem value="side">Side by side</ToggleGroupItem>
-        </ToggleGroup>
+      <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-line px-4 py-2.5 text-[12.5px]">
+        <span><b>{n}</b> {n === 1 ? "file" : "files"} · <b className="font-[650] text-work">+{add}</b> <b className="font-[650] text-bad">−{del}</b></span>
+        <span className="min-w-0 flex-1 truncate text-xs text-text-muted" title={data.root}>{data.branch ? `${data.branch} against ${data.base}` : `against ${data.base}`}, with uncommitted changes</span>
+        {view === "lines" && (
+          <button className={cn("inline-grid size-7 place-items-center rounded-[7px] text-text-muted hover:bg-press hover:text-text active:scale-[0.92]", hasTree && "text-brand hover:text-brand")}
+            onClick={() => changesTree.set(!hasTree)} title={hasTree ? "Hide the tree" : "Show the tree of changed files"}><PanelLeft className="size-3.5" /></button>
+        )}
+        <span role="group" aria-label="View" className="inline-flex rounded-md bg-press p-0.5">
+          <button className={seg(view === "lines")} onClick={() => changesView.set("lines")} title="Line by line, with comments for the session">Lines</button>
+          <button className={seg(view === "side")} onClick={() => changesView.set("side")} title="Side by side, in VS Code's diff view">Side by side</button>
+        </span>
+        <Button variant="ghost" onClick={() => void read()}>Refresh</Button>
       </div>
-      {data.files.length === 0 ? <p className="p-6 text-sm text-muted-foreground">No changes against {data.base}.</p> : (
-        <div className="grid min-h-0 flex-1 grid-cols-[minmax(220px,28%)_minmax(0,1fr)]">
-          <FileList files={data.files} chosen={chosen?.path ?? null} onPick={pick} notes={notes} />
-          <div className="flex min-h-0 flex-col">
-            {view === "lines" ? <Lines files={data.files} comments={comments} setComments={setComments} /> : <SideBySide id={id} file={chosen ?? data.files.find(f => !f.binary && !f.collapsed) ?? null} />}
+      {view === "side" && n > 0 && <SideBySide key={data.files.map(f => f.path).join("|")} id={id} files={data.files} />}
+      {data.truncated && <p className="m-0 px-3 py-2.5 text-xs text-text-muted">The diff is very large: only the start is shown.</p>}
+      {n === 0 && <p className="grid flex-1 place-items-center p-8 text-text-muted">No changes against {data.base}.</p>}
+      {view === "lines" && n > 0 && (
+        <div className={cn("flex min-h-0 flex-1", hasTree && "grid grid-cols-[minmax(200px,30%)_minmax(0,1fr)]")}>
+          {hasTree && <ChangedTree files={data.files} chosen={picked} onPick={goTo} notes={notes} />}
+          <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-auto px-3 pt-2.5 pb-4">
+            {data.files.map(f => <FileBlock key={f.path} file={f} comments={comments} editing={editing} setEditing={setEditing} save={save} remove={remove} />)}
           </div>
         </div>
       )}
       {list.length > 0 && (
-        <div className="flex items-center gap-2 border-t px-4 py-2">
-          <span className="flex-1 text-sm font-medium">{list.length} {list.length === 1 ? "comment" : "comments"}</span>
-          <Button size="sm" variant="ghost" onClick={() => setComments(() => ({}))}>Discard</Button>
-          <Button size="sm" onClick={send}><Send />Send to the session</Button>
+        <div className="flex shrink-0 items-center gap-2 border-t border-line bg-surface px-4 py-2.5">
+          <span className="flex-1 text-[13px] font-semibold">{list.length} {list.length === 1 ? "comment" : "comments"}</span>
+          <Button variant="ghost" onClick={() => setComments({})}>Discard</Button>
+          <Button disabled={isSending} onClick={send}><Send className="size-[13px]" />Send to the session</Button>
         </div>
       )}
     </div>

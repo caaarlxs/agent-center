@@ -125,7 +125,7 @@ Legend: missing = not in the new app; partial = present but differs (what differ
 - [x] Code tab kept alive — classic: reader.js:86-89, 163 (mounted once, hidden with `display:none` when another tab shows: open files, view, unsaved text survive) — new: missing (`SessionPanel.tsx:66` unmounts; switching tabs drops unsaved edits).
 - [x] Open a file from the conversation in Files — classic: main.js:696, reader.js:156 (`showFile(path)` → Files tab with that file) — new: missing.
 - [ ] Bridge poll 2.5 s — classic: reader.js:93-100 — new: done (`features/conversation/useBridge.ts`).
-- [ ] Review comments sent → back to Conversation — classic: reader.js:122-128 — new: missing (`features/changes/Changes.tsx:185` stays in Changes).
+- [x] Review comments sent → back to Conversation — classic: reader.js:122-128 — new: missing (`features/changes/Changes.tsx:185` stays in Changes).
 
 ## Conversation
 
@@ -186,20 +186,20 @@ Legend: missing = not in the new app; partial = present but differs (what differ
 
 ## Changes
 
-- [ ] Head — classic: changes.js:137-147, css:1201-1204 ("N file(s) · +A −D" with `--work`/`--bad` 650; branch text with title = root) — new: partial (`Changes.tsx:188-196` always "files", no root tooltip).
-- [ ] Tree toggle — classic: changes.js:100-101, 140-141 (icon-btn, titles "Hide the tree" / "Show the tree of changed files", `ac.changesTree`) — new: missing.
-- [ ] Lines / Side by side switch — classic: changes.js:142-145, css:1764-1766 (`.seg` on `--press` bg, radius 8; selected `--surface` + `--shadow`; titles "Line by line, with comments for the session" / "Side by side, in VS Code's diff view"; `ac.changesView`) — new: partial (outline ToggleGroup, no titles, raw key `changesView` without `ac.`).
-- [ ] Refresh button — classic: changes.js:146 — new: missing.
-- [ ] Loading / empty / truncated — classic: changes.js:132-133, 149-150 (spinner; "No changes against base."; "The diff is very large: only the start is shown.") — new: partial (text loader; truncated note missing).
-- [ ] File block header — classic: changes.js:67-74, css:1208-1220 (sticky top −10px, `--raised`, radius 10 top; chevron rotates 90° in 150ms; folds on click; files > 400 lines start folded; status word new/deleted/renamed 10.5px/700 uppercase coloured; path mono 12 RTL ellipsis with title "old → new"; "N comment(s)" ask tag; +/− stat) — new: partial (`Changes.tsx:118-119` FileIcon + path only, not sticky, no fold, no status word, no stats).
-- [ ] Hunks — classic: css:1222-1224 (header mono 11.5 faint on `--hover`; dashed rule between hunks) — new: partial (sky tint).
-- [ ] Diff line — classic: changes.js:30-42, css:1225-1234 (grid 40/40/16/max-content, 12px/1.55 mono; add/del bg 11% work/bad; hover inset 3px accent bar; commented line inset 3px `--ask` bar; title "Click to comment on this line") — new: partial (`Changes.tsx:132-139` hover brightness, comment outline).
-- [ ] Saved comment — classic: changes.js:44-49, css:1235-1241 (indented 96px, ask-soft box radius 8, pencil icon, × remove (title "Remove the comment"), title "Click to edit it") — new: partial (`Changes.tsx:141` no remove, no pencil).
-- [ ] Comment editor — classic: changes.js:50-59, css:1242-1248 (accent border + ring; hint "⌘ ↵ save · Esc cancel" with kbds; Cancel subtle, Save primary) — new: partial (`Changes.tsx:91-103` no hint).
-- [ ] Changed-files tree — classic: code.js:550-610, css:1769-1776 (compact folders like "src/models", foldable, folder icon `#c99a3b`/open `#dcb67a`, status letter, +/− delta, pencil comment count) — new: partial (`Changes.tsx:63-89` flat list with dir suffix).
-- [ ] Side by side path bar — classic: code.js:659 (mono 12 "old → new") — new: missing.
-- [ ] Comments bar — classic: changes.js:158-162 — new: done (`Changes.tsx:205-211`).
-- [ ] Poll every 5 s when visible — new: done.
+- [x] Head — classic: changes.js:137-147, css:1201-1204 ("N file(s) · +A −D" with `--work`/`--bad` 650; branch text with title = root) — new: partial (`Changes.tsx:188-196` always "files", no root tooltip).
+- [x] Tree toggle — classic: changes.js:100-101, 140-141 (icon-btn, titles "Hide the tree" / "Show the tree of changed files", `ac.changesTree`) — new: missing.
+- [x] Lines / Side by side switch — classic: changes.js:142-145, css:1764-1766 (`.seg` on `--press` bg, radius 8; selected `--surface` + `--shadow`; titles "Line by line, with comments for the session" / "Side by side, in VS Code's diff view"; `ac.changesView`) — new: partial (outline ToggleGroup, no titles, raw key `changesView` without `ac.`).
+- [x] Refresh button — classic: changes.js:146 — new: missing.
+- [x] Loading / empty / truncated — classic: changes.js:132-133, 149-150 (spinner; "No changes against base."; "The diff is very large: only the start is shown.") — new: partial (text loader; truncated note missing).
+- [x] File block header — classic: changes.js:67-74, css:1208-1220 (sticky top −10px, `--raised`, radius 10 top; chevron rotates 90° in 150ms; folds on click; files > 400 lines start folded; status word new/deleted/renamed 10.5px/700 uppercase coloured; path mono 12 RTL ellipsis with title "old → new"; "N comment(s)" ask tag; +/− stat) — new: partial (`Changes.tsx:118-119` FileIcon + path only, not sticky, no fold, no status word, no stats).
+- [x] Hunks — classic: css:1222-1224 (header mono 11.5 faint on `--hover`; dashed rule between hunks) — new: partial (sky tint).
+- [x] Diff line — classic: changes.js:30-42, css:1225-1234 (grid 40/40/16/max-content, 12px/1.55 mono; add/del bg 11% work/bad; hover inset 3px accent bar; commented line inset 3px `--ask` bar; title "Click to comment on this line") — new: partial (`Changes.tsx:132-139` hover brightness, comment outline).
+- [x] Saved comment — classic: changes.js:44-49, css:1235-1241 (indented 96px, ask-soft box radius 8, pencil icon, × remove (title "Remove the comment"), title "Click to edit it") — new: partial (`Changes.tsx:141` no remove, no pencil).
+- [x] Comment editor — classic: changes.js:50-59, css:1242-1248 (accent border + ring; hint "⌘ ↵ save · Esc cancel" with kbds; Cancel subtle, Save primary) — new: partial (`Changes.tsx:91-103` no hint).
+- [x] Changed-files tree — classic: code.js:550-610, css:1769-1776 (compact folders like "src/models", foldable, folder icon `#c99a3b`/open `#dcb67a`, status letter, +/− delta, pencil comment count) — new: partial (`Changes.tsx:63-89` flat list with dir suffix).
+- [x] Side by side path bar — classic: code.js:659 (mono 12 "old → new") — new: missing.
+- [x] Comments bar — classic: changes.js:158-162 — new: done (`Changes.tsx:205-211`).
+- [x] Poll every 5 s when visible — new: done.
 
 ## Code
 
@@ -213,7 +213,7 @@ Legend: missing = not in the new app; partial = present but differs (what differ
 - [ ] Quick open ⌘P — classic: code.js:156-193, css:1737-1744 (panel under the tabs, 560px; fuzzy ranking (name match first); ↑↓ ↵ Esc; closes on blur) — new: partial (`CodeWorkspace.tsx:343-366` cmdk dialog, cmdk's own filter order).
 - [ ] Search panel — classic: code.js:209-262, css:1750-1762 (⌘⇧F selects the field; per-file fold; dir path; "N result(s) in N file(s)" singular forms; hit text with match `<mark>` ask-soft and leading "…"; opening selects the exact match; kept mounted so the query stays) — new: partial (`CodeWorkspace.tsx:72-112` no highlight, no fold, no dir, selects whole line, unmounts on switch).
 - [ ] Theme follows the OS live — classic: code.js:38-39, 316-317 — new: partial (fixed dark).
-- [ ] File type labels — classic: code.js:70-95 (also Makefile MK, ipynb NB, mts/cts/cjs, jsonc/jsonl, ini, mdx, log, tsv, htm, less, astro, gql, bash, fish, ps1, prisma, proto, h, hpp, icns; lock uses the lock glyph) — new: partial (`components/common/FileIcon.tsx:5-24` subset).
+- [x] File type labels — classic: code.js:70-95 (also Makefile MK, ipynb NB, mts/cts/cjs, jsonc/jsonl, ini, mdx, log, tsv, htm, less, astro, gql, bash, fish, ps1, prisma, proto, h, hpp, icns; lock uses the lock glyph) — new: partial (`components/common/FileIcon.tsx:5-24` subset).
 - [ ] Save, conflict notice, compare, follow disk, remembered tabs, margin marks, beforeunload — new: done.
 
 ## Files
