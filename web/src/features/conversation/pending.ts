@@ -44,8 +44,8 @@ export type Stamp = { text: string; isBad: boolean }
 export function stampOf(p: Pending, bridge: Bridge | null, isWorking: boolean): Stamp {
   const refused = bridge?.failed.find(f => f.id === p.id)
   if (refused) return { text: `Could not deliver: ${refused.reason}`, isBad: true }
-  if (bridge?.wake?.untrusted) return { text: "Claude does not trust this folder: open it in Claude and accept", isBad: true }
+  if (bridge?.wake?.untrusted) return { text: "Claude does not trust this session's folder: open it in Claude and accept", isBad: true }
   if (bridge?.stuck.includes(p.id)) return { text: "The session did not wake: open it in Claude", isBad: true }
   if (isWorking) return { text: "Queued: delivered when the turn ends", isBad: false }
-  return { text: bridge?.isOpen ? "Sending…" : "Waking the session…", isBad: false }
+  return { text: bridge?.isOpen ? "Sending…" : "Waking the session in the background…", isBad: false }
 }

@@ -239,3 +239,35 @@
 
 /* While the panel's edge is dragged: no text selection, the resize cursor everywhere. */
 .resizing, .resizing * { user-select: none; cursor: col-resize !important; }
+
+/* Claude's Markdown in the conversation (styles.css:534-576): its own type
+   scale and blocks, as the generated tags carry no classes. */
+.md { font-size: 13.5px; line-height: 1.6; overflow-wrap: anywhere; }
+.md > :first-child, .md > section > :first-child { margin-top: 0; }
+.md > :last-child, .md > section > :last-child { margin-bottom: 0; }
+.md p, .md ul, .md ol { margin: 0 0 8px; }
+.md ul, .md ol { padding-left: 20px; }
+.md ul { list-style: disc; }
+.md ol { list-style: decimal; }
+.md li { margin: 2px 0; }
+.md h1, .md h2, .md h3, .md h4, .md h5, .md h6 { font-size: 14px; margin: 14px 0 6px; font-weight: 650; }
+.md a { color: var(--brand); text-decoration: underline; text-underline-offset: 2px; }
+.md code { font: 0.9em var(--font-mono); color: var(--code-text); background: var(--code-bg); border: 1px solid var(--code-line); border-radius: 5px; padding: 1px 5px; overflow-wrap: anywhere; }
+.md a code { color: inherit; }
+.md pre { background: var(--side); border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px; margin: 0 0 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.md pre code { color: inherit; background: none; border: 0; padding: 0; font-size: 12px; line-height: 1.55; white-space: inherit; }
+.md table { border-collapse: collapse; margin: 0 0 8px; font-size: 12.5px; display: block; overflow-x: auto; max-width: 100%; }
+.md th, .md td { border: 1px solid var(--line); padding: 4px 9px; text-align: left; vertical-align: top; }
+.md th { background: var(--side); font-weight: 600; }
+.md blockquote { margin: 0 0 8px; padding-left: 10px; border-left: 3px solid var(--line-strong); color: var(--text-muted); }
+.md hr { border: 0; border-top: 1px solid var(--line); margin: 12px 0; }
+/* a path Claude names, opened in the Files tab */
+.file-link { cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
+.file-link:hover { color: var(--brand); }
+/* Run on shell blocks shows only while Setup allows it */
+.can-run .code-run { display: inline-flex; }
+
+/* Something running in the background: an orange dot whose ring beats (styles.css:1429-1434). */
+.run-dot { animation: run-beat 1.4s ease-out infinite; }
+@keyframes run-beat { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--run) 60%, transparent); } 70%, 100% { box-shadow: 0 0 0 6px transparent; } }
+@media (prefers-reduced-motion: reduce) { .run-dot { animation: none; box-shadow: 0 0 0 2px var(--run-soft); } }
