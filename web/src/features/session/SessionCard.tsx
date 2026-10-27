@@ -11,6 +11,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import type { Card } from "@/lib/api-types"
 import { cn } from "@/lib/utils"
 import { answer, permit, sendText } from "./actions"
+import { CardMenu } from "./CardMenu"
 import { StateIcon } from "./StateIcon"
 import { ageOf, contextOf, hueOf, stateOf } from "./state"
 
@@ -106,6 +107,7 @@ function SessionCardView({ card, level = "near", now, isSelected = false, textSc
             <span className="line-clamp-2 flex-1 text-sm font-medium leading-snug [overflow-wrap:anywhere]" style={far ? { fontSize: 14 * textScale, lineHeight: 1.2 } : undefined}>{card.title}</span>
             {card.pinned && <Star className="mt-0.5 size-3.5 shrink-0 fill-amber-400 text-amber-400" />}
             {card.isUnread && <i className="mt-1.5 size-2 shrink-0 rounded-full bg-orange-400" title="New since you last looked" />}
+            {level === "near" && <span className="-mt-0.5 -mr-1 opacity-0 transition-opacity group-hover:opacity-100 has-[[data-state=open]]:opacity-100"><CardMenu card={card} /></span>}
           </div>
           {level !== "far" && line && (
             <p className={cn("text-[12.5px] leading-snug", isAsking ? "text-foreground" : "text-muted-foreground", level === "mid" ? "line-clamp-1" : "line-clamp-2")}>{line}</p>
