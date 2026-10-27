@@ -36,7 +36,9 @@ sessions through a small Claude Code mod, and keeps its own state in a folder of
   closes by itself. Reply buttons Claude offers at the end of a turn are one click.
 - **Sleeping sessions wake up.** Claude desktop stops idle sessions to save memory. Sending to
   one wakes it in the background and delivers the message; the app you were using keeps the
-  focus.
+  focus. Claude desktop runs at most as many sessions as the Mac's memory allows (6 on 16 GB) and
+  does not start one in the background past that: the board then runs the turn itself, headless,
+  in the same session (marked "headless"; open it in Claude when it ends to see it there).
 - **Stop, mode, model.** Stop a running turn (`S`), switch the permission mode and the model of
   a session from the reply box. In a session running in Auto the mode change goes as your
   message (Auto's classifier lets only the conversation change it); to a mode that asks less,
@@ -54,7 +56,11 @@ sessions through a small Claude Code mod, and keeps its own state in a folder of
   against its pinned hash, and kept in the state folder.
 - **Fork** a conversation from any of your messages into a new session, **run** the session's
   project (`▶` on the card) and see its ports, **start new sessions** in any folder with a first
-  prompt, files, mode, model and effort.
+  prompt, files, mode, model and effort, in a new git worktree if you like.
+- **Suggested tasks.** When Claude suggests a task for a session of its own (the chip Claude
+  desktop shows), the conversation shows it too: **Start** opens "New session" with its folder and
+  prompt, in a new worktree, for you to change before it runs; **Dismiss** puts it away. Once started
+  (here or in the app) the card says so and links to the session.
 - **Catch me up** (`D`): one line per session about what happened since you last looked and what
   is yours to do, written by Claude in a separate call that does not touch your sessions.
 - **Plan limits** in the sidebar: how much of your 5-hour and weekly windows is used, when each

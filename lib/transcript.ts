@@ -32,7 +32,7 @@ export function applyPlanOp(steps: PlanStep[], op: PlanOp): PlanStep[] {
 }
 
 // Tool calls the desktop app keeps out of the conversation.
-const HIDDEN_TOOLS = /^(ToolSearch|mcp__ccd_turn__|mcp__ccd_view__|mcp__ccd_session__dismiss_task)/
+const HIDDEN_TOOLS = /^(ToolSearch|mcp__ccd_turn__|mcp__ccd_view__)/
 
 // Tools that wait for the person in the desktop app: what each asks.
 function dialogOf(name: string, input: any): { label: string; detail: string | null; isLong: boolean } | null {
@@ -60,6 +60,11 @@ export type Item = { key: string } & (
   // Files Claude showed you (SendUserFile) and pages it published (Artifact).
   | { kind: "files"; paths: string[]; caption: string | null }
   | { kind: "artifact"; path: string | null; url: string | null }
+  // A task Claude suggests for a session of its own (spawn_task), and Claude
+  // taking one back (dismiss_task). `folder`: where it runs (null: the
+  // session's own repository).
+  | { kind: "suggestion"; taskId: string | null; title: string; tldr: string | null; prompt: string; folder: string | null }
+  | { kind: "suggestionGone"; taskId: string }
 )
 
 const pathCache = new Map<string, string>()
@@ -215,6 +220,17 @@ function toItems(rows: any[]): Item[] {
           else if (name === "Artifact" && (!block.input?.action || block.input.action === "publish") && !block.input?.asset) {
             const url = results.get(block.id)?.match(/https:\/\/claude\.ai\/[\w/.-]+/)?.[0] ?? null
             items.push({ key, kind: "artifact", path: block.input?.file_path ?? null, url })
+          } else if (name.endsWith("ccd_session__spawn_task") && block.input?.prompt) {
+            // The task id comes back in the result: "Noted (position 1, task_id: task_…)";
+            // a live read can get the call before its result (null until reopened).
+            const taskId = results.get(block.id)?.match(/task_id: (task_[\w-]+)/)?.[1] ?? null
+            items.push({
+              key, kind: "suggestion", taskId, title: String(block.input.title ?? "Suggested task"),
+              tldr: block.input.tldr ? String(block.input.tldr) : null, prompt: String(block.input.prompt),
+              folder: typeof block.input.cwd === "string" && block.input.cwd ? block.input.cwd : null,
+            })
+          } else if (name.endsWith("ccd_session__dismiss_task")) {
+            if (block.input?.task_id) items.push({ key, kind: "suggestionGone", taskId: String(block.input.task_id) })
           } else if (dialogOf(name, block.input)) {
             const result = results.get(block.id)
             const answer = result === undefined ? null : (result.split("\n").find(l => l.trim()) ?? "Answered").slice(0, 300)

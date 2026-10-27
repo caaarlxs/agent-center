@@ -88,10 +88,15 @@ beforeAll(async () => {
     { type: "assistant", uuid: "f1", cwd: home, timestamp: new Date(now - 3000).toISOString(), message: { role: "assistant", content: [
       { type: "tool_use", id: "toolu_f1", name: "SendUserFile", input: { files: ["report.md"], caption: "The report" } },
       { type: "tool_use", id: "toolu_f2", name: "Artifact", input: { file_path: join(home, "page.html") } },
+      // Two tasks it suggests for sessions of their own.
+      { type: "tool_use", id: "toolu_s1", name: "mcp__ccd_session__spawn_task", input: { title: "Fix the zebra tests", tldr: "They fail.", prompt: "Fix tests/zebra.test.ts" } },
+      { type: "tool_use", id: "toolu_s2", name: "mcp__ccd_session__spawn_task", input: { title: "Tidy the docs", prompt: "Tidy docs/" } },
     ] } },
     { type: "user", uuid: "f2", cwd: home, timestamp: new Date(now - 2000).toISOString(), message: { role: "user", content: [
       { type: "tool_result", tool_use_id: "toolu_f1", content: "sent" },
       { type: "tool_result", tool_use_id: "toolu_f2", content: "Published: https://claude.ai/code/artifact/abc-123" },
+      { type: "tool_result", tool_use_id: "toolu_s1", content: [{ type: "text", text: "Noted (position 1, task_id: task_aaaa1111). A chip is showing." }] },
+      { type: "tool_result", tool_use_id: "toolu_s2", content: [{ type: "text", text: "Noted (position 2, task_id: task_bbbb2222). A chip is showing." }] },
     ] } },
   ]
   await writeFile(join(home, ".claude", "projects", "demo", `${SERVER}.jsonl`), fileRows.map(r => JSON.stringify(r)).join("\n") + "\n")
@@ -104,12 +109,28 @@ beforeAll(async () => {
   }
   // The dev-server session is archived in the app.
   await writeFile(join(desktop, "a-account/org", "local_server.json"), JSON.stringify({ sessionId: "local_server", cliSessionId: SERVER, cwd: home, title: "Dev server", lastActivityAt: now, isArchived: true }))
+  // Its first suggested task was started in the app.
+  await writeFile(join(desktop, "a-account/org", "local_zebra.json"), JSON.stringify({
+    sessionId: "local_zebra", cliSessionId: "zebra-cli", cwd: home, title: "Fix the zebra tests", lastActivityAt: now,
+    spawnedFrom: { sessionId: "local_server", taskId: "task_aaaa1111", title: "Fix the zebra tests" },
+  }))
+
+  // A stand-in for Claude Code run headless: it says the session it resumes
+  // and writes down how it was called.
+  await writeFile(join(home, "fake-claude"), `#!/bin/sh
+printf '%s\\n' "$@" > "$HOME/fake-claude.args"
+id=new-session
+prev=""
+for a in "$@"; do [ "$prev" = "--resume" ] && id="$a"; prev="$a"; done
+echo "{\\"type\\":\\"system\\",\\"session_id\\":\\"$id\\"}"
+`, { mode: 0o755 })
 
   port = 20000 + Math.floor(Math.random() * 20000)
   server = Bun.spawn(["bun", "server.ts"], {
     cwd: join(import.meta.dir, ".."),
     env: {
       ...process.env, HOME: home, AGENT_CENTER_HOME: join(home, "state"), AGENT_CENTER_PORT: String(port), AGENT_CENTER_DATA: data, AGENT_CENTER_DRY_RUN: "1",
+      AGENT_CENTER_CLAUDE: join(home, "fake-claude"),
       // Memory read each second, and a command idle a moment counts as forgotten.
       AGENT_CENTER_MEMORY_EVERY_MS: "1000", AGENT_CENTER_FORGOTTEN_UP_MS: "0", AGENT_CENTER_FORGOTTEN_IDLE_MS: "0",
     },
@@ -332,6 +353,31 @@ describe("messages to the session", () => {
     expect((await jsonOf(fetch(`${base()}/api/sessions/${ID}/bridge`))).isArchived).toBe(false)
   })
 
+  test("runs the turn here when Claude does not wake the session because it runs as many as it allows", async () => {
+    const first = await jsonOf(post(`/api/sessions/${ID}/send`, { text: "wake up" }))
+    const second = await jsonOf(post(`/api/sessions/${ID}/send`, { text: "and go on" }))
+    // What the client writes when its governor turns the background start down
+    // (in local time, which bun test and the server read in different zones: a
+    // day ahead is after the send in any of them).
+    const stamp = new Date(Date.now() + 86_400_000).toISOString().slice(0, 19).replace("T", " ")
+    await mkdir(join(home, "Library", "Logs", "Claude"), { recursive: true })
+    await writeFile(join(home, "Library", "Logs", "Claude", "main.log"),
+      `${stamp} [info] [CCD] Warming session local_demo\n${stamp} [info] [CliGovernor] at cap; yielding warm spawn\n`)
+    const argsFile = join(home, "fake-claude.args")
+    let args = ""
+    for (let i = 0; i < 60 && !args; i++) {
+      await Bun.sleep(250)
+      args = await readFile(argsFile, "utf8").catch(() => "")
+    }
+    // The same session, resumed headless, with both messages as one prompt.
+    expect(args).toContain(`--resume\n${ID}\n`)
+    expect(args.endsWith("--\nwake up\n\nand go on\n")).toBe(true)
+    const bridge = await jsonOf(fetch(`${base()}/api/sessions/${ID}/bridge`))
+    expect(bridge.queued.map((q: any) => q.id)).not.toContain(first.messageId)
+    expect(bridge.queued.map((q: any) => q.id)).not.toContain(second.messageId)
+    await writeFile(join(home, "Library", "Logs", "Claude", "main.log"), "")
+  }, 20_000)
+
   test("refuses an empty message", async () => {
     expect((await post(`/api/sessions/${ID}/send`, { text: "   " })).status).toBe(400)
   })
@@ -470,5 +516,23 @@ describe("files of a session", () => {
     expect((await at(join(home, ".claude", "settings.json"))).status).toBe(404)
     // Another session did not name it.
     expect((await fetch(`${base()}/api/sessions/${ID}/file?path=${encodeURIComponent(join(home, "report.md"))}`)).status).toBe(404)
+  })
+})
+
+describe("suggested tasks", () => {
+  test("shows each with what became of it, and dismisses one on the board", async () => {
+    const page = await jsonOf(fetch(`${base()}/api/sessions/${SERVER}/messages`))
+    const tasks = page.items.filter((i: any) => i.kind === "suggestion")
+    expect(tasks.map((t: any) => [t.taskId, t.title, t.prompt])).toEqual([
+      ["task_aaaa1111", "Fix the zebra tests", "Fix tests/zebra.test.ts"],
+      ["task_bbbb2222", "Tidy the docs", "Tidy docs/"],
+    ])
+    expect(tasks[0].folder).toBe(home)
+    expect(page.suggestions).toEqual({ task_aaaa1111: { state: "started", session: "zebra-cli" } })
+
+    expect((await post(`/api/sessions/${SERVER}/suggestion`, { taskId: "../x" })).status).toBe(400)
+    expect((await post(`/api/sessions/${SERVER}/suggestion`, { taskId: "task_bbbb2222" })).status).toBe(200)
+    const after = await jsonOf(fetch(`${base()}/api/sessions/${SERVER}/messages?after=${page.end}`))
+    expect(after.suggestions.task_bbbb2222).toEqual({ state: "dismissed", session: null })
   })
 })

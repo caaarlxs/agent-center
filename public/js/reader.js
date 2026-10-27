@@ -155,7 +155,8 @@ export function Reader({ id, card, result, tab: asked, file, isWide, isWorkspace
     <div class="tab-panel" id="reader-panel" role="tabpanel" aria-labelledby=${`reader-tab-${tab}`}>
       ${tab === "changes" ? html`<${Changes} id=${id} onSend=${sendText} />` : tab === "code" ? null : tab === "prs" ? html`<${Prs} id=${id} onSend=${sendText} />` : tab === "files" ? html`<${Files} id=${id} file=${file} />` : tab === "chat"
         ? html`<${Conversation} id=${id} card=${card} pending=${allPending} onUnsend=${unsend} stuck=${bridge?.stuck ?? []}
-              isOpen=${!!bridge?.isOpen} untrusted=${!!bridge?.wake?.untrusted} question=${bridge?.question}
+              isOpen=${!!bridge?.isOpen} untrusted=${!!bridge?.wake?.untrusted} atCap=${!!bridge?.wake?.atCap} question=${bridge?.question}
+              isBusy=${!!bridge?.busy && Date.now() - (bridge?.lastSeen ?? 0) < 15 * 60_000}
               permission=${bridge?.permission} failed=${bridge?.failed ?? []}
               onDelivered=${pid => setPending(ps => ps.filter(p => p.id !== pid))} />
             <${Composer} id=${id} card=${card} bridge=${bridge} isWorking=${card?.column === "working"} onSent=${sent} />`

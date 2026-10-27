@@ -26,6 +26,7 @@ import { monacoFile } from "./lib/monaco"
 import { stopAllCommands } from "./lib/commands"
 import { stopAll as stopRuns } from "./lib/runner"
 import { MAX_UPLOAD_BYTES } from "./lib/uploads"
+import { deliverHere } from "./lib/deliver"
 import { startWaking } from "./lib/wake"
 import { handleRead } from "./routes/read"
 import { handleSession } from "./routes/session"
@@ -83,7 +84,7 @@ await loadBoard()
 await mkdir(SESSIONS_DIR, { recursive: true })
 watch(SESSIONS_DIR, refreshSoon)
 startLive()
-startWaking(activate)
+startWaking(activate, deliverHere)
 
 Bun.serve({
   port: PORT,

@@ -12,14 +12,18 @@ import { get, hue, keep, load, post, when } from "./util.js"
 
 // A folder from the list (repos and folders used before) or any folder on the
 // Mac ("Browse…", the system's picker); the first turn's mode, model and
-// effort (remembered for next time); files, as in the reply box.
-export function NewSession({ initialRoot, onClose }) {
+// effort (remembered for next time); files, as in the reply box; and, in a
+// git repository, a new worktree for it. `draft`: a task a session suggested
+// ({ root, prompt, worktree, suggestion }), started from its card.
+export function NewSession({ initialRoot, draft, onClose }) {
   const ui = useContext(Ctx)
   const [repos, setRepos] = useState(null)
   const [filter, setFilter] = useState("")
-  const [root, setRoot] = useState(initialRoot)
-  const [picked, setPicked] = useState(null) // a folder chosen with "Browse…"
-  const [prompt, setPrompt] = useState("")
+  const [root, setRoot] = useState(draft?.root ?? initialRoot)
+  // a folder chosen with "Browse…" (or the suggested task's)
+  const [picked, setPicked] = useState(draft?.root ? { root: draft.root, name: draft.root.split("/").pop() || draft.root } : null)
+  const [prompt, setPrompt] = useState(draft?.prompt ?? "")
+  const [worktree, setWorktree] = useState(!!draft?.worktree)
   const [prefs, setPrefs] = useState(() => ({ mode: "auto", model: "claude-fable-5-1", effort: "high", ...load("newPrefs", {}) }))
   const attach = useAttachments()
   const files = attach.files
@@ -59,13 +63,14 @@ export function NewSession({ initialRoot, onClose }) {
       setSending(false)
       return ui.toast(err.message)
     }
-    const ok = await ui.newSession(root, withFiles(prompt.trim(), paths), send, prefs)
+    const ok = await ui.newSession(root, withFiles(prompt.trim(), paths), send,
+      { ...prefs, worktree: send && worktree, suggestion: send ? draft?.suggestion : undefined })
     setSending(false)
     if (ok) onClose()
   }
   return html`<dialog class="dialog new-session" ref=${dialog} onClose=${onClose} onCancel=${onClose}>
     <form method="dialog" onSubmit=${e => (e.preventDefault(), submit())} ...${attach.dropProps}>
-      <h2>New session</h2>
+      <h2>${draft?.suggestion ? "Start the suggested task" : "New session"}</h2>
       <div class="folder-row">
         <input class="field" placeholder="Filter folders…" value=${filter} autofocus
           onInput=${e => {
@@ -108,6 +113,8 @@ export function NewSession({ initialRoot, onClose }) {
           <${Picker} icon="lock" value=${prefs.mode} options=${MODES} onPick=${v => setPref("mode", v)} title="Permission mode for the first turn" />
           <${Picker} icon="bot" value=${prefs.model} options=${MODELS} onPick=${v => setPref("model", v)} title="Model" />
           <${Picker} icon="gauge" value=${prefs.effort} options=${EFFORTS} onPick=${v => setPref("effort", v)} title="Effort for the first turn" />
+          <label class="worktree-toggle" title="Runs in a new git worktree of the folder (.claude/worktrees), on a branch of its own, as Claude desktop does: your checkout is left as it is. Only when you send.">
+            <input type="checkbox" checked=${worktree} onChange=${e => setWorktree(e.target.checked)} /><${Icon} name="branch" size=${13} />Worktree</label>
         </div>
       </div>
       <div class="dialog-actions">

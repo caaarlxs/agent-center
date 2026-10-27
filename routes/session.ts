@@ -3,7 +3,7 @@
 // opening it in the client, forks, runs, and the board's own actions (pin,
 // park, done, archive, seen, move, rename, color, tier).
 
-import { applyAction, isBoardAction } from "../lib/board"
+import { applyAction, isBoardAction, isTaskId, setSuggestion } from "../lib/board"
 import { answer as answerQuestion, isBusy, permit, requestSettings, send as sendMessage, status as bridgeStatus, stop as stopTurn, unsend } from "../lib/bridge"
 import { activate, openInClient } from "../lib/client"
 import { isArchivedInApp, readDesktop } from "../lib/desktop"
@@ -186,6 +186,12 @@ export async function handleSession(id: string, action: string, body: Record<str
       if (!group || typeof body.text !== "string") return json({ error: "nothing to save" }, 400)
       const { status = 200, ...res } = await saveCode(group.lead.cwd, String(body.path ?? ""), body.text, Number(body.mtime), body.force === true)
       return json(res, status)
+    }
+    // A task the session suggested, dismissed on the board (or back again).
+    case "suggestion": {
+      if (!isTaskId(body.taskId)) return json({ error: "missing task" }, 400)
+      await setSuggestion(body.taskId, id, { isDismissed: body.isDismissed !== false })
+      return json({ ok: true })
     }
     // Its turn ended, or it asks you: read aloud what it did (lib/speech.ts).
     case "speak": {

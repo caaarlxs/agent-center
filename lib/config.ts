@@ -4,7 +4,8 @@
 // where Claude Code keeps them.
 //
 // Environment overrides: AGENT_CENTER_HOME (the state folder),
-// AGENT_CENTER_DATA (its data/ alone; the tests use it), AGENT_CENTER_PORT.
+// AGENT_CENTER_DATA (its data/ alone; the tests use it), AGENT_CENTER_PORT,
+// AGENT_CENTER_CLAUDE (the Claude Code to run headless; the tests give a stand-in).
 
 import { readFileSync } from "node:fs"
 import { join } from "node:path"

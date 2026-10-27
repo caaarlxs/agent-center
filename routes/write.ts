@@ -2,7 +2,7 @@
 // notes, PR actions, tasks, files sent and dictation.
 
 import { stat } from "node:fs/promises"
-import { setNotes, setZones } from "../lib/board"
+import { isTaskId, setNotes, setSuggestion, setZones } from "../lib/board"
 import { requestSettings } from "../lib/bridge"
 import { activate, newInClient, pickFolder } from "../lib/client"
 import { EFFORTS, MODES } from "../lib/config"
@@ -55,11 +55,17 @@ async function newSession(body: Record<string, unknown>) {
   const extra: string[] = []
   if (/^claude-[\w.-]+$/.test(String(body.model ?? ""))) extra.push("--model", String(body.model))
   if (EFFORTS.includes(String(body.effort))) extra.push("--effort", String(body.effort))
+  if (body.worktree === true) {
+    if (!(await repoInfo(folder)).branch) return json({ error: "A worktree needs a git repository: that folder is not one" }, 400)
+    extra.push("--worktree")
+  }
+  const suggestion = body.suggestion as { from?: unknown; taskId?: unknown } | undefined
   try {
     const id = await launch(folder, prompt, done => {
       void activate(done)
       void keepMode(done, mode)
     }, extra, mode)
+    if (typeof suggestion?.from === "string" && isTaskId(suggestion.taskId)) await setSuggestion(suggestion.taskId, suggestion.from, { session: id })
     refreshSoon()
     return json({ ok: true, id })
   } catch (err) {

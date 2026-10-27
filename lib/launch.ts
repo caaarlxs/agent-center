@@ -17,6 +17,7 @@ export const running = new Set<string>()
 
 // The newest Claude Code the desktop app ships (it loads the bridge mod).
 export async function claudeBinary() {
+  if (process.env.AGENT_CENTER_CLAUDE) return process.env.AGENT_CENTER_CLAUDE
   const versions = (await readdir(APP_CLI).catch(() => [] as string[]))
     .filter(v => /^\d+\.\d+\.\d+$/.test(v))
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))

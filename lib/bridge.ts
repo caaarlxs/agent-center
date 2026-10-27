@@ -120,6 +120,36 @@ export async function unsend(sessionId: string, messageId: string) {
   )
 }
 
+// The messages that wait for a session, taken out of its outbox, oldest first
+// (past their undo time, not delivered nor refused): the board delivers them
+// itself (lib/deliver.ts). `putBack` returns them when that did not work.
+export type Message = { id: string; text: string; at: number; notBefore: number }
+export async function takeQueued(sessionId: string): Promise<Message[]> {
+  if (!isId(sessionId)) return []
+  let done = new Set<string>()
+  try {
+    const acks = await readJson(join(BASE, "acks", `${sessionId}.json`))
+    done = new Set([...(acks.delivered ?? []), ...(acks.failed ?? []).map((f: { id: string }) => f.id)])
+  } catch {}
+  const dir = join(BASE, "outbox", sessionId)
+  const out: Message[] = []
+  for (const name of (await readdir(dir).catch(() => [] as string[])).filter(n => n.endsWith(".json")).sort()) {
+    const id = name.slice(0, -5)
+    if (done.has(id)) continue
+    try {
+      const msg = (await readJson(join(dir, name))) as Message
+      if (!msg.text || Date.now() < (msg.notBefore ?? 0)) continue
+      await unlink(join(dir, name))
+      out.push(msg)
+    } catch {}
+  }
+  return out
+}
+
+export async function putBack(sessionId: string, messages: Message[]) {
+  for (const m of messages) await writeJsonAtomic(join(BASE, "outbox", sessionId, `${m.id}.json`), m)
+}
+
 // Asks the session's mod (v4) to change its permission mode, model or effort.
 // Answers the request id; status() reports the mod's results under `settings`.
 export async function requestSettings(sessionId: string, changes: { mode?: string; model?: string; effort?: string }) {

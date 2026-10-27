@@ -197,7 +197,7 @@ export function UsageMeter({ usage, wide = false }) {
 export function Meta({ card }) {
   const ui = useContext(Ctx)
   return html`<div class="meta">
-    ${card.isLaunching && html`<span class="tag tone-work" title="The first turn runs headless; open it in Claude when it ends">headless</span>`}
+    ${card.isLaunching && html`<span class="tag tone-work" title="A turn runs here, headless (a new session's first one, or messages Claude desktop did not start the session for); open it in Claude when it ends">headless</span>`}
     ${card.state === "permission" && card.column === "asking" && html`<span class="tag tone-bad">needs approval</span>`}
     <${OverlapChip} card=${card} />
     <${BackgroundChip} card=${card} />
@@ -436,7 +436,7 @@ export function MemoryChip({ card }) {
 // session did not wake (open the conversation to deliver them).
 export function PendingChip({ card }) {
   const ui = useContext(Ctx)
-  const stuck = card.bridge?.stuck?.length || (card.bridge?.wake?.untrusted ? card.bridge.pending : 0)
+  const stuck = card.bridge?.stuck?.length || (card.bridge?.wake?.untrusted || card.bridge?.wake?.atCap ? card.bridge.pending : 0)
   return html`<button class=${`tag ${stuck ? "tone-bad" : "tone-ask"}`}
     title=${stuck ? "The session did not wake: open the conversation to deliver them" : "Your messages waiting for the session"}
     onClick=${e => (e.stopPropagation(), ui.openReader(card.id))}>

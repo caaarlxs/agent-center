@@ -7,7 +7,8 @@ import { status as bridgeStatus } from "../lib/bridge"
 import { changesOf } from "../lib/changes"
 import { codeTree, marksOf, readCode, searchCode, versionsOf } from "../lib/code"
 import { HOME } from "../lib/config"
-import { isArchivedInApp, readDesktop } from "../lib/desktop"
+import { board } from "../lib/board"
+import { isArchivedInApp, readDesktop, suggestionStates } from "../lib/desktop"
 import { lastDigest } from "../lib/digest"
 import { detail as prDetail, lookup as prLookup, openThreads } from "../lib/github"
 import { json } from "../lib/http"
@@ -121,7 +122,12 @@ async function sessionRead(id: string, what: string, url: URL) {
   switch (what) {
     case "messages": {
       const page = await readMessages(id, { before: offset(url.searchParams.get("before")), after: offset(url.searchParams.get("after")) })
-      return page ? json(page) : json({ error: "Cannot find this session's transcript" }, 404)
+      if (!page) return json({ error: "Cannot find this session's transcript" }, 404)
+      // A suggested task runs in the session's repository (not its worktree)
+      // unless it names a folder; what became of each one, on every read.
+      const root = group ? (await repoInfo(group.lead.cwd)).root : null
+      for (const item of page.items) if (item.kind === "suggestion") item.folder ??= root
+      return json({ ...page, suggestions: await suggestionStates(group?.ids ?? [id], board.suggestions ?? {}) })
     }
     // The "Code" tab: the folder's files, and one of them as text.
     case "codetree":

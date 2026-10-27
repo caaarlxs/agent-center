@@ -105,6 +105,7 @@ function App() {
   const [opened, setOpened] = useState(null) // the search result last opened (a session not on the board)
   const [toasts, setToasts] = useState([])
   const [dialog, setDialog] = useState(null) // "new" | "help" | "digest"
+  const [newDraft, setNewDraft] = useState(null) // "New session" filled in: a suggested task
   const [runFor, setRunFor] = useState(null) // the card whose "Run" window is open
   const [isSideOpen, setSideOpen] = useState(false)
   const [isDrawingZone, setDrawingZone] = useState(false) // the next drag on the canvas draws a zone
@@ -516,7 +517,8 @@ function App() {
     if (!res.body.ok) toast(res.body.error ?? "Could not rename")
   }, [])
 
-  // options: the first turn's mode, model and effort.
+  // options: the first turn's mode, model and effort; worktree; the suggested
+  // task it starts (suggestion).
   const newSession = async (folder, prompt, send, options = {}) => {
     const res = await post("/api/new", { folder, prompt, send, ...options })
     if (!res.body.ok) {
@@ -524,7 +526,7 @@ function App() {
       return false
     }
     if (res.body.id) {
-      toast("Session created: Claude is working")
+      toast(options.worktree ? "Session created in a new worktree: Claude is working" : "Session created: Claude is working")
       setTimeout(() => openReader(res.body.id), 600)
     } else toast("New session opened in Claude")
     return true
@@ -695,6 +697,8 @@ function App() {
     // One of the open session's files, in its Files tab.
     showFile: file => setReader(r => r && { ...r, tab: "files", file }),
     openDialog: name => (setSideOpen(false), setDialog(name)),
+    // A task a session suggested: "New session" with its folder and prompt.
+    startSuggestion: draft => (setNewDraft(draft), setDialog("new")),
     fillComposer: text => composerFocus.current?.fill(text),
     openRun: card => setRunFor(card),
     toggleWide: () => setWide(w => !w),
@@ -770,7 +774,7 @@ function App() {
           hasTasks=${data?.features?.organizer !== false} />`}
       </div>
       <${Toasts} toasts=${toasts} />
-      ${dialog === "new" && html`<${NewSession} initialRoot=${repoFilter} onClose=${() => setDialog(null)} />`}
+      ${dialog === "new" && html`<${NewSession} initialRoot=${repoFilter} draft=${newDraft} onClose=${() => (setDialog(null), setNewDraft(null))} />`}
       ${dialog === "help" && html`<${Help} onClose=${() => setDialog(null)} />`}
       ${dialog === "digest" && html`<${Digest} onClose=${() => setDialog(null)} />`}
       ${isSearching && html`<${SearchPalette} cards=${data?.cards ?? []} onClose=${() => setSearching(false)}

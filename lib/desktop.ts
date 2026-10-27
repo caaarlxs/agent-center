@@ -18,6 +18,13 @@ export type DesktopSession = {
   isStarred: boolean
   lastActivityAt: number | null
   permissionMode: string | null
+  model: string | null
+  effort: string | null
+  // Suggested tasks (spawn_task) this session made that the app resolved:
+  // task id → "started_notified" | "dismissed".
+  suggestions: Record<string, string>
+  // The suggested task this session was started from, if any.
+  spawnedFrom: { hostId: string; taskId: string } | null
 }
 
 export type DesktopIndex = {
@@ -79,6 +86,10 @@ export async function readDesktop(): Promise<DesktopIndex> {
                 isStarred: !!raw.isStarred,
                 lastActivityAt: raw.lastActivityAt ?? null,
                 permissionMode: raw.permissionMode ?? null,
+                model: typeof raw.model === "string" ? raw.model : null,
+                effort: typeof raw.effort === "string" ? raw.effort : null,
+                suggestions: raw.resolvedBackgroundTaskSuggestions ?? {},
+                spawnedFrom: raw.spawnedFrom?.taskId ? { hostId: String(raw.spawnedFrom.sessionId ?? ""), taskId: String(raw.spawnedFrom.taskId) } : null,
               },
             })
           }
@@ -110,4 +121,26 @@ export async function readDesktop(): Promise<DesktopIndex> {
 export async function isArchivedInApp(ids: string[]) {
   const desktop = await readDesktop()
   return ids.some(id => desktop.byCli.get(id)?.isArchived)
+}
+
+export type SuggestionState = { state: "started" | "dismissed"; session: string | null }
+
+// What became of the tasks a session (its CLI `ids`) suggested: started (and
+// the session that runs it, started in the app or from the board) or
+// dismissed, in either place. `ours`: the board's own record.
+export async function suggestionStates(ids: string[], ours: Record<string, { from: string; session?: string; dismissed_at?: number }>) {
+  const desktop = await readDesktop()
+  const parents = ids.map(id => desktop.byCli.get(id)).filter(Boolean) as DesktopSession[]
+  const hosts = new Set(parents.map(p => p.hostId))
+  const out: Record<string, SuggestionState> = {}
+  for (const p of parents)
+    for (const [taskId, how] of Object.entries(p.suggestions))
+      out[taskId] = { state: how === "dismissed" ? "dismissed" : "started", session: null }
+  for (const s of desktop.byHost.values())
+    if (s.spawnedFrom && hosts.has(s.spawnedFrom.hostId)) out[s.spawnedFrom.taskId] = { state: "started", session: s.cliId }
+  for (const [taskId, o] of Object.entries(ours))
+    if (ids.includes(o.from) && out[taskId]?.state !== "started")
+      if (o.session) out[taskId] = { state: "started", session: o.session }
+      else if (o.dismissed_at) out[taskId] = { state: "dismissed", session: null }
+  return out
 }
