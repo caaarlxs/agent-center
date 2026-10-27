@@ -228,3 +228,14 @@
 .react-flow__node.flash > * { animation: card-flash 1.4s cubic-bezier(0.23, 1, 0.32, 1); }
 @keyframes card-flash { from { box-shadow: 0 0 0 0 rgb(251 146 60 / 0.75); } to { box-shadow: 0 0 0 18px rgb(251 146 60 / 0); } }
 @media (prefers-reduced-motion: reduce) { .react-flow__node.flash > * { animation: none; outline: 2px solid rgb(251 146 60); } }
+
+/* Loading: bars with a light passing over them (styles.css:1013-1017). */
+.skeleton { background: linear-gradient(90deg, var(--hover), var(--press), var(--hover)); background-size: 200% 100%; animation: shimmer 1.2s linear infinite; }
+@keyframes shimmer { to { background-position: -200% 0; } }
+
+/* A dot that breathes while Claude works (styles.css:259-260). */
+.pulse-ring { animation: pulse-ring 1.6s ease-in-out infinite; }
+@keyframes pulse-ring { 0%, 100% { box-shadow: 0 0 0 0 var(--work-soft); } 50% { box-shadow: 0 0 0 4px var(--work-soft); } }
+
+/* While the panel's edge is dragged: no text selection, the resize cursor everywhere. */
+.resizing, .resizing * { user-select: none; cursor: col-resize !important; }

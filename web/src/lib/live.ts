@@ -32,6 +32,9 @@ function subscribe(listener: () => void) {
   return () => void listeners.delete(listener)
 }
 
+// The live state now, outside React (a key, a click handler).
+export const liveNow = () => state
+
 // A slice of the live state. The selector must return the same value (or a
 // value from the snapshot itself) while nothing changed, or React redraws.
 export function useLive<T>(select: (live: Live) => T): T {

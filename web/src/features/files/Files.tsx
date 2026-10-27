@@ -74,13 +74,30 @@ function Viewer({ id, file }: { id: string; file: Listed }) {
   }
 }
 
-export function Files({ id }: { id: string }) {
+// file: one to show first (a link in the conversation). The list reloads
+// every 10 s while it shows, as the session may write more.
+export function Files({ id, file }: { id: string; file?: string }) {
   const now = useNow()
   const [files, setFiles] = useState<Listed[] | null>(null)
   const [chosen, setChosen] = useState<Listed | null>(null)
   useEffect(() => {
-    get<{ files: Listed[] }>(`/api/sessions/${encodeURIComponent(id)}/files`).then(r => (setFiles(r.files), setChosen(c => c ?? r.files[0] ?? null)), (err: Error) => toast.error(err.message))
+    let alive = true
+    const load = () =>
+      get<{ files: Listed[] }>(`/api/sessions/${encodeURIComponent(id)}/files`).then(r => {
+        if (!alive) return
+        setFiles(r.files)
+        setChosen(c => (c && r.files.find(f => f.path === c.path)) ?? c ?? r.files[0] ?? null)
+      }, (err: Error) => alive && toast.error(err.message))
+    load()
+    const timer = setInterval(load, 10_000)
+    return () => ((alive = false), clearInterval(timer))
   }, [id])
+  // Asked for one: it shows, also when the list does not have it yet.
+  useEffect(() => {
+    if (!file) return
+    const name = file.split("/").pop() ?? file
+    setChosen(c => (c?.path === file ? c : files?.find(f => f.path === file) ?? { path: file, name, size: 0, modifiedAt: Date.now(), source: "written" }))
+  }, [file, files === null])
   const openOnMac = (reveal = false) => chosen && post(`/api/sessions/${encodeURIComponent(id)}/openfile`, { path: chosen.path, reveal }).catch((err: Error) => toast.error(err.message))
   if (!files) return <p className="p-6 text-sm text-muted-foreground">Reading the files…</p>
   if (!files.length) return <p className="p-6 text-sm text-muted-foreground">This session has not sent, published or written any file yet.</p>

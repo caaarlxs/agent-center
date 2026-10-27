@@ -8,6 +8,10 @@ import { sendText, unsend } from "@/features/session/actions"
 import { takenBack } from "./pending"
 
 export const composerFill = createStore<{ id: string; text: string } | null>(null)
+// Asks a session's reply box for the cursor (at the end of its text): a new
+// object each time, so asking twice works twice.
+export const composerFocus = createStore<{ id: string } | null>(null)
+export const focusComposer = (id: string) => composerFocus.set({ id })
 
 export async function takeBack(id: string, p: { id: string; text: string }) {
   try {

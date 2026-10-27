@@ -4,7 +4,7 @@
 // less); the effort only shows, as the app sends its own with every message.
 // Under it, what the session can do with a message now.
 import { Gauge, Square } from "lucide-react"
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 import {
   PromptInput, PromptInputBody, PromptInputFooter, PromptInputProvider, PromptInputSelect, PromptInputSelectContent, PromptInputSelectItem,
@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils"
 import { AttachButton, MicButton, PickedFiles, fileErrors } from "@/features/prompt/PromptExtras"
 import { MAX_BYTES, MAX_FILES, messageWith } from "@/features/prompt/files"
 import { stop, wake } from "@/features/session/actions"
-import { composerFill, sendMessage } from "./send"
+import { composerFill, composerFocus, sendMessage } from "./send"
 
 export const MODES = [["default", "Ask"], ["acceptEdits", "Accept edits"], ["plan", "Plan"], ["auto", "Auto"], ["bypassPermissions", "Bypass"]] as const
 export const MODELS = [["claude-fable-5-1", "Fable 5.1"], ["claude-opus-5-5", "Opus 5.5"], ["claude-sonnet-5-5", "Sonnet 5.5"], ["claude-haiku-5-5", "Haiku 5.5"]] as const
@@ -62,6 +62,16 @@ const DOT = { on: "bg-emerald-400", busy: "bg-amber-400", bad: "bg-rose-400", of
 function Box({ card, bridge }: { card: Card; bridge: Bridge | null }) {
   const { textInput } = usePromptInputController()
   const fill = composerFill.use()
+  const focus = composerFocus.use()
+  const box = useRef<HTMLDivElement>(null)
+  // Asked for the cursor (a click that opened it, Next up, R): at the end of the text.
+  useEffect(() => {
+    if (focus?.id !== card.id) return
+    const field = box.current?.querySelector("textarea")
+    if (!field) return
+    field.focus()
+    field.setSelectionRange(field.value.length, field.value.length)
+  }, [focus, card.id])
   useEffect(() => {
     if (fill?.id !== card.id) return
     textInput.setInput(fill.text)
@@ -93,7 +103,7 @@ function Box({ card, bridge }: { card: Card; bridge: Bridge | null }) {
   const effort = EFFORTS.find(([e]) => e === card.effort)?.[1]
   const model = MODELS.find(([m]) => card.usage?.model?.startsWith(m))?.[0]
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-1.5" ref={box}>
       <PromptInput
         className="rounded-xl" multiple maxFiles={MAX_FILES} maxFileSize={MAX_BYTES} onError={fileErrors}
         onSubmit={async ({ text, files }) => {

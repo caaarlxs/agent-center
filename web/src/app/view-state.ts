@@ -18,3 +18,13 @@ export const focusCard = (id: string) => focusRequest.set({ id })
 
 // The sidebar as a drawer over the page, in a narrow window (≤ 860px).
 export const sideOpen = createStore(false)
+
+// What the window shows: the canvas needs room, so a narrow window shows the
+// inbox instead (main.js:134-136).
+const narrow = typeof window !== "undefined" ? matchMedia("(max-width: 860px)") : null
+const isNarrow = createStore(!!narrow?.matches)
+narrow?.addEventListener("change", () => isNarrow.set(narrow.matches))
+export function useShownView(): View {
+  const chosen = view.use()
+  return isNarrow.use() && chosen === "canvas" ? "inbox" : chosen
+}

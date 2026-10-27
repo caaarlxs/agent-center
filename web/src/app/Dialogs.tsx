@@ -1,4 +1,4 @@
-// The open dialog, if any. A link can open one (?dialog=new|setup|digest),
+// The open dialog, if any. A link can open one (?dialog=new|setup|digest|help),
 // and Setup opens by itself while a required step is missing, until closed once.
 import { useEffect } from "react"
 import { get } from "@/lib/api"
@@ -10,7 +10,7 @@ import { SetupDialog } from "@/features/setup/SetupDialog"
 import { closeDialog, dialog, openDialog } from "./open-dialog"
 
 const setupSeen = persistedStore("setupSeen", false)
-const LINKED = ["new", "setup", "digest"] as const
+const LINKED = ["new", "setup", "digest", "help"] as const
 
 export function Dialogs() {
   const open = dialog.use()

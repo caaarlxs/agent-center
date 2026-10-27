@@ -1,6 +1,8 @@
 // What the page asks a session to do, through the board's API
 // (routes/session.ts). Each one throws ApiError with the server's reason.
+import { toast } from "sonner"
 import { post } from "@/lib/api"
+import { undoable } from "@/lib/toast"
 import { addPending, dropPending } from "@/features/conversation/pending"
 
 const at = (id: string, action: string) => `/api/sessions/${encodeURIComponent(id)}/${action}`
@@ -35,8 +37,31 @@ export const moveTo = (id: string, p: { x: number; y: number }) => post(at(id, "
 
 // The board's own actions on a session (lib/board.ts): pin, park ("later"),
 // done, archive and their undoing, mark seen or unseen, colour.
-export type BoardAction = "pin" | "unpin" | "park" | "unpark" | "done" | "undone" | "archive" | "seen" | "unseen"
+export type BoardAction = "pin" | "unpin" | "park" | "unpark" | "done" | "undone" | "archive" | "unarchive" | "seen" | "unseen" | "color" | "rename"
 export const act = (id: string, action: BoardAction, body: Record<string, unknown> = {}) => post(at(id, action), body)
+
+// The same, said in a toast with Undo where it can be taken back (main.js:373-414).
+const INVERSE: Partial<Record<BoardAction, BoardAction>> = { pin: "unpin", unpin: "pin", park: "unpark", done: "undone", archive: "unarchive", unseen: "seen" }
+const SAID: Partial<Record<BoardAction, string>> = { done: "Marked as done", park: "Moved to Later", pin: "Pinned", unpin: "Unpinned", archive: "Archived", unseen: "Marked to review" }
+export async function actOn(card: { id: string; title: string }, action: BoardAction, body: Record<string, unknown> = {}) {
+  try {
+    await act(card.id, action, body)
+  } catch (err) {
+    return void toast((err as Error).message || "Could not save")
+  }
+  const inverse = INVERSE[action]
+  if (SAID[action] && inverse) undoable(`${SAID[action]}: ${card.title}`, () => void act(card.id, inverse).catch(() => {}))
+}
+
+// Opens it in Claude desktop.
+export const launch = (id: string) => post(at(id, "open")).catch((err: Error) => toast(err.message || "Could not open the session"))
+
+// Ends its running turn, like Esc in the app.
+export const stopTurn = (card: { id: string; title: string }) =>
+  stop(card.id).then(() => toast(`Stopping “${card.title}”…`), (err: Error) => toast(err.message || "Could not stop"))
+
+// Its name on the board (Claude desktop keeps its own); empty: back to Claude's.
+export const rename = (id: string, title: string) => act(id, "rename", { title }).catch((err: Error) => toast(err.message || "Could not rename"))
 
 // "Later" until… (park): the times the board offers.
 const todayAt = (days: number, hour: number) => {
@@ -45,10 +70,22 @@ const todayAt = (days: number, hour: number) => {
   d.setHours(hour, 0, 0, 0)
   return d.getTime()
 }
-export const LATER = [
-  { label: "1 hour", until: () => Date.now() + 3600_000 },
-  { label: "This afternoon", until: () => todayAt(new Date().getHours() >= 16 ? 1 : 0, 16) },
-  { label: "Tomorrow morning", until: () => todayAt(1, 9) },
-  { label: "Monday", until: () => todayAt((8 - new Date().getDay()) % 7 || 7, 9) },
-  { label: "No date", until: () => null },
+export const LATER: { key: string; label: string; hint?: string; until: () => number | null }[] = [
+  { key: "1", label: "1 hour", until: () => Date.now() + 3600_000 },
+  { key: "2", label: "This afternoon", hint: "16:00", until: () => todayAt(new Date().getHours() >= 16 ? 1 : 0, 16) },
+  { key: "3", label: "Tomorrow morning", hint: "9:00", until: () => todayAt(1, 9) },
+  { key: "4", label: "Monday", hint: "9:00", until: () => todayAt((8 - new Date().getDay()) % 7 || 7, 9) },
+  { key: "5", label: "No date", until: () => null },
 ]
+
+// The colours a card can wear (lib/board.ts), in the order keys 1–7 pick them.
+export const CARD_COLORS = [
+  { key: "lilac", label: "Lilac", tint: "#8b5cf6" },
+  { key: "blue", label: "Blue", tint: "#3b82f6" },
+  { key: "teal", label: "Teal", tint: "#14b8a6" },
+  { key: "green", label: "Green", tint: "#22c55e" },
+  { key: "yellow", label: "Yellow", tint: "#eab308" },
+  { key: "orange", label: "Orange", tint: "#f97316" },
+  { key: "pink", label: "Pink", tint: "#ec4899" },
+] as const
+export const tintOf = (color: string | null | undefined) => CARD_COLORS.find(c => c.key === color)?.tint
