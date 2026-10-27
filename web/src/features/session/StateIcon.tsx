@@ -1,45 +1,46 @@
 // A session's state at a glance: a shape and a colour, the same on every view.
-// While Claude works, a ring fills with the turn's task list.
+// While Claude works, a ring fills with the turn's task list (4 of 6 steps:
+// two thirds); with no list, the ring turns (components.js StateIcon).
 import { AlertTriangle, Check, Clock, Eye, List, Lock, MessageCircleQuestion } from "lucide-react"
-import { motion } from "motion/react"
 import type { Card } from "@/lib/api-types"
 import { cn } from "@/lib/utils"
-import { STATE_LABEL, type StateKey, stateOf } from "./state"
+import { type StateKey, labelOf, stateOf } from "./state"
 
 const ICON = { asking: MessageCircleQuestion, permission: Lock, review: Eye, pending: List, parked: Clock, done: Check, stale: AlertTriangle }
+// Its colour first (the panel reads it), then its soft face.
 export const TONE: Record<StateKey, string> = {
-  asking: "text-amber-400 bg-amber-400/12",
-  permission: "text-rose-400 bg-rose-400/12",
-  review: "text-sky-400 bg-sky-400/12",
-  working: "text-emerald-400",
-  pending: "text-zinc-400 bg-zinc-400/10",
-  parked: "text-zinc-500 bg-zinc-500/10",
-  done: "text-zinc-500 bg-zinc-500/10",
-  stale: "text-orange-400 bg-orange-400/12",
+  asking: "text-ask bg-ask-soft",
+  permission: "text-bad bg-bad-soft",
+  review: "text-review bg-review-soft",
+  working: "text-work",
+  pending: "text-[color-mix(in_srgb,var(--review)_55%,var(--faint))] bg-hover",
+  parked: "text-faint bg-hover",
+  done: "text-work bg-work-soft",
+  stale: "text-faint bg-hover",
 }
 
-export function StateIcon({ card, size = 22 }: { card: Card; size?: number }) {
+export function StateIcon({ card, size = 28 }: { card: Card; size?: number }) {
   const state = stateOf(card)
-  const label = STATE_LABEL[state]
+  const label = labelOf(card)
+  const p = card.progress
+  const title = p ? `${label}: step ${Math.min(p.done + 1, p.total)} of ${p.total}${p.current ? ` · ${p.current}` : ""}` : label
   if (state === "working") {
-    const p = card.progress
-    const pct = p ? p.done / p.total : 0.3
+    const pct = p ? p.done / p.total : 0.28
     return (
-      <span className="relative inline-grid shrink-0 place-items-center" style={{ width: size, height: size }} role="img" aria-label={label}
-        title={p ? `${label}: step ${Math.min(p.done + 1, p.total)} of ${p.total}` : label}>
-        <svg viewBox="0 0 36 36" className={cn("absolute inset-0 -rotate-90", !p && "animate-spin")}>
-          <circle cx="18" cy="18" r="15" fill="none" className="stroke-emerald-400/20" strokeWidth="4" />
-          <motion.circle cx="18" cy="18" r="15" fill="none" className="stroke-emerald-400" strokeWidth="4" strokeLinecap="round"
-            initial={false} animate={{ pathLength: Math.max(0.06, pct) }} transition={{ type: "spring", duration: 0.8, bounce: 0 }} />
+      <span className="relative inline-flex flex-none items-center justify-center rounded-full text-work" style={{ width: size, height: size }} role="img" aria-label={title} title={title}>
+        <svg viewBox="0 0 36 36" aria-hidden="true" className={cn("absolute inset-0 size-full -rotate-90 fill-none", !p && "animate-spin-ring")}>
+          <circle cx="18" cy="18" r="15.5" strokeWidth="3.5" className="stroke-work-soft" />
+          <circle cx="18" cy="18" r="15.5" strokeWidth="3.5" pathLength={100} strokeLinecap="round" className="stroke-work transition-[stroke-dasharray] duration-500 ease-(--ease-out)"
+            strokeDasharray={`${Math.max(4, pct * 100)} 100`} />
         </svg>
-        <span className="size-1.5 rounded-full bg-emerald-400" />
+        {p && size >= 26 ? <b className="text-[9.5px] font-[750] tracking-[-0.02em] tabular-nums">{p.done}/{p.total}</b> : <i className="size-[7px] rounded-full bg-work" />}
       </span>
     )
   }
   const Icon = ICON[state]
   return (
-    <span className={cn("inline-grid shrink-0 place-items-center rounded-full", TONE[state])} style={{ width: size, height: size }} role="img" aria-label={label} title={label}>
-      <Icon className="size-[58%]" />
+    <span className={cn("relative inline-flex flex-none items-center justify-center rounded-full", TONE[state])} style={{ width: size, height: size }} role="img" aria-label={title} title={title}>
+      <Icon style={{ width: Math.round(size * 0.55), height: Math.round(size * 0.55) }} />
     </span>
   )
 }

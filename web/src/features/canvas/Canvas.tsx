@@ -19,6 +19,7 @@ import { useNow } from "@/lib/now"
 import { openSession, useOpenSession } from "@/app/open-session"
 import { focusRequest, repoFilter } from "@/app/view-state"
 import { act, moveTo } from "@/features/session/actions"
+import { selected as selectedCard, useBoardCards } from "@/features/board/state"
 import { type Level, SessionCard } from "@/features/session/SessionCard"
 import { DONE_DOCK, DoneDock } from "./DoneDock"
 import { CARD_W, GRID, type Point, isInZone, onCanvas, placeCards, snap } from "./geometry"
@@ -29,15 +30,16 @@ import { ZoneNode, type ZoneNodeData } from "./ZoneNode"
 
 type SessionNodeData = { card: Card; now: number }
 
-const levelOf = (zoom: number): Level => (zoom < 0.62 ? "far" : zoom < 0.9 ? "mid" : "near")
+const levelOf = (zoom: number): Level => (zoom < 0.62 ? "far" : zoom < 0.85 ? "mid" : "near")
 const CARD_H_GUESS = 120 // a card's height before it is measured
 
-function SessionNode({ id, data, selected }: NodeProps<Node<SessionNodeData>>) {
+function SessionNode({ id, data, selected, dragging }: NodeProps<Node<SessionNodeData>>) {
   const zoom = useStore(s => s.transform[2])
   const isOpen = useOpenSession()?.id === id
+  const isPointed = selectedCard.use() === id
   // Far, the title is drawn larger the smaller the canvas is drawn, so it
   // keeps a readable size on screen.
-  return <SessionCard card={data.card} now={data.now} level={levelOf(zoom)} textScale={Math.min(1 / zoom, 2)} isSelected={selected || isOpen} />
+  return <SessionCard card={data.card} now={data.now} level={levelOf(zoom)} unscale={1 / zoom} isSelected={selected || isPointed} isReading={isOpen} isDragging={dragging} />
 }
 
 const nodeTypes = { session: SessionNode, zone: ZoneNode, note: NoteNode }
@@ -49,7 +51,8 @@ const isOverDock = (e: MouseEvent | TouchEvent) => {
 }
 
 export function Canvas() {
-  const cards = useLive(l => l.snapshot?.cards)
+  const hasData = useLive(l => !!l.snapshot)
+  const cards = useBoardCards()
   const serverZones = useLive(l => l.snapshot?.zones)
   const serverNotes = useLive(l => l.snapshot?.notes)
   const now = useNow()
@@ -212,7 +215,7 @@ export function Canvas() {
   }, [focus])
   const shown = useMemo(() => (flashId ? nodes.map(n => (n.id === flashId ? { ...n, className: "flash" } : n)) : nodes), [nodes, flashId])
 
-  if (!cards) return <div className="grid h-full place-items-center text-sm text-muted-foreground">Connecting…</div>
+  if (!hasData) return <div className="grid h-full place-items-center text-sm text-muted-foreground">Connecting…</div>
   return (
     <div className="size-full" onDoubleClick={e => {
       if (!(e.target as HTMLElement).classList.contains("react-flow__pane") || !flow.current) return

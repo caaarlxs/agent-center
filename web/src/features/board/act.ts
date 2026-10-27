@@ -1,0 +1,72 @@
+// The board's actions on a session, as the classic board does them
+// (main.js act): shown at once, sent to the server, then a toast that names
+// the session, with Undo (also Z) when it can be taken back.
+import { toast } from "sonner"
+import type { Card } from "@/lib/api-types"
+import { undoable } from "@/lib/toast"
+import { post } from "@/lib/api"
+import { stop } from "@/features/session/actions"
+import { patchOf } from "./overrides"
+import { overrides, selected, showDone } from "./state"
+import type { Step } from "./columns"
+
+export type Action = "pin" | "unpin" | "park" | "unpark" | "done" | "undone" | "archive" | "unarchive" | "seen" | "unseen" | "color" | "tier"
+
+const INVERSE: Partial<Record<Action, Action>> = { pin: "unpin", unpin: "pin", park: "unpark", done: "undone", archive: "unarchive", unseen: "seen" }
+const MESSAGE: Partial<Record<Action, string>> = { done: "Marked as done", park: "Moved to Later", pin: "Pinned", unpin: "Unpinned", archive: "Archived", unseen: "Marked to review" }
+
+const send = (id: string, action: string, payload: Record<string, unknown> = {}) => post(`/api/sessions/${encodeURIComponent(id)}/${action}`, payload)
+
+// Undo drops the change shown at once, not waiting for it to run out.
+function forget(ids: string[]) {
+  const rest = { ...overrides.get() }
+  for (const id of ids) delete rest[id]
+  overrides.set(rest)
+}
+
+// The card the keyboard points at next when this one leaves the list.
+let orderNow: Card[] = []
+export const setOrder = (order: Card[]) => void (orderNow = order)
+
+export async function boardAct(card: Card, action: Action, payload: Record<string, unknown> = {}) {
+  if (selected.get() === card.id && ((action === "done" && !showDone.get()) || action === "park")) {
+    const i = orderNow.findIndex(c => c.id === card.id)
+    selected.set((orderNow[i + 1] ?? orderNow[i - 1])?.id ?? null)
+  }
+  const patch = patchOf(action, payload)
+  if (patch) overrides.set({ ...overrides.get(), [card.id]: { ...patch, at: Date.now() } })
+  try {
+    await send(card.id, action, payload)
+  } catch (err) {
+    forget([card.id])
+    return void toast((err as Error).message || "Could not save")
+  }
+  const inverse = INVERSE[action]
+  const message = MESSAGE[action]
+  if (!message) return
+  const text = `${message}: ${card.title}`
+  if (inverse) undoable(text, () => (forget([card.id]), void send(card.id, inverse).catch(() => {})))
+  else toast(text)
+}
+
+// Several steps in a row (a drop on another tier).
+export async function boardSteps(card: Card, steps: Step[]) {
+  for (const [action, payload] of steps) await boardAct(card, action, payload)
+}
+
+// Archive all (Done): one toast, one Undo for all of them.
+export async function archiveAll(list: Card[]) {
+  const at = Date.now()
+  overrides.set({ ...overrides.get(), ...Object.fromEntries(list.map(c => [c.id, { column: "archived", at }])) })
+  await Promise.all(list.map(c => send(c.id, "archive").catch(() => {})))
+  undoable(list.length === 1 ? "1 session archived" : `${list.length} sessions archived`, () => {
+    forget(list.map(c => c.id))
+    void Promise.all(list.map(c => send(c.id, "unarchive").catch(() => {})))
+  })
+}
+
+// Ends the running turn, like Esc in the app.
+export const stopSession = (card: Card) =>
+  stop(card.id).then(() => toast(`Stopping “${card.title}”…`), (err: Error) => toast(err.message || "Could not stop"))
+
+export const openInClaude = (id: string) => send(id, "open").catch((err: Error) => toast(err.message || "Could not open the session"))

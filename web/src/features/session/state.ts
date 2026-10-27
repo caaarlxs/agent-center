@@ -19,10 +19,26 @@ export const STATE_LABEL: Record<StateKey, string> = {
   permission: "Needs approval",
   review: "To review",
   working: "Working",
-  pending: "Idle",
+  pending: "Pending",
   parked: "Later",
   done: "Done",
   stale: "Stuck",
+}
+
+// The label a card's state shows: an interrupted session says so (the
+// classic board's stateOf), a stuck one "Stuck".
+export const labelOf = (card: Card): string => {
+  const state = stateOf(card)
+  return state === "stale" && !card.isStale && card.isInterrupted ? "Interrupted" : STATE_LABEL[state]
+}
+
+// How long a session has waited for you: yellow under 10 minutes, orange up
+// to 30, red past 30 (its border, its age, how hard it shakes).
+export type Urgency = "low" | "mid" | "high"
+export function urgencyOf(card: Card, now: number): Urgency | null {
+  if (card.column !== "asking" || !card.waitingSince) return null
+  const min = (now - card.waitingSince) / 60_000
+  return min > 30 ? "high" : min >= 10 ? "mid" : "low"
 }
 
 // The line under the title: the question while it asks, the step under way
@@ -46,7 +62,8 @@ export function ago(at: number, now: number): string {
   if (min < 60) return `${min} min`
   const h = Math.round(min / 60)
   if (h < 24) return `${h} h`
-  return `${Math.round(h / 24)} d`
+  const d = Math.round(h / 24)
+  return d < 30 ? `${d} d` : `${Math.round(d / 30)} mo`
 }
 
 // A repo's colour, the same on every view and in both boards: a hue from

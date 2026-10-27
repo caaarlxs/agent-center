@@ -224,7 +224,33 @@
 .gm-mod { background: #2f81f7; }
 .gm-del { margin-left: 2px; width: 0 !important; height: 0 !important; border-left: 5px solid #f85149; border-top: 4px solid transparent; border-bottom: 4px solid transparent; transform: translateY(14px); }
 
+/* The board's motion (styles.css): a card that waits for you shakes now and
+   then (--amp, set per card), one at work breathes, the ring turns, a dot
+   beats while work runs in the background. */
+@theme {
+    --animate-breathe: breathe 2.6s ease-in-out infinite;
+    --animate-spin-ring: spin-ring 1.6s linear infinite;
+    --animate-run-beat: run-beat 1.4s ease-out infinite;
+    @keyframes breathe { 0%, 100% { opacity: 0.25; } 50% { opacity: 1; } }
+    @keyframes spin-ring { from { transform: rotate(-90deg); } to { transform: rotate(270deg); } }
+    @keyframes run-beat {
+        0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--run) 60%, transparent); }
+        70%, 100% { box-shadow: 0 0 0 6px transparent; }
+    }
+}
+@keyframes nudge {
+    0%, 9%, 100% { transform: none; }
+    1.5% { transform: rotate(calc(var(--amp) * -1deg)); }
+    3% { transform: rotate(calc(var(--amp) * 1deg)); }
+    4.5% { transform: rotate(calc(var(--amp) * -0.7deg)); }
+    6% { transform: rotate(calc(var(--amp) * 0.5deg)); }
+    7.5% { transform: rotate(calc(var(--amp) * -0.2deg)); }
+}
+
+/* Canvas: a card over the others while the pointer is on it (styles.css:824). */
+@media (hover: hover) { .react-flow__node-session:hover:not(.dragging) { z-index: 1000 !important; } }
+
 /* Canvas: a card the canvas went to ("Next up", the search) flashes once. */
-.react-flow__node.flash > * { animation: card-flash 1.4s cubic-bezier(0.23, 1, 0.32, 1); }
-@keyframes card-flash { from { box-shadow: 0 0 0 0 rgb(251 146 60 / 0.75); } to { box-shadow: 0 0 0 18px rgb(251 146 60 / 0); } }
-@media (prefers-reduced-motion: reduce) { .react-flow__node.flash > * { animation: none; outline: 2px solid rgb(251 146 60); } }
+.react-flow__node.flash article { animation: card-flash 1.4s var(--ease-out) 1 !important; }
+@keyframes card-flash { from { box-shadow: 0 0 0 0 color-mix(in srgb, var(--brand) 70%, transparent); } to { box-shadow: 0 0 0 18px transparent; } }
+@media (prefers-reduced-motion: reduce) { .react-flow__node.flash article { animation: none !important; border-color: var(--brand); } }
