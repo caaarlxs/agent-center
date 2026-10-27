@@ -245,24 +245,24 @@ Legend: missing = not in the new app; partial = present but differs (what differ
 
 ## Tasks
 
-- [ ] Intro — classic: tasks.js:35 ("Tasks from your organizer created in this conversation.") — new: missing.
-- [ ] Reload on each live update — classic: tasks.js:13 (`taskSignal`) — new: missing.
-- [ ] Close with Undo — classic: tasks.js:15-23 (optimistic; toast "Task done: <text>" with Undo/Z) — new: partial (`Tasks.tsx:18-23` "Task closed").
-- [ ] Check box — classic: css:642-647 (17px, radius 5, 1.5px `--line-strong`; hover `--work` border/tick + work-soft) — new: partial (shadcn Checkbox).
-- [ ] Add a task — classic: tasks.js:24-32, 47-48 (field "New task, Enter to save" → POST `/api/tasks/add {text, session}`) — new: missing.
-- [ ] Empty text — classic: tasks.js:37 ("This conversation has no open tasks.") — new: partial ("No open task for this session.").
+- [x] Intro — classic: tasks.js:35 ("Tasks from your organizer created in this conversation.") — new: missing.
+- [x] Reload on each live update — classic: tasks.js:13 (`taskSignal`) — new: missing.
+- [x] Close with Undo — classic: tasks.js:15-23 (optimistic; toast "Task done: <text>" with Undo/Z) — new: partial (`Tasks.tsx:18-23` "Task closed").
+- [x] Check box — classic: css:642-647 (17px, radius 5, 1.5px `--line-strong`; hover `--work` border/tick + work-soft) — new: partial (shadcn Checkbox).
+- [x] Add a task — classic: tasks.js:24-32, 47-48 (field "New task, Enter to save" → POST `/api/tasks/add {text, session}`) — new: missing.
+- [x] Empty text — classic: tasks.js:37 ("This conversation has no open tasks.") — new: partial ("No open task for this session.").
 
 ## Search
 
-- [ ] Look — classic: search.js:87-120, css:1619-1644 (backdrop `rgb(0 0 0/.28)`, top 14vh; `min(680px)` × `min(560px,72vh)`, radius 14, `--raised`; input 16px with search icon and × "Close (Esc)"; rows 38px, selected `--select`, hover moves selection; no animation on purpose) — new: partial (`SearchPalette.tsx` cmdk dialog `sm:max-w-2xl`, animated).
-- [ ] Tabs All / Sessions / Archived with counts, Tab / ⇧Tab cycles — classic: search.js:13-17, 63-64, 79-83, 95-98 — new: missing (groups instead).
-- [ ] Matched words marked — classic: search.js:29-34, css:1640 (title and quote, accent 700) — new: missing.
-- [ ] Quote near the match — classic: search.js:19-27 — new: missing (start of snippet).
-- [ ] "archived" tag — classic: search.js:110 — new: partial (icon only).
-- [ ] ⌘↵ / ⌘-click opens in Claude — classic: search.js:69-78, 106 — new: missing.
-- [ ] Footer hints — classic: search.js:115-118 ("↑↓ choose", "↵ open", "⌘↵ open in Claude", "Tab tab", "Esc close") — new: missing.
+- [x] Look — classic: search.js:87-120, css:1619-1644 (backdrop `rgb(0 0 0/.28)`, top 14vh; `min(680px)` × `min(560px,72vh)`, radius 14, `--raised`; input 16px with search icon and × "Close (Esc)"; rows 38px, selected `--select`, hover moves selection; no animation on purpose) — new: partial (`SearchPalette.tsx` cmdk dialog `sm:max-w-2xl`, animated).
+- [x] Tabs All / Sessions / Archived with counts, Tab / ⇧Tab cycles — classic: search.js:13-17, 63-64, 79-83, 95-98 — new: missing (groups instead).
+- [x] Matched words marked — classic: search.js:29-34, css:1640 (title and quote, accent 700) — new: missing.
+- [x] Quote near the match — classic: search.js:19-27 — new: missing (start of snippet).
+- [x] "archived" tag — classic: search.js:110 — new: partial (icon only).
+- [x] ⌘↵ / ⌘-click opens in Claude — classic: search.js:69-78, 106 — new: missing.
+- [x] Footer hints — classic: search.js:115-118 ("↑↓ choose", "↵ open", "⌘↵ open in Claude", "Tab tab", "Esc close") — new: missing.
 - [ ] Recent sessions when empty, 150 ms debounce, "Searching…", open goes to card — new: done.
-- [ ] Empty text — classic: search.js:102 ("Nothing found in this tab.") — new: partial ("Nothing found.").
+- [x] Empty text — classic: search.js:102 ("Nothing found in this tab.") — new: partial ("Nothing found.").
 
 ## Dialogs
 
@@ -311,6 +311,6 @@ Legend: missing = not in the new app; partial = present but differs (what differ
 ## Other
 
 - [x] Storage keys shared with classic — classic: util.js:18-31 (`ac.<key>`) — new: partial (`lib/store.ts` uses `ac.`, but `Sidebar.tsx:20` `sideFolded`, `Changes.tsx:47, 175, 192` `review.<id>` and `changesView`, `CodeWorkspace.tsx:37, 144` `code.<id>` write raw keys: choices do not carry between boards).
-- [ ] `mark` style — css:484 (ask-soft bg, radius 3, 1px ring) — new: missing (no highlight in use).
+- [x] `mark` style — css:484 (ask-soft bg, radius 3, 1px ring) — new: missing (no highlight in use).
 - [ ] `.link-btn` — css:1144 (accent, underline offset 2) — new: partial (plain underline-on-hover buttons).
 - [ ] Copy handler fallback (execCommand) — util.js:94-107 — new: missing (`Files.tsx:107` clipboard API only).
