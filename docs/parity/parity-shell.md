@@ -233,15 +233,15 @@ Legend: missing = not in the new app; partial = present but differs (what differ
 
 ## PRs
 
-- [ ] Intro — classic: prs.js:171 ("PRs from this session's branch and PRs named in the conversation.") — new: missing.
-- [ ] Refresh every 30 s and after an action — classic: prs.js:161-166, 100 — new: missing (`Prs.tsx:72-74` once).
-- [ ] Open first, then "Merged and closed (N)" fold — classic: prs.js:168-176 — new: missing.
-- [ ] Card — classic: prs.js:110-121, css:986-995 (state chip; "repo#N ↗" link title "Open on GitHub"; age; h3 14px/600; "base ← head" mono; "+A −D · N file(s)"; closed at opacity .75) — new: partial (`Prs.tsx:26-46` badges, arrow reversed "head → base", no age, no fade).
-- [ ] "Ready to merge?" — classic: prs.js:33-81, css:1252-1262 (rows with ✓ ✗ • – marks: checks, review, unresolved threads from `/readiness`, uncommitted/unpushed, open tasks, conflicts, behind; buttons "Ask it to fix them", "Send to the session", "Ask it to resolve them" that send prepared messages) — new: missing.
-- [ ] Merge state line — classic: prs.js:18-29, 125, css:996-997 (dot + "Ready to merge", "Has conflicts with the base branch", "Can be merged, but some checks are failing", "Out of date with the base branch", "Blocked by the repo's rules (required review or checks)", "GitHub is working out whether it can be merged") — new: missing.
-- [ ] Merge flow — classic: prs.js:126-145, css:1000-1006 (method select Squash / Merge commit / Rebase saved `ac.mergeMethod`; "Delete branch" checkbox `ac.deleteBranch`; confirm strip "Merge #N into base with squash and delete the branch?" with "Still pending: …" and "Merge anyway"; close confirm "Close #N without merging?" with danger "Close PR") — new: missing (`Prs.tsx:50-61` merges on menu click, no confirm, no delete-branch).
-- [ ] Busy labels and toasts — classic: prs.js:93-101, 139-153 ("Merging…", "Marking…", "Closing…", "Reopening…"; "#N merged" / "Could not do it: …") — new: partial (`Prs.tsx:22-24` "Merge: done").
-- [ ] Draft actions — classic: prs.js:146-149 ("Mark as ready", "Convert to draft") — new: partial ("Ready for review", "Back to draft").
+- [x] Intro — classic: prs.js:171 ("PRs from this session's branch and PRs named in the conversation.") — new: missing.
+- [x] Refresh every 30 s and after an action — classic: prs.js:161-166, 100 — new: missing (`Prs.tsx:72-74` once).
+- [x] Open first, then "Merged and closed (N)" fold — classic: prs.js:168-176 — new: missing.
+- [x] Card — classic: prs.js:110-121, css:986-995 (state chip; "repo#N ↗" link title "Open on GitHub"; age; h3 14px/600; "base ← head" mono; "+A −D · N file(s)"; closed at opacity .75) — new: partial (`Prs.tsx:26-46` badges, arrow reversed "head → base", no age, no fade).
+- [x] "Ready to merge?" — classic: prs.js:33-81, css:1252-1262 (rows with ✓ ✗ • – marks: checks, review, unresolved threads from `/readiness`, uncommitted/unpushed, open tasks, conflicts, behind; buttons "Ask it to fix them", "Send to the session", "Ask it to resolve them" that send prepared messages) — new: missing.
+- [x] Merge state line — classic: prs.js:18-29, 125, css:996-997 (dot + "Ready to merge", "Has conflicts with the base branch", "Can be merged, but some checks are failing", "Out of date with the base branch", "Blocked by the repo's rules (required review or checks)", "GitHub is working out whether it can be merged") — new: missing.
+- [x] Merge flow — classic: prs.js:126-145, css:1000-1006 (method select Squash / Merge commit / Rebase saved `ac.mergeMethod`; "Delete branch" checkbox `ac.deleteBranch`; confirm strip "Merge #N into base with squash and delete the branch?" with "Still pending: …" and "Merge anyway"; close confirm "Close #N without merging?" with danger "Close PR") — new: missing (`Prs.tsx:50-61` merges on menu click, no confirm, no delete-branch).
+- [x] Busy labels and toasts — classic: prs.js:93-101, 139-153 ("Merging…", "Marking…", "Closing…", "Reopening…"; "#N merged" / "Could not do it: …") — new: partial (`Prs.tsx:22-24` "Merge: done").
+- [x] Draft actions — classic: prs.js:146-149 ("Mark as ready", "Convert to draft") — new: partial ("Ready for review", "Back to draft").
 
 ## Tasks
 
@@ -299,7 +299,7 @@ Legend: missing = not in the new app; partial = present but differs (what differ
 - [ ] Dialog 160ms scale .97 — css:1036-1037 — new: partial.
 - [ ] Toast 220ms translateY 8px — css:1026-1027 — new: partial.
 - [x] Button press scale .97 / icon .92 / choice .96 / option .99 — css:119, 135, 909, 964 — new: partial (translate-y-px).
-- [ ] Spinner — css:1141 (16px, 2px accent ring, right side transparent, `spin .8s linear`) — new: partial (lucide Loader).
+- [x] Spinner — css:1141 (16px, 2px accent ring, right side transparent, `spin .8s linear`) — new: partial (lucide Loader).
 - [x] Shimmer skeleton 1.2s — css:1014-1017 — new: partial (animate-pulse).
 - [x] Status dot pulse 1.6s, run dot `run-beat 1.4s`, rec dot 1.2s, waiting blink 1s, plan spin 1s — css:259-260, 1429-1434, 1464-1465, 1478, 974 — new: missing (except an animate-pulse rec dot).
 - [x] Mic pill open 260ms — css:1455-1457 — new: missing.
