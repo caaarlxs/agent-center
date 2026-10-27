@@ -1,12 +1,14 @@
-// The answer being written arrives in pieces of a few words every ~130 ms;
-// shown as they come it jumps. Instead its letters appear one after another,
-// fast enough to catch up with what has arrived within about one piece's
-// time, so it reads as typing and never falls behind. A text that is not a
+// The answer being written arrives in pieces of a few words every ~130 ms,
+// and after a tool run Claude Code often hands over its first part at once
+// (two thousand letters in one piece); shown as they come, they jump.
+// Instead its letters appear one after another, at the speed that shows
+// what has arrived within CATCH_UP_MS: a big piece types in under a second,
+// the steady flow keeps pace. A text that is not a
 // continuation of the last (a new step of the turn) starts over.
 import { useEffect, useRef, useState } from "react"
 
 const FRAME_MS = 33 // about 30 redraws a second: each one parses the markdown again
-const CATCH_UP_MS = 160 // what has arrived is all shown within this
+const CATCH_UP_MS = 800 // what has arrived is all shown within this
 
 // Letters per millisecond to show what has arrived in CATCH_UP_MS, set each
 // time more arrives.
