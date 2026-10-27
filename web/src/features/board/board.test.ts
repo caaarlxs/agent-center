@@ -3,7 +3,7 @@ import type { Card } from "@/lib/api-types"
 import { dropAction, inboxGroups, runsOf } from "./columns"
 import { canvasOrder, stepFrom, walkOrder } from "./order"
 import { patchOf, settle, withOverrides } from "./overrides"
-import { emptyText, tierOf, tierStep, toTier } from "./tiers"
+import { byRank, emptyText, ranksAt, tierOf, tierStep, toTier } from "./tiers"
 
 const card = (id: string, extra: Partial<Card> = {}) =>
   ({ id, column: "review", pinned: false, repoRoot: "/r", repo: "r", tier: "other", pos: null, isUnread: false, title: id, ...extra }) as Card
@@ -33,8 +33,20 @@ test("consecutive cards of one repo stack; the order never changes", () => {
 })
 
 describe("tiers", () => {
+  test("a row keeps the order the person gave, never the activity's", () => {
+    const row = [card("c", { tierRank: null }), card("b", { tierRank: 2048 }), card("a", { tierRank: 1024 }), card("d", { tierRank: null })]
+    expect([...row].sort(byRank).map(c => c.id)).toEqual(["a", "b", "c", "d"])
+  })
+  test("a place between two neighbours, or the whole row numbered when some had none", () => {
+    const ranked = [card("a", { tierRank: 1024 }), card("b", { tierRank: 2048 })]
+    expect(ranksAt(ranked, "x", 1)).toEqual([["x", 1536]])
+    expect(ranksAt(ranked, "x", 0)).toEqual([["x", 512]])
+    expect(ranksAt(ranked, "x", 2)).toEqual([["x", 3072]])
+    expect(ranksAt([card("a", { tierRank: null }), card("b", { tierRank: null })], "b", 0)).toEqual([["b", 1024], ["a", 2048]])
+  })
+
   test("a card's row: Done closes, Later pauses, else its own (other by default)", () => {
-    expect(tierOf(card("a", { column: "done" }))).toBe("close")
+    expect(tierOf(card("a", { column: "done" }))).toBeNull()
     expect(tierOf(card("a", { column: "parked", tier: "main" }))).toBe("paused")
     expect(tierOf(card("a", { tier: "fixes" }))).toBe("fixes")
     expect(tierOf(card("a", { tier: "nonsense" }))).toBe("other")
@@ -42,16 +54,17 @@ describe("tiers", () => {
   test("moving takes it out of Done or Later first", () => {
     expect(toTier(card("a", { column: "done" }), "main")).toEqual([["undone", {}], ["tier", { tier: "main" }]])
     expect(toTier(card("a"), "paused")).toEqual([["park", { until: null }]])
-    expect(toTier(card("a"), "close")).toEqual([["done", {}]])
     expect(toTier(card("a"), "other")).toBeNull()
   })
   test("[ and ] step one row, and stop at the ends", () => {
     expect(tierStep(card("a", { tier: "main" }), -1)).toBeNull()
     expect(tierStep(card("a", { tier: "main" }), 1)).toBe("fixes")
+    expect(tierStep(card("a", { column: "parked" }), 1)).toBeNull()
+    expect(tierStep(card("a", { column: "done" }), -1)).toBeNull()
   })
-  test("an empty Close row says how many it hides", () => {
-    expect(emptyText("close", 3, false)).toBe("3 closed · “Done” at the top shows them")
-    expect(emptyText("paused", 0, false)).toBe("Drag a card here to pause it")
+  test("an empty row says what a drop there does", () => {
+    expect(emptyText("paused", false)).toBe("Drag a card here to pause it")
+    expect(emptyText("main", true)).toBe("Drop here")
   })
 })
 

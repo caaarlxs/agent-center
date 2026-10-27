@@ -19,6 +19,7 @@ export type BoardItem = {
   title?: string // the person's own name for it, on the board only
   color?: string // the person's own colour for it (CARD_COLORS), on every view
   tier?: string // its row on the tier list (TIERS); absent: the "other" row
+  tier_rank?: number // its place in that row, left to right, as the person put it
   pos?: { x: number; y: number } // where it sits on the canvas view
 }
 
@@ -74,7 +75,7 @@ export function itemOf(key: string, ids: string[]): BoardItem {
   return board.items[key] ?? ids.map(id => board.items[id]).find(Boolean) ?? {}
 }
 
-const ACTIONS = new Set(["pin", "unpin", "park", "unpark", "done", "undone", "archive", "unarchive", "seen", "unseen", "move", "rename", "color", "tier"])
+const ACTIONS = new Set(["pin", "unpin", "park", "unpark", "done", "undone", "archive", "unarchive", "seen", "unseen", "move", "rename", "color", "tier", "rank"])
 export const isBoardAction = (action: string) => ACTIONS.has(action)
 
 // Applies one of ACTIONS to a group's item (`key`: the group's board key,
@@ -95,6 +96,9 @@ export async function applyAction(key: string, ids: string[], action: string, bo
   // An empty tier, or "other", puts it back in the default row.
   const tier = action === "tier" ? String(body.tier ?? "") : ""
   if (tier && !TIERS.includes(tier)) return `unknown tier: ${tier}`
+  // A place in its row: any number (smaller is further left); null takes it off.
+  const rank = action === "rank" && body.rank !== null ? Number(body.rank) : null
+  if (action === "rank" && body.rank !== null && !Number.isFinite(rank)) return "invalid rank"
   if (!board.items[key]) {
     const legacy = itemOf(key, ids)
     if (Object.keys(legacy).length) board.items[key] = { ...legacy }
@@ -157,6 +161,10 @@ export async function applyAction(key: string, ids: string[], action: string, bo
     case "tier":
       if (tier && tier !== "other") item.tier = tier
       else delete item.tier
+      break
+    case "rank":
+      if (rank !== null) item.tier_rank = rank
+      else delete item.tier_rank
       break
   }
   if (Object.keys(item).length === 0) delete board.items[key]

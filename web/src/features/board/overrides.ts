@@ -5,7 +5,7 @@ import type { Card } from "@/lib/api-types"
 
 export const OVERRIDE_MS = 6000
 
-export type Patch = Partial<Pick<Card, "column" | "pinned" | "isUnread" | "title" | "color" | "tier" | "parkedUntil">>
+export type Patch = Partial<Pick<Card, "column" | "pinned" | "isUnread" | "title" | "color" | "tier" | "tierRank" | "parkedUntil">>
 export type Overrides = Record<string, Patch & { at: number }>
 
 // The patch an action makes, or null (it changes nothing the card shows).
@@ -20,6 +20,7 @@ export function patchOf(action: string, payload: Record<string, unknown> = {}): 
     case "seen": return { isUnread: false }
     case "color": return { color: (payload.color as string) || null }
     case "tier": return { tier: (payload.tier as string) || "other" }
+    case "rank": return { tierRank: (payload.rank as number | null) ?? null }
     default: return null
   }
 }
