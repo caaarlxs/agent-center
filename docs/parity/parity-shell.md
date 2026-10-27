@@ -45,7 +45,7 @@ Legend: missing = not in the new app; partial = present but differs (what differ
 - [x] Inbox pills — classic: sidebar.js:35-36, css:203-207, 931-932 ("N new" pill accent-soft/accent, title "Updated since you last looked"; asking count pill ask-soft/ask; both 18px h, radius 9, 11px/650, tabular, 4px apart) — new: missing (no unread/asking counts anywhere in the sidebar).
 - [x] "Repos" heading — classic: css:208 (11px/600 uppercase, letter-spacing .05em, `--faint`, margin 18px 8px 6px) — new: partial (`Sidebar.tsx:101` 11px medium, not uppercase).
 - [x] Repo rows — classic: sidebar.js:49-59, css:209-213 (28px rows, weight 450; swatch 9px radius 3 `hsl(hue 62% 55%)`; "All" swatch `conic-gradient(hsl(20 70% 58%), hsl(140 50% 50%), hsl(220 70% 62%), hsl(300 50% 60%), hsl(20 70% 58%))` and open-session count; `.n` 11.5px faint tabular; title = repo root) — new: partial (`Sidebar.tsx:104-119` swatch 10px `oklch(.72 .14 hue)`; All has no count; no root tooltip when unfolded; different conic colours).
-- [ ] Repo filter persistence — classic: main.js:93, 145, 296-298 (`ac.repoFilter`; reset when the repo leaves; closes narrow sidebar) — new: missing (`app/view-state.ts:6` plain store, lost on reload; no reset).
+- [x] Repo filter persistence — classic: main.js:93, 145, 296-298 (`ac.repoFilter`; reset when the repo leaves; closes narrow sidebar) — new: missing (`app/view-state.ts:6` plain store, lost on reload; no reset).
 - [x] Slim (folded) layout — classic: css:1778-1805 (icon-only centred buttons, font-size 0; pills absolute top 1 right 2, 16px×15px, 10px; "new" pill hidden; `.n` hidden; Sent files size absolute bottom −2 9.5px; foot as column gap 8; only the Setup gear (`.keep`) stays, other ghost buttons hidden; live label hidden) — new: partial (`Sidebar.tsx:122-134` keeps all four foot buttons in a column; repo tooltips on the right are an improvement).
 - [x] Live indicator — classic: sidebar.js:67, css:216-219 (7px dot `--faint`; on: `--work` + `0 0 0 3px var(--work-soft)`; 12px muted "Live"/"Reconnecting…") — new: done (`Sidebar.tsx:123-125`, 6px emerald-400).
 - [x] Foot toggles "on" colour — classic: css:1098 (`.ghost-btn.on` accent) — new: partial (`text-foreground`; speech off uses opacity .5).
@@ -109,11 +109,11 @@ Legend: missing = not in the new app; partial = present but differs (what differ
 - [x] Default width — classic: main.js:663-666 (`min(760, max(420, round(vw·0.42)))`, never above `vw − 300`) — new: partial (`SessionPanel.tsx:42` `min(680px,46vw)`, min 420, no `vw−300` cap).
 - [x] Resize by dragging the left edge — classic: main.js:667-686, 766-767, css:1356-1364 (7px handle, `col-resize`; hover/drag `color-mix(accent 45%)`; clamps 380…vw−300; saved `ac.readerW`; double-click resets; title "Drag to change the width · double-click: default width"; transitions off and `user-select:none` while dragging) — new: missing.
 - [x] Widen toggle — classic: reader.js:143-144, main.js:116, 665-666 (expand/shrink icon-btn, titles "Widen the panel" / "Normal width"; wide = `max(base, 75vw)`; Changes asks for room automatically) — new: missing.
-- [ ] Workspace width (Changes, Code, Files) — classic: main.js:50-51, 664-666 — new: done (`SessionPanel.tsx:42`).
+- [x] Workspace width (Changes, Code, Files) — classic: main.js:50-51, 664-666 — new: done (`SessionPanel.tsx:42`).
 - [x] Head layout — classic: css:493-498 (padding 10px 12px 10px 20px; bar min-height 30px gap 10; tools gap 4) — new: partial (`SessionPanel.tsx:43-52` px-5 pt-3, xs text row).
 - [x] Status chip — classic: reader.js:136, components.js:79-97, css:262-271, 252-260 (chip 22px, radius 6, 11.5px/600, tone bg (ask-soft, work-soft, review-soft, bad-soft, hover); permission lock icon, parked clock, done check, else 7px dot that pulses (`pulse 1.6s ease-in-out infinite`, 4px work-soft ring) when working) — new: partial (`SessionPanel.tsx:45` StateIcon 18 + coloured label text, no chip bg).
 - [x] Repo tag — classic: components.js:109-111, css:273-274 (12px/600, text `hsl(hue 55% 70%)`, 7px square radius 2 `hsl(hue 62% 55%)`) — new: partial (`SessionPanel.tsx:46` muted text, oklch square).
-- [ ] Branch — classic: reader.js:138, css:275 — new: done (`SessionPanel.tsx:47`).
+- [x] Branch — classic: reader.js:138, css:275 — new: done (`SessionPanel.tsx:47`).
 - [x] Actions in the head — classic: reader.js:140, components.js:272-322, css:330, 438-439 (compact 24px icon buttons: Open in Claude "(O)", Pin star "(P)" accent when on, bell "Tell me when it finishes or asks me something", Run play, palette colour menu "(C)" tinted, eye "Mark to review … (U)" when pending, stop "(S)" hover red when working, clock Later menu "(A)" / unpark, check "Mark as done (E)" or undo "Reopen (E)" + archive) — new: missing in the panel (only on the card's "…" menu, `features/session/CardMenu.tsx`; no colour, no mark-to-review, no stop).
 - [x] Open in Claude button — classic: reader.js:141-142, css:499 (`.btn.primary.sm` 28px, 12.5px, external icon 12; title "Open in Claude (O)") — new: partial (`SessionPanel.tsx:49` orange-500, no title).
 - [x] Close button — classic: reader.js:145 (title "Close (Esc)") — new: partial (aria-label only).
@@ -124,7 +124,7 @@ Legend: missing = not in the new app; partial = present but differs (what differ
 - [x] Tasks tab only when the organizer is on — classic: reader.js:80-82, main.js:769 (`data.features.organizer`) — new: missing (always shown).
 - [x] Code tab kept alive — classic: reader.js:86-89, 163 (mounted once, hidden with `display:none` when another tab shows: open files, view, unsaved text survive) — new: missing (`SessionPanel.tsx:66` unmounts; switching tabs drops unsaved edits).
 - [x] Open a file from the conversation in Files — classic: main.js:696, reader.js:156 (`showFile(path)` → Files tab with that file) — new: missing.
-- [ ] Bridge poll 2.5 s — classic: reader.js:93-100 — new: done (`features/conversation/useBridge.ts`).
+- [x] Bridge poll 2.5 s — classic: reader.js:93-100 — new: done (`features/conversation/useBridge.ts`).
 - [x] Review comments sent → back to Conversation — classic: reader.js:122-128 — new: missing (`features/changes/Changes.tsx:185` stays in Changes).
 
 ## Conversation
@@ -154,7 +154,7 @@ Legend: missing = not in the new app; partial = present but differs (what differ
 - [x] File chips Claude sent — classic: files.js:54-74, css:1338-1347, 1553-1556 (caption; chip with coloured ext tag by family, name, size or "gone"; click opens Files tab) — new: partial (`ConversationView.tsx:210` static spans, not clickable, no size).
 - [x] Artifact card — classic: files.js:77-86, css:1559-1564 (card radius 10, accent file icon, name without extension, "Published on claude.ai", "View file" + "Open ↗") — new: partial (`ConversationView.tsx:212` bare link).
 - [x] "Running now" box — classic: components.js:367-413, css:1426-1449 (background tasks and processes: icon, what, kind, age, idle (forgotten in `--run`), memory (≥ 1 GB `--run`), "Stop" link → `/stopprocess`; head "Running now" with beating dot and total "X in memory") — new: missing.
-- [ ] Loading skeleton — classic: conversation.js:468, css:1014-1016 — new: done (`ConversationView.tsx:268`).
+- [x] Loading skeleton — classic: conversation.js:468, css:1014-1016 — new: done (`ConversationView.tsx:268`).
 - [x] Load earlier — classic: conversation.js:446-453 (keeps the scroll position) — new: partial (`ConversationView.tsx:272`; position kept only if stick-to-bottom allows).
 - [x] "New messages" pill — classic: conversation.js:494-499, css:597-601 (sticky bottom 4px, 28px radius 14, `--text` bg / `--bg` text, 12px/600, arrow-down, shadow-pop; only when new items arrived while scrolled up) — new: partial (`ConversationScrollButton` icon-only, shows whenever scrolled up).
 
@@ -214,7 +214,7 @@ Legend: missing = not in the new app; partial = present but differs (what differ
 - [x] Search panel — classic: code.js:209-262, css:1750-1762 (⌘⇧F selects the field; per-file fold; dir path; "N result(s) in N file(s)" singular forms; hit text with match `<mark>` ask-soft and leading "…"; opening selects the exact match; kept mounted so the query stays) — new: partial (`CodeWorkspace.tsx:72-112` no highlight, no fold, no dir, selects whole line, unmounts on switch).
 - [x] Theme follows the OS live — classic: code.js:38-39, 316-317 — new: partial (fixed dark).
 - [x] File type labels — classic: code.js:70-95 (also Makefile MK, ipynb NB, mts/cts/cjs, jsonc/jsonl, ini, mdx, log, tsv, htm, less, astro, gql, bash, fish, ps1, prisma, proto, h, hpp, icns; lock uses the lock glyph) — new: partial (`components/common/FileIcon.tsx:5-24` subset).
-- [ ] Save, conflict notice, compare, follow disk, remembered tabs, margin marks, beforeunload — new: done.
+- [x] Save, conflict notice, compare, follow disk, remembered tabs, margin marks, beforeunload — new: done.
 
 ## Files
 
@@ -229,7 +229,7 @@ Legend: missing = not in the new app; partial = present but differs (what differ
 - [x] Tables — classic: files.js:172-174, css:1684-1687 (sticky header row on `--side`; 1000 rows with "Only the first 1000 rows show here.") — new: partial (`Files.tsx:42, 62-69` 500 rows, no note, header not sticky).
 - [x] Audio — classic: files.js:16, 189-190 (`mp3|wav` → `<audio controls>`) — new: missing.
 - [x] Quick Look fallback — classic: files.js:191-194, css:1681-1683 (caption "The first page, as Quick Look shows it. Open it on the Mac for all of it."; failure "macOS has no preview for this kind of file: open it on the Mac.") — new: partial (no caption; different failure text).
-- [ ] Text as Monaco, images, video, PDF, sandboxed HTML, Office in shadow root — new: done.
+- [x] Text as Monaco, images, video, PDF, sandboxed HTML, Office in shadow root — new: done.
 
 ## PRs
 
@@ -261,7 +261,7 @@ Legend: missing = not in the new app; partial = present but differs (what differ
 - [x] "archived" tag — classic: search.js:110 — new: partial (icon only).
 - [x] ⌘↵ / ⌘-click opens in Claude — classic: search.js:69-78, 106 — new: missing.
 - [x] Footer hints — classic: search.js:115-118 ("↑↓ choose", "↵ open", "⌘↵ open in Claude", "Tab tab", "Esc close") — new: missing.
-- [ ] Recent sessions when empty, 150 ms debounce, "Searching…", open goes to card — new: done.
+- [x] Recent sessions when empty, 150 ms debounce, "Searching…", open goes to card — new: done.
 - [x] Empty text — classic: search.js:102 ("Nothing found in this tab.") — new: partial ("Nothing found.").
 
 ## Dialogs
@@ -271,7 +271,7 @@ Legend: missing = not in the new app; partial = present but differs (what differ
 - [x] New session prompt — classic: dialogs.js:99-120 (placeholder "What you want Claude to do (optional) — or dictate it"; ⌘↵ sends; explanation "Send: the first turn runs here, headless, with this mode, model and effort, and the session shows up at once. Open it in Claude when you want." / "Without a prompt, it opens in Claude for you to write there (with Claude's settings)."; "Open in Claude" button; "Send ⌘↵" / "Launching…") — new: partial (`NewSessionDialog.tsx:97-123` no explanation, icon-only submit, no kbd).
 - [x] New session pickers — classic: dialogs.js:108-110 (icons lock/bot/gauge with hints; titles "Permission mode for the first turn", "Model", "Effort for the first turn") — new: partial.
 - [x] New session toasts — classic: main.js:520-531 ("Session created: Claude is working" then opens after 600 ms; "New session opened in Claude") — new: partial ("Session started").
-- [ ] Help dialog — classic: dialogs.js:152-166 — new: missing (see Keyboard).
+- [ ] Help dialog — classic: dialogs.js:152-166 — new: missing (see Keyboard). Owned by the keyboard work: the sidebar button and `?dialog=help` open `{ kind: "help" }`, which `app/Dialogs.tsx` leaves for that dialog to draw.
 - [x] Catch me up — classic: dialogs.js:170-256, css:1060-1096 (width min(640px), max-h min(78vh,760px); sun icon `--ask`; "Since Tue 27, 14:20" (`when`, util.js:152); counts as pills (radius 999, waiting ask-soft, stuck bad-soft); "START WITH" focus card accent-soft with accent 35% border; group h3 uppercase 11.5px/700; next pill accent-soft accent; group label "For later"; wait text "Claude reads what your sessions did. It takes about 10 seconds."; footer "A separate request to Claude with your account: it does not open or touch your sessions. It covers what happened since the last summary and what still waits for you."; stale body .5 in 200ms) — new: partial (`DigestDialog.tsx` amber instead of accent, counts as plain text, "Since 2 h", "Later", no footer, shorter wait text).
 - [x] Setup texts — classic: setup.js:14-63, 139 (intro "Each step changes something on this Mac and runs only when you press it. Sessions that were already open load the mod when they restart."; long step texts) — new: partial (`SetupDialog.tsx:23-32` shortened, no intro).
 - [x] Setup step look — classic: css:1521-1547 (card radius 10; done step on `--side`; need badge radius 999, Required accent-soft/accent; working state accent; progress 6px accent; busy "One moment…") — new: partial (rose/amber badges, spinner).
@@ -305,12 +305,12 @@ Legend: missing = not in the new app; partial = present but differs (what differ
 - [x] Mic pill open 260ms — css:1455-1457 — new: missing.
 - [x] Chevron turns (150ms file head, 120ms tree, 150ms picker 180°) — css:1213-1214, 1708-1709, 1486-1488 — new: partial.
 - [x] Hover reveals (pencil, fork link, code copy .75 → 1) 120ms — css:946-947, 1266-1267, 552-554 — new: missing.
-- [ ] Card flash — new: done (`index.css:137-140`).
-- [ ] Reduced motion everywhere — css:1138-1140, 326, 1434, 1466, 1832 — new: missing.
+- [x] Card flash — new: done (`index.css:137-140`).
+- [x] Reduced motion everywhere — css:1138-1140, 326, 1434, 1466, 1832 — new: missing.
 
 ## Other
 
 - [x] Storage keys shared with classic — classic: util.js:18-31 (`ac.<key>`) — new: partial (`lib/store.ts` uses `ac.`, but `Sidebar.tsx:20` `sideFolded`, `Changes.tsx:47, 175, 192` `review.<id>` and `changesView`, `CodeWorkspace.tsx:37, 144` `code.<id>` write raw keys: choices do not carry between boards).
 - [x] `mark` style — css:484 (ask-soft bg, radius 3, 1px ring) — new: missing (no highlight in use).
-- [ ] `.link-btn` — css:1144 (accent, underline offset 2) — new: partial (plain underline-on-hover buttons).
+- [x] `.link-btn` — css:1144 (accent, underline offset 2) — new: partial (plain underline-on-hover buttons).
 - [x] Copy handler fallback (execCommand) — util.js:94-107 — new: missing (`Files.tsx:107` clipboard API only).
