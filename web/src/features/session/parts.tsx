@@ -21,6 +21,7 @@ import { boardAct, openInClaude, stopSession } from "@/features/board/act"
 import { menu, toggleMenu } from "@/features/board/state"
 import { answer, permit, sendText } from "./actions"
 import { ago } from "./state"
+import { Num } from "@/components/common/Num"
 
 const stop = (fn: () => void) => (e: React.MouseEvent) => (e.stopPropagation(), fn())
 const openTab = (id: string, tab: Tab = "chat") => openSession(id, tab)
@@ -249,7 +250,7 @@ export function UsageMeter({ usage, barW = 28 }: { usage: Card["usage"]; barW?: 
   return (
     <span className={cn("inline-flex flex-none items-center gap-[5px] text-[11px] font-semibold tabular-nums", tone)}
       title={`Context used: ${tokens} of ${usage.window / 1000}k tokens (${pct}%)${pct >= 85 ? " — consider starting a new session" : ""}`}>
-      <span className="h-1 overflow-hidden rounded-[2px] bg-hover" style={{ width: barW }}><i className={cn("block h-full rounded-[2px]", fill)} style={{ width: `${pct}%` }} /></span>{pct}%
+      <span className="h-1 overflow-hidden rounded-[2px] bg-hover" style={{ width: barW }}><i className={cn("block h-full rounded-[2px]", fill)} style={{ width: `${pct}%` }} /></span><Num value={pct} suffix="%" />
     </span>
   )
 }

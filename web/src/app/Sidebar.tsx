@@ -21,6 +21,7 @@ import { Limits, SlimLimits } from "@/features/limits/Limits"
 import { openDialog } from "./open-dialog"
 import { openSession } from "./open-session"
 import { repoFilter, sideOpen, view, type View } from "./view-state"
+import { Mem, Num } from "@/components/common/Num"
 
 export const sideFolded = persistedStore("sideSlim", false) // the classic board's name for it
 export const toggleFolded = () => sideFolded.set(!sideFolded.get())
@@ -90,7 +91,7 @@ function SessionsMemory({ cards, isSlim }: { cards: Snapshot["cards"]; isSlim: b
         <Gauge className="size-3.5 shrink-0" />
         {!isSlim && <span>Sessions</span>}
         {!isSlim && PRESSURE[memory.pressure] && <span className="text-[10.5px] font-semibold whitespace-nowrap text-bad">{PRESSURE[memory.pressure]}</span>}
-        <span className={cn("ml-auto text-[11.5px] text-faint tabular-nums", isTense && "text-run", isSlim && "absolute -bottom-0.5 ml-0 text-[9.5px]")}>{memText(memory.total)}</span>
+        <span className={cn("ml-auto text-[11.5px] text-faint tabular-nums", isTense && "text-run", isSlim && "absolute -bottom-0.5 ml-0 text-[9.5px]")}><Mem bytes={memory.total} /></span>
       </button>
       {!isSlim && forgotten.length > 0 && (
         <div className="mx-0.5 mt-0.5 flex items-center gap-2 py-1 pr-2.5 pl-8 text-[11.5px] text-run"
@@ -192,8 +193,8 @@ export function Sidebar() {
               {v.icon}{!isSlim && v.label}
               {v.key === "inbox" && (unread > 0 || asking > 0) && (
                 <span className={cn("flex gap-1", !isSlim && "ml-auto")}>
-                  {unread > 0 && !isSlim && <Pill tone="new" title="Updated since you last looked" isSlim={isSlim}>{unread} new</Pill>}
-                  {asking > 0 && <Pill tone="ask" title="Asking you something" isSlim={isSlim}>{asking}</Pill>}
+                  {unread > 0 && !isSlim && <Pill tone="new" title="Updated since you last looked" isSlim={isSlim}><Num value={unread} /> new</Pill>}
+                  {asking > 0 && <Pill tone="ask" title="Asking you something" isSlim={isSlim}><Num value={asking} /></Pill>}
                 </span>
               )}
             </button>

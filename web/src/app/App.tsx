@@ -30,6 +30,7 @@ import { openDialog } from "./open-dialog"
 import { type Update, isStale } from "./update"
 import { Sidebar } from "./Sidebar"
 import { VIEW_NAME, focusCard, repoFilter, sideOpen, useShownView, view, type View } from "./view-state"
+import { Num } from "@/components/common/Num"
 
 // The design system's page (/design), with every example: never in the board's download.
 const DesignSystem = lazyView(() => import("@/design/DesignSystem").then(m => m.DesignSystem))
@@ -203,7 +204,7 @@ function TopBar({ waiting, onSearch }: { waiting: number; onSearch: () => void }
       <Button variant="outline" className="gap-1.5" onClick={nextUp}
         title={waiting ? `Open what waits for you next: ${waiting} (approvals, questions, then what is new) · F` : "Nothing waits for you · F"}>
         Next up
-        {waiting > 0 && <span className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-[9px] bg-ask px-[5px] text-[11px] font-bold text-surface tabular-nums">{waiting}</span>}
+        {waiting > 0 && <span className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-[9px] bg-ask px-[5px] text-[11px] font-bold text-surface tabular-nums"><Num value={waiting} /></span>}
         <Kbd className="opacity-70">F</Kbd>
       </Button>
       <Button className="size-8 px-0 min-[861px]:hidden" onClick={() => openDialog({ kind: "new" })} title="New session (N)"><Plus className="size-[15px]" /></Button>

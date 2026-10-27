@@ -19,6 +19,7 @@ import { lazyView } from "@/lib/lazy-view"
 import { CARD_COLORS, LATER, launch, rename, stopTurn, tintOf } from "./actions"
 import { isWide, toggleWide } from "./panel-width"
 import { STATE_LABEL, repoDot, repoText, stateOf, type StateKey } from "./state"
+import { Num } from "@/components/common/Num"
 
 // The conversation (with its markdown renderer) is not needed to draw the
 // board: it loads once the browser is idle, before you open one. The
@@ -244,7 +245,7 @@ export function SessionPanel({ id, tab: asked, file }: { id: string; tab: Tab; f
           <button key={t.key} role="tab" aria-selected={tab === t.key} onClick={() => showTab(t.key)} onPointerEnter={PRELOAD[t.key]} title={t.label}
             className={cn("relative flex items-center gap-1.5 px-2.5 py-[9px] text-[13px] font-[550] whitespace-nowrap text-text-muted transition-colors duration-[120ms] hover:text-text [&_svg]:size-3.5 [&_svg]:opacity-70",
               tab === t.key && "text-text after:absolute after:inset-x-2.5 after:-bottom-px after:h-0.5 after:rounded-sm after:bg-text")}>
-            {t.icon}{t.label}{(counts[t.key] ?? 0) > 0 && <span className="text-[11px] text-text-muted tabular-nums">{counts[t.key]}</span>}
+            {t.icon}{t.label}{(counts[t.key] ?? 0) > 0 && <span className="text-[11px] text-text-muted tabular-nums"><Num key={id} value={counts[t.key] ?? 0} /></span>}
           </button>
         ))}
       </nav>

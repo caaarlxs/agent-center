@@ -15,6 +15,7 @@ import { ageOf } from "@/features/session/state"
 import { CARD_W, GRID } from "./geometry"
 import { DONE_H, bandScale } from "./ZoomControl"
 import { FOLD_EASE } from "./ZoneNode"
+import { Num } from "@/components/common/Num"
 
 export const DONE_BAND = "done-band" // its id, for the drop test
 
@@ -82,7 +83,7 @@ function DoneList({ cards, now, onClose }: { cards: Card[]; now: number; onClose
   return (
     <div ref={ref} role="dialog" aria-label="More done sessions"
       className="absolute right-4 bottom-[calc(100%+8px)] z-60 flex max-h-[min(60vh,520px)] w-[min(420px,calc(100%-32px))] flex-col overflow-hidden rounded-[12px] border border-line bg-raised shadow-pop">
-      <header className="flex flex-none items-center gap-[7px] border-b border-line px-3.5 py-2.5 text-xs font-bold tracking-[0.05em] text-text-muted uppercase"><Check className="size-[13px]" />{cards.length} more done</header>
+      <header className="flex flex-none items-center gap-[7px] border-b border-line px-3.5 py-2.5 text-xs font-bold tracking-[0.05em] text-text-muted uppercase"><Check className="size-[13px]" /><Num value={cards.length} /> more done</header>
       <ul className="m-0 list-none overflow-auto p-1.5">
         {cards.map(card => (
           <li key={card.id} className="flex items-center gap-0.5">
@@ -140,7 +141,7 @@ export function DoneBand({ cards, isTarget, onLift }: { cards: Card[]; isTarget:
           <button data-done-more aria-expanded={isMoreOpen} onClick={() => setMoreOpen(!isMoreOpen)} style={{ width: CARD_W }}
             className={cn("flex h-[72px] flex-none flex-col items-center justify-center gap-0.5 rounded-[12px] border-[1.5px] border-dashed text-[12.5px] text-text-muted hover:border-brand hover:bg-hover",
               isMoreOpen ? "border-brand text-text" : "border-line-strong")}>
-            <b className="text-xl text-text tabular-nums">+{more.length}</b><span>more done</span>
+            <b className="text-xl text-text tabular-nums"><Num value={more.length} prefix="+" /></b><span>more done</span>
           </button>
         )}
       </div>
