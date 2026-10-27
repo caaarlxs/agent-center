@@ -3,7 +3,7 @@
 // three days (the files while the page is open). The mode and model change in
 // the session; the effort only shows, as the app sends its own with every
 // message. Under it, what a message would meet now and how full the context is.
-import { ArrowUp, Square } from "lucide-react"
+import { Square } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import type { FileUIPart } from "ai"
 import { toast } from "sonner"
@@ -19,6 +19,7 @@ import { launch, stopTurn, wake } from "@/features/session/actions"
 import { UsageMeter } from "@/features/session/UsageMeter"
 import { isBusyNow, isStuckNow, reachOf } from "./reach"
 import { composerFill, composerFocus, sendMessage } from "./send"
+import { Anim } from "@/components/icons/animated"
 
 export { EFFORTS, MODELS, MODES, Pick } // New session uses them too
 
@@ -148,7 +149,7 @@ function Box({ id, card, bridge }: { id: string; card: Card | undefined; bridge:
           <button type="submit" disabled={!!bridge?.isArchived}
             title={bridge?.isArchived ? "Archived in Claude: unarchive it there to write" : "Send (↵) · new line (⇧↵)"}
             className="ml-1 inline-grid size-8 shrink-0 place-items-center rounded-[10px] border border-brand bg-brand text-brand-text transition-[filter,transform] duration-[120ms] hover:brightness-106 active:scale-[0.97] disabled:opacity-45">
-            <ArrowUp className="size-3.5" />
+            <Anim.ArrowUp size={14} />
           </button>
         </div>
       </PromptInput>

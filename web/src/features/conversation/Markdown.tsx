@@ -3,7 +3,7 @@
 // Setup allows it), inline code and relative links that name a file opening it
 // in the Files tab, other links in a new window. Streamdown parses; the look is
 // the .md block in index.css.
-import { Check, Copy, Play } from "lucide-react"
+import { Check, Play } from "lucide-react"
 import { createContext, memo, useContext, useEffect, useRef, useState, type ComponentProps, type ReactNode } from "react"
 import { Streamdown, type Components } from "streamdown"
 import { cjk } from "@streamdown/cjk"
@@ -11,6 +11,7 @@ import { post } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import { showFile } from "@/app/open-session"
 import { endOf, pathInCode, pathInLink, SHELL_LANG, nameOf } from "./text"
+import { Anim } from "@/components/icons/animated"
 
 // The session the text belongs to: a shell block runs in its folder.
 export const SessionOf = createContext<string | null>(null)
@@ -101,7 +102,7 @@ function CodeBox({ text, lang }: { text: string; lang: string }) {
             onClick={() => (setRuns(n => n + 1), setRunning(true))}><Play className="size-3 fill-current" />Run</button>
         )}
         <button type="button" className={cn(toolBtn, copied === "Copied" && "text-work hover:text-work")} title="Copy" onClick={copy}>
-          {copied === "Copied" ? <Check className="size-[13px]" /> : <Copy className="size-[13px]" />}{copied}
+          {copied === "Copied" ? <Check className="size-[13px]" /> : <Anim.Copy size={13} />}{copied}
         </button>
       </div>
       <pre className={cn(isShell ? "pr-[82px] [.can-run_&]:pr-[150px]" : "pr-[82px]")}><code className={lang}>{text}</code></pre>

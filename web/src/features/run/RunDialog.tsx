@@ -1,7 +1,7 @@
 // "Run": start the session's project in its folder with the command saved
 // for its repository, see where it listens, read its output, stop it. It
 // keeps running after the dialog closes.
-import { ExternalLink, Play, Square } from "lucide-react"
+import { Play, Square } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -13,6 +13,7 @@ import { get, post } from "@/lib/api"
 import type { Card, RunState } from "@/lib/api-types"
 import { clock } from "@/lib/format"
 import { cn } from "@/lib/utils"
+import { Anim } from "@/components/icons/animated"
 
 type RunInfo = { command: string | null; suggestion: string | null; repo: string; cwd: string; run: (RunState & { isRunning: boolean }) | null }
 
@@ -65,11 +66,11 @@ export function RunDialog({ card, onClose }: { card: Card; onClose: () => void }
             <div className="flex flex-wrap items-center gap-2">
               <RunLine run={run} />
               {run?.isRunning && (run.ports.length
-                ? run.ports.map(p => <Button key={p} asChild variant="outline"><a href={`http://localhost:${p}`} target="_blank" rel="noreferrer">localhost:{p}<ExternalLink className="size-3" /></a></Button>)
+                ? run.ports.map(p => <Button key={p} asChild variant="outline"><a href={`http://localhost:${p}`} target="_blank" rel="noreferrer">localhost:{p}<Anim.ExternalLink size={12} /></a></Button>)
                 : <span className="text-text-muted">Waiting for it to open a port…</span>)}
               <span className="flex-1" />
               {run?.isRunning && <Button variant="outline" className="text-bad" onClick={stop}><Square className="size-3" />Stop</Button>}
-              <Button disabled={isBusy} onClick={start}><Play className="size-3" />{run?.isRunning ? "Restart" : "Start"}</Button>
+              <Button disabled={isBusy} onClick={start}><Anim.Play size={12} />{run?.isRunning ? "Restart" : "Start"}</Button>
             </div>
             {lines.length > 0 && <pre ref={log} className="mt-3 mb-0 max-h-[260px] overflow-auto rounded-[9px] border border-line bg-side px-3 py-2.5 font-mono text-[11.5px]/[1.5] [overflow-wrap:anywhere] whitespace-pre-wrap text-text-muted">{lines.join("\n")}</pre>}
           </>

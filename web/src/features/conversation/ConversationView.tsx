@@ -8,7 +8,7 @@
 // choices it offers, the approval it asks for, and your messages it has not
 // received yet, each with Undo. A "New messages" pill shows when more arrives
 // while you read further up.
-import { ArrowDown, ArrowUpRight, ChevronDown, ChevronRight, FileText, GitFork, ListChecks, Terminal, Bot, Wrench } from "lucide-react"
+import { ArrowDown, ChevronDown, ChevronRight, FileText, GitFork, ListChecks, Terminal, Bot, Wrench } from "lucide-react"
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -32,6 +32,7 @@ import { type Pending, deliveredOf, dropPending, stampOf, takenBack, usePending,
 import { reply, takeBack } from "./send"
 import { dialogAnswer, extOf, familyOf, linesText, nameOf, partsOf, type Family } from "./text"
 import { type Suggestions, useConversation } from "./useConversation"
+import { Anim } from "@/components/icons/animated"
 
 const linkBtn = "text-brand underline underline-offset-2"
 // The "?" disc before a question (.next-ask span).
@@ -169,7 +170,7 @@ function AnswerInApp({ sessionId, why }: { sessionId: string; why: string }) {
   return (
     <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2.5">
       <span className="text-xs text-text-muted">{why}</span>
-      <Button onClick={() => launch(sessionId)}>Answer in Claude <ArrowUpRight className="size-[13px]" /></Button>
+      <Button onClick={() => launch(sessionId)}>Answer in Claude <Anim.ArrowUpRight size={13} /></Button>
     </div>
   )
 }
@@ -438,7 +439,7 @@ function ShownItem({ item, sessionId, asked, suggested, onFork }: { item: Shown;
             <small className="text-[11.5px] text-faint">{item.url ? "Published on claude.ai" : "Published"}</small>
           </div>
           {item.path && <Button variant="ghost" onClick={() => showFile(item.path!)}>View file</Button>}
-          {item.url && <Button variant="outline" asChild><a href={item.url} target="_blank" rel="noreferrer">Open <ArrowUpRight className="size-3" /></a></Button>}
+          {item.url && <Button variant="outline" asChild><a href={item.url} target="_blank" rel="noreferrer">Open <Anim.ArrowUpRight size={12} /></a></Button>}
         </div>
       )
   }

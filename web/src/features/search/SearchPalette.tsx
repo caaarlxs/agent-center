@@ -5,7 +5,7 @@
 // ↑↓ choose, ↵ opens the conversation (and goes to its card), ⌘↵ or ⌘-click
 // opens it in Claude, Tab / ⇧Tab change the tab, Esc closes. No animation: it
 // opens and closes many times a day.
-import { Archive, MessageSquare, Search, X } from "lucide-react"
+import { Archive, MessageSquare, Search } from "lucide-react"
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { Kbd } from "@/components/ui/kbd"
@@ -20,6 +20,7 @@ import { openedResult } from "@/features/session/SessionPanel"
 import { StateIcon } from "@/features/session/StateIcon"
 import { ago } from "@/features/session/state"
 import { markedParts, plain, quoteOf, termsOf } from "./match"
+import { Anim } from "@/components/icons/animated"
 
 type Result = { id: string; title: string; repo: string | null; updatedAt: number; snippet: string; isArchived: boolean; isOnBoard?: boolean }
 
@@ -93,7 +94,7 @@ function Palette({ onClose }: { onClose: () => void }) {
           <Search className="size-4 shrink-0" />
           <input ref={field} value={query} placeholder="Search every conversation…" spellCheck={false} aria-label="Search"
             className="min-w-0 flex-1 border-0 bg-transparent text-base text-text outline-none placeholder:text-faint" onChange={e => setQuery(e.target.value)} />
-          <button className="inline-grid size-7 place-items-center rounded-[7px] text-text-muted hover:bg-press hover:text-text active:scale-[0.92]" title="Close (Esc)" onClick={onClose}><X className="size-[15px]" /></button>
+          <button className="inline-grid size-7 place-items-center rounded-[7px] text-text-muted hover:bg-press hover:text-text active:scale-[0.92]" title="Close (Esc)" onClick={onClose}><Anim.X size={15} /></button>
         </div>
         <div role="tablist" className="flex gap-1 border-b border-line px-3 pb-2.5">
           {TABS.map(([key, label]) => (

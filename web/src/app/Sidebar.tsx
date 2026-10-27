@@ -3,7 +3,7 @@
 // the folder of sent files, and the live connection, alerts, Setup and the
 // keyboard help at the foot. It folds to icons (slim), and in a narrow window
 // it is a drawer over the page.
-import { AudioLines, Bell, BellOff, Columns3, Gauge, Inbox, Keyboard, LayoutGrid, List, PanelLeft, Paperclip, Plus, Settings, Sun, Volume2, VolumeX } from "lucide-react"
+import { BellOff, Columns3, Inbox, List, PanelLeft, Paperclip, Volume2, VolumeX } from "lucide-react"
 import { useState, type ReactNode } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -22,6 +22,7 @@ import { openDialog } from "./open-dialog"
 import { openSession } from "./open-session"
 import { repoFilter, sideOpen, view, type View } from "./view-state"
 import { Mem, Num } from "@/components/common/Num"
+import { Anim } from "@/components/icons/animated"
 
 export const sideFolded = persistedStore("sideSlim", false) // the classic board's name for it
 export const toggleFolded = () => sideFolded.set(!sideFolded.get())
@@ -49,7 +50,7 @@ function Pill({ tone, title, children, isSlim }: { tone: "ask" | "new"; title: s
 const VIEWS: { key: View; label: string; title: string; icon: ReactNode }[] = [
   { key: "inbox", label: "Inbox", title: "Inbox (1)", icon: <Inbox className="size-4 shrink-0" /> },
   { key: "board", label: "Board", title: "Board (2)", icon: <Columns3 className="size-4 shrink-0" /> },
-  { key: "canvas", label: "Canvas", title: "Canvas (3)", icon: <LayoutGrid className="size-4 shrink-0" /> },
+  { key: "canvas", label: "Canvas", title: "Canvas (3)", icon: <Anim.LayoutGrid size={16} /> },
   { key: "tiers", label: "Tiers", title: "Tiers: sessions by importance (4)", icon: <List className="size-4 shrink-0" /> },
 ]
 
@@ -88,7 +89,7 @@ function SessionsMemory({ cards, isSlim }: { cards: Snapshot["cards"]; isSlim: b
     <div className="flex flex-col">
       <button className={cn(sideRow(isSlim), isTense && TONE_TEXT.run)} aria-expanded={isOpen} onClick={() => setOpen(!isOpen)}
         title="Memory your sessions and what they started take on this Mac (Activity Monitor's Memory column). Click to see which">
-        <Gauge className="size-3.5 shrink-0" />
+        <Anim.Gauge size={14} />
         {!isSlim && <span>Sessions</span>}
         {!isSlim && PRESSURE[memory.pressure] && <span className="text-[10.5px] font-semibold whitespace-nowrap text-bad">{PRESSURE[memory.pressure]}</span>}
         <span className={cn("ml-auto text-[11.5px] text-faint tabular-nums", isTense && "text-run", isSlim && "absolute -bottom-0.5 ml-0 text-[9.5px]")}><Mem bytes={memory.total} /></span>
@@ -180,11 +181,11 @@ export function Sidebar() {
         </div>
         <div className="mx-0.5 mb-3.5 flex flex-col gap-1.5">
           <Button className={cn("h-[34px] w-full justify-start gap-2", isSlim && "justify-center gap-0 px-0")} onClick={() => openDialog({ kind: "new" })} title="New session (N)">
-            <Plus className="size-[15px]" />{!isSlim && <>New session<Kbd className="ml-auto">N</Kbd></>}
+            <Anim.Plus size={15} />{!isSlim && <>New session<Kbd className="ml-auto">N</Kbd></>}
           </Button>
           <Button variant="outline" className={cn("h-[34px] w-full justify-start gap-2", isSlim && "justify-center gap-0 px-0")} onClick={() => openDialog({ kind: "digest" })}
             title="Summary of what your sessions did since you last looked (D)">
-            <Sun className="size-3.5" />{!isSlim && <>Catch me up<Kbd className="ml-auto">D</Kbd></>}
+            <Anim.Sun size={14} />{!isSlim && <>Catch me up<Kbd className="ml-auto">D</Kbd></>}
           </Button>
         </div>
         <nav className="flex flex-col gap-px">
@@ -193,7 +194,7 @@ export function Sidebar() {
               {v.icon}{!isSlim && v.label}
               {v.key === "inbox" && (unread > 0 || asking > 0) && (
                 <span className={cn("flex gap-1", !isSlim && "ml-auto")}>
-                  {unread > 0 && !isSlim && <Pill tone="new" title="Updated since you last looked" isSlim={isSlim}><Num value={unread} /> new</Pill>}
+                  {unread > 0 && !isSlim && <Pill tone="new" title="Updated since you last looked" isSlim={isSlim}><Num value={unread} suffix=" new" /></Pill>}
                   {asking > 0 && <Pill tone="ask" title="Asking you something" isSlim={isSlim}><Num value={asking} /></Pill>}
                 </span>
               )}
@@ -239,7 +240,7 @@ export function Sidebar() {
             <>
               <button className={footBtn(notifyState === "on")} onClick={toggleNotify}
                 title={notifyState === "on" ? "Notifications on: a macOS notification when a session asks you something while you are in another window. Click to turn them off" : notifyState === "blocked" ? "Chrome blocks notifications for this app" : "Notify me (macOS) when a session asks me something while I am in another window"}>
-                {notifyState === "on" ? <Bell className="size-[15px]" /> : <BellOff className="size-[15px]" />}
+                {notifyState === "on" ? <Anim.Bell size={15} /> : <BellOff className="size-[15px]" />}
               </button>
               <button className={footBtn(isSound)} onClick={toggleSound}
                 title={isSound ? "Sound on: a chime when a session finishes or asks you something, also while you look at the board. Click to turn it off" : "Play a chime when a session finishes or asks me something, also while I look at the board"}>
@@ -247,14 +248,14 @@ export function Sidebar() {
               </button>
               <button className={footBtn(speechMode !== "off")} onClick={toggleSpeech}
                 title={speechMode !== "off" ? `Read aloud on (${speechMode === "all" ? "every session" : "sessions with the bell"}): the Mac says what a session did when its turn ends. Click to turn it off` : "Read aloud what a session did when its turn ends (voice and speed in Setup)"}>
-                <AudioLines className="size-[15px]" />
+                <Anim.AudioLines size={15} />
               </button>
             </>
           )}
-          <button className={footBtn()} onClick={() => openDialog({ kind: "setup" })} title="Setup: hook, mod, dictation, tasks…"><Settings className="size-[15px]" /></button>
+          <button className={footBtn()} onClick={() => openDialog({ kind: "setup" })} title="Setup: hook, mod, dictation, tasks…"><Anim.Settings size={15} /></button>
           {!isSlim && (
             <button className={footBtn()} onClick={() => openDialog({ kind: "help" })} title="Keyboard shortcuts (?)">
-              <Keyboard className="size-[15px]" /><Kbd>?</Kbd>
+              <Anim.Keyboard size={15} /><Kbd>?</Kbd>
             </button>
           )}
         </footer>

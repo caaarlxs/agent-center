@@ -4,7 +4,7 @@
 // words; and the actions: merge (method and delete branch kept, a confirm
 // first), close (confirmed), reopen, draft or ready. Merged and closed ones
 // fold away. Read again every 30 s and after each action.
-import { ArrowUpRight, ChevronDown, ChevronRight } from "lucide-react"
+import { ChevronDown, ChevronRight } from "lucide-react"
 import { useEffect, useState } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -17,6 +17,7 @@ import { showTab } from "@/app/open-session"
 import { sendMessage } from "@/features/conversation/send"
 import { ago } from "@/features/session/state"
 import { mergeState, readinessRows, type Readiness, type Row } from "./readiness"
+import { Anim } from "@/components/icons/animated"
 
 const CHIP = {
   OPEN: ["Open", "bg-work-soft text-work"],
@@ -87,7 +88,7 @@ function PrItem({ pr, sessionId, onDone }: { pr: PrDetail; sessionId?: string; o
       <header className="flex items-center gap-2.5">
         <span className={cn("inline-flex h-[22px] items-center rounded-md px-2 text-[11.5px] font-semibold", chip)}>{label}</span>
         <a className="inline-flex items-center gap-1 text-[12.5px] font-semibold text-text-muted no-underline hover:text-text" href={pr.url} target="_blank" rel="noreferrer" title="Open on GitHub">
-          {pr.repo}#{pr.number}<ArrowUpRight className="size-3" />
+          {pr.repo}#{pr.number}<Anim.ArrowUpRight size={12} />
         </a>
         <span className="ml-auto text-xs text-faint">{ago(Date.parse(pr.updatedAt), now)}</span>
       </header>

@@ -2,7 +2,8 @@
 // board uses, with made-up data); everything else is the board: the sidebar,
 // the top bar with the view's name, the search and "Next up", the view, and
 // a session's panel sliding over them from the right.
-import { Menu, Plus, Search, X } from "lucide-react"
+import { Menu } from "lucide-react"
+import { MotionConfig } from "motion/react"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -31,6 +32,7 @@ import { type Update, isStale } from "./update"
 import { Sidebar } from "./Sidebar"
 import { VIEW_NAME, focusCard, repoFilter, sideOpen, useShownView, view, type View } from "./view-state"
 import { Num } from "@/components/common/Num"
+import { Anim } from "@/components/icons/animated"
 
 // The design system's page (/design), with every example: never in the board's download.
 const DesignSystem = lazyView(() => import("@/design/DesignSystem").then(m => m.DesignSystem))
@@ -38,10 +40,12 @@ const DesignSystem = lazyView(() => import("@/design/DesignSystem").then(m => m.
 export function App() {
   if (location.pathname.replace(/\/$/, "").endsWith("/design")) return <DesignSystem />
   return (
-    <TooltipProvider delayDuration={300}>
-      <Board />
-      <Toaster />
-    </TooltipProvider>
+    <MotionConfig reducedMotion="user">
+      <TooltipProvider delayDuration={300}>
+        <Board />
+        <Toaster />
+      </TooltipProvider>
+    </MotionConfig>
   )
 }
 
@@ -190,13 +194,13 @@ function TopBar({ waiting, onSearch }: { waiting: number; onSearch: () => void }
         {repoName && (
           <button className="group inline-flex items-center gap-1 text-[13px] font-medium text-text-muted hover:text-text" onClick={() => repoFilter.set(null)}
             title="You only see this repo. Click to see all">
-            <span className="mr-1 text-faint">/</span>{repoName}<X className="size-[11px] opacity-55 group-hover:opacity-100" />
+            <span className="mr-1 text-faint">/</span>{repoName}<Anim.X size={11} className="opacity-55 group-hover:opacity-100" />
           </button>
         )}
       </h1>
       <button onClick={onSearch} title="Search all conversations (⌘K or /)"
         className="ml-auto flex h-8 w-[min(340px,34vw)] cursor-text items-center gap-[7px] rounded-md border border-line-strong bg-surface px-2.5 text-left text-[13.5px] text-faint transition-[border-color,box-shadow] duration-[120ms] hover:border-brand focus-visible:border-brand focus-visible:shadow-[0_0_0_3px_var(--brand-soft)] focus-visible:outline-none max-[860px]:w-auto max-[860px]:flex-1">
-        <Search className="size-[15px] shrink-0" />
+        <Anim.Search size={15} />
         <span className="min-w-0 flex-1 truncate">Search…</span>
         <Kbd className="max-[1080px]:hidden">⌘K</Kbd>
       </button>
@@ -207,7 +211,7 @@ function TopBar({ waiting, onSearch }: { waiting: number; onSearch: () => void }
         {waiting > 0 && <span className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-[9px] bg-ask px-[5px] text-[11px] font-bold text-surface tabular-nums"><Num value={waiting} /></span>}
         <Kbd className="opacity-70">F</Kbd>
       </Button>
-      <Button className="size-8 px-0 min-[861px]:hidden" onClick={() => openDialog({ kind: "new" })} title="New session (N)"><Plus className="size-[15px]" /></Button>
+      <Button className="size-8 px-0 min-[861px]:hidden" onClick={() => openDialog({ kind: "new" })} title="New session (N)"><Anim.Plus size={15} /></Button>
     </header>
   )
 }

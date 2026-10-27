@@ -5,7 +5,7 @@
 // the first turn here, headless, and opens the conversation; "Open in Claude"
 // leaves it in a new session of the desktop app. `draft`: a task a session
 // suggested, started from its card (its folder and prompt, in a new worktree).
-import { GitBranch, Search } from "lucide-react"
+import { GitBranch } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 import { PromptInput, PromptInputBody, PromptInputProvider, PromptInputTextarea, usePromptInputAttachments, usePromptInputController } from "@/components/ai-elements/prompt-input"
@@ -23,6 +23,7 @@ import { EFFORTS, MODELS, MODES, Pick } from "@/features/prompt/Settings"
 import { MAX_BYTES, MAX_FILES, messageWith } from "@/features/prompt/files"
 import { hasWhisper } from "@/features/prompt/voice"
 import { repoDot } from "@/features/session/state"
+import { Anim } from "@/components/icons/animated"
 
 type Repo = { root: string; name: string }
 const prefs = persistedStore("newPrefs", { mode: "auto", model: "claude-fable-5-1", effort: "high" })
@@ -69,7 +70,7 @@ function Folders({ root, onPick }: { root: string | null; onPick: (root: string)
             const next = shown[Math.max(0, Math.min(shown.length - 1, i + (e.key === "ArrowDown" ? 1 : -1)))]
             if (next) (onPick(next.root), requestAnimationFrame(() => list.current?.querySelector("[aria-selected=true]")?.scrollIntoView({ block: "nearest" })))
           }} />
-        <Button type="button" variant="outline" className="h-[34px] shrink-0" onClick={browse} title="Pick any folder on the Mac with the system picker"><Search className="size-3.5" />Browse…</Button>
+        <Button type="button" variant="outline" className="h-[34px] shrink-0" onClick={browse} title="Pick any folder on the Mac with the system picker"><Anim.Search size={14} />Browse…</Button>
       </div>
       <div ref={list} role="listbox" className="flex max-h-[260px] flex-col gap-px overflow-y-auto rounded-[10px] border border-line p-1">
         {!repos && <p className="m-2 text-text-muted">Loading folders…</p>}

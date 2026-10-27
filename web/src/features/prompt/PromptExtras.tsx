@@ -1,12 +1,13 @@
 // What the reply box and "New session" add to the prompt: the paperclip and
 // the files picked (pasted and dropped ones join too), and the microphone.
-import { FileText, Mic, Paperclip, Square, X } from "lucide-react"
+import { FileText, Paperclip, Square } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 import { usePromptInputAttachments, usePromptInputController } from "@/components/ai-elements/prompt-input"
 import { Spinner } from "@/components/ui/spinner"
 import { canDictate, canRecord, dictate, hasWhisper, recordVoice, type Recording } from "./voice"
+import { Anim } from "@/components/icons/animated"
 
 export const fileErrors = (err: { code: string }) =>
   toast(err.code === "max_files" ? "Up to 10 files per message" : "Each file can be up to 500 MB (and cannot be empty)")
@@ -22,12 +23,12 @@ export function PickedFiles() {
       {files.map(f => f.mediaType?.startsWith("image/") ? (
         <span key={f.id} className="relative">
           <img src={f.url} alt="" className="block size-16 rounded-lg border border-line object-cover" />
-          <button type="button" className={remover} onClick={() => remove(f.id)} title="Remove the image"><X /></button>
+          <button type="button" className={remover} onClick={() => remove(f.id)} title="Remove the image"><Anim.X size={11} /></button>
         </span>
       ) : (
         <span key={f.id} className="relative inline-flex h-16 max-w-[260px] items-center gap-1.5 rounded-lg border border-line bg-side pr-3 pl-2.5 text-[12.5px]">
           <FileText className="size-3.5 shrink-0 text-text-muted" /><span className="truncate">{f.filename}</span>
-          <button type="button" className={remover} onClick={() => remove(f.id)} title="Remove the file"><X /></button>
+          <button type="button" className={remover} onClick={() => remove(f.id)} title="Remove the file"><Anim.X size={11} /></button>
         </span>
       ))}
     </div>
@@ -125,7 +126,7 @@ export function MicButton() {
       </button>
     )
   }
-  if (mic.kind === "dictating") return <button type="button" className={cn(toolIcon, "text-bad hover:text-bad")} onClick={mic.stop} title="Stop dictation (Chrome uses Google's servers)"><Mic /></button>
+  if (mic.kind === "dictating") return <button type="button" className={cn(toolIcon, "text-bad hover:text-bad")} onClick={mic.stop} title="Stop dictation (Chrome uses Google's servers)"><Anim.Mic size={15} /></button>
 
   const start = async () => {
     if (!isWhisper) {
@@ -147,5 +148,5 @@ export function MicButton() {
       toast((err as Error)?.name === "NotAllowedError" ? "The browser has no permission to use the microphone" : "Could not start recording")
     }
   }
-  return <button type="button" className={toolIcon} onClick={start} title={isWhisper ? "Dictate (Whisper on this Mac)" : "Dictate"} aria-label="Dictate"><Mic /></button>
+  return <button type="button" className={toolIcon} onClick={start} title={isWhisper ? "Dictate (Whisper on this Mac)" : "Dictate"} aria-label="Dictate"><Anim.Mic size={15} /></button>
 }
