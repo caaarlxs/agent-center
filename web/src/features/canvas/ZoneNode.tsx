@@ -171,7 +171,7 @@ export function ZoneNode({ data, dragging }: NodeProps<Node<ZoneNodeData>>) {
         <ZoneButton title="Remove the zone (the cards stay)" onClick={() => data.onRemove(zone)}><X /></ZoneButton>
       </header>
       {/* The corner: the same size on screen at any zoom. */}
-      <NodeResizeControl position="bottom-right" minWidth={160} minHeight={120}
+      <NodeResizeControl autoScale={false} position="bottom-right" minWidth={160} minHeight={120}
         onResizeEnd={(_, p) => data.onChange({ ...zone, w: Math.max(160, Math.floor(p.width / GRID) * GRID), h: Math.max(120, Math.floor(p.height / GRID) * GRID) })}
         style={{
           left: "auto", top: "auto", right: 2, bottom: 2, transform: "none", width: 20 * unscale, height: 20 * unscale, border: 0, borderRadius: "0 0 12px 0",

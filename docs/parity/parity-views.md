@@ -33,7 +33,7 @@ Leyenda de tokens clásicos (`styles.css:3-81`), usados abajo por nombre:
 ## Scrollbars
 
 - [x] Barra fina con color de tema y sin pista — classic: `styles.css:153-154` `* { scrollbar-width: thin; scrollbar-color: var(--scroll) transparent } *:hover { scrollbar-color: var(--scroll-hover) transparent }`; tokens `--scroll rgb(0 0 0/.16)` / dark `rgb(255 255 255/.13)`, `--scroll-hover .32` / dark `.28` (`styles.css:39-40,77-78`) — new: missing (`index.css` no tiene reglas de scrollbar).
-- [ ] Pestañas sin barra — classic: `styles.css:503` `.tabs { scrollbar-width: none }` — new: fuera de alcance (panel).
+- [x] Pestañas sin barra — classic: `styles.css:503` `.tabs { scrollbar-width: none }` — new: fuera de alcance (panel). — done after the merge.
 
 ## Views: Inbox / Board / Tiers / Canvas
 
@@ -206,7 +206,7 @@ Clásico: `main.js:552-658` y `canvas.js:891-912`. Nuevo: `app/App.tsx:51-60`, `
 - [x] `j` / `↓`, `k` / `↑` mover la selección en el orden de la vista; el foco sigue y hace `scrollIntoView({block:"nearest"})`; con el panel abierto cambia la sesión — classic: `main.js:595-614`; orden del canvas: arriba-abajo, luego izquierda-derecha (`canvas-layout.js:36-40`) — new: missing.
 - [x] `Enter` abre la seleccionada (no sobre botones ni roles interactivos, `main.js:26`); Enter/Espacio sobre una tarjeta con foco la abre (`components.js:35-39`) — new: missing.
 - [x] `O` abrir en Claude — classic: `main.js:618` — new: missing.
-- [ ] `T` renombrar — classic: `main.js:619-624` — new: partial (la tecla abre el panel y lanza el evento clásico `agents:rename`; falta que el panel lo escuche y empiece a editar el título).
+- [x] `T` renombrar — classic: `main.js:619-624` — new: done (useBoardKeys llama a startRename del panel).
 - [x] `R` responder (abre y enfoca el campo) — classic: `main.js:625-630` — new: missing.
 - [x] `P` fijar/soltar — classic: `main.js:631` — new: missing.
 - [x] `A` Later (abre el menú; 1–5 eligen) o quitar de Later — classic: `main.js:577-585,632` — new: missing.
@@ -242,10 +242,10 @@ Clásico: `main.js:552-658` y `canvas.js:891-912`. Nuevo: `app/App.tsx:51-60`, `
 - [x] Brillo `breathe` de la tarjeta que trabaja — ver Card — new: missing.
 - [x] Giro del anillo `spin-ring 1.6s linear` — classic: `styles.css:322-323` — new: partial (`animate-spin` 1 s).
 - [x] Latido `run-beat` del punto en segundo plano — ver Card — new: missing.
-- [ ] Punto `pulse` 1.6s del chip "Working" — classic: `styles.css:259-260` — new: fuera de alcance (chip de estado del panel).
+- [x] Punto `pulse` 1.6s del chip "Working" — classic: `styles.css:259-260` — new: fuera de alcance (chip de estado del panel). — done after the merge.
 - [x] Llegada del menú, toast y peek con `@starting-style` / keyframes — ver Card y Toasts — new: partial.
 - [x] Plegar/desplegar zona y soltar en carpeta — ver Zones y Canvas — new: missing.
-- [ ] Panel: entra con `translateX(28px)` + opacidad, 420 ms `cubic-bezier(0.25, 1, 0.5, 1)` — classic: `styles.css:170-176`, `main.js:319-336` — new: partial (`App.tsx:78` `slide-in-from-right-8 fade-in duration-300`; sin animación de salida).
+- [x] Panel: entra con `translateX(28px)` + opacidad, 420 ms `cubic-bezier(0.25, 1, 0.5, 1)` — classic: `styles.css:170-176`, `main.js:319-336` — new: partial (`App.tsx:78` `slide-in-from-right-8 fade-in duration-300`; sin animación de salida). — done after the merge.
 - [x] Skeleton mientras carga — classic: `main.js:753-754`, `styles.css:1013-1017` 5 filas 52px, radio 9px, `shimmer 1.2s linear infinite` — new: partial (`Canvas.tsx:215` texto "Connecting…").
 
 ## Toasts
@@ -261,7 +261,7 @@ Clásico: `main.js:552-658` y `canvas.js:891-912`. Nuevo: `app/App.tsx:51-60`, `
 - [x] Arrastre HTML5 entre columnas y filas, con `cursor: grabbing` al pulsar — classic: `board.js:18-25`, `styles.css:444` — new: missing (no hay Board ni Tiers).
 - [x] Clase `is-dragging` atenúa los destinos no válidos — classic: `main.js:721`, `styles.css:414,711` — new: missing.
 - [x] Al quitar una tarjeta de la lista (Done sin `showDone`, Later) la selección pasa a la siguiente — classic: `main.js:396-400` — new: missing.
-- [ ] Marcar como leída al abrir y mantener "no leída" tras "Mark to review" — classic: `main.js:440-447,474-475,493-496` — new: fuera de alcance (panel); verifícalo allí.
+- [x] Marcar como leída al abrir y mantener "no leída" tras "Mark to review" — classic: `main.js:440-447,474-475,493-496` — new: fuera de alcance (panel); verifícalo allí. — done after the merge.
 - [x] Campana de aviso en la tarjeta — classic: `components.js:283-285` botón en la barra de acciones — new: done (`CardMenu.tsx:30`; además `SessionCard.tsx:71` muestra una señal de campana, que el clásico no tiene).
-- [ ] Clic en tarjeta abre el panel con el cursor en el campo de respuesta (solo puntero, no en móvil) — classic: `main.js:464-478` — new: fuera de alcance (panel); verifícalo allí.
+- [x] Clic en tarjeta abre el panel con el cursor en el campo de respuesta (solo puntero, no en móvil) — classic: `main.js:464-478` — new: fuera de alcance (panel); verifícalo allí. — done after the merge.
 - [ ] Iconos — classic: `icons.js:4-67` trazo propio 24px, `stroke-width 2`, 60 nombres — new: partial (lucide; formas parecidas, pero distintas: p. ej. `question` clásico es un globo con "?", `Minimize2` frente a `shrink`).

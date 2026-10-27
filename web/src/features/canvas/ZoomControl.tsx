@@ -4,15 +4,27 @@
 // ("canvasZoom", null = fit), as the classic board keeps it.
 import { getNodesBounds, getViewportForBounds, useNodesInitialized, useReactFlow, useStore } from "@xyflow/react"
 import { useCallback, useEffect, useRef } from "react"
-import { persistedStore } from "@/lib/store"
+import { createStore, persistedStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
 import { ZOOM, minZoomOf, zoomTarget } from "./zoom"
 
 export const savedZoom = persistedStore<number | null>("canvasZoom", null)
 export const DONE_H = 48 + 144 // the "Done" band at the foot: its head and one row of cards
-const TOP_H = 56 // the page's tools over the canvas's top (search, Zone, Next up)
+const TOP_H = 16 // a margin over the canvas's top
 
-// The zoom that shows every node between the tools and "Done", and the view that does it.
+// "Done" is drawn at the canvas's scale, as in the classic board where it is
+// part of the canvas (never larger than its own size): its height on screen.
+export const bandScale = createStore(1)
+export const useBandHeight = () => DONE_H * bandScale.use()
+export function BandScaleTracker() {
+  const scale = useStore(s => Math.min(1, s.transform[2]))
+  useEffect(() => bandScale.set(scale), [scale])
+  return null
+}
+
+// The zoom that shows every node above "Done", and the view that does it.
+// "Done" is DONE_H tall at that zoom, so it counts as that much more canvas
+// below the nodes (canvas.js: needH + DONE_H).
 function useFit() {
   const rf = useReactFlow()
   const w = useStore(s => s.width)
@@ -20,7 +32,8 @@ function useFit() {
   return useCallback(() => {
     const nodes = rf.getNodes().filter(n => !n.hidden)
     if (!nodes.length || !w || !h) return { zoom: 1, view: null }
-    const fit = getViewportForBounds(getNodesBounds(nodes), w, Math.max(120, h - DONE_H - TOP_H), 0.05, 1, 0.04)
+    const b = getNodesBounds(nodes)
+    const fit = getViewportForBounds({ ...b, height: b.height + DONE_H }, w, Math.max(120, h - TOP_H), 0.05, 1, 0.04)
     return { zoom: Math.min(1, fit.zoom), view: { ...fit, y: fit.y + TOP_H } }
   }, [rf, w, h])
 }

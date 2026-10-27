@@ -33,6 +33,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
           "--normal-bg": "var(--text)",
           "--normal-text": "var(--bg)",
           "--normal-border": "transparent",
+          "--toast-button-margin-start": "auto",
           "--border-radius": "10px",
         } as React.CSSProperties
       }
@@ -40,7 +41,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
         classNames: {
           toast: "cn-toast !w-auto !max-w-[min(460px,calc(100vw-40px))] !gap-3.5 !py-2.5 !pr-3 !pl-3.5 !text-[13px] !shadow-pop",
           title: "truncate",
-          actionButton: "!bg-transparent !px-0 !text-[13px] !font-[650] !text-brand !gap-1.5",
+          actionButton: "!bg-transparent !px-0 !text-[13px] !font-[650] !text-brand !gap-1.5 [&_kbd]:!border-[color-mix(in_srgb,var(--bg)_30%,transparent)] [&_kbd]:!bg-transparent [&_kbd]:!text-current",
         },
       }}
       {...props}

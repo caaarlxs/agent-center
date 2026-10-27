@@ -5,8 +5,9 @@ import { toast } from "sonner"
 import type { Card } from "@/lib/api-types"
 import { undoable } from "@/lib/toast"
 import { post } from "@/lib/api"
-import { stop } from "@/features/session/actions"
+import { launch, stopTurn } from "@/features/session/actions"
 import { patchOf } from "./overrides"
+import { keepUnread } from "./seen"
 import { overrides, selected, showDone } from "./state"
 import type { Step } from "./columns"
 import { TIERS, type TierKey, toTier } from "./tiers"
@@ -34,6 +35,7 @@ export async function boardAct(card: Card, action: Action, payload: Record<strin
     const i = orderNow.findIndex(c => c.id === card.id)
     selected.set((orderNow[i + 1] ?? orderNow[i - 1])?.id ?? null)
   }
+  if (action === "unseen") keepUnread(card.id)
   const patch = patchOf(action, payload)
   if (patch) overrides.set({ ...overrides.get(), [card.id]: { ...patch, at: Date.now() } })
   try {
@@ -74,8 +76,6 @@ export async function archiveAll(list: Card[]) {
   })
 }
 
-// Ends the running turn, like Esc in the app.
-export const stopSession = (card: Card) =>
-  stop(card.id).then(() => toast(`Stopping “${card.title}”…`), (err: Error) => toast(err.message || "Could not stop"))
+// Ends the running turn, like Esc in the app; opens it in Claude desktop.
+export { stopTurn as stopSession, launch as openInClaude }
 
-export const openInClaude = (id: string) => send(id, "open").catch((err: Error) => toast(err.message || "Could not open the session"))

@@ -1,10 +1,8 @@
 import { cn } from "cn"
-import { Loader2Icon } from "lucide-react"
 
-function Spinner({ className, ...props }: React.ComponentProps<"svg">) {
-  return (
-    <Loader2Icon data-slot="spinner" role="status" aria-label="Loading" className={cn("size-4 animate-spin", className)} {...props} />
-  )
+// The board's spinner (styles.css:1141): a 16px brand ring with a gap, turning.
+function Spinner({ className, ...props }: React.ComponentProps<"span">) {
+  return <span data-slot="spinner" role="status" aria-label="Loading" className={cn("spinner", className)} {...props} />
 }
 
 export { Spinner }

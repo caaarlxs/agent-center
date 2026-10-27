@@ -3,7 +3,7 @@
 // tier list (rows by importance, then Paused and Close). A click, or Enter on
 // a focused card or row, opens the conversation; cards drag between columns
 // and rows. Each view's own tools sit at the top: Columns / By repo, Done.
-import { Archive, Check, ChevronDown, ChevronRight, Pause, Star } from "lucide-react"
+import { Archive, Check, ChevronDown, ChevronRight, Pause, Plus, Star } from "lucide-react"
 import { type CSSProperties, type ReactNode, useState } from "react"
 import type { Card } from "@/lib/api-types"
 import { useLive } from "@/lib/live"
@@ -17,7 +17,7 @@ import { StateIcon } from "@/features/session/StateIcon"
 import { ageOf, hueOf, repoDot, repoText, urgencyOf } from "@/features/session/state"
 import { archiveAll, boardSteps, moveToTier } from "./act"
 import { COLUMN, type ColumnKey, type Step, TONE_DOT, byPin, columnsShown, dropAction, inboxGroups, runsOf } from "./columns"
-import { dragging, groupBy, menu, selected, showDone } from "./state"
+import { type View, dragging, drawingZone, groupBy, menu, noteAsked, selected, showDone } from "./state"
 import { TIERS, type TierKey, emptyText, tierOf, toTier } from "./tiers"
 
 const open = (id: string) => (selected.set(id), openSession(id))
@@ -349,10 +349,21 @@ export const toolBtn = (isOn = false) =>
   cn("pointer-events-auto inline-flex h-[30px] items-center gap-1.5 rounded-lg border px-[11px] font-medium whitespace-nowrap transition-[background-color,border-color,transform] duration-120 ease-(--ease-out) active:scale-[0.97]",
     isOn ? "border-text bg-text text-bg" : "border-line-strong bg-surface hover:bg-hover")
 
-// Columns / By repo on the board (G), and Done everywhere but the canvas.
-export function ViewTools({ view }: { view: "inbox" | "board" | "tiers" }) {
+// Each view's tools in the top bar (main.js:735-745): Zone and Note on the
+// canvas; Columns / By repo on the board (G), and Done everywhere else.
+export function ViewTools({ view }: { view: View }) {
   const by = groupBy.use()
   const isDone = showDone.use()
+  const isDrawing = drawingZone.use()
+  if (view === "canvas")
+    return (
+      <>
+        <button className={toolBtn(isDrawing)} aria-pressed={isDrawing} title="Draw a named zone on the canvas to group cards (Esc cancels)"
+          onClick={() => drawingZone.set(!isDrawing)}><Plus className="size-3.5" /><span className="max-[1080px]:hidden">Zone</span></button>
+        <button className={toolBtn()} title="Add a note (or double-click the empty canvas)" onClick={() => noteAsked.set(noteAsked.get() + 1)}>
+          <Plus className="size-3.5" /><span className="max-[1080px]:hidden">Note</span></button>
+      </>
+    )
   return (
     <>
       {view === "board" && (

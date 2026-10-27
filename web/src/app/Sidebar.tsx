@@ -1,129 +1,257 @@
-// The left column: new session, the repos to filter the canvas by, the plan's
-// limits, and the live connection with Setup at the foot. It folds to icons.
-import { AudioLines, Bell, BellOff, ExternalLink, Keyboard, PanelLeft, Plus, Settings, Sun, Volume2, VolumeX } from "lucide-react"
-import { persistedStore } from "@/lib/store"
+// The left column (sidebar.js): new session and "Catch me up", the views, the
+// repos to filter by, the plan's limits, what the sessions take in memory,
+// the folder of sent files, and the live connection, alerts, Setup and the
+// keyboard help at the foot. It folds to icons (slim), and in a narrow window
+// it is a drawer over the page.
+import { AudioLines, Bell, BellOff, Columns3, Gauge, Inbox, Keyboard, LayoutGrid, List, PanelLeft, Paperclip, Plus, Settings, Sun, Volume2, VolumeX } from "lucide-react"
+import { useState, type ReactNode } from "react"
+import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Kbd } from "@/components/ui/kbd"
-import { Progress } from "@/components/ui/progress"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import type { Snapshot } from "@/lib/api-types"
+import { post } from "@/lib/api"
+import { bytesText, memText, MEMORY_DETAIL, MEMORY_LISTED, MEMORY_WARN } from "@/lib/format"
 import { useLive } from "@/lib/live"
-import { useNow } from "@/lib/now"
+import { persistedStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
 import { repoDot } from "@/features/session/state"
-import { ViewNav } from "@/features/board/ViewNav"
-import { helpOpen } from "@/features/keys/help-state"
 import { notify, sound, speech, toggleNotify, toggleSound, toggleSpeech } from "@/features/alerts/prefs"
+import { Limits, SlimLimits } from "@/features/limits/Limits"
 import { openDialog } from "./open-dialog"
-import { repoFilter } from "./view-state"
-
-const LIMIT_NAME: Record<string, string> = { five_hour: "5 hours", seven_day: "Week", seven_day_opus: "Week · Opus", seven_day_sonnet: "Week · Sonnet" }
+import { openSession } from "./open-session"
+import { repoFilter, sideOpen, view, type View } from "./view-state"
 
 export const sideFolded = persistedStore("sideSlim", false) // the classic board's name for it
-const toggleFolded = () => sideFolded.set(!sideFolded.get())
+export const toggleFolded = () => sideFolded.set(!sideFolded.get())
 
-function untilText(ms: number) {
-  const min = Math.max(0, Math.ceil(ms / 60_000))
-  if (min < 60) return `${min} min`
-  const h = Math.floor(min / 60)
-  return h < 24 ? `${h} h ${min % 60 ? `${min % 60} min` : ""}`.trim() : `${Math.floor(h / 24)} d ${h % 24} h`
+// A row of the views or repos list (.nav button): muted, the chosen one raised.
+const navRow = (isOn: boolean, isSlim: boolean) =>
+  cn(
+    "relative flex h-[30px] w-full shrink-0 items-center gap-[9px] rounded-[7px] px-2 text-left font-medium text-text-muted transition-colors duration-100",
+    isOn ? "bg-surface text-text shadow-[0_1px_2px_rgb(0_0_0/0.06)]" : "hover:bg-hover hover:text-text",
+    isSlim && "justify-center gap-0 px-0",
+  )
+
+// A count beside Inbox: what asks you (amber), what is new (brand).
+function Pill({ tone, title, children, isSlim }: { tone: "ask" | "new"; title: string; children: ReactNode; isSlim: boolean }) {
+  return (
+    <span title={title}
+      className={cn("inline-flex h-[18px] min-w-5 items-center justify-center rounded-[9px] px-1.5 text-[11px] font-[650] tabular-nums",
+        tone === "ask" ? "bg-ask-soft text-ask" : "bg-brand-soft text-brand",
+        isSlim && "absolute top-px right-0.5 h-[15px] min-w-4 px-1 text-[10px]")}>
+      {children}
+    </span>
+  )
 }
 
-function Limits({ isFolded }: { isFolded: boolean }) {
-  const limits = useLive(l => l.snapshot?.limits)
-  const now = useNow()
-  if (!limits?.windows.length) return null
+const VIEWS: { key: View; label: string; title: string; icon: ReactNode }[] = [
+  { key: "inbox", label: "Inbox", title: "Inbox (1)", icon: <Inbox className="size-4 shrink-0" /> },
+  { key: "board", label: "Board", title: "Board (2)", icon: <Columns3 className="size-4 shrink-0" /> },
+  { key: "canvas", label: "Canvas", title: "Canvas (3)", icon: <LayoutGrid className="size-4 shrink-0" /> },
+  { key: "tiers", label: "Tiers", title: "Tiers: sessions by importance (4)", icon: <List className="size-4 shrink-0" /> },
+]
+
+// A row under the limits (.side-uploads): icon, words, a number on the right.
+const sideRow = (isSlim: boolean) =>
+  cn("relative mx-0.5 mt-1.5 flex h-[30px] shrink-0 items-center gap-2 rounded-md px-2.5 text-left text-[12.5px] text-text-muted transition-colors duration-[120ms] hover:bg-hover hover:text-text",
+    isSlim && "justify-center gap-0 px-0")
+const TONE_TEXT = { ask: "text-ask hover:text-ask", bad: "text-bad hover:text-bad", run: "text-run hover:text-run", "": "" }
+
+const PRESSURE: Record<string, string> = { warning: "Memory low", critical: "Out of memory" } // the Mac's, as macOS rates it
+const line = (i: { label: string; cwd: string | null; bytes: number }) => `• ${i.label}${i.cwd ? ` · ${i.cwd}` : ""} · ${memText(i.bytes)}`
+
+// The sessions together (their processes and what they started); open, the
+// ones that take the most, each a click from its conversation; and the
+// commands left running unused, to stop all at once.
+function SessionsMemory({ cards, isSlim }: { cards: Snapshot["cards"]; isSlim: boolean }) {
+  const memory = useLive(l => l.snapshot?.memory)
+  const [isOpen, setOpen] = useState(false)
+  const [isSure, setSure] = useState(false) // "Stop them" asks once more
+  if (!memory?.total) return null
+  const heavy = cards.filter(c => (c.memory?.total ?? 0) >= MEMORY_LISTED).sort((a, b) => b.memory!.total - a.memory!.total)
+  const isTense = memory.pressure !== "normal" || heavy.some(c => c.memory!.total >= MEMORY_WARN)
+  const forgotten = cards.flatMap(c => (c.memory?.items ?? []).filter(i => i.isForgotten).map(i => ({ ...i, session: c.title })))
+  const forgottenBytes = forgotten.reduce((sum, i) => sum + i.bytes, 0)
+  const stopForgotten = async () => {
+    if (!isSure) return (setSure(true), void setTimeout(() => setSure(false), 4000))
+    setSure(false)
+    try {
+      const res = await post<{ ok: boolean; stopped: number }>("/api/memory/stopforgotten")
+      toast(`Stopped ${res.stopped} of ${forgotten.length}`)
+    } catch (err) {
+      toast((err as Error).message || "Could not stop them")
+    }
+  }
   return (
-    <div className={cn("flex flex-col gap-3 border-t px-3 py-3", isFolded && "items-center px-0")}>
-      {limits.windows.map(w => {
-        const pct = Math.round(w.percentUsed)
-        const tone = pct >= 90 ? "[&>*]:bg-rose-400" : pct >= 70 ? "[&>*]:bg-amber-400" : "[&>*]:bg-zinc-400"
-        const reset = w.resetsAt ? Date.parse(w.resetsAt) : null
-        const label = LIMIT_NAME[w.kind] ?? w.kind
-        if (isFolded)
-          return (
-            <Tooltip key={w.kind}>
-              <TooltipTrigger asChild>
-                <span className="grid size-9 place-items-center rounded-full text-[10.5px] font-semibold tabular-nums"
-                  style={{ background: `radial-gradient(circle, var(--sidebar) 12px, transparent 12.5px), conic-gradient(${pct >= 90 ? "#fb7185" : pct >= 70 ? "#fbbf24" : "#a1a1aa"} ${pct}%, var(--border) 0)` }}>{pct}</span>
-              </TooltipTrigger>
-              <TooltipContent side="right">{label}: {pct}% used{reset && reset > now ? `, resets in ${untilText(reset - now)}` : ""}</TooltipContent>
-            </Tooltip>
-          )
-        return (
-          <div key={w.kind} className="space-y-1.5 text-xs">
-            <div className="flex justify-between"><span className="font-medium">{label}</span><span className={cn("tabular-nums", pct >= 70 && "text-amber-400", pct >= 90 && "text-rose-400")}>{pct}%</span></div>
-            <Progress value={pct} className={cn("h-1.5", tone)} />
-            {reset && reset > now && <div className="text-muted-foreground">Resets in {untilText(reset - now)}</div>}
-          </div>
-        )
-      })}
+    <div className="flex flex-col">
+      <button className={cn(sideRow(isSlim), isTense && TONE_TEXT.run)} aria-expanded={isOpen} onClick={() => setOpen(!isOpen)}
+        title="Memory your sessions and what they started take on this Mac (Activity Monitor's Memory column). Click to see which">
+        <Gauge className="size-3.5 shrink-0" />
+        {!isSlim && <span>Sessions</span>}
+        {!isSlim && PRESSURE[memory.pressure] && <span className="text-[10.5px] font-semibold whitespace-nowrap text-bad">{PRESSURE[memory.pressure]}</span>}
+        <span className={cn("ml-auto text-[11.5px] text-faint tabular-nums", isTense && "text-run", isSlim && "absolute -bottom-0.5 ml-0 text-[9.5px]")}>{memText(memory.total)}</span>
+      </button>
+      {!isSlim && forgotten.length > 0 && (
+        <div className="mx-0.5 mt-0.5 flex items-center gap-2 py-1 pr-2.5 pl-8 text-[11.5px] text-run"
+          title={`Up for hours and idle for over 30 min:\n${forgotten.map(i => `${line(i)} (${i.session})`).join("\n")}`}>
+          <span className="min-w-0 flex-1 truncate">{forgotten.length} left running, unused · {memText(forgottenBytes)}</span>
+          <button className={cn("shrink-0 text-brand underline underline-offset-2", isSure && "font-semibold text-bad")} onClick={stopForgotten}>{isSure ? "Sure? Stop them" : "Stop them"}</button>
+        </div>
+      )}
+      {!isSlim && isOpen && (
+        <ul className="mx-0.5 mt-0.5 flex max-h-[220px] flex-col overflow-auto">
+          {heavy.map(c => (
+            <li key={c.id}>
+              <button onClick={() => openSession(c.id)} title={c.memory!.items.filter(i => i.bytes >= MEMORY_DETAIL).map(line).join("\n")}
+                className={cn("flex h-[26px] w-full items-center gap-2 rounded-[7px] pr-2.5 pl-8 text-left text-xs text-text-muted hover:bg-hover hover:text-text", c.memory!.total >= MEMORY_WARN && "text-run")}>
+                <span className="min-w-0 flex-1 truncate">{c.title}</span>
+                <span className={cn("shrink-0 text-[11.5px] text-faint tabular-nums", c.memory!.total >= MEMORY_WARN && "text-run")}>{memText(c.memory!.total)}</span>
+              </button>
+            </li>
+          ))}
+          {!heavy.length && <li className="px-2.5 py-1 text-[11.5px] text-text-muted">No session takes 100 MB</li>}
+        </ul>
+      )}
     </div>
   )
 }
 
+// The folder of files sent to sessions: amber from 500 MB, red from 1 GB, time to empty it.
+function SentFiles({ isSlim }: { isSlim: boolean }) {
+  const bytes = useLive(l => l.snapshot?.uploadsBytes) ?? 0
+  const tone = bytes >= 1e9 ? "bad" : bytes >= 5e8 ? "ask" : ""
+  const open = () => post("/api/uploads/open").catch(() => toast("Could not open the folder"))
+  return (
+    <button className={cn(sideRow(isSlim), TONE_TEXT[tone])} title="Open the sent files folder in Finder" onClick={open}>
+      <Paperclip className="size-3.5 shrink-0" />
+      {!isSlim && <span>Sent files</span>}
+      <span className={cn("ml-auto text-[11.5px] text-faint tabular-nums", tone && "text-current", isSlim && "absolute -bottom-0.5 ml-0 text-[9.5px]")}>{bytesText(bytes)}</span>
+    </button>
+  )
+}
+
+// A small button at the foot (.ghost-btn): muted, brand when on.
+const footBtn = (isOn = false) =>
+  cn("inline-flex items-center gap-1.5 rounded-md p-1 text-text-muted transition-[color,background-color,transform] duration-[120ms] hover:bg-hover hover:text-text active:scale-[0.92]", isOn && "text-brand hover:text-brand")
+
 export function Sidebar() {
-  const isFolded = sideFolded.use()
+  const isSlimChosen = sideFolded.use()
+  const isDrawerOpen = sideOpen.use()
+  const isSlim = isSlimChosen && !isDrawerOpen // the drawer always shows words
   const repos = useLive(l => l.snapshot?.repos) ?? []
+  const cards = useLive(l => l.snapshot?.cards) ?? []
   const isConnected = useLive(l => l.isConnected)
   const chosen = repoFilter.use()
+  const shown = view.use()
   const isSound = sound.use() === "on"
   const notifyState = notify.use()
   const speechMode = speech.use().mode
+  const open = cards.filter(c => c.column !== "done")
+  const asking = open.filter(c => c.column === "asking").length
+  const unread = open.filter(c => c.isUnread).length
+  const chooseRepo = (root: string | null) => (repoFilter.set(root), sideOpen.set(false))
+  const chooseView = (v: View) => (view.set(v), sideOpen.set(false))
   return (
-    <aside className={cn("flex h-full shrink-0 flex-col border-r bg-sidebar text-sm transition-[width] duration-200", isFolded ? "w-14" : "w-60")}
-      ref={el => void el?.ownerDocument.documentElement.style.setProperty("--side-w", isFolded ? "56px" : "240px")}>
-      <div className={cn("flex h-12 items-center gap-2 px-3", isFolded && "justify-center px-0")}>
-        {!isFolded && <b className="flex items-center gap-2 font-semibold"><i className="size-4 rounded bg-gradient-to-br from-orange-500 to-amber-300" />Agent Center</b>}
-        <Button variant="ghost" size="icon-sm" className={cn(!isFolded && "ml-auto")} onClick={toggleFolded} aria-label={isFolded ? "Show the sidebar" : "Fold the sidebar"}><PanelLeft /></Button>
-      </div>
-      <div className={cn("px-2 pb-3", isFolded && "px-2")}>
-        <Button className={cn("w-full bg-orange-500 text-white hover:bg-orange-500/90", isFolded ? "px-0" : "justify-start")} onClick={() => openDialog({ kind: "new" })} title="New session">
-          <Plus />{!isFolded && "New session"}
-        </Button>
-      </div>
-      <nav className="space-y-0.5 px-2">
-        <ViewNav isFolded={isFolded} />
-        <button onClick={() => openDialog({ kind: "digest" })} title="Catch me up"
-          className={cn("flex h-8 w-full items-center gap-2.5 rounded-md px-2 text-muted-foreground hover:bg-accent hover:text-foreground", isFolded && "justify-center px-0")}>
-          <Sun className="size-4" />{!isFolded && "Catch me up"}
-        </button>
-      </nav>
-      {!isFolded && <div className="mt-5 mb-1 px-4 text-[11px] font-medium text-muted-foreground">Repos</div>}
-      <nav className={cn("min-h-0 flex-1 overflow-auto px-2", isFolded && "mt-3")}>
-        {!isFolded && (
-          <button onClick={() => repoFilter.set(null)} className={cn("flex h-7 w-full items-center gap-2.5 rounded-md px-2 text-muted-foreground hover:bg-accent hover:text-foreground", !chosen && "bg-accent text-foreground")}>
-            <i className="size-2.5 rounded-[3px] bg-[conic-gradient(#f97316,#22c55e,#3b82f6,#a855f7,#f97316)]" />All
-          </button>
+    <>
+      {/* The drawer's scrim, in a narrow window. */}
+      <div onClick={() => sideOpen.set(false)} aria-hidden
+        className={cn("fixed inset-0 z-[44] bg-black/30 transition-opacity duration-200 min-[861px]:hidden", isDrawerOpen ? "opacity-100" : "pointer-events-none opacity-0")} />
+      <aside
+        className={cn(
+          "flex h-full shrink-0 flex-col border-r border-line bg-side transition-[width,translate] duration-200 ease-(--ease-out)",
+          isSlim ? "w-[60px] px-2 pt-3.5 pb-2.5" : "w-64 px-2.5 pt-3.5 pb-2.5",
+          "max-[860px]:fixed max-[860px]:inset-y-0 max-[860px]:left-0 max-[860px]:z-[45] max-[860px]:w-[260px] max-[860px]:duration-[220ms]",
+          isDrawerOpen ? "max-[860px]:shadow-pop" : "max-[860px]:-translate-x-full",
         )}
-        {repos.map(r => (
-          <Tooltip key={r.root}>
-            <TooltipTrigger asChild>
-              <button onClick={() => repoFilter.set(chosen === r.root ? null : r.root)}
-                className={cn("flex h-7 w-full items-center gap-2.5 rounded-md px-2 text-muted-foreground hover:bg-accent hover:text-foreground", chosen === r.root && "bg-accent text-foreground", isFolded && "justify-center px-0")}>
-                <i className="size-2.5 shrink-0 rounded-[3px]" style={{ background: repoDot(r.name) }} />
-                {!isFolded && <><span className="truncate">{r.name}</span><span className="ml-auto text-xs tabular-nums text-muted-foreground/70">{r.count || ""}</span></>}
+        ref={el => void el?.ownerDocument.documentElement.style.setProperty("--side-w", isSlim ? "60px" : "256px")}>
+        <div className={cn("flex items-center gap-[9px] px-2 pt-0.5 pb-4 text-sm font-[650] tracking-[-0.01em]", isSlim && "flex-col gap-3 px-0 pb-3.5")}>
+          <span className="inline-flex h-4 items-end gap-0.5" aria-hidden>
+            <i className="h-4 w-1 rounded-sm bg-brand" />
+            <i className="h-[11px] w-1 rounded-sm bg-brand opacity-70" />
+            <i className="h-[7px] w-1 rounded-sm bg-brand opacity-45" />
+          </span>
+          {!isSlim && <span>Agent Center</span>}
+          <button className={cn(footBtn(), !isSlim && "ml-auto", "max-[860px]:hidden")} onClick={toggleFolded} title={isSlim ? "Show the sidebar" : "Fold the sidebar to icons"}>
+            <PanelLeft className="size-[15px]" />
+          </button>
+        </div>
+        <div className="mx-0.5 mb-3.5 flex flex-col gap-1.5">
+          <Button className={cn("h-[34px] w-full justify-start gap-2", isSlim && "justify-center gap-0 px-0")} onClick={() => openDialog({ kind: "new" })} title="New session (N)">
+            <Plus className="size-[15px]" />{!isSlim && <>New session<Kbd className="ml-auto">N</Kbd></>}
+          </Button>
+          <Button variant="outline" className={cn("h-[34px] w-full justify-start gap-2", isSlim && "justify-center gap-0 px-0")} onClick={() => openDialog({ kind: "digest" })}
+            title="Summary of what your sessions did since you last looked (D)">
+            <Sun className="size-3.5" />{!isSlim && <>Catch me up<Kbd className="ml-auto">D</Kbd></>}
+          </Button>
+        </div>
+        <nav className="flex flex-col gap-px">
+          {VIEWS.map(v => (
+            <button key={v.key} className={navRow(shown === v.key, isSlim)} onClick={() => chooseView(v.key)} title={v.title}>
+              {v.icon}{!isSlim && v.label}
+              {v.key === "inbox" && (unread > 0 || asking > 0) && (
+                <span className={cn("flex gap-1", !isSlim && "ml-auto")}>
+                  {unread > 0 && !isSlim && <Pill tone="new" title="Updated since you last looked" isSlim={isSlim}>{unread} new</Pill>}
+                  {asking > 0 && <Pill tone="ask" title="Asking you something" isSlim={isSlim}>{asking}</Pill>}
+                </span>
+              )}
+            </button>
+          ))}
+        </nav>
+        {!isSlim && <div className="mx-2 mt-[18px] mb-1.5 text-[11px] font-semibold tracking-[0.05em] text-faint uppercase">Repos</div>}
+        <nav className={cn("-mx-1 flex min-h-0 flex-1 flex-col gap-px overflow-y-auto px-1", isSlim && "mx-0 mt-2 px-0")}>
+          <button className={cn(navRow(!chosen, isSlim), "h-7 font-[450]")} onClick={() => chooseRepo(null)} title={isSlim ? "All" : undefined}>
+            <i className="size-[9px] shrink-0 rounded-[3px] bg-[conic-gradient(hsl(20_70%_58%),hsl(140_50%_50%),hsl(220_70%_62%),hsl(300_50%_60%),hsl(20_70%_58%))]" />
+            {!isSlim && <>All<span className="ml-auto text-[11.5px] text-faint tabular-nums">{open.length}</span></>}
+          </button>
+          {repos.map(r => {
+            const row = (
+              <button className={cn(navRow(chosen === r.root, isSlim), "h-7 font-[450]")} title={isSlim ? undefined : r.root}
+                onClick={() => chooseRepo(chosen === r.root ? null : r.root)}>
+                <i className="size-[9px] shrink-0 rounded-[3px]" style={{ background: repoDot(r.name) }} />
+                {!isSlim && <><span className="min-w-0 truncate">{r.name}</span><span className="ml-auto text-[11.5px] text-faint tabular-nums">{r.count || ""}</span></>}
               </button>
-            </TooltipTrigger>
-            {isFolded && <TooltipContent side="right">{r.name}</TooltipContent>}
-          </Tooltip>
-        ))}
-      </nav>
-      <Limits isFolded={isFolded} />
-      <footer className={cn("flex items-center gap-1 border-t px-3 py-2 text-xs text-muted-foreground", isFolded && "flex-col px-0")}>
-        <span className="flex items-center gap-1.5" title={isConnected ? "Live" : "Reconnecting…"}>
-          <i className={cn("size-1.5 rounded-full", isConnected ? "bg-emerald-400 shadow-[0_0_0_3px_rgb(52_211_153/0.15)]" : "bg-zinc-500")} />{!isFolded && (isConnected ? "Live" : "Reconnecting…")}
-        </span>
-        <span className={cn("flex gap-0.5", !isFolded && "ml-auto")}>
-          <Button variant="ghost" size="icon-sm" className={cn(notifyState === "on" && "text-foreground")} onClick={toggleNotify}
-            title={notifyState === "on" ? "Notifications on" : notifyState === "blocked" ? "The browser blocks notifications" : "Notifications off"}>{notifyState === "on" ? <Bell /> : <BellOff />}</Button>
-          <Button variant="ghost" size="icon-sm" className={cn(isSound && "text-foreground")} onClick={toggleSound} title={isSound ? "Sound on" : "Sound off"}>{isSound ? <Volume2 /> : <VolumeX />}</Button>
-          <Button variant="ghost" size="icon-sm" className={cn(speechMode !== "off" ? "text-foreground" : "opacity-50")} onClick={toggleSpeech}
-            title={speechMode === "off" ? "Read aloud off" : `Read aloud: ${speechMode === "all" ? "every session" : "sessions with the bell"}`}><AudioLines /></Button>
-          <Button variant="ghost" size="icon-sm" onClick={() => openDialog({ kind: "setup" })} title="Setup"><Settings /></Button>
-          <Button variant="ghost" size={isFolded ? "icon-sm" : "sm"} className="px-1.5" onClick={() => helpOpen.set(true)} title="Keyboard shortcuts (?)"><Keyboard />{!isFolded && <Kbd>?</Kbd>}</Button>
-          {!isFolded && <Button variant="ghost" size="icon-sm" onClick={() => window.open("/", "_blank")} title="Open the classic board"><ExternalLink /></Button>}
-        </span>
-      </footer>
-    </aside>
+            )
+            return isSlim ? (
+              <Tooltip key={r.root}>
+                <TooltipTrigger asChild>{row}</TooltipTrigger>
+                <TooltipContent side="right">{r.name}</TooltipContent>
+              </Tooltip>
+            ) : <span key={r.root} className="contents">{row}</span>
+          })}
+        </nav>
+        {isSlim ? <SlimLimits /> : <Limits />}
+        <SessionsMemory cards={cards} isSlim={isSlim} />
+        <SentFiles isSlim={isSlim} />
+        <footer className={cn("mt-2 flex items-center justify-between border-t border-line px-1.5 pt-2.5", isSlim && "flex-col gap-2 px-0")}>
+          <span className="inline-flex items-center gap-1.5 text-xs text-text-muted" title={isSlim ? (isConnected ? "Live" : "Reconnecting…") : undefined}>
+            <i className={cn("size-[7px] rounded-full", isConnected ? "bg-work shadow-[0_0_0_3px_var(--work-soft)]" : "bg-faint")} />
+            {!isSlim && (isConnected ? "Live" : "Reconnecting…")}
+          </span>
+          {!isSlim && (
+            <>
+              <button className={footBtn(notifyState === "on")} onClick={toggleNotify}
+                title={notifyState === "on" ? "Notifications on: a macOS notification when a session asks you something while you are in another window. Click to turn them off" : notifyState === "blocked" ? "Chrome blocks notifications for this app" : "Notify me (macOS) when a session asks me something while I am in another window"}>
+                {notifyState === "on" ? <Bell className="size-[15px]" /> : <BellOff className="size-[15px]" />}
+              </button>
+              <button className={footBtn(isSound)} onClick={toggleSound}
+                title={isSound ? "Sound on: a chime when a session finishes or asks you something, also while you look at the board. Click to turn it off" : "Play a chime when a session finishes or asks me something, also while I look at the board"}>
+                {isSound ? <Volume2 className="size-[15px]" /> : <VolumeX className="size-[15px]" />}
+              </button>
+              <button className={footBtn(speechMode !== "off")} onClick={toggleSpeech}
+                title={speechMode !== "off" ? `Read aloud on (${speechMode === "all" ? "every session" : "sessions with the bell"}): the Mac says what a session did when its turn ends. Click to turn it off` : "Read aloud what a session did when its turn ends (voice and speed in Setup)"}>
+                <AudioLines className="size-[15px]" />
+              </button>
+            </>
+          )}
+          <button className={footBtn()} onClick={() => openDialog({ kind: "setup" })} title="Setup: hook, mod, dictation, tasks…"><Settings className="size-[15px]" /></button>
+          {!isSlim && (
+            <button className={footBtn()} onClick={() => openDialog({ kind: "help" })} title="Keyboard shortcuts (?)">
+              <Keyboard className="size-[15px]" /><Kbd>?</Kbd>
+            </button>
+          )}
+        </footer>
+      </aside>
+    </>
   )
 }

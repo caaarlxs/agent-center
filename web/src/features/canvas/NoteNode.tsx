@@ -82,7 +82,7 @@ export function NoteNode({ data, selected, dragging }: NodeProps<Node<NoteNodeDa
         </div>
       )}
       {/* The corner: the same size on screen at any zoom; 144 × 96 to 800 × 800, on the grid. */}
-      <NodeResizeControl position="bottom-right" minWidth={144} minHeight={96} maxWidth={800} maxHeight={800}
+      <NodeResizeControl autoScale={false} position="bottom-right" minWidth={144} minHeight={96} maxWidth={800} maxHeight={800}
         onResizeEnd={(_, p) => data.onChange({ ...note, w: Math.max(144, Math.floor(p.width / GRID) * GRID), h: Math.max(96, Math.floor(p.height / GRID) * GRID) })}
         style={{
           left: "auto", top: "auto", right: 2, bottom: 2, transform: "none", width: 16 * unscale, height: 16 * unscale, border: 0, borderRadius: "0 0 8px 0",

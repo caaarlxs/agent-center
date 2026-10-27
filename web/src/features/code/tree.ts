@@ -42,3 +42,35 @@ export function rankFiles(paths: string[], query: string, max = 50): string[] {
   }
   return out.sort((a, b) => a[1] - b[1]).slice(0, max).map(([path]) => path)
 }
+
+// The changed files by folder, a folder holding only one folder shown as one
+// row ("src/models"), as VS Code's compact folders (code.js compactTree).
+export function compactTree(paths: string[]): Folder {
+  const squash = (node: Folder): Folder => {
+    const dirs = new Map<string, Folder>()
+    for (const [name, dir] of node.dirs) {
+      let label = name
+      let d = dir
+      while (d.files.length === 0 && d.dirs.size === 1) {
+        const [childName, child] = [...d.dirs][0]
+        label = `${label}/${childName}`
+        d = child
+      }
+      dirs.set(label, squash(d))
+    }
+    return { ...node, dirs }
+  }
+  return squash(treeOf(paths))
+}
+
+// Where a search's query is in a line: [start, end] of its first match, or
+// null (code.js spanOf). A broken regular expression matches nothing.
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+export function spanOf(text: string, query: string, opts: { isCase: boolean; isRegex: boolean }): [number, number] | null {
+  try {
+    const m = new RegExp(opts.isRegex ? query : escapeRe(query), opts.isCase ? "" : "i").exec(text)
+    return m && m[0].length ? [m.index, m.index + m[0].length] : null
+  } catch {
+    return null
+  }
+}

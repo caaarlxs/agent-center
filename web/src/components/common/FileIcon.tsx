@@ -10,18 +10,25 @@ const BY_NAME: [RegExp, string, string, "lock"?][] = [
   [/^\.env(\..*)?$/, "ENV", "#c9a400"],
   [/^readme(\..*)?$/i, "i", "#519aba"],
   [/^(license|licence|copying)(\..*)?$/i, "©", "#c9a400"],
+  [/^makefile$/i, "MK", "#6d8086"],
   [/\.lock$|^(bun\.lockb?|yarn\.lock|pnpm-lock\.yaml|uv\.lock|poetry\.lock|cargo\.lock)$/i, "", "#8a8a8a", "lock"],
 ]
 const BY_EXT: Record<string, [string, string]> = {
-  ts: ["TS", "#3178c6"], tsx: ["TSX", "#3178c6"], js: ["JS", "#c9a400"], jsx: ["JSX", "#c9a400"], mjs: ["JS", "#c9a400"],
-  py: ["PY", "#3572a5"], rb: ["RB", "#cc342d"], go: ["GO", "#00add8"], rs: ["RS", "#c4772b"], java: ["J", "#b07219"],
-  kt: ["KT", "#a97bff"], swift: ["SW", "#f05138"], php: ["PHP", "#777bb4"], cs: ["C#", "#178600"], c: ["C", "#6d8086"], cpp: ["C++", "#f34b7d"],
-  json: ["{}", "#c9a400"], yml: ["YML", "#cb171e"], yaml: ["YML", "#cb171e"], toml: ["TML", "#9c4221"], xml: ["XML", "#e37933"],
-  md: ["MD", "#519aba"], txt: ["TXT", "#8a8a8a"], csv: ["CSV", "#21a366"], html: ["<>", "#e34c26"], css: ["#", "#563d7c"],
-  scss: ["#", "#c6538c"], vue: ["V", "#41b883"], svelte: ["S", "#ff3e00"], sh: ["$", "#4eaa25"], zsh: ["$", "#4eaa25"],
-  sql: ["SQL", "#e38c00"], graphql: ["GQL", "#e10098"], tf: ["TF", "#7b42bc"], svg: ["SVG", "#ffb13b"], pdf: ["PDF", "#d93831"],
+  ts: ["TS", "#3178c6"], tsx: ["TSX", "#3178c6"], mts: ["TS", "#3178c6"], cts: ["TS", "#3178c6"],
+  js: ["JS", "#c9a400"], jsx: ["JSX", "#c9a400"], mjs: ["JS", "#c9a400"], cjs: ["JS", "#c9a400"],
+  py: ["PY", "#3572a5"], ipynb: ["NB", "#da5b0b"], rb: ["RB", "#cc342d"], php: ["PHP", "#777bb4"],
+  go: ["GO", "#00add8"], rs: ["RS", "#c4772b"], java: ["J", "#b07219"], kt: ["KT", "#a97bff"], swift: ["SW", "#f05138"],
+  c: ["C", "#6d8086"], h: ["H", "#6d8086"], cpp: ["C++", "#f34b7d"], hpp: ["H++", "#f34b7d"], cs: ["C#", "#178600"],
+  json: ["{}", "#c9a400"], jsonc: ["{}", "#c9a400"], jsonl: ["{}", "#c9a400"],
+  yml: ["YML", "#cb171e"], yaml: ["YML", "#cb171e"], toml: ["TML", "#9c4221"], ini: ["INI", "#6d8086"], xml: ["XML", "#e37933"],
+  md: ["MD", "#519aba"], mdx: ["MDX", "#519aba"], txt: ["TXT", "#8a8a8a"], log: ["LOG", "#8a8a8a"], csv: ["CSV", "#21a366"], tsv: ["TSV", "#21a366"],
+  html: ["<>", "#e34c26"], htm: ["<>", "#e34c26"], css: ["#", "#563d7c"], scss: ["#", "#c6538c"], less: ["#", "#1d365d"],
+  vue: ["V", "#41b883"], svelte: ["S", "#ff3e00"], astro: ["A", "#ff5d01"], graphql: ["GQL", "#e10098"], gql: ["GQL", "#e10098"],
+  sh: ["$", "#4eaa25"], zsh: ["$", "#4eaa25"], bash: ["$", "#4eaa25"], fish: ["$", "#4eaa25"], ps1: ["PS", "#012456"],
+  sql: ["SQL", "#e38c00"], prisma: ["PR", "#5a67d8"], proto: ["PB", "#6d8086"], tf: ["TF", "#7b42bc"],
+  svg: ["SVG", "#ffb13b"], pdf: ["PDF", "#d93831"],
 }
-const IMAGES = /^(png|jpe?g|gif|webp|avif|ico|bmp)$/
+const IMAGES = /^(png|jpe?g|gif|webp|avif|ico|bmp|icns)$/
 
 export function FileIcon({ path }: { path: string }) {
   const name = path.split("/").pop() ?? path

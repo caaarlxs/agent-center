@@ -9,6 +9,7 @@ import { createStore, persistedStore } from "@/lib/store"
 import type { GroupBy, View } from "./order"
 import { type Overrides, settle, withOverrides } from "./overrides"
 
+export type { View }
 export const view = persistedStore<View>("view", "inbox")
 export const showDone = persistedStore("showDone", false)
 export const groupBy = persistedStore<GroupBy>("groupBy", "none")
@@ -27,6 +28,8 @@ export const toggleMenu = (kind: "park" | "color", id: string) => {
 export const dragging = createStore<Card | null>(null)
 // The canvas's next drag draws a zone (the Zone button).
 export const drawingZone = createStore(false)
+// The Note button asks the canvas for a note: a new count each press.
+export const noteAsked = createStore(0)
 
 export const overrides = createStore<Overrides>({})
 

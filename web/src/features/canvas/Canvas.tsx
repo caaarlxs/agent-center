@@ -9,7 +9,6 @@
 import {
   type Node, type NodeChange, type NodeProps, type OnNodeDrag, type ReactFlowInstance, Panel, SelectionMode, applyNodeChanges, useReactFlow, useStore,
 } from "@xyflow/react"
-import { Plus } from "lucide-react"
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 import { Canvas as FlowCanvas } from "@/components/ai-elements/canvas"
@@ -22,7 +21,7 @@ import { cn } from "@/lib/utils"
 import { openSession, useOpenSession } from "@/app/open-session"
 import { focusRequest, repoFilter } from "@/app/view-state"
 import { boardAct } from "@/features/board/act"
-import { drawingZone, selected as selectedCard, useBoardCards, whereTo } from "@/features/board/state"
+import { drawingZone, noteAsked, selected as selectedCard, useBoardCards, whereTo } from "@/features/board/state"
 import { moveTo } from "@/features/session/actions"
 import { type Level, SessionCard } from "@/features/session/SessionCard"
 import { hueOf } from "@/features/session/state"
@@ -32,7 +31,7 @@ import { CARD_W, GRID, type Point, entryBox, entrySlots, isInZone, newZone, onCa
 import { NoteNode, type NoteNodeData } from "./NoteNode"
 import { attachTo, cardKey, newNote, noteAt, placeNote } from "./notes"
 import { useSyncedList } from "./useSyncedList"
-import { DONE_H, ZoomControl, savedZoom, useCanvasZoom, useSavedZoomOnce } from "./ZoomControl"
+import { BandScaleTracker, ZoomControl, useBandHeight, savedZoom, useCanvasZoom, useSavedZoomOnce } from "./ZoomControl"
 import { FOLD_EASE, IncomingNode, ZoneNode, type ZoneNodeData, cardEl, isCalm, towardFolder } from "./ZoneNode"
 import { ZOOM, minZoomOf } from "./zoom"
 
@@ -83,6 +82,7 @@ function CanvasKeys() {
 // The Zone button's mode: the next drag on the canvas draws a zone (a click
 // gives one of the usual size); Esc or the button again cancels.
 function ZoneDraw({ onDrawn }: { onDrawn: (r: { x0: number; y0: number; x1: number; y1: number }) => void }) {
+  const bandH = useBandHeight()
   const rf = useReactFlow()
   const [draft, setDraft] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null)
   useEffect(() => {
@@ -110,7 +110,7 @@ function ZoneDraw({ onDrawn }: { onDrawn: (r: { x0: number; y0: number; x1: numb
   }
   const hue = hueOf("New zone")
   return (
-    <div ref={box} className="absolute inset-x-0 top-0 z-[45] cursor-crosshair" style={{ bottom: DONE_H }} onPointerDown={start}>
+    <div ref={box} className="absolute inset-x-0 top-0 z-[45] cursor-crosshair" style={{ bottom: bandH }} onPointerDown={start}>
       {draft ? (
         <div className="pointer-events-none absolute rounded-[14px]" style={{
           left: Math.min(draft.x0, draft.x1), top: Math.min(draft.y0, draft.y1), width: Math.abs(draft.x1 - draft.x0), height: Math.abs(draft.y1 - draft.y0),
@@ -123,7 +123,6 @@ function ZoneDraw({ onDrawn }: { onDrawn: (r: { x0: number; y0: number; x1: numb
   )
 }
 
-const btn = "pointer-events-auto inline-flex h-[30px] items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-[11px] font-medium whitespace-nowrap transition-[background-color,border-color,transform] duration-120 ease-(--ease-out) active:scale-[0.97]"
 
 export function Canvas() {
   const hasData = useLive(l => !!l.snapshot)
@@ -321,7 +320,16 @@ export function Canvas() {
     const note = newNote(spot)
     setFresh(note.id)
     saveNotes([...notes, note])
-  }
+  }  // The Note button in the top bar.
+  const asked = noteAsked.use()
+  const lastAsked = useRef(asked)
+  useEffect(() => {
+    if (asked === lastAsked.current) return
+    lastAsked.current = asked
+    addNote()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [asked])
+
   const addZone = (r: { x0: number; y0: number; x1: number; y1: number }) => {
     const zone = newZone(r)
     drawingZone.set(false)
@@ -389,12 +397,8 @@ export function Canvas() {
         <CanvasKeys />
         <CanvasFlip root={box} />
         <FitTracker onFit={setFit} />
-        <Panel position="top-center" className="!mt-3 flex gap-1.5">
-          <button className={cn(btn, isDrawing ? "border-text bg-text text-bg" : "hover:bg-hover")} aria-pressed={isDrawing}
-            title="Draw a named zone on the canvas to group cards (Esc cancels)" onClick={() => drawingZone.set(!isDrawing)}><Plus className="size-3.5" />Zone</button>
-          <button className={cn(btn, "hover:bg-hover")} title="Add a note (or double-click the empty canvas)" onClick={() => addNote()}><Plus className="size-3.5" />Note</button>
-        </Panel>
-        <Panel position="top-right" className="!mt-14 !mr-3.5"><ZoomControl /></Panel>
+        <BandScaleTracker />
+        <Panel position="top-right" className="!mt-3 !mr-3.5"><ZoomControl /></Panel>
         {isDrawing && <ZoneDraw onDrawn={addZone} />}
       </FlowCanvas>
       <DoneBand cards={done} isTarget={isOverDoneNow} onLift={lift} />

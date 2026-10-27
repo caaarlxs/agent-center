@@ -8,7 +8,7 @@ export const hasWhisper = () =>
 
 export const canRecord = !!navigator.mediaDevices && typeof window.MediaRecorder === "function"
 
-type Recognition = { lang: string; continuous: boolean; interimResults: boolean; start(): void; stop(): void; onresult: ((e: { resultIndex: number; results: ArrayLike<{ isFinal: boolean; 0: { transcript: string } }> }) => void) | null; onend: (() => void) | null }
+type Recognition = { lang: string; continuous: boolean; interimResults: boolean; start(): void; stop(): void; onresult: ((e: { resultIndex: number; results: ArrayLike<{ isFinal: boolean; 0: { transcript: string } }> }) => void) | null; onend: (() => void) | null; onerror: ((e: { error?: string }) => void) | null }
 const Recognition = (window as unknown as { SpeechRecognition?: new () => Recognition; webkitSpeechRecognition?: new () => Recognition }).SpeechRecognition
   ?? (window as unknown as { webkitSpeechRecognition?: new () => Recognition }).webkitSpeechRecognition
 export const canDictate = !!Recognition
@@ -46,8 +46,9 @@ export async function recordVoice(): Promise<Recording> {
   }
 }
 
-// The browser's recognition: `onText` gets all heard so far, `stop()` ends it.
-export function dictate(onText: (heard: string) => void, onEnd: () => void) {
+// The browser's recognition: `onText` gets all heard so far, `stop()` ends it;
+// `onEnd` gets the reason when it stopped on an error ("not-allowed"…).
+export function dictate(onText: (heard: string) => void, onEnd: (error?: string) => void) {
   const rec = new Recognition!()
   rec.lang = navigator.language || "en-US"
   rec.continuous = true
@@ -62,7 +63,9 @@ export function dictate(onText: (heard: string) => void, onEnd: () => void) {
     }
     onText(heard + interim)
   }
-  rec.onend = onEnd
+  let error: string | undefined
+  rec.onerror = (e: { error?: string }) => void (error = e.error)
+  rec.onend = () => onEnd(error)
   rec.start()
   return { stop: () => rec.stop() }
 }

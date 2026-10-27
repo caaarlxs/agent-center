@@ -1,13 +1,14 @@
 // What kind of file a name is, for the viewer, and CSV/TSV read as rows.
 // Pure: tested on their own.
 
-export type Kind = "markdown" | "code" | "image" | "video" | "pdf" | "page" | "document" | "table" | "other"
+export type Kind = "markdown" | "code" | "image" | "video" | "audio" | "pdf" | "page" | "document" | "table" | "other"
 
 const KINDS: [RegExp, Kind][] = [
   [/^(md|markdown|mdx)$/, "markdown"],
   [/^(csv|tsv)$/, "table"],
   [/^(png|jpe?g|gif|webp|avif|bmp|ico|svg)$/, "image"],
   [/^(mp4|mov|webm)$/, "video"],
+  [/^(mp3|wav)$/, "audio"],
   [/^pdf$/, "pdf"],
   [/^html?$/, "page"],
   [/^(docx|doc|rtf|rtfd|odt|xlsx|xlsm)$/, "document"], // the server makes a page of them (lib/office.ts)

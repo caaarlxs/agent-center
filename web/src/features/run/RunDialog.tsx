@@ -7,19 +7,22 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { Kbd } from "@/components/ui/kbd"
 import { Spinner } from "@/components/ui/spinner"
 import { get, post } from "@/lib/api"
 import type { Card, RunState } from "@/lib/api-types"
+import { clock } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
 type RunInfo = { command: string | null; suggestion: string | null; repo: string; cwd: string; run: (RunState & { isRunning: boolean }) | null }
-const clock = (at: number) => new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
 
+// Whether it runs, stopped, or ended (with its error code).
 function RunLine({ run }: { run: RunInfo["run"] }) {
-  if (!run) return <span className="text-muted-foreground">Not running</span>
-  if (run.isRunning) return <span className="flex items-center gap-2 text-emerald-400"><i className="size-2 rounded-full bg-emerald-400" />Running since {clock(run.startedAt)}</span>
-  if (run.wasStopped) return <span className="flex items-center gap-2 text-muted-foreground"><i className="size-2 rounded-full bg-zinc-500" />Stopped</span>
-  return <span className={cn("flex items-center gap-2", run.exitCode ? "text-rose-400" : "text-muted-foreground")}><i className="size-2 rounded-full bg-current" />Exited{run.exitCode ? ` with code ${run.exitCode}` : ""}</span>
+  if (!run) return <span className="text-text-muted">Not running.</span>
+  const dot = (tone: string) => <i className={cn("size-[7px] rounded-full", tone)} />
+  if (run.isRunning) return <span className="inline-flex items-center gap-1.5 text-xs text-text-muted">{dot("bg-work shadow-[0_0_0_3px_var(--work-soft)]")}Running since {clock(run.startedAt)}</span>
+  if (run.wasStopped) return <span className="inline-flex items-center gap-1.5 text-xs text-text-muted">{dot("bg-faint")}Stopped</span>
+  return <span className={cn("inline-flex items-center gap-1.5 text-xs text-text-muted", run.exitCode && "text-bad")}>{dot(run.exitCode ? "bg-bad" : "bg-faint")}Exited{run.exitCode ? ` with an error (code ${run.exitCode})` : ""}</span>
 }
 
 export function RunDialog({ card, onClose }: { card: Card; onClose: () => void }) {
@@ -43,36 +46,35 @@ export function RunDialog({ card, onClose }: { card: Card; onClose: () => void }
     const command = input.current?.value.trim()
     if (!command) return input.current?.focus()
     setBusy(true)
-    await post(`${url}/run`, { command }).then(refresh, (err: Error) => toast.error(err.message))
+    await post(`${url}/run`, { command }).then(refresh, (err: Error) => toast(err.message || "Could not start"))
     setBusy(false)
   }
-  const stop = () => post(`${url}/stoprun`).then(() => setTimeout(refresh, 800), (err: Error) => toast.error(err.message))
+  const stop = () => post(`${url}/stoprun`).then(() => setTimeout(refresh, 800), (err: Error) => toast(err.message))
   return (
     <Dialog open onOpenChange={o => !o && onClose()}>
-      <DialogContent className="gap-4 sm:max-w-2xl">
-        <DialogTitle className="flex min-w-0 items-center gap-2 pr-8"><Play className="size-4" />Run<span className="truncate font-normal text-muted-foreground">{card.title}</span></DialogTitle>
-        {!info ? <div className="grid place-items-center py-10"><Spinner /></div> : (
+      <DialogContent showCloseButton={false} className="w-[min(680px,calc(100vw-32px))] gap-0">
+        <DialogTitle className="mb-3.5 flex min-w-0 items-center gap-2"><Play className="size-4" />Run<span className="truncate text-sm font-medium text-text-muted">{card.title}</span></DialogTitle>
+        {!info ? <div className="grid place-items-center py-8"><Spinner /></div> : (
           <>
-            <div className="space-y-1.5">
-              <Input ref={input} className="font-mono" defaultValue={run?.command ?? info.command ?? info.suggestion ?? ""} placeholder="npm run dev" spellCheck={false}
-                onKeyDown={e => e.key === "Enter" && start()} aria-label={`Command for ${info.repo}`} />
-              <p className="text-xs text-muted-foreground">
-                Saved for {info.repo}. Runs in <span className="font-mono break-all" title={info.cwd}>{info.cwd.replace(/^\/Users\/[^/]+/, "~")}</span> with a free port in <code>$PORT</code>.
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2 text-sm">
+            <label className="mb-1.5 block text-[12.5px] text-text-muted">Command to start <b className="text-text">{info.repo}</b></label>
+            <Input ref={input} className="font-mono" defaultValue={run?.command ?? info.command ?? info.suggestion ?? ""} placeholder="npm run dev" spellCheck={false}
+              onKeyDown={e => e.key === "Enter" && start()} />
+            <p className="mt-1.5 mb-3 text-xs text-text-muted">
+              Saved for every session of {info.repo}. It runs in this session's folder (<span className="font-mono" title={info.cwd}>{info.cwd.replace(/^\/Users\/[^/]+/, "~")}</span>). <code className="font-mono text-[11.5px]">$PORT</code> holds a free port.
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
               <RunLine run={run} />
               {run?.isRunning && (run.ports.length
-                ? run.ports.map(p => <Button key={p} asChild variant="outline" size="sm"><a href={`http://localhost:${p}`} target="_blank" rel="noreferrer">localhost:{p}<ExternalLink /></a></Button>)
-                : <span className="text-muted-foreground">waiting for a port…</span>)}
-              <span className="ml-auto flex gap-2">
-                {run?.isRunning && <Button variant="ghost" size="sm" className="text-rose-400" onClick={stop}><Square />Stop</Button>}
-                <Button size="sm" disabled={isBusy} onClick={start}><Play />{run?.isRunning ? "Restart" : "Start"}</Button>
-              </span>
+                ? run.ports.map(p => <Button key={p} asChild variant="outline"><a href={`http://localhost:${p}`} target="_blank" rel="noreferrer">localhost:{p}<ExternalLink className="size-3" /></a></Button>)
+                : <span className="text-text-muted">Waiting for it to open a port…</span>)}
+              <span className="flex-1" />
+              {run?.isRunning && <Button variant="outline" className="text-bad" onClick={stop}><Square className="size-3" />Stop</Button>}
+              <Button disabled={isBusy} onClick={start}><Play className="size-3" />{run?.isRunning ? "Restart" : "Start"}</Button>
             </div>
-            {lines.length > 0 && <pre ref={log} className="max-h-72 overflow-auto rounded-lg bg-black/40 p-3 font-mono text-xs leading-relaxed">{lines.join("\n")}</pre>}
+            {lines.length > 0 && <pre ref={log} className="mt-3 mb-0 max-h-[260px] overflow-auto rounded-[9px] border border-line bg-side px-3 py-2.5 font-mono text-[11.5px]/[1.5] [overflow-wrap:anywhere] whitespace-pre-wrap text-text-muted">{lines.join("\n")}</pre>}
           </>
         )}
+        <div className="mt-3.5 flex items-center gap-1 text-xs text-text-muted">It keeps running after you close this window. <Kbd>Esc</Kbd> close</div>
       </DialogContent>
     </Dialog>
   )

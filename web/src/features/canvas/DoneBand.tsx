@@ -13,7 +13,7 @@ import { selected } from "@/features/board/state"
 import { SessionCard } from "@/features/session/SessionCard"
 import { ageOf } from "@/features/session/state"
 import { CARD_W, GRID } from "./geometry"
-import { DONE_H } from "./ZoomControl"
+import { DONE_H, bandScale } from "./ZoomControl"
 import { FOLD_EASE } from "./ZoneNode"
 
 export const DONE_BAND = "done-band" // its id, for the drop test
@@ -111,15 +111,17 @@ export function DoneBand({ cards, isTarget, onLift }: { cards: Card[]; isTarget:
     obs.observe(el)
     return () => obs.disconnect()
   }, [])
+  const scale = bandScale.use()
   // One row, as many as the band is wide (newest first); the rest wait behind "+N more".
   const slots = Math.max(1, Math.floor((width - GRID) / (CARD_W + GRID)))
   const shown = cards.length > slots ? cards.slice(0, slots - 1) : cards
   const more = cards.slice(shown.length)
   useEffect(() => void (more.length || setMoreOpen(false)), [more.length])
   return (
-    <section id={DONE_BAND} data-fly="done" data-group="done" style={{ height: DONE_H }}
+    <section id={DONE_BAND} data-fly="done" data-group="done" style={{ height: DONE_H * scale }}
       className={cn("absolute inset-x-0 bottom-0 z-10 border-t-[1.5px] border-dashed transition-[background-color,border-color] duration-150",
         isTarget ? "border-work bg-work-soft" : "border-line-strong bg-[color-mix(in_srgb,var(--side)_55%,transparent)]")}>
+      <div style={{ width: `${100 / scale}%`, transform: `scale(${scale})`, transformOrigin: "0 0" }}>
       <header className="flex h-10 items-center gap-2 px-4 text-xs font-bold tracking-[0.05em] text-text-muted uppercase">
         <Check className="size-3.5" />Done<span className="font-medium text-faint">{cards.length || ""}</span>
         <span className={cn("text-xs font-[450] tracking-normal normal-case", isTarget ? "text-work" : "text-faint")}>
@@ -141,6 +143,7 @@ export function DoneBand({ cards, isTarget, onLift }: { cards: Card[]; isTarget:
             <b className="text-xl text-text tabular-nums">+{more.length}</b><span>more done</span>
           </button>
         )}
+      </div>
       </div>
       {isMoreOpen && <DoneList cards={more} now={now} onClose={() => setMoreOpen(false)} />}
     </section>

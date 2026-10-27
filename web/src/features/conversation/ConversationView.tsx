@@ -1,106 +1,247 @@
-// A session's conversation, drawn with AI Elements: your messages (with the
-// files you sent), Claude's answers (Markdown), the tools it ran as one folded
-// run, its task list, the questions it asked (answered here while it waits),
-// the "next step" box with its reply buttons, the approval it asks for, and
-// your messages it has not received yet, each with Undo.
-import { ArrowUpRight, Check, CircleDot, Circle, FileText, ListTodo, Wrench } from "lucide-react"
-import { useEffect, useMemo, useRef, useState } from "react"
+// A session's conversation, as the classic board draws it (conversation.js):
+// your messages (long ones fold, pasted text folds away, sent files as pictures
+// and chips, the time and a Fork link under each), Claude's answers in
+// Markdown, the tool runs folded, its task list, the "next step" box, the
+// questions it asks (answered here while it waits), the app's own dialogs,
+// the files and pages it sent, what still runs in the background, the reply
+// choices it offers, the approval it asks for, and your messages it has not
+// received yet, each with Undo. A "New messages" pill shows when more arrives
+// while you read further up.
+import { ArrowDown, ArrowUpRight, ChevronDown, ChevronRight, FileText, GitFork, ListChecks, Terminal, Bot, Wrench } from "lucide-react"
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
-import { Conversation, ConversationContent, ConversationScrollButton } from "@/components/ai-elements/conversation"
-import { Message, MessageContent, MessageResponse } from "@/components/ai-elements/message"
-import { Task, TaskContent, TaskItem, TaskTrigger } from "@/components/ai-elements/task"
 import { Button } from "@/components/ui/button"
-import { Skeleton } from "@/components/ui/skeleton"
-import { Input } from "@/components/ui/input"
-import { post } from "@/lib/api"
-import type { Bridge, Card, Permission } from "@/lib/api-types"
+import { get, post } from "@/lib/api"
+import type { Bridge, Card, Permission, Snapshot } from "@/lib/api-types"
+import { bytesText, clock, memText, MEMORY_WARN } from "@/lib/format"
+import { useLive } from "@/lib/live"
+import { useNow } from "@/lib/now"
 import { cn } from "@/lib/utils"
+import { showFile } from "@/app/open-session"
 import { fileName, sentFiles } from "@/features/prompt/files"
-import { answer, permit } from "@/features/session/actions"
+import { ago } from "@/features/session/state"
+import { answer, launch, permit } from "@/features/session/actions"
+import { ForkDialog } from "./ForkDialog"
 import type { Shown } from "./items"
+import { Markdown, SessionOf } from "./Markdown"
 import { type Pending, deliveredOf, dropPending, stampOf, takenBack, usePending, waitingOf } from "./pending"
-import { sendMessage, takeBack } from "./send"
+import { reply, takeBack } from "./send"
+import { dialogAnswer, extOf, familyOf, linesText, nameOf, partsOf, type Family } from "./text"
 import { useConversation } from "./useConversation"
 
-const openInClaude = (id: string) => post(`/api/sessions/${encodeURIComponent(id)}/open`).catch((err: Error) => toast.error(err.message))
-const PASTE_RE = /<pasted[_-]?content\b[^>]*>([\s\S]*?)(?:<\/pasted[_-]?content>|$)/gi
+const linkBtn = "text-brand underline underline-offset-2"
+// The "?" disc before a question (.next-ask span).
+const Disc = () => <span className="inline-flex size-[17px] shrink-0 translate-y-0.5 items-center justify-center rounded-full bg-ask text-[11px] font-extrabold text-surface">?</span>
+const card = "rounded-xl border border-line bg-side px-[13px] py-[11px]"
 
-// What you typed, pasted blocks folded away; the files you sent as pictures
-// and named files, without the line that names them for Claude.
-function UserText({ text: raw }: { text: string }) {
+// What you typed, pasted blocks folded away and a long text clamped to 12
+// lines; the files you sent as pictures and named files, without the line
+// that names them for Claude.
+function Bubble({ text: raw, isPending }: { text: string; isPending?: boolean }) {
   const { text, images, files } = sentFiles(raw)
-  const parts: ({ typed: string } | { pasted: string })[] = []
-  let last = 0
-  for (const m of text.matchAll(PASTE_RE)) {
-    if (m.index > last) parts.push({ typed: text.slice(last, m.index) })
-    parts.push({ pasted: m[1].trim() })
-    last = m.index + m[0].length
-  }
-  if (last < text.length) parts.push({ typed: text.slice(last) })
+  const { parts, isLong } = partsOf(text)
+  const [isOpen, setOpen] = useState(false)
   return (
-    <div className="space-y-2 whitespace-pre-wrap">
-      {parts.map((p, i) => "typed" in p
-        ? p.typed.trim() && <span key={i}>{p.typed.trim()}</span>
-        : <details key={i} className="text-xs"><summary className="cursor-pointer text-muted-foreground">Pasted text · {p.pasted.split("\n").length} lines</summary><pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap">{p.pasted}</pre></details>)}
+    <div className={cn("rounded-[14px_14px_4px_14px] border border-[color-mix(in_srgb,var(--brand)_18%,transparent)] bg-brand-soft px-3 py-2 text-[13.5px] [overflow-wrap:anywhere] whitespace-pre-wrap",
+      isPending && "border-dashed opacity-65")}>
+      {parts.map((p, i) =>
+        "typed" in p ? (
+          <span key={i} className={cn(isLong && !isOpen && "line-clamp-12")}>{p.typed.trim()}</span>
+        ) : (
+          <details key={i} className="group/paste my-1.5 rounded-lg border border-[color-mix(in_srgb,var(--brand)_22%,transparent)] bg-surface whitespace-normal">
+            <summary className="cursor-pointer list-none px-[9px] py-[5px] text-xs font-semibold text-text-muted">
+              <span className="text-faint">{"▸ "}</span>Pasted text · {linesText(p.pasted.split("\n").length)}
+            </summary>
+            <pre className="m-0 max-h-80 overflow-auto border-t border-line px-2.5 py-2 font-mono text-[11.5px]/[1.5] whitespace-pre-wrap">{p.pasted}</pre>
+          </details>
+        ),
+      )}
+      {isLong && <button className="mt-1 block text-xs font-semibold text-brand" onClick={() => setOpen(o => !o)}>{isOpen ? "Show less" : "Show all"}</button>}
       {images.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {images.map(rel => <a key={rel} href={`/api/uploads/${rel}`} target="_blank" rel="noreferrer"><img src={`/api/uploads/${rel}`} alt={fileName(rel)} loading="lazy" className="max-h-40 rounded-md" /></a>)}
+        <div className="mt-1.5 flex flex-wrap gap-1.5">
+          {images.map(rel => (
+            <a key={rel} href={`/api/uploads/${rel}`} target="_blank" rel="noreferrer" title="Open the image">
+              <img src={`/api/uploads/${rel}`} alt="" loading="lazy" className="block max-h-40 max-w-[220px] rounded-lg border border-line" />
+            </a>
+          ))}
         </div>
       )}
       {files.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {files.map(rel => <a key={rel} href={`/api/uploads/${rel}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-md border bg-background/40 px-2 py-1 text-xs"><FileText className="size-3" />{fileName(rel)}</a>)}
+        <div className="mt-1.5 flex flex-wrap gap-1.5">
+          {files.map(rel => (
+            <a key={rel} href={`/api/uploads/${rel}`} target="_blank" rel="noreferrer" title="Open the file" className={chip}>
+              <FileText className="size-3.5 shrink-0 text-text-muted" /><span className="truncate">{fileName(rel)}</span>
+            </a>
+          ))}
         </div>
       )}
     </div>
   )
 }
 
-function AnswerInClaude({ sessionId }: { sessionId: string }) {
-  return <Button size="sm" variant="outline" onClick={() => openInClaude(sessionId)}>Answer in Claude<ArrowUpRight /></Button>
+const chip = "inline-flex h-[30px] max-w-[260px] items-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 text-[12.5px] text-text no-underline hover:border-line-strong"
+const FAMILY_TONE: Record<Family, string> = {
+  sheet: "bg-[rgb(22_163_74/0.16)] text-work",
+  doc: "bg-[color-mix(in_srgb,var(--review)_18%,transparent)] text-review",
+  slides: "bg-run-soft text-run",
+  pdf: "bg-bad-soft text-bad",
+  media: "bg-[color-mix(in_srgb,var(--brand)_16%,transparent)] text-brand",
+  code: "bg-hover text-text-muted",
+}
+// A file type's label, tinted by its family (files.js ExtTag).
+export function ExtTag({ ext }: { ext: string }) {
+  return <span className={cn("inline-flex h-[18px] min-w-[26px] shrink-0 items-center justify-center rounded px-1 font-mono text-[9.5px] font-semibold uppercase", FAMILY_TONE[familyOf(ext)])}>{ext || "file"}</span>
+}
+
+// A file Claude showed you: its type, name and size ("gone" when it is no
+// longer there); a click opens it in the Files tab.
+function FileChip({ sessionId, path }: { sessionId: string; path: string }) {
+  const [info, setInfo] = useState<{ path?: string; size?: number; error?: string } | null>(null)
+  useEffect(() => void get<{ path: string; size: number }>(`/api/sessions/${encodeURIComponent(sessionId)}/fileinfo?path=${encodeURIComponent(path)}`).then(setInfo, (err: Error) => setInfo({ error: err.message })), [sessionId, path])
+  return (
+    <button className={chip} onClick={() => showFile(path)} title={info?.path ?? path}>
+      <ExtTag ext={extOf(path)} /><span className="truncate">{nameOf(path)}</span>
+      {info?.size != null ? <small className="shrink-0 text-[11px] text-faint tabular-nums">{bytesText(info.size)}</small> : info?.error && <small className="shrink-0 text-[11px] text-faint">gone</small>}
+    </button>
+  )
+}
+
+function YourMessage({ item, onFork }: { item: Extract<Shown, { kind: "user" }>; onFork: () => void }) {
+  return (
+    <div className="group/msg flex max-w-[88%] flex-col items-end gap-[3px] self-end">
+      <Bubble text={item.text} />
+      <span className="flex items-center justify-end gap-2 text-[11px] text-faint">
+        <button className={cn(linkBtn, "inline-flex items-center gap-1 text-[11.5px] no-underline opacity-0 transition-opacity duration-[120ms] group-hover/msg:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100")}
+          onClick={onFork} title="New session with the conversation up to just before this message; the original does not change">
+          <GitFork className="size-3" />Fork
+        </button>
+        {item.at && <span title={item.isMidTurn ? "You wrote it while Claude was working" : undefined}>{item.isMidTurn ? "during the turn · " : ""}{clock(Date.parse(item.at))}</span>}
+      </span>
+    </div>
+  )
+}
+
+function Tools({ lines }: { lines: string[] }) {
+  const [isOpen, setOpen] = useState(false)
+  return (
+    <div className="text-xs text-text-muted">
+      <button className="-ml-1.5 flex max-w-full items-center gap-1.5 rounded-md px-1.5 py-[3px] text-text-muted hover:bg-hover hover:text-text" onClick={() => setOpen(o => !o)} aria-expanded={isOpen}>
+        {isOpen ? <ChevronDown className="size-3 shrink-0" /> : <ChevronRight className="size-3 shrink-0" />}
+        <Wrench className="size-3 shrink-0" />
+        <span className="shrink-0 font-[550]">{lines.length === 1 ? "1 action" : `${lines.length} actions`}</span>
+        {!isOpen && <span className="min-w-0 truncate font-mono text-[11.5px] text-faint">{lines.at(-1)}</span>}
+      </button>
+      {isOpen && (
+        <ul className="mt-1 flex flex-col gap-0.5 border-l-2 border-line pl-[18px]">
+          {lines.map((l, i) => <li key={i} title={l} className="truncate font-mono text-[11.5px] text-text-muted">{l}</li>)}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+function Plan({ steps }: { steps: Extract<Shown, { kind: "plan" }>["steps"] }) {
+  const done = steps.filter(s => s.status === "completed").length
+  return (
+    <div className="rounded-xl border border-line bg-surface px-[13px] py-2.5">
+      <div className="mb-1.5 flex items-center gap-[7px] text-xs font-[650] text-text-muted"><ListChecks className="size-[13px]" />Plan<span className="ml-auto font-medium tabular-nums">{done}/{steps.length}</span></div>
+      <ul className="flex flex-col gap-1">
+        {steps.map((s, i) => (
+          <li key={i} className="flex items-start gap-[9px] text-[13px]">
+            <i className={cn("mt-0.5 size-3.5 shrink-0 rounded-full",
+              s.status === "completed" ? "bg-work shadow-[inset_0_0_0_3.5px_var(--surface)]"
+                : s.status === "in_progress" ? "animate-spin border-2 border-brand border-r-transparent [animation-duration:1s]"
+                : "border-[1.5px] border-dashed border-line-strong")} />
+            <span className={cn(s.status === "completed" && "text-text-muted")}>{s.content}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+// What only Claude desktop can answer: why, and the button that opens it there.
+function AnswerInApp({ sessionId, why }: { sessionId: string; why: string }) {
+  return (
+    <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2.5">
+      <span className="text-xs text-text-muted">{why}</span>
+      <Button onClick={() => launch(sessionId)}>Answer in Claude <ArrowUpRight className="size-[13px]" /></Button>
+    </div>
+  )
 }
 
 type QuestionItem = Extract<Shown, { kind: "question" }>
 // A question with options. While the session waits for it (`canAnswer`), a
 // click answers (several, then Send, when it takes several), or your own text.
-function Question({ item, sessionId, canAnswer, picked, onPick }: { item: QuestionItem; sessionId: string; canAnswer: boolean; picked?: string; onPick: (text: string, value: string) => void }) {
+function Question({ item, sessionId, canAnswer: isAnswerable, picked, onPick }: { item: QuestionItem; sessionId: string; canAnswer: boolean; picked?: string; onPick: (text: string, value: string) => void }) {
   const [several, setSeveral] = useState<string[]>([])
   const [own, setOwn] = useState("")
   const shown = item.answer ?? picked ?? null
-  const isOpen = canAnswer && !item.answer
-  const chosen = isOpen && item.isMulti ? several : (shown ?? "").split(",").map(a => a.trim())
+  const canAnswer = isAnswerable && !item.answer
+  const chosen = canAnswer && item.isMulti ? several : (shown ?? "").split(",").map(a => a.trim())
   const labels = item.options.map(o => o.label)
   // The app always adds a free "Other": an answer outside the options is that.
   const free = shown && !labels.some(l => shown.includes(l)) ? shown : null
   const choose = (label: string) => {
-    if (!isOpen) return
+    if (!canAnswer) return
     if (item.isMulti) setSeveral(list => (list.includes(label) ? list.filter(l => l !== label) : [...list, label]))
     else onPick(item.text, label)
   }
-  const sendSeveral = () => onPick(item.text, [...several, ...(own.trim() ? [own.trim()] : [])].join(", "))
   const hint = (o: QuestionItem["options"][number]) => (o.description && o.description.trim().toLowerCase() !== o.label.trim().toLowerCase() ? o.description : null)
+  const option = (isChosen: boolean) =>
+    cn("flex items-start gap-2.5 rounded-lg border border-line bg-surface px-2.5 py-[7px]",
+      isChosen && "border-[color-mix(in_srgb,var(--brand)_60%,transparent)] bg-brand-soft",
+      canAnswer && "cursor-pointer transition-[border-color,background-color,transform] duration-[120ms] ease-(--ease-out) active:scale-[0.99]",
+      canAnswer && !isChosen && "hover:border-line-strong hover:bg-hover",
+      shown && !canAnswer && !isChosen && "opacity-55")
+  const mark = (isChosen: boolean) =>
+    cn("mt-0.5 size-3.5 shrink-0 border-[1.5px] border-line-strong", item.isMulti ? "rounded" : "rounded-full", isChosen && "border-brand bg-brand shadow-[inset_0_0_0_2.5px_var(--surface)]")
   return (
-    <div className={cn("space-y-2 rounded-xl border p-3 text-sm", isOpen ? "border-amber-400/40 bg-amber-400/5" : "bg-card/50")}>
-      <p className="font-medium">{item.text}</p>
-      <div className="space-y-1">
-        {item.options.map(o => {
-          const isChosen = chosen.includes(o.label)
-          return (
-            <button key={o.label} disabled={!isOpen} onClick={() => choose(o.label)}
-              className={cn("flex w-full items-start gap-2.5 rounded-lg border px-3 py-2 text-left disabled:cursor-default", isOpen && "hover:bg-accent", isChosen && "border-emerald-400/50 bg-emerald-400/5")}>
-              <span className={cn("mt-0.5 grid size-4 shrink-0 place-items-center border", item.isMulti ? "rounded" : "rounded-full", isChosen && "border-emerald-400 bg-emerald-400 text-black")}>{isChosen && <Check className="size-3" />}</span>
-              <span><b className="font-medium">{o.label}</b>{hint(o) && <span className="block text-xs text-muted-foreground">{hint(o)}</span>}</span>
-            </button>
-          )
-        })}
-        {free && <p className="rounded-lg border border-emerald-400/50 px-3 py-2">{free}</p>}
-      </div>
-      {isOpen ? (
-        <form className="flex gap-2" onSubmit={e => (e.preventDefault(), item.isMulti ? sendSeveral() : own.trim() && onPick(item.text, own.trim()))}>
-          <Input value={own} onChange={e => setOwn(e.target.value)} placeholder="Another answer…" className="h-8" />
-          <Button size="sm" disabled={item.isMulti ? !several.length && !own.trim() : !own.trim()}>Send</Button>
+    <div className={cn(card, "w-[min(520px,100%)] self-start")}>
+      <p className="m-0 flex items-baseline gap-2 font-semibold"><Disc />{item.text}</p>
+      {item.isMulti && canAnswer && <p className="mt-0.5 ml-[25px] text-xs text-faint">You can pick several</p>}
+      {item.options.length > 0 && (
+        <ul className="mt-2.5 flex flex-col gap-1" role={canAnswer ? (item.isMulti ? "group" : "radiogroup") : undefined}>
+          {item.options.map(o => {
+            const isChosen = chosen.includes(o.label)
+            return (
+              <li key={o.label} className={option(isChosen)} role={canAnswer ? (item.isMulti ? "checkbox" : "radio") : undefined} aria-checked={canAnswer ? isChosen : undefined}
+                tabIndex={canAnswer ? 0 : undefined} onClick={() => choose(o.label)}
+                onKeyDown={e => canAnswer && (e.key === "Enter" || e.key === " ") && (e.preventDefault(), choose(o.label))}>
+                <i className={mark(isChosen)} />
+                <div><b className="block text-[13px] leading-[1.35] font-semibold">{o.label}</b>{hint(o) && <small className="mt-px block text-xs text-text-muted">{hint(o)}</small>}</div>
+              </li>
+            )
+          })}
+          {free && <li className={option(true)}><i className={mark(true)} /><div><b className="block text-[13px] font-semibold">{free}</b><small className="block text-xs text-text-muted">Your own answer</small></div></li>}
+        </ul>
+      )}
+      {canAnswer ? (
+        <form className="mt-2 flex gap-1.5" onSubmit={e => (e.preventDefault(), own.trim() && !item.isMulti && onPick(item.text, own.trim()))}>
+          <input className="h-8 min-w-0 flex-1 rounded-md border border-line-strong bg-surface px-2.5 text-[13.5px] focus:border-brand focus:shadow-[0_0_0_3px_var(--brand-soft)] focus:outline-none"
+            placeholder="Another answer…" value={own} onChange={e => setOwn(e.target.value)} />
+          {item.isMulti
+            ? <Button type="button" disabled={!several.length && !own.trim()} onClick={() => onPick(item.text, [...several, ...(own.trim() ? [own.trim()] : [])].join(", "))}>Send</Button>
+            : <Button variant="outline" disabled={!own.trim()}>Send</Button>}
         </form>
-      ) : !shown && <AnswerInClaude sessionId={sessionId} />}
+      ) : !shown && <AnswerInApp sessionId={sessionId} why="You can answer this question only in Claude desktop." />}
+    </div>
+  )
+}
+
+// A dialog of the desktop app (the plan to approve, a branch to pick…).
+function AppDialog({ item, sessionId }: { item: Extract<Shown, { kind: "dialog" }>; sessionId: string }) {
+  return (
+    <div className={cn(card, "w-[min(520px,100%)] self-start")}>
+      <p className="m-0 flex items-baseline gap-2 font-semibold"><Disc />{item.label}</p>
+      {item.detail && (item.isLong ? (
+        <details className="my-1.5 rounded-lg border border-[color-mix(in_srgb,var(--brand)_22%,transparent)] bg-surface">
+          <summary className="cursor-pointer list-none px-[9px] py-[5px] text-xs font-semibold text-text-muted"><span className="text-faint">{"▸ "}</span>Show the plan</summary>
+          <Markdown className="max-h-[360px] overflow-auto border-t border-line px-2.5 py-2 text-[12.5px]">{item.detail}</Markdown>
+        </details>
+      ) : <p className="mt-2 text-xs text-text-muted">{item.detail}</p>)}
+      {item.answer ? <p className="mt-2 text-[13px]"><b>Your answer:</b> {dialogAnswer(item.answer)}</p>
+        : <AnswerInApp sessionId={sessionId} why="You can answer this only in Claude desktop." />}
     </div>
   )
 }
@@ -109,13 +250,13 @@ function Question({ item, sessionId, canAnswer, picked, onPick }: { item: Questi
 function PermissionCard({ sessionId, permission }: { sessionId: string; permission: Permission }) {
   const { command, file_path, url, description } = permission.input as Record<string, string | undefined>
   const what = command ?? file_path ?? url
-  const decide = (d: "allow" | "deny") => permit(sessionId, permission.id, d).then(() => toast(d === "allow" ? "Allowed" : "Denied"), (err: Error) => toast.error(err.message))
+  const decide = (d: "allow" | "deny") => permit(sessionId, permission.id, d).then(() => toast(d === "allow" ? "Allowed" : "Denied"), (err: Error) => toast(err.message))
   return (
-    <div className="space-y-2 rounded-xl border border-rose-400/40 bg-rose-400/5 p-3 text-sm">
-      <p className="font-medium">Allow Claude to use {permission.tool}?</p>
-      {description && <p className="text-muted-foreground">{description}</p>}
-      {what && <pre className="max-h-40 overflow-auto rounded bg-black/30 p-2 font-mono text-xs whitespace-pre-wrap">{what}</pre>}
-      <div className="flex justify-end gap-2"><Button size="sm" variant="outline" onClick={() => decide("deny")}>Deny</Button><Button size="sm" onClick={() => decide("allow")}>Allow</Button></div>
+    <div className={cn(card, "w-[min(520px,100%)] self-start")}>
+      <p className="m-0 flex items-baseline gap-2 font-semibold"><Disc />Allow Claude to use {permission.tool}?</p>
+      {description && <p className="mt-2 text-xs text-text-muted">{description}</p>}
+      {what && <pre className="mt-2 max-h-[180px] overflow-auto rounded-lg border border-line bg-surface px-2.5 py-2 font-mono text-xs/[1.5] [overflow-wrap:anywhere] whitespace-pre-wrap">{what}</pre>}
+      <div className="mt-2.5 flex justify-end gap-2"><Button variant="outline" onClick={() => decide("deny")}>Deny</Button><Button onClick={() => decide("allow")}>Allow</Button></div>
     </div>
   )
 }
@@ -123,101 +264,142 @@ function PermissionCard({ sessionId, permission }: { sessionId: string; permissi
 function PendingMessage({ p, sessionId, bridge, isWorking }: { p: Pending; sessionId: string; bridge: Bridge | null; isWorking: boolean }) {
   const stamp = stampOf(p, bridge, isWorking)
   return (
-    <Message from="user" className="opacity-70">
-      <MessageContent><UserText text={p.text} /></MessageContent>
-      <div className={cn("flex items-center justify-end gap-2 text-xs", stamp.isBad ? "text-rose-300" : "text-muted-foreground")}>
-        {stamp.text}
-        {stamp.isBad && <button className="underline-offset-2 hover:underline" onClick={() => openInClaude(sessionId)}>Open in Claude</button>}
-        <button className="font-medium text-foreground underline-offset-2 hover:underline" onClick={() => takeBack(sessionId, p)}>Undo</button>
-      </div>
-    </Message>
-  )
-}
-
-function Tools({ lines }: { lines: string[] }) {
-  return (
-    <Task defaultOpen={false}>
-      <TaskTrigger title={lines.length === 1 ? lines[0] : `${lines.length} actions · ${lines.at(-1)}`} />
-      <TaskContent>
-        {lines.map((l, i) => <TaskItem key={i} className="font-mono text-xs"><Wrench className="mr-1.5 inline size-3" />{l}</TaskItem>)}
-      </TaskContent>
-    </Task>
-  )
-}
-
-function Plan({ steps }: { steps: Extract<Shown, { kind: "plan" }>["steps"] }) {
-  const done = steps.filter(s => s.status === "completed").length
-  return (
-    <div className="rounded-xl border bg-card/50 p-3 text-sm">
-      <div className="mb-2 flex items-center gap-2 text-xs font-medium text-muted-foreground"><ListTodo className="size-3.5" />Plan<span className="ml-auto tabular-nums">{done}/{steps.length}</span></div>
-      <ul className="space-y-1">
-        {steps.map((s, i) => (
-          <li key={i} className={cn("flex items-start gap-2", s.status === "completed" && "text-muted-foreground line-through")}>
-            {s.status === "completed" ? <Check className="mt-0.5 size-3.5 text-emerald-400" /> : s.status === "in_progress" ? <CircleDot className="mt-0.5 size-3.5 text-amber-400" /> : <Circle className="mt-0.5 size-3.5 text-muted-foreground" />}
-            {s.content}
-          </li>
-        ))}
-      </ul>
+    <div className="flex max-w-[88%] flex-col items-end gap-[3px] self-end">
+      <Bubble text={p.text} isPending />
+      <span className={cn("text-[11px]", stamp.isBad ? "text-bad" : "text-faint")}>
+        {stamp.text} ·{" "}
+        {stamp.isBad && !stamp.text.startsWith("Could not") && <><button className={linkBtn} onClick={() => launch(sessionId)} title="Opens the session in Claude desktop; when you write in it, it starts and gets the message">Open in Claude</button> · </>}
+        <button className={linkBtn} onClick={() => takeBack(sessionId, p)} title="Remove the message before it arrives and put it back in the field">Undo</button>
+      </span>
     </div>
   )
 }
 
-function Next({ item, sessionId }: { item: Extract<Shown, { kind: "next" }>; sessionId: string }) {
-  const reply = (text: string) => sendMessage(sessionId, text, "Reply sent").catch((err: Error) => toast.error(err.message))
+const BG_LABEL: Record<string, string> = { shell: "in the background", subagent: "subagent", monitor: "monitor", workflow: "workflow", current: "in progress" }
+type LiveCard = Snapshot["cards"][number]
+type Task = NonNullable<LiveCard["background"]>[number]
+type Proc = NonNullable<LiveCard["memory"]>["items"][number]
+const taskTitle = (t: Task) => t.description || t.command || BG_LABEL[t.type] || t.type || "task"
+const flat = (text: unknown) => String(text ?? "").replace(/['"]/g, "").replace(/\s+/g, " ").trim()
+
+// "Running now" (components.js BackgroundBox): the background tasks and what
+// each takes in memory, then what else the session started that still takes
+// memory, each with Stop.
+function RunningNow({ sessionId }: { sessionId: string }) {
+  const live = useLive(l => l.snapshot?.cards.find(c => c.id === sessionId))
+  const now = useNow()
+  if (!live) return null
+  const tasks = live.background ?? []
+  const items = (live.memory?.items ?? []).filter(i => i.kind !== "session")
+  const used = new Set<number>()
+  const processOf = (t: Task) => {
+    const k = flat(t.command)
+    const found = k ? items.find(i => !used.has(i.pid) && flat(i.command).includes(k)) : undefined
+    if (found) used.add(found.pid)
+    return found
+  }
+  const rows = tasks.map(t => ({ task: t, proc: processOf(t) }))
+  const others = items.filter(i => !used.has(i.pid) && i.bytes >= 20 * 1024 ** 2)
+  if (!rows.length && !others.length) return null
+  const stopAt = (i: Proc) => post(`/api/sessions/${encodeURIComponent(sessionId)}/stopprocess`, { pid: i.pid }).then(() => toast(`Stopping ${i.label}…`), (err: Error) => toast(err.message || "Could not stop it"))
+  const memCell = (i: Proc | undefined) => {
+    if (!i) return null
+    const idle = i.idleSince && now - i.idleSince > 5 * 60_000 ? `idle ${ago(i.idleSince, now)}` : ""
+    return (
+      <>
+        {idle && <span className={cn("shrink-0 text-[11px] text-faint", i.isForgotten && "text-run")} title={i.isForgotten ? "Up for hours and unused for a while: likely forgotten" : "No CPU used lately"}>{idle}</span>}
+        <span className={cn("shrink-0 text-[11.5px] text-text-muted tabular-nums", i.bytes >= MEMORY_WARN && "font-semibold text-run")}>{memText(i.bytes)}</span>
+        <button className={cn(linkBtn, "shrink-0 text-[11.5px]")} title={`Stop it (and what it started)${i.cwd ? `: ${i.cwd}` : ""}`} onClick={() => stopAt(i)}>Stop</button>
+      </>
+    )
+  }
+  const row = "flex min-w-0 items-center gap-2 text-[12.5px] text-text"
   return (
-    <div className="space-y-2 rounded-xl border bg-card/50 p-3 text-sm">
-      {item.recap && <p className="text-muted-foreground">{item.recap}</p>}
-      {item.ask && <p className="font-medium">{item.ask}</p>}
-      {item.actions.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {item.actions.map((a, i) => (
-            <Button key={a.label} size="sm" variant={item.picked === a.label ? "secondary" : i === 0 && !item.picked ? "default" : "outline"}
-              disabled={!!item.picked} onClick={() => reply(a.message || a.label)}>{item.picked === a.label && <Check />}{a.label}</Button>
-          ))}
+    <div className="flex shrink-0 flex-col gap-1 rounded-[10px] border border-line bg-side px-2.5 py-2">
+      <div className="flex items-center gap-2 text-[11.5px] font-bold tracking-[0.05em] text-text-muted uppercase">
+        <i className="run-dot size-2 rounded-full bg-run" />Running now<span className="font-medium text-faint">{rows.length + others.length}</span>
+        {(live.memory?.total ?? 0) >= MEMORY_WARN && <span className="ml-auto font-semibold tracking-normal text-run normal-case" title="Memory this session and what it started take on this Mac">{memText(live.memory!.total)} in memory</span>}
+      </div>
+      {rows.map(({ task: t, proc }) => (
+        <div key={t.id} className={row} title={[t.command ?? t.description ?? "", proc?.cwd].filter(Boolean).join("\n")}>
+          {t.type === "subagent" ? <Bot className="size-[13px] shrink-0 text-work" /> : <Terminal className="size-[13px] shrink-0 text-work" />}
+          <span className={cn("min-w-0 flex-1 truncate", t.type === "shell" && !t.description && "font-mono text-xs")}>{taskTitle(t)}</span>
+          <span className="max-w-[40%] shrink-0 truncate text-[11px] text-faint">{BG_LABEL[t.type] ?? t.type}</span>
+          <span className="shrink-0 text-[11px] text-faint">{ago(t.since, now)}</span>
+          {memCell(proc)}
         </div>
-      )}
+      ))}
+      {others.map(i => (
+        <div key={i.pid} className={row} title={[i.command, i.cwd].filter(Boolean).join("\n")}>
+          {i.kind === "mcp" ? <Wrench className="size-[13px] shrink-0 text-work" /> : <Terminal className="size-[13px] shrink-0 text-work" />}
+          <span className="min-w-0 flex-1 truncate font-mono text-xs">{i.label}</span>
+          <span className="max-w-[40%] shrink-0 truncate text-[11px] text-faint">{[i.kind === "mcp" ? "MCP server" : i.cwd?.split("/").slice(-2).join("/"), i.isDetached && "left running"].filter(Boolean).join(" · ")}</span>
+          <span className="shrink-0 text-[11px] text-faint">{ago(i.since, now)}</span>
+          {memCell(i)}
+        </div>
+      ))}
     </div>
   )
 }
 
 type Asked = { canAnswer: (text: string) => boolean; picks: Record<string, string>; onPick: (text: string, value: string) => void }
 
-function ShownItem({ item, sessionId, asked }: { item: Shown; sessionId: string; asked: Asked }) {
+function ShownItem({ item, sessionId, asked, onFork }: { item: Shown; sessionId: string; asked: Asked; onFork: (item: Extract<Shown, { kind: "user" }>) => void }) {
   switch (item.kind) {
     case "user":
-      return <Message from="user"><MessageContent><UserText text={item.text} /></MessageContent></Message>
+      return <YourMessage item={item} onFork={() => onFork(item)} />
     case "assistant":
-      return <Message from="assistant"><MessageContent><MessageResponse>{item.text}</MessageResponse></MessageContent></Message>
+      return <Markdown>{item.text}</Markdown>
     case "tools":
       return <Tools lines={item.lines} />
     case "plan":
       return <Plan steps={item.steps} />
     case "next":
-      return <Next item={item} sessionId={sessionId} />
+      return (
+        <div className={card}>
+          {item.recap && <Markdown className="text-[13px] text-text-muted">{item.recap}</Markdown>}
+          {item.ask && <p className={cn("m-0 flex items-baseline gap-2 font-semibold", item.recap && "mt-2")}><Disc />{item.ask}</p>}
+          {item.picked && <p className="mt-1.5 ml-[25px] text-[13px] text-text-muted"><span className="text-faint">↳ </span>{item.picked}</p>}
+        </div>
+      )
     case "chapter":
-      return <div className="flex items-center gap-3 text-xs font-medium text-muted-foreground"><span className="h-px flex-1 bg-border" />{item.title}<span className="h-px flex-1 bg-border" /></div>
+      return (
+        <div className="my-1.5 flex items-center gap-2.5 text-[11.5px] font-[650] tracking-[0.04em] text-faint uppercase">
+          <span className="h-px flex-1 bg-line" />{item.title}<span className="h-px flex-1 bg-line" />
+        </div>
+      )
     case "question":
       return <Question item={item} sessionId={sessionId} canAnswer={asked.canAnswer(item.text)} picked={asked.picks[item.text]} onPick={asked.onPick} />
     case "dialog":
+      return <AppDialog item={item} sessionId={sessionId} />
+    case "files":
       return (
-        <div className="space-y-2 rounded-xl border p-3 text-sm">
-          <p className="font-medium">{item.label}</p>
-          {item.detail && <p className="line-clamp-6 whitespace-pre-wrap text-muted-foreground">{item.detail}</p>}
-          {item.answer ? <p className="text-xs text-emerald-300">{item.answer}</p> : <AnswerInClaude sessionId={sessionId} />}
+        <div className="flex flex-col gap-1">
+          {item.caption && <p className="m-0 text-[12.5px] text-text-muted">{item.caption}</p>}
+          <div className="flex flex-wrap gap-1.5">{item.paths.map(p => <FileChip key={p} sessionId={sessionId} path={p} />)}</div>
         </div>
       )
-    case "files":
-      return <div className="flex flex-wrap gap-1.5">{item.paths.map(p => <span key={p} className="inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs"><FileText className="size-3" />{p.split("/").pop()}</span>)}</div>
     case "artifact":
-      return item.url ? <a href={item.url} target="_blank" rel="noreferrer" className="text-sm text-sky-400 underline">{item.path?.split("/").pop() ?? "Published page"}</a> : null
+      return (
+        <div className="flex max-w-[520px] items-center gap-2.5 rounded-[10px] border border-line bg-surface px-3 py-2.5">
+          <FileText className="size-4 shrink-0 text-brand" />
+          <div className="flex min-w-0 flex-1 flex-col">
+            <b className="truncate text-[13px]">{item.path ? nameOf(item.path).replace(/\.[^.]+$/, "") : "Artifact"}</b>
+            <small className="text-[11.5px] text-faint">{item.url ? "Published on claude.ai" : "Published"}</small>
+          </div>
+          {item.path && <Button variant="ghost" onClick={() => showFile(item.path!)}>View file</Button>}
+          {item.url && <Button variant="outline" asChild><a href={item.url} target="_blank" rel="noreferrer">Open <ArrowUpRight className="size-3" /></a></Button>}
+        </div>
+      )
   }
 }
 
-export function ConversationView({ sessionId, card, bridge }: { sessionId: string; card: Card | undefined; bridge: Bridge | null }) {
+export function ConversationView({ sessionId, card: session, bridge }: { sessionId: string; card: Card | undefined; bridge: Bridge | null }) {
   const { shown, isLoaded, error, hasMore, loadEarlier, refresh } = useConversation(sessionId)
   const mine = usePending(sessionId)
   const gone = takenBack.use()
   const waiting = useMemo(() => waitingOf(mine, bridge?.queued ?? [], gone), [mine, bridge?.queued, gone])
+  const [forking, setForking] = useState<Extract<Shown, { kind: "user" }> | null>(null)
 
   // A message sent from here shows as pending until the transcript has it.
   const userTexts = useMemo(() => shown.flatMap(i => (i.kind === "user" ? [i.text] : [])), [shown])
@@ -253,7 +435,7 @@ export function ConversationView({ sessionId, card, bridge }: { sessionId: strin
       const next = { ...picks, [text]: value }
       setPicks(next)
       if (!question || !question.questions.every(q => next[q.question])) return
-      await answer(sessionId, question.id, next).then(() => toast("Answer sent"), (err: Error) => (setPicks(picks), toast.error(err.message)))
+      await answer(sessionId, question.id, next).then(() => toast("Answer sent"), (err: Error) => (setPicks(picks), toast(err.message || "Could not answer")))
     },
   }
 
@@ -262,20 +444,74 @@ export function ConversationView({ sessionId, card, bridge }: { sessionId: strin
   const inTranscript = new Set(shown.flatMap(i => (i.kind === "question" ? [i.text] : [])))
   const live: QuestionItem[] = (question?.questions ?? []).filter(q => !inTranscript.has(q.question))
     .map(q => ({ key: `${question!.id}-${q.question}`, kind: "question", text: q.question, options: q.options, isMulti: !!q.multiSelect, answer: null }))
-  const permission = card?.askKind === "permission" ? (card.bridge?.permission ?? null) : null
+  const permission = session?.askKind === "permission" ? (session.bridge?.permission ?? null) : null
+  const choices = session?.column === "asking" && !waiting.length ? (session.choices ?? []) : []
 
-  if (error) return <p className="p-6 text-center text-sm text-muted-foreground">{error}</p>
-  if (!isLoaded) return <div className="space-y-3 p-5"><Skeleton className="ml-auto h-10 w-2/3" /><Skeleton className="h-24 w-full" /><Skeleton className="h-16 w-4/5" /></div>
+  // Follows the bottom while you are there; what arrives while you read
+  // further up raises "New messages".
+  const box = useRef<HTMLDivElement>(null)
+  const stick = useRef(true)
+  const [hasNew, setHasNew] = useState(false)
+  const lastKey = shown.at(-1)?.key
+  const prevLast = useRef<string | undefined>(undefined)
+  useLayoutEffect(() => {
+    const el = box.current
+    if (!el) return
+    if (stick.current) el.scrollTop = el.scrollHeight
+    else if (prevLast.current && lastKey !== prevLast.current) setHasNew(true)
+    prevLast.current = lastKey
+  }, [lastKey, shown, waiting.length, isLoaded])
+  const onScroll = () => {
+    const el = box.current!
+    stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48
+    if (stick.current) setHasNew(false)
+  }
+  // Earlier messages go on top; what you were reading stays in place.
+  const earlier = async () => {
+    const el = box.current!
+    const before = el.scrollHeight
+    await loadEarlier()
+    requestAnimationFrame(() => (el.scrollTop += el.scrollHeight - before))
+  }
+  const toBottom = () => {
+    stick.current = true
+    setHasNew(false)
+    box.current!.scrollTop = box.current!.scrollHeight
+  }
+
   return (
-    <Conversation className="min-h-0 flex-1">
-      <ConversationContent className="gap-4">
-        {hasMore && <Button variant="ghost" size="sm" className="self-center" onClick={loadEarlier}>Load earlier messages</Button>}
-        {shown.map(item => <ShownItem key={item.key} item={item} sessionId={sessionId} asked={asked} />)}
-        {waiting.map(p => <PendingMessage key={p.id} p={p} sessionId={sessionId} bridge={bridge} isWorking={card?.column === "working"} />)}
+    <SessionOf.Provider value={sessionId}>
+      <div ref={box} onScroll={onScroll} className="relative flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto px-5 pt-[18px] pb-3 max-[860px]:px-3.5 max-[860px]:pt-3.5 max-[860px]:pb-2.5">
+        {!isLoaded && !error && (
+          <div className="flex flex-col gap-3">
+            <i className="skeleton block h-[52px] rounded-[9px]" /><i className="skeleton block h-9 w-[70%] self-end rounded-[9px]" /><i className="skeleton block h-[52px] rounded-[9px]" />
+          </div>
+        )}
+        {error && <p className="text-center text-text-muted">{error}</p>}
+        {hasMore && <Button variant="ghost" className="self-center" onClick={earlier}>Load earlier messages</Button>}
+        {shown.map(item => <ShownItem key={item.key} item={item} sessionId={sessionId} asked={asked} onFork={setForking} />)}
+        {choices.length > 0 && (
+          <div className="flex flex-wrap justify-end gap-1.5">
+            {choices.map((c, i) => (
+              <button key={i} title={c.message} onClick={() => reply(sessionId, c.message || c.label)}
+                className={cn("h-[26px] rounded-[13px] border px-2.5 text-xs font-semibold transition-[transform,background-color,filter] duration-[120ms] ease-(--ease-out) active:scale-[0.96]",
+                  i === 0 ? "border-ask bg-ask text-surface hover:brightness-108" : "border-[color-mix(in_srgb,var(--ask)_45%,transparent)] bg-ask-soft text-ask hover:bg-[color-mix(in_srgb,var(--ask)_22%,transparent)]")}>
+                {c.label}
+              </button>
+            ))}
+          </div>
+        )}
+        {waiting.map(p => <PendingMessage key={p.id} p={p} sessionId={sessionId} bridge={bridge} isWorking={session?.column === "working"} />)}
         {live.map(q => <Question key={q.key} item={q} sessionId={sessionId} canAnswer picked={picks[q.text]} onPick={asked.onPick} />)}
         {permission && <PermissionCard key={permission.id} sessionId={sessionId} permission={permission} />}
-      </ConversationContent>
-      <ConversationScrollButton />
-    </Conversation>
+        <RunningNow sessionId={sessionId} />
+        {hasNew && (
+          <button onClick={toBottom} className="sticky bottom-1 inline-flex h-7 shrink-0 items-center gap-1.5 self-center rounded-[14px] bg-text px-3 text-xs font-semibold text-bg shadow-pop">
+            <ArrowDown className="size-[13px]" />New messages
+          </button>
+        )}
+      </div>
+      {forking && <ForkDialog sessionId={sessionId} item={forking} onClose={() => setForking(null)} />}
+    </SessionOf.Provider>
   )
 }

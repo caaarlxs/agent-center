@@ -16,6 +16,7 @@ import { groupBy, menu, selected, setView, showDone, useBoardCards } from "@/fea
 import { tierStep } from "@/features/board/tiers"
 import { CARD_COLORS, PARK_OPTIONS } from "@/features/session/parts"
 import { helpOpen } from "./help-state"
+import { startRename } from "@/features/session/SessionPanel"
 
 // Enter keeps its own job on these (press, pick, tick, unfold): it opens the
 // selected conversation only from elsewhere.
@@ -104,7 +105,7 @@ export function useBoardKeys({ nextUp, toggleSearch, openSearch, isSearching }: 
           e.preventDefault()
           if (openNow()?.id !== id) openSession(id)
           // The panel starts editing its title (the classic board's event).
-          setTimeout(() => window.dispatchEvent(new Event("agents:rename")), 50)
+          setTimeout(startRename, 50)
           return
         case "r":
           if (!id) return

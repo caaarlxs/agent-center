@@ -239,6 +239,9 @@ const useOptionalProviderAttachments = () =>
 
 export type PromptInputProviderProps = PropsWithChildren<{
   initialInput?: string;
+  // Files picked before (a draft): they come back, and outlive the provider.
+  initialFiles?: (FileUIPart & { id: string })[];
+  onFilesChange?: (files: (FileUIPart & { id: string })[]) => void;
 }>;
 
 /**
@@ -247,6 +250,8 @@ export type PromptInputProviderProps = PropsWithChildren<{
  */
 export const PromptInputProvider = ({
   initialInput: initialTextInput = "",
+  initialFiles,
+  onFilesChange,
   children,
 }: PromptInputProviderProps) => {
   // ----- textInput state
@@ -256,7 +261,7 @@ export const PromptInputProvider = ({
   // ----- attachments state (global when wrapped)
   const [attachmentFiles, setAttachmentFiles] = useState<
     (FileUIPart & { id: string })[]
-  >([]);
+  >(initialFiles ?? []);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   // oxlint-disable-next-line eslint(no-empty-function)
   const openRef = useRef<() => void>(() => {});
@@ -305,11 +310,13 @@ export const PromptInputProvider = ({
 
   useEffect(() => {
     attachmentsRef.current = attachmentFiles;
+    onFilesChange?.(attachmentFiles);
   }, [attachmentFiles]);
 
-  // Cleanup blob URLs on unmount to prevent memory leaks
+  // Cleanup blob URLs on unmount to prevent memory leaks (kept drafts keep theirs)
   useEffect(
     () => () => {
+      if (onFilesChange) return;
       for (const f of attachmentsRef.current) {
         if (f.url) {
           URL.revokeObjectURL(f.url);

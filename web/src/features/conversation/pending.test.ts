@@ -33,6 +33,6 @@ describe("stampOf", () => {
   it("says it waits for the turn, or is on its way", () => {
     expect(stampOf(p("a"), bridge({ isOpen: true }), true).text).toMatch(/^Queued/)
     expect(stampOf(p("a"), bridge({ isOpen: true }), false).text).toBe("Sending…")
-    expect(stampOf(p("a"), bridge({}), false).text).toBe("Waking the session…")
+    expect(stampOf(p("a"), bridge({}), false).text).toBe("Waking the session in the background…")
   })
 })

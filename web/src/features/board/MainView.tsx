@@ -10,7 +10,7 @@ import { Canvas } from "@/features/canvas/Canvas"
 import type { View } from "./order"
 import { useFlip } from "./flip"
 import { dragging, groupBy, showDone, useBoardCards, view as viewStore, whereTo } from "./state"
-import { Board, Inbox, Tiers, ViewTools, useViewCards } from "./Views"
+import { Board, Inbox, Tiers, useViewCards } from "./Views"
 
 const NARROW = "(max-width: 860px)"
 const useNarrow = () =>
@@ -44,8 +44,7 @@ export function MainView() {
   if (view === "canvas" && hasData) return <Canvas />
   return (
     <div ref={root} className={cn("absolute inset-0 flex flex-col", isDragging && "is-dragging")}>
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-[5] flex justify-center gap-1.5 pt-3">{hasData && view !== "canvas" && <ViewTools view={view} />}</div>
-      <div className="min-h-0 flex-1 overflow-auto pt-14">
+      <div className="min-h-0 flex-1 overflow-auto">
         {!hasData ? (
           <div className="flex max-w-[900px] flex-col gap-2.5 p-5">
             {[1, 2, 3, 4, 5].map(i => <i key={i} className="block h-[52px] animate-shimmer rounded-[9px] bg-[linear-gradient(90deg,var(--hover),var(--press),var(--hover))] bg-[length:200%_100%]" />)}
