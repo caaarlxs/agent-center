@@ -28,7 +28,7 @@ import type { EngineInterface, Register } from 'claude-code'
 
 const POLL_MS = 2000
 const KEEP_ACKS = 100
-const VERSION = 8
+const VERSION = 9
 const ANSWER_POLL_MS = 1000
 
 type Message = { id: string; text: string; notBefore?: number }
@@ -102,6 +102,9 @@ type SettingsRequest = { id: string; mode?: string; model?: string; effort?: str
 // the client's tools are not connected yet, and a session closed while its
 // approval card waited takes the card with it (it shows again when reopened).
 const RETRYABLE = /no connected MCP tool|stream closed before response/
+// In Auto, the classifier may give no verdict for a change the conversation
+// itself did not ask for; it says to ask once more, as is.
+const NO_VERDICT = /gave no verdict/
 const RETRY_MS = 15_000
 const SETTINGS_PATIENCE_MS = 30 * 60_000
 let retryAt = 0
@@ -121,7 +124,8 @@ async function applySettings($: EngineInterface, b: Bridge) {
   const fail = (err: unknown) => (err instanceof Error ? err.message : String(err)).slice(0, 300)
   if (req.mode) {
     try {
-      const r = await $.mcp.call("ccd_session_mgmt", "set_session_permission_mode", { session_id: "self", mode: req.mode })
+      const setMode = () => $.mcp.call("ccd_session_mgmt", "set_session_permission_mode", { session_id: "self", mode: req!.mode })
+      const r = await setMode().catch(err => (NO_VERDICT.test(fail(err)) ? setMode() : Promise.reject(err)))
       results.mode = r.isError ? fail(JSON.stringify(r.content ?? r)) : "ok"
     } catch (err) {
       const now = await $.clock.now()

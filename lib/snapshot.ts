@@ -8,6 +8,7 @@ import { backgroundOf } from "./background"
 import { board, itemOf, type BoardItem } from "./board"
 import { status as bridgeStatus, type Limits, type Permission } from "./bridge"
 import { canRunCommands } from "./commands"
+import { freshness } from "./freshness"
 import { memoryNow, memoryOf } from "./memory"
 import { readDesktop, type DesktopIndex } from "./desktop"
 import { lookup as prLookup, type Pr } from "./github"
@@ -299,6 +300,7 @@ export async function snapshot() {
     canRunCommands: canRunCommands(),
     memory: { total: visible.reduce((sum, c) => sum + (c.memory?.total ?? 0), 0), pressure: memory.pressure },
     features: { organizer },
+    update: await freshness(),
   }
 }
 

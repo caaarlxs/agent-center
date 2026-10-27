@@ -54,7 +54,7 @@ const importUrl = (id: string) => `claude://resume?session=${encodeURIComponent(
 // At most once every 15 s per session.
 const activatedAt = new Map<string, number>()
 export async function activate(id: string): Promise<{ ok: boolean; error?: string; again?: boolean; imported?: boolean }> {
-  if (running.has(id)) return { ok: false, error: "The first turn is still running headless" }
+  if (running.has(id)) return { ok: false, error: "A turn runs here, headless: it moves to Claude when it ends" }
   if (Date.now() - (activatedAt.get(id) ?? 0) < 15_000) return { ok: true, again: true }
   activatedAt.set(id, Date.now())
   const { hostId } = await hostIdOf(id, await readDesktop())
@@ -69,7 +69,7 @@ export async function openInClient(id: string): Promise<{ ok: boolean; error?: s
   const { hostId } = await hostIdOf(id, await readDesktop())
   if (hostId) return { ok: await openUrl(continueUrl(hostId)) }
   // Never opened in the app (a terminal or headless session): import it.
-  if (running.has(id)) return { ok: false, error: "Its first turn is still running: open it when it ends" }
+  if (running.has(id)) return { ok: false, error: "A turn runs here, headless: open it in Claude when it ends" }
   return { ok: await openUrl(importUrl(id)) }
 }
 

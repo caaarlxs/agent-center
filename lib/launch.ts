@@ -8,7 +8,7 @@ import { join } from "node:path"
 import { DESKTOP_DIR } from "./config"
 import { claudeEnv } from "./proc"
 
-const APP_CLI = join(DESKTOP_DIR, "claude-code")
+export const APP_CLI = join(DESKTOP_DIR, "claude-code")
 const ID_TIMEOUT_MS = 30_000
 
 // Sessions whose headless first turn still runs: opening them in the app now
@@ -17,6 +17,7 @@ export const running = new Set<string>()
 
 // The newest Claude Code the desktop app ships (it loads the bridge mod).
 export async function claudeBinary() {
+  if (process.env.AGENT_CENTER_CLAUDE) return process.env.AGENT_CENTER_CLAUDE
   const versions = (await readdir(APP_CLI).catch(() => [] as string[]))
     .filter(v => /^\d+\.\d+\.\d+$/.test(v))
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
@@ -33,7 +34,7 @@ export async function claudeBinary() {
 // `onDone(id)` runs when the first turn ends well.
 // `extraArgs`: more flags for Claude Code (a fork's --resume …). `mode`: the
 // permission mode the turn runs in.
-export async function launch(folder: string, prompt: string, onDone?: (id: string) => void, extraArgs: string[] = [], mode = "bypassPermissions"): Promise<string> {
+export async function launch(folder: string, prompt: string, onDone?: (id: string) => void, extraArgs: string[] = [], mode = "auto"): Promise<string> {
   // The prompt goes after "--", so one that starts with "-" is never a flag.
   const proc = Bun.spawn(
     [await claudeBinary(), "-p", "--output-format", "stream-json", "--verbose", "--permission-mode", mode, ...extraArgs, "--", prompt],

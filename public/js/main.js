@@ -1,5 +1,5 @@
 // Agent Center front end: state, live data, keyboard, and the layout.
-import { html, render, useCallback, useEffect, useMemo, useRef, useState } from "../vendor/preact-htm.js"
+import { html, render, useCallback, useContext, useEffect, useMemo, useRef, useState } from "../vendor/preact-htm.js"
 import { Board, Inbox } from "./board.js"
 import { Canvas } from "./canvas.js"
 import { canvasOrder } from "./canvas-layout.js"
@@ -105,6 +105,7 @@ function App() {
   const [opened, setOpened] = useState(null) // the search result last opened (a session not on the board)
   const [toasts, setToasts] = useState([])
   const [dialog, setDialog] = useState(null) // "new" | "help" | "digest"
+  const [newDraft, setNewDraft] = useState(null) // "New session" filled in: a suggested task
   const [runFor, setRunFor] = useState(null) // the card whose "Run" window is open
   const [isSideOpen, setSideOpen] = useState(false)
   const [isDrawingZone, setDrawingZone] = useState(false) // the next drag on the canvas draws a zone
@@ -335,6 +336,31 @@ function App() {
     return () => clearTimeout(timer)
   }, [reader])
 
+  // Back and forward (the mouse's side buttons, the window's arrows) walk the
+  // conversations you opened, as in Claude desktop: each one opened is a
+  // history entry. Going back, the panel slides out and the one before
+  // slides in; to an entry with none open, it closes.
+  const fromHistory = useRef(false)
+  useEffect(() => {
+    const id = reader?.id ?? null
+    if (fromHistory.current) return void (fromHistory.current = false)
+    if ((history.state?.reader ?? null) !== id) history.pushState({ reader: id }, "")
+  }, [reader?.id])
+  useEffect(() => {
+    const onPop = e => {
+      const id = e.state?.reader ?? null
+      const now = latest.current.reader?.id ?? null
+      if (id === now) return
+      fromHistory.current = true
+      if (!id) return void (setReader(null), setSelected(null))
+      if (!now) return void openReader(id)
+      setReader(null)
+      setTimeout(() => ((fromHistory.current = true), openReader(id)), 300)
+    }
+    addEventListener("popstate", onPop)
+    return () => removeEventListener("popstate", onPop)
+  }, [])
+
   // Cards travel when they change place; one that leaves flies to where it
   // went: the "Done" button, a folded group, or fades if archived.
   useFlip(contentRef, `${view}|${isNarrow}|${groupBy}|${repoFilter}|${showDone}|${!!data}`, id => {
@@ -516,7 +542,8 @@ function App() {
     if (!res.body.ok) toast(res.body.error ?? "Could not rename")
   }, [])
 
-  // options: the first turn's mode, model and effort.
+  // options: the first turn's mode, model and effort; worktree; the suggested
+  // task it starts (suggestion).
   const newSession = async (folder, prompt, send, options = {}) => {
     const res = await post("/api/new", { folder, prompt, send, ...options })
     if (!res.body.ok) {
@@ -524,7 +551,7 @@ function App() {
       return false
     }
     if (res.body.id) {
-      toast("Session created: Claude is working")
+      toast(options.worktree ? "Session created in a new worktree: Claude is working" : "Session created: Claude is working")
       setTimeout(() => openReader(res.body.id), 600)
     } else toast("New session opened in Claude")
     return true
@@ -695,6 +722,8 @@ function App() {
     // One of the open session's files, in its Files tab.
     showFile: file => setReader(r => r && { ...r, tab: "files", file }),
     openDialog: name => (setSideOpen(false), setDialog(name)),
+    // A task a session suggested: "New session" with its folder and prompt.
+    startSuggestion: draft => (setNewDraft(draft), setDialog("new")),
     fillComposer: text => composerFocus.current?.fill(text),
     openRun: card => setRunFor(card),
     toggleWide: () => setWide(w => !w),
@@ -749,6 +778,7 @@ function App() {
           <button class="btn primary only-narrow" onClick=${() => setDialog("new")} title="New session (N)"><${Icon} name="plus" size=${15} /></button>
         </header>
         <${Offline} lostAt=${lostAt} hasData=${!!data} />
+        <${UpdateBanner} update=${data?.update} />
         <div class="content" ref=${contentRef}>
           ${!data
             ? html`<div class="skeleton-rows">${[1, 2, 3, 4, 5].map(i => html`<i key=${i}></i>`)}</div>`
@@ -769,7 +799,7 @@ function App() {
           hasTasks=${data?.features?.organizer !== false} />`}
       </div>
       <${Toasts} toasts=${toasts} />
-      ${dialog === "new" && html`<${NewSession} initialRoot=${repoFilter} onClose=${() => setDialog(null)} />`}
+      ${dialog === "new" && html`<${NewSession} initialRoot=${repoFilter} draft=${newDraft} onClose=${() => (setDialog(null), setNewDraft(null))} />`}
       ${dialog === "help" && html`<${Help} onClose=${() => setDialog(null)} />`}
       ${dialog === "digest" && html`<${Digest} onClose=${() => setDialog(null)} />`}
       ${isSearching && html`<${SearchPalette} cards=${data?.cards ?? []} onClose=${() => setSearching(false)}
@@ -795,6 +825,41 @@ function Offline({ lostAt, hasData }) {
     ${hasData ? " What you see may be out of date." : ""} macOS restarts it on its own; the page retries every few seconds.
     If it stays down, check <code>~/organizer/agent-center/logs/server.log</code>.
   </div>`
+}
+
+// After a `git pull`: something runs older code than the repository holds
+// (lib/freshness.ts): the server, this page, the hook or the bridge mod.
+// One click brings it all up to date, then the page reloads once the
+// server answers again.
+const isStale = (update, loadedPage) => update.server || update.hook || update.bridge || update.page !== loadedPage
+
+function UpdateBanner({ update }) {
+  const ui = useContext(Ctx)
+  const loadedPage = useRef(null)
+  const [isBusy, setBusy] = useState(false)
+  if (update && loadedPage.current === null) loadedPage.current = update.page
+  if (!update || !isStale(update, loadedPage.current)) return null
+  const run = async () => {
+    setBusy(true)
+    const res = await post("/api/update")
+    if (!res.body.ok) return (setBusy(false), ui.toast(res.body.error ?? "Could not update"))
+    if (res.body.needsRestart) return (setBusy(false), ui.toast("Restart the server to finish"))
+    if (res.body.isRestarting) await serverBack()
+    location.reload()
+  }
+  return html`<div class="banner update" role="status">
+    <span>A newer version of Agent Center is on disk.</span>
+    <button class="btn primary" disabled=${isBusy} onClick=${run}>${isBusy ? "Updating…" : "Update"}</button>
+  </div>`
+}
+
+// The server restarting: answered again, or given up after half a minute.
+async function serverBack() {
+  await new Promise(r => setTimeout(r, 800))
+  for (let i = 0; i < 60; i++) {
+    if (await get("/api/update")) return
+    await new Promise(r => setTimeout(r, 500))
+  }
 }
 
 render(html`<${App} />`, document.getElementById("app"))

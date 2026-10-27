@@ -2,7 +2,7 @@
 // notes, PR actions, tasks, files sent and dictation.
 
 import { stat } from "node:fs/promises"
-import { setNotes, setZones } from "../lib/board"
+import { isTaskId, setNotes, setSuggestion, setZones } from "../lib/board"
 import { requestSettings } from "../lib/bridge"
 import { activate, newInClient, pickFolder } from "../lib/client"
 import { EFFORTS, MODES } from "../lib/config"
@@ -15,6 +15,7 @@ import { latestState, refreshSoon } from "../lib/live"
 import { rescan, stopForgotten } from "../lib/memory"
 import { addTask, closeTask, reopenTask } from "../lib/organizer"
 import { repoInfo } from "../lib/repo"
+import { update } from "../lib/freshness"
 import { runStep, setupStatus } from "../lib/setup"
 import { cleanPrompt } from "../lib/sessions"
 import { speakSample, stopSpeaking } from "../lib/speech"
@@ -27,27 +28,44 @@ const isFolder = (path: string) => stat(path).then(st => st.isDirectory(), () =>
 // A new session: sent, its first turn runs headless here with the mode, model
 // and effort picked in the dialog, and it moves into the client once that
 // turn ends (so it shows up there and can take messages from here); not
-// sent, it opens in the client with the prompt written. The client imports
-// it in Manual when it ran in Auto (or Bypass): those are chosen in the
-// client. So the mode is asked again through the session's mod, once the
-// headless run is gone; the client asks the person to approve it.
-const KEPT_ON_IMPORT = new Set(["default", "acceptEdits", "plan"])
+// sent, it opens in the client with the prompt written. The client does not
+// take Auto (or Bypass) from an imported session: it gives it its default
+// mode (`permissions.defaultMode` in ~/.claude/settings.json, else Manual).
+// When that is not the mode picked, the board asks for it through the
+// session's mod once the client has it; the client asks the person to
+// approve it.
+const IMPORT_WAIT_MS = 60_000
+async function keepMode(id: string, mode: string) {
+  for (let waited = 0; waited < IMPORT_WAIT_MS; waited += 2000) {
+    await Bun.sleep(2000)
+    const now = (await readDesktop()).byCli.get(id)?.permissionMode
+    if (now === undefined || now === null) continue // not imported yet
+    if (now !== mode) await requestSettings(id, { mode }).catch(() => {})
+    return
+  }
+}
 async function newSession(body: Record<string, unknown>) {
   const folder = String(body.folder ?? "")
   if (!folder) return json({ error: "missing folder" }, 400)
   if (!(await isFolder(folder))) return json({ error: "that folder does not exist" }, 400)
   const prompt = String(body.prompt ?? "").trim()
   if (!body.send || !prompt) return json({ ok: await newInClient(folder, prompt) })
-  // Bypass permissions unless the page asks for another mode.
-  const mode = MODES.includes(String(body.mode)) ? String(body.mode) : "bypassPermissions"
+  // Auto unless the page asks for another mode.
+  const mode = MODES.includes(String(body.mode)) ? String(body.mode) : "auto"
   const extra: string[] = []
   if (/^claude-[\w.-]+$/.test(String(body.model ?? ""))) extra.push("--model", String(body.model))
   if (EFFORTS.includes(String(body.effort))) extra.push("--effort", String(body.effort))
+  if (body.worktree === true) {
+    if (!(await repoInfo(folder)).branch) return json({ error: "A worktree needs a git repository: that folder is not one" }, 400)
+    extra.push("--worktree")
+  }
+  const suggestion = body.suggestion as { from?: unknown; taskId?: unknown } | undefined
   try {
-    const id = await launch(folder, prompt, async done => {
-      if (!KEPT_ON_IMPORT.has(mode)) await requestSettings(done, { mode }).catch(() => {})
+    const id = await launch(folder, prompt, done => {
       void activate(done)
+      void keepMode(done, mode)
     }, extra, mode)
+    if (typeof suggestion?.from === "string" && isTaskId(suggestion.taskId)) await setSuggestion(suggestion.taskId, suggestion.from, { session: id })
     refreshSoon()
     return json({ ok: true, id })
   } catch (err) {
@@ -131,6 +149,13 @@ export async function handleWrite(path: string, body: Record<string, unknown>): 
       setTimeout(() => void rescan(knownSessionIds()).then(refreshSoon), 1500)
       return json({ ok: true, stopped })
     }
+    // After a `git pull`: what runs old code, brought up to date (lib/freshness.ts).
+    case "/api/update":
+      try {
+        return json(await update())
+      } catch (err) {
+        return json({ error: errorMessage(err) }, 500)
+      }
     // The read-aloud setting's "Try it".
     case "/api/speak/sample":
       await speakSample({ voice: body.voice, rate: body.rate })

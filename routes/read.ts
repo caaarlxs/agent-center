@@ -7,11 +7,14 @@ import { status as bridgeStatus } from "../lib/bridge"
 import { changesOf } from "../lib/changes"
 import { codeTree, marksOf, readCode, searchCode, versionsOf } from "../lib/code"
 import { HOME } from "../lib/config"
-import { isArchivedInApp, readDesktop } from "../lib/desktop"
+import { board } from "../lib/board"
+import { isArchivedInApp, readDesktop, suggestionStates } from "../lib/desktop"
 import { lastDigest } from "../lib/digest"
 import { detail as prDetail, lookup as prLookup, openThreads } from "../lib/github"
 import { json } from "../lib/http"
 import { latestJson, latestState, stream } from "../lib/live"
+import { blockerFor, report } from "../lib/diagnose"
+import { freshness } from "../lib/freshness"
 import { monacoState } from "../lib/monaco"
 import { documentHtml, quickLook, WORD, WORKBOOK, workbookHtml } from "../lib/office"
 import { readTasks } from "../lib/organizer"
@@ -120,7 +123,12 @@ async function sessionRead(id: string, what: string, url: URL) {
   switch (what) {
     case "messages": {
       const page = await readMessages(id, { before: offset(url.searchParams.get("before")), after: offset(url.searchParams.get("after")) })
-      return page ? json(page) : json({ error: "Cannot find this session's transcript" }, 404)
+      if (!page) return json({ error: "Cannot find this session's transcript" }, 404)
+      // A suggested task runs in the session's repository (not its worktree)
+      // unless it names a folder; what became of each one, on every read.
+      const root = group ? (await repoInfo(group.lead.cwd)).root : null
+      for (const item of page.items) if (item.kind === "suggestion") item.folder ??= root
+      return json({ ...page, suggestions: await suggestionStates(group?.ids ?? [id], board.suggestions ?? {}) })
     }
     // The "Code" tab: the folder's files, and one of them as text.
     case "codetree":
@@ -152,7 +160,7 @@ async function sessionRead(id: string, what: string, url: URL) {
       return result ? json(result) : json({ error: "This session's folder is not a git repository" }, 404)
     }
     case "bridge":
-      return json({ ...(await bridgeStatus(id)), wake: wakeState(id), isArchived: await isArchivedInApp(group?.ids ?? [id]) })
+      return json({ ...(await bridgeStatus(id)), ...(await blockerFor(id)), wake: wakeState(id), isArchived: await isArchivedInApp(group?.ids ?? [id]) })
     case "prs": {
       const refs = group ? await prRefs(group.ids, group.root, group.branch) : await prRefs([id], HOME, null)
       // The branch's PR resolves to a URL through the summary cache.
@@ -227,6 +235,8 @@ export async function handleRead(url: URL): Promise<Response | null> {
   if (path === "/api/transcribe") return json({ ready: await voiceReady() })
   if (path === "/api/setup") return json(await setupStatus())
   if (path === "/api/monaco") return json(await monacoState())
+  if (path === "/api/update") return json(await freshness({ fresh: true }))
+  if (path === "/api/diagnostics") return json({ text: await report() })
   if (path === "/api/voices") return json({ voices: await listVoices(), default: defaultVoice() })
   const file = path.match(/^\/api\/uploads\/(.+)$/)
   if (file) return sentFile(decodeURIComponent(file[1]!))

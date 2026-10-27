@@ -155,13 +155,15 @@ export function Composer({ id, card, bridge, isWorking, onSent }) {
   }
   // Claude stops idle sessions (30 min, or sooner when memory is short); the
   // server wakes them in the background and tries again while messages wait.
-  const isStuck = !!bridge?.stuck?.length || !!bridge?.wake?.untrusted || !!bridge?.isArchived
+  const isStuck = !!bridge?.stuck?.length || !!bridge?.wake?.untrusted || !!bridge?.wake?.atCap || !!bridge?.isArchived
   const state = !bridge
     ? ["", "Checking the session…"]
     : bridge.isArchived
       ? ["bad", "Archived in Claude: it does not wake until you unarchive it there (Open in Claude)"]
     : bridge.wake?.untrusted
       ? ["bad", "Claude does not trust this session's folder: open it in Claude and accept"]
+    : bridge.wake?.atCap && bridge.pending && !bridge.isOpen
+      ? ["bad", "Claude already runs as many sessions as this Mac's memory allows, so it does not wake this one in the background: write to it in Claude, or close sessions you are not using"]
     : bridge.stuck?.length
       ? ["bad", "The session did not wake: open it in Claude"]
     : bridge.isOpen
@@ -274,6 +276,8 @@ function SessionSettings({ id, card, bridge }) {
   const change = async (key, value) => {
     const res = await post(`/api/sessions/${id}/settings`, { [key]: value })
     if (!res.body.ok) return ui.toast(res.body.error ?? "Could not request the change")
+    // A session in Auto changes its mode when the conversation asks: sent as a message.
+    if (res.body.messageId) return ui.toast("Sent as a message: in Auto, Claude changes the mode when the conversation asks")
     setAsked({ requestId: res.body.requestId, key, value })
     ui.toast(res.body.isOpen ? "Change sent: it applies as soon as the session is free" : "Change saved: it applies when the session opens")
   }

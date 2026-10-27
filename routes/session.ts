@@ -3,10 +3,10 @@
 // opening it in the client, forks, runs, and the board's own actions (pin,
 // park, done, archive, seen, move, rename, color, tier).
 
-import { applyAction, isBoardAction } from "../lib/board"
+import { applyAction, isBoardAction, isTaskId, setSuggestion } from "../lib/board"
 import { answer as answerQuestion, isBusy, permit, requestSettings, send as sendMessage, status as bridgeStatus, stop as stopTurn, unsend } from "../lib/bridge"
 import { activate, openInClient } from "../lib/client"
-import { isArchivedInApp } from "../lib/desktop"
+import { isArchivedInApp, readDesktop } from "../lib/desktop"
 import { commandStatus, runCommand, stopCommand } from "../lib/commands"
 import { EFFORTS, MODES } from "../lib/config"
 import { saveCode } from "../lib/code"
@@ -70,7 +70,17 @@ async function settings(id: string, body: Record<string, unknown>) {
     effort: pick("effort", EFFORTS),
   }
   if (!changes.mode && !changes.model && !changes.effort) return json({ error: "nothing to change" }, 400)
-  return json({ ok: true, requestId: await requestSettings(id, changes), isOpen: bridge.isOpen })
+  // In Auto, the classifier lets the app's tool change the mode only when the
+  // conversation asks for it (a change from the mod gets no verdict): there
+  // the change goes as your message, and Claude makes it.
+  let messageId: string | null = null
+  if (changes.mode && (await readDesktop()).byCli.get(groupOf(id)?.id ?? id)?.permissionMode === "auto") {
+    messageId = await sendMessage(id, `Switch this session's permission mode to ${changes.mode} with set_session_permission_mode (session_id "self"). Change nothing else, and answer in one line.`)
+    changes.mode = undefined
+    refreshSoon()
+  }
+  const requestId = changes.mode || changes.model || changes.effort ? await requestSettings(id, changes) : null
+  return json({ ok: true, requestId, messageId, isOpen: bridge.isOpen })
 }
 
 export async function handleSession(id: string, action: string, body: Record<string, unknown>): Promise<Response> {
@@ -176,6 +186,12 @@ export async function handleSession(id: string, action: string, body: Record<str
       if (!group || typeof body.text !== "string") return json({ error: "nothing to save" }, 400)
       const { status = 200, ...res } = await saveCode(group.lead.cwd, String(body.path ?? ""), body.text, Number(body.mtime), body.force === true)
       return json(res, status)
+    }
+    // A task the session suggested, dismissed on the board (or back again).
+    case "suggestion": {
+      if (!isTaskId(body.taskId)) return json({ error: "missing task" }, 400)
+      await setSuggestion(body.taskId, id, { isDismissed: body.isDismissed !== false })
+      return json({ ok: true })
     }
     // Its turn ended, or it asks you: read aloud what it did (lib/speech.ts).
     case "speak": {

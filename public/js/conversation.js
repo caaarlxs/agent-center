@@ -2,9 +2,10 @@
 // few seconds, older ones on demand), shaped as the desktop app shows it: the
 // person's messages (pasted text folded, sent files as pictures or chips),
 // Claude's answers, tool runs, plans, "next step" boxes, questions with
-// options (answered from here through the bridge mod), and the messages sent
-// from here that the session has not received yet. A message can be forked
-// into a new session.
+// options (answered from here through the bridge mod), tasks it suggests for
+// a session of their own (started from here), and the messages sent from here
+// that the session has not received yet. A message can be forked into a new
+// session.
 import { html, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "../vendor/preact-htm.js"
 import { ATTACH_LINES, IMAGE_FILE, UPLOAD_RE, fileName } from "./attachments.js"
 import { BackgroundBox, permit } from "./components.js"
@@ -111,9 +112,13 @@ function normalize(items) {
     next = null
   }
   let planAt = -1 // the turn's task list: a rewritten list replaces it
+  // Suggestions Claude took back (dismiss_task) say so.
+  const gone = new Set(items.filter(i => i.kind === "suggestionGone").map(i => i.taskId))
   for (const item of items) {
     const last = out.at(-1)
-    if (item.kind === "next") next = item
+    if (item.kind === "suggestionGone") continue
+    if (item.kind === "suggestion" && gone.has(item.taskId)) out.push({ ...item, isGone: true })
+    else if (item.kind === "next") next = item
     else if (item.kind === "user" && !item.isMidTurn) (close(item), out.push(item), (planAt = -1))
     else if (item.kind === "plan") {
       if (planAt >= 0) out.splice(planAt, 1)
@@ -165,6 +170,35 @@ function Dialog({ item, sessionId }) {
     ${item.answer
       ? html`<p class="answer"><b>Your answer:</b> ${dialogAnswer(item.answer)}</p>`
       : html`<${AnswerInApp} sessionId=${sessionId} why="You can answer this only in Claude desktop." />`}
+  </div>`
+}
+
+// A task Claude suggests for a session of its own (spawn_task), as the chip
+// in Claude desktop: Start opens "New session" with its prompt and folder (in
+// a new worktree), Dismiss puts it away. `state`: what became of it, here or
+// in the app ({ state: "started" | "dismissed", session }).
+function Suggestion({ item, sessionId, state, onDismiss }) {
+  const ui = useContext(Ctx)
+  const repo = item.folder?.split("/").pop()
+  const start = () => ui.startSuggestion({ root: item.folder, prompt: item.prompt, worktree: true, suggestion: { from: sessionId, taskId: item.taskId } })
+  return html`<div class=${`msg suggestion ${state || item.isGone ? "resolved" : ""}`}>
+    <p class="suggestion-head"><${Icon} name="fork" size=${12} />Suggested task${repo && html` · in <b>${repo}</b>`}</p>
+    <p class="suggestion-title">${item.title}</p>
+    ${item.tldr && html`<p class="suggestion-tldr">${item.tldr}</p>`}
+    <details class="paste"><summary>Prompt</summary><pre>${item.prompt}</pre></details>
+    <div class="suggestion-actions">
+      ${item.isGone && !state
+        ? html`<span class="muted small">Claude took this suggestion back</span>`
+        : state?.state === "started"
+        ? html`<span class="small ok">Started</span>
+            ${state.session && html`<button class="btn subtle" onClick=${() => ui.openReader(state.session)}>Open the session</button>`}`
+        : html`${state?.state === "dismissed" && html`<span class="muted small">Dismissed</span>`}
+            <span class="grow"></span>
+            ${!state && item.taskId && html`<button class="btn subtle" onClick=${() => onDismiss(item.taskId)}>Dismiss</button>`}
+            <button class="btn primary" onClick=${start} disabled=${!item.folder}
+              title=${item.folder ? `A new session in a new worktree of ${item.folder}, with this prompt: you can change it before it starts` : "The session's folder is unknown"}>
+              ${state ? "Start anyway" : "Start"}…</button>`}
+    </div>
   </div>`
 }
 
@@ -270,7 +304,7 @@ function Question({ item, sessionId, isAnswerable, picked, onPick }) {
   </div>`
 }
 
-function Message({ item, sessionId, onFork, question, picks, onPick }) {
+function Message({ item, sessionId, onFork, question, picks, onPick, suggestions, onDismiss }) {
   switch (item.kind) {
     case "user":
       return html`<div class="msg user"><${UserText} text=${item.text} />
@@ -303,6 +337,8 @@ function Message({ item, sessionId, onFork, question, picks, onPick }) {
       return html`<${Dialog} item=${item} sessionId=${sessionId} />`
     case "plan":
       return html`<${Plan} item=${item} />`
+    case "suggestion":
+      return html`<${Suggestion} item=${item} sessionId=${sessionId} state=${suggestions?.[item.taskId]} onDismiss=${onDismiss} />`
     default:
       return null
   }
@@ -362,7 +398,9 @@ function PermissionCard({ sessionId, permission }) {
   </div>`
 }
 
-export function Conversation({ id, card, pending, onDelivered, onUnsend, stuck = [], isOpen, untrusted, question, permission, failed = [] }) {
+const ANSWER_RECEIPT_MS = 12_000 // an answer the session has not taken by then did not reach it
+
+export function Conversation({ id, card, pending, onDelivered, onUnsend, stuck = [], isOpen, isBusy, untrusted, atCap, question, permission, failed = [], noMod, cliVersion }) {
   const ui = useContext(Ctx)
   // Answers to the question the session asks gather here until every question
   // of the call has one, then go together (one question: at the first click).
@@ -393,9 +431,18 @@ export function Conversation({ id, card, pending, onDelivered, onUnsend, stuck =
     const res = await post(`/api/sessions/${id}/answer`, { id: question.id, answers: next })
     if (!res.body.ok) return (setPicks(picks), ui.toast(res.body.error ?? "Could not answer"))
     ui.toast("Answer sent")
+    // The session takes it within seconds (its mod clears the question);
+    // still waiting after that, it did not reach it.
+    const asked = question.id
+    setTimeout(() => {
+      if (lastQuestion.current !== asked) return
+      setPicks({})
+      ui.toast("The answer did not reach the session: answer it in Claude")
+    }, ANSWER_RECEIPT_MS)
   }
   const [forking, setForking] = useState(null)
   const [page, setPage] = useState({ items: [], start: 0, end: 0, hasMore: false, loaded: false, error: null })
+  const [suggestions, setSuggestions] = useState({}) // every read says what became of the suggested tasks
   const [hasNew, setHasNew] = useState(false)
   const box = useRef()
   const stick = useRef(true) // follow the bottom while the reader is there
@@ -407,15 +454,18 @@ export function Conversation({ id, card, pending, onDelivered, onUnsend, stuck =
     stick.current = true
     setHasNew(false)
     setPage({ items: [], start: 0, end: 0, hasMore: false, loaded: false, error: null })
+    setSuggestions({})
     get(`/api/sessions/${id}/messages`).then(res => {
       if (!alive) return
       if (!res || res.error) return setPage(p => ({ ...p, loaded: true, error: res?.error ?? "Could not read the conversation" }))
       endRef.current = res.end
+      setSuggestions(res.suggestions ?? {})
       setPage({ items: res.items, start: res.start, end: res.end, hasMore: res.hasMore, loaded: true, error: null })
     })
     const timer = setInterval(async () => {
       if (!endRef.current) return
       const res = await get(`/api/sessions/${id}/messages?after=${endRef.current}`)
+      if (alive && res?.suggestions) setSuggestions(s => (JSON.stringify(s) === JSON.stringify(res.suggestions) ? s : res.suggestions))
       if (!alive || !res || res.error || res.end === endRef.current) return
       endRef.current = res.end
       if (res.items.length) {
@@ -432,7 +482,8 @@ export function Conversation({ id, card, pending, onDelivered, onUnsend, stuck =
     if (users.length !== lastUserCount.current) {
       const fresh = users.slice(lastUserCount.current).map(u => u.text.trim())
       lastUserCount.current = users.length
-      for (const p of pending) if (fresh.includes(p.text)) onDelivered(p.id)
+      // The board delivers several at once in one prompt when Claude does not start the session.
+      for (const p of pending) if (fresh.some(f => f === p.text.trim() || f.includes(p.text.trim()))) onDelivered(p.id)
     }
   }, [page.items, pending])
 
@@ -442,6 +493,11 @@ export function Conversation({ id, card, pending, onDelivered, onUnsend, stuck =
   }, [page.items, pending.length, card?.background?.length])
 
   const shown = useMemo(() => normalize(page.items), [page.items])
+  const dismiss = async taskId => {
+    setSuggestions(s => ({ ...s, [taskId]: { state: "dismissed", session: null } }))
+    const res = await post(`/api/sessions/${id}/suggestion`, { taskId })
+    if (!res.body.ok) ui.toast(res.body.error ?? "Could not dismiss it")
+  }
 
   const loadEarlier = async () => {
     const el = box.current
@@ -469,7 +525,7 @@ export function Conversation({ id, card, pending, onDelivered, onUnsend, stuck =
     ${page.error && html`<p class="muted center">${page.error}</p>`}
     ${page.hasMore && html`<button class="btn subtle earlier" onClick=${loadEarlier}>Load earlier messages</button>`}
     ${shown.map(item => html`<${Message} key=${item.key} item=${item} sessionId=${id} onFork=${setForking}
-      question=${question} picks=${picks} onPick=${pick} />`)}
+      question=${question} picks=${picks} onPick=${pick} suggestions=${suggestions} onDismiss=${dismiss} />`)}
     ${forking && html`<${ForkDialog} sessionId=${id} item=${forking} onClose=${() => setForking(null)} />`}
     ${card?.column === "asking" && card.choices?.length > 0 && !pending.length && html`<div class="choices reply-choices">
       ${card.choices.map(
@@ -482,11 +538,17 @@ export function Conversation({ id, card, pending, onDelivered, onUnsend, stuck =
         ${failed.some(f => f.id === p.id)
           ? html`<span class="stamp stuck">Could not deliver: ${failed.find(f => f.id === p.id).reason} ·
               <button class="link-btn" onClick=${() => onUnsend(p)} title="Remove the message and put it back in the field">Undo</button></span>`
-          : stuck.includes(p.id) || untrusted
-          ? html`<span class="stamp stuck">${untrusted ? "Claude does not trust this session's folder: open it in Claude and accept" : "The session did not wake: open it in Claude"} ·
+          : noMod
+          ? html`<span class="stamp stuck">This session runs without the bridge mod${cliVersion ? ` (Claude Code ${cliVersion})` : ""}: update Claude desktop, then close the session and open it again ·
+              <button class="link-btn" onClick=${() => ui.launch(id)}>Open in Claude</button> ·
+              <button class="link-btn" onClick=${() => onUnsend(p)}>Undo</button></span>`
+          : stuck.includes(p.id) || untrusted || (atCap && !isOpen)
+          ? html`<span class="stamp stuck">${untrusted ? "Claude does not trust this session's folder: open it in Claude and accept"
+              : atCap ? "Claude is at its limit of open sessions for this Mac's memory and did not wake it: write it in Claude, or close sessions you are not using"
+              : "The session did not wake: open it in Claude"} ·
               <button class="link-btn" onClick=${() => ui.launch(id)} title="Opens the session in Claude desktop; when you write in it, it starts and gets the message">Open in Claude</button> ·
               <button class="link-btn" onClick=${() => onUnsend(p)}>Undo</button></span>`
-          : html`<span class="stamp">${card?.column === "working" ? "Queued: delivered when the turn ends" : isOpen ? "Sending…" : "Waking the session in the background…"}
+          : html`<span class="stamp">${card?.column === "working" || isBusy ? "Queued: delivered when the turn ends" : isOpen ? "Sending…" : "Waking the session in the background…"}
               · <button class="link-btn" onClick=${() => onUnsend(p)} title="Remove the message before it arrives and put it back in the field">Undo</button></span>`}</div>`,
     )}
     ${permission && html`<${PermissionCard} key=${permission.id} sessionId=${id} permission=${permission} />`}

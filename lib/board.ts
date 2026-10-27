@@ -35,8 +35,16 @@ export const CARD_COLORS = ["lilac", "blue", "teal", "green", "yellow", "orange"
 // them); its last row, "Close", is the done column and needs no tier.
 export const TIERS = ["main", "fixes", "searches", "other"]
 
+// A task a session suggested (spawn_task) and what the board did with it:
+// the session it started, or when it was dismissed. Keyed by its task id;
+// `from`: the session that suggested it.
+export type Suggestion = { from: string; session?: string; dismissed_at?: number }
+
 // seenEpoch: when "new since you looked" started; older activity is not new.
-export type Board = { items: Record<string, BoardItem>; seenEpoch?: number; zones?: Zone[]; notes?: Note[] }
+export type Board = {
+  items: Record<string, BoardItem>; seenEpoch?: number; zones?: Zone[]; notes?: Note[]
+  suggestions?: Record<string, Suggestion>
+}
 
 export let board: Board = { items: {} }
 
@@ -154,6 +162,20 @@ export async function applyAction(key: string, ids: string[], action: string, bo
   if (Object.keys(item).length === 0) delete board.items[key]
   await saveBoard()
   return null
+}
+
+export const isTaskId = (id: unknown): id is string => typeof id === "string" && /^task_[\w-]{1,64}$/.test(id)
+
+// A suggested task started from here (`session`), dismissed, or back again.
+export async function setSuggestion(taskId: string, from: string, change: { session: string } | { isDismissed: boolean }) {
+  const all = (board.suggestions ??= {})
+  if ("session" in change) all[taskId] = { from, session: change.session }
+  else if (change.isDismissed) all[taskId] = { ...all[taskId], from, dismissed_at: Date.now() }
+  else if (all[taskId]) {
+    delete all[taskId].dismissed_at
+    if (!all[taskId].session) delete all[taskId]
+  }
+  await saveBoard()
 }
 
 // Zones and notes come back whole after each change, cleaned to safe values.

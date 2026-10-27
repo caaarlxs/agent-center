@@ -36,9 +36,13 @@ sessions through a small Claude Code mod, and keeps its own state in a folder of
   closes by itself. Reply buttons Claude offers at the end of a turn are one click.
 - **Sleeping sessions wake up.** Claude desktop stops idle sessions to save memory. Sending to
   one wakes it in the background and delivers the message; the app you were using keeps the
-  focus.
+  focus. Claude desktop runs at most as many sessions as the Mac's memory allows (6 on 16 GB) and
+  does not start one in the background past that: the board then runs the turn itself, headless,
+  in the same session (marked "headless"; open it in Claude when it ends to see it there).
 - **Stop, mode, model.** Stop a running turn (`S`), switch the permission mode and the model of
-  a session from the reply box.
+  a session from the reply box. In a session running in Auto the mode change goes as your
+  message (Auto's classifier lets only the conversation change it); to a mode that asks less,
+  Claude desktop asks you to approve it.
 - **Changes and PRs.** Each session's diff against its base branch, with line comments sent
   back as one message, or side by side in VS Code's diff view, with the tree of changed files
   beside them; it follows the disk, so edits made by hand show too; its pull requests with checks, review state, unresolved comments and a
@@ -52,7 +56,11 @@ sessions through a small Claude Code mod, and keeps its own state in a folder of
   against its pinned hash, and kept in the state folder.
 - **Fork** a conversation from any of your messages into a new session, **run** the session's
   project (`▶` on the card) and see its ports, **start new sessions** in any folder with a first
-  prompt, files, mode, model and effort.
+  prompt, files, mode, model and effort, in a new git worktree if you like.
+- **Suggested tasks.** When Claude suggests a task for a session of its own (the chip Claude
+  desktop shows), the conversation shows it too: **Start** opens "New session" with its folder and
+  prompt, in a new worktree, for you to change before it runs; **Dismiss** puts it away. Once started
+  (here or in the app) the card says so and links to the session.
 - **Catch me up** (`D`): one line per session about what happened since you last looked and what
   is yours to do, written by Claude in a separate call that does not touch your sessions.
 - **Plan limits** in the sidebar: how much of your 5-hour and weekly windows is used, when each
@@ -129,16 +137,19 @@ says what it changes and runs only when you press it:
 | Notifications | macOS notifications when a session asks while you are in another window. | optional |
 | Sound | A short chime when a session finishes its turn or asks you something, also while you look at the board. The speaker in the sidebar turns it on and off. | optional |
 | Read aloud | The Mac says what a session did when its turn ends (its recap), for every session or only the ones with the bell, in the voice and speed you pick. | optional |
+| Diagnostics | Messages or answers that do not reach a session: "Copy report" copies this Mac's setup and each session's bridge mod (no conversation in it) to send to whoever helps. | tool |
 
 Sessions that were already open load the mod the next time they start.
 
 ### Update
 
 ```bash
-git pull && ./install.sh
+git pull
 ```
 
-Then open Setup: a newer bridge mod shows as "Update".
+The board then shows "A newer version of Agent Center is on disk" with an **Update** button. It
+brings up to date what still runs older code (the hook, the bridge mod, the server, the page),
+restarts the server and reloads the page. Sessions already open load a newer mod when they restart.
 
 ### Uninstall
 
@@ -198,6 +209,10 @@ the block says, as Claude desktop's own Run does.
 Nothing deletes the files you send; the sidebar shows how much they take and opens the folder.
 Catch me up and new sessions run Claude Code itself (`claude -p`), with your account.
 
+New sessions start in Auto. Claude desktop gives a session it imports its own default mode, so
+for them to stay in Auto once they move into the app, set it in `~/.claude/settings.json`:
+`"permissions": { "defaultMode": "auto" }` (sessions you start in the app then start in Auto too).
+
 ## Configuration
 
 | Setting | Where | Default |
@@ -213,6 +228,7 @@ Catch me up and new sessions run Claude Code itself (`claude -p`), with your acc
 |---|---|
 | `J` `K` / `↓` `↑` | Move between sessions |
 | `↵` | Open the conversation |
+| `⌘[` `⌘]`, the mouse's side buttons | The conversation opened before, after |
 | `R` | Reply |
 | `T` | Rename (on the board only) |
 | `O` | Open in Claude |
