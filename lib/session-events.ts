@@ -4,6 +4,8 @@
 //   bridge    its mod wrote for it: a message taken or refused, a question,
 //             an approval, a settings answer, or a beat that changes whether
 //             a turn runs (a beat alone changes nothing the page shows)
+//   stream    the answer as the model writes it (mod v10), sent along:
+//             { turnId, step, text, done, at }
 // Folders are watched, not files: a write that replaces a file (atomic, as
 // the mod's and this server's) would leave a watch on the old one.
 
@@ -13,7 +15,7 @@ import { basename, dirname, join, relative, sep } from "node:path"
 import { CENTER_DIR } from "./config"
 import { transcriptPath } from "./transcript"
 
-type Kind = "messages" | "bridge"
+type Kind = "messages" | "bridge" | "stream"
 const SETTLE_MS = 60 // a burst of writes is told once
 const PING_MS = 20_000 // keeps the connection open through idle proxies
 
@@ -33,10 +35,12 @@ export async function sessionEvents(ids: string[], lead: string): Promise<Respon
   let send: (text: string) => void = () => {}
   let lastBusy: string | null = null
 
-  const tell = (kind: Kind) => {
+  // `data`, read when the burst settles: what the event carries (the stream's text).
+  const tell = (kind: Kind, data: () => Promise<string> = async () => String(Date.now())) => {
     if (timers.has(kind)) return
-    timers.set(kind, setTimeout(() => (timers.delete(kind), send(`event: ${kind}\ndata: ${Date.now()}\n\n`)), SETTLE_MS))
+    timers.set(kind, setTimeout(async () => (timers.delete(kind), send(`event: ${kind}\ndata: ${await data()}\n\n`)), SETTLE_MS))
   }
+  const streamOf = (id: string) => () => readFile(join(CENTER_DIR, "stream", `${id}.json`), "utf8").then(t => t.replace(/\n/g, " "), () => "null")
   // A beat: told only when whether a turn runs changed.
   const beat = async (id: string) => {
     const busy = await readFile(join(CENTER_DIR, "alive", `${id}.json`), "utf8").then(t => String(JSON.parse(t).busy), () => null)
@@ -63,6 +67,7 @@ export async function sessionEvents(ids: string[], lead: string): Promise<Respon
           const id = sessionOf(path)
           if (!id || !mine.has(id)) return
           if (path.startsWith(`alive${sep}`)) void beat(id)
+          else if (path.startsWith(`stream${sep}`)) tell("stream", streamOf(id))
           else tell("bridge")
         }),
       )

@@ -26,6 +26,7 @@ import { answer, launch, permit } from "@/features/session/actions"
 import { ForkDialog } from "./ForkDialog"
 import type { Shown, SuggestionItem } from "./items"
 import { Markdown, SessionOf } from "./Markdown"
+import { useLiveAnswer } from "./session-events"
 import { type Pending, deliveredOf, dropPending, stampOf, takenBack, usePending, waitingOf } from "./pending"
 import { reply, takeBack } from "./send"
 import { dialogAnswer, extOf, familyOf, linesText, nameOf, partsOf, type Family } from "./text"
@@ -444,6 +445,8 @@ function ShownItem({ item, sessionId, asked, suggested, onFork }: { item: Shown;
 
 export function ConversationView({ sessionId, card: session, bridge }: { sessionId: string; card: Card | undefined; bridge: Bridge | null }) {
   const { shown, suggestions, markDismissed, isLoaded, error, hasMore, loadEarlier, refresh } = useConversation(sessionId)
+  // The answer being written now (mod v10), until the transcript has it.
+  const writing = useLiveAnswer(sessionId, shown.length)
   const mine = usePending(sessionId)
   const gone = takenBack.use()
   const waiting = useMemo(() => waitingOf(mine, bridge?.queued ?? [], gone), [mine, bridge?.queued, gone])
@@ -555,6 +558,7 @@ export function ConversationView({ sessionId, card: session, bridge }: { session
         {error && <p className="text-center text-text-muted">{error}</p>}
         {hasMore && <Button variant="ghost" className="self-center" onClick={earlier}>Load earlier messages</Button>}
         {shown.map(item => <ShownItem key={item.key} item={item} sessionId={sessionId} asked={asked} suggested={suggested} onFork={setForking} />)}
+        {writing && <Markdown isStreaming>{writing}</Markdown>}
         {choices.length > 0 && (
           <div className="flex flex-wrap justify-end gap-1.5">
             {choices.map((c, i) => (

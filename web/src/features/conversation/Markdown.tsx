@@ -139,9 +139,11 @@ const components: Components = {
   },
 }
 
-export const Markdown = memo(function Markdown({ children, className }: { children: string; className?: string }) {
+// isStreaming: text still being written; markdown left open (a ** not yet
+// closed) shows as it will once it is.
+export const Markdown = memo(function Markdown({ children, className, isStreaming = false }: { children: string; className?: string; isStreaming?: boolean }) {
   return (
-    <Streamdown className={cn("md", className)} components={components} plugins={{ cjk }} controls={false} parseIncompleteMarkdown={false}>
+    <Streamdown className={cn("md", className)} components={components} plugins={{ cjk }} controls={false} parseIncompleteMarkdown={isStreaming}>
       {children}
     </Streamdown>
   )

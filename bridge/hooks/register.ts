@@ -19,6 +19,8 @@
 //   permissions/<session>.json   { id, tool, input, at }   this mod: the tool approval the
 //                                client asks for now; id null once settled
 //   permits/<session>.json       { id, decision }          the server: the board's allow/deny
+//   stream/<session>.json        { turnId, step, text, done, at }  this mod (v10): the
+//                                answer as the model writes it, for the board to show live
 //
 // A message waits in the outbox until the session is free (no turn running)
 // and its `notBefore` has passed: until then the server can still take it
@@ -27,8 +29,9 @@
 import type { EngineInterface, Register } from 'claude-code'
 
 const POLL_MS = 2000
+const STREAM_MS = 120 // how often the answer being written is passed on
 const KEEP_ACKS = 100
-const VERSION = 9
+const VERSION = 10
 const ANSWER_POLL_MS = 1000
 
 type Message = { id: string; text: string; notBefore?: number }
@@ -272,6 +275,38 @@ export const register: Register = on => {
     limitsAskedAt = 0 // the turn moved the plan's limits
     void poll($) // a message that waited goes now
     return result
+  })
+
+  // The answer as the model writes it, for the board to show live: its text
+  // so far, every STREAM_MS, then once more marked done when the step ends
+  // (the transcript then holds it whole). Every chunk passes on unchanged,
+  // as it came; the writes do not hold it.
+  on('turn.step', async function* ($, e, next) {
+    const b = bridge
+    if (!b || e.agentId !== undefined) return yield* next(e)
+    const path = `${b.base}/stream/${b.id}.json`
+    const blocks: string[] = []
+    let wroteAt = 0
+    const write = (done: boolean) => {
+      const at = Date.now()
+      wroteAt = at
+      return $.fs.write(path, JSON.stringify({ turnId: e.turnId, step: e.index, text: blocks.filter(Boolean).join('\n\n'), done, at })).catch(() => {})
+    }
+    const stream = next(e)
+    try {
+      while (true) {
+        const piece = await stream.next()
+        if (piece.done) return piece.value
+        const chunk = piece.value
+        if (chunk.kind === 'text') {
+          blocks[chunk.index] = (blocks[chunk.index] ?? '') + chunk.text
+          if (Date.now() - wroteAt >= STREAM_MS) void write(false)
+        }
+        yield chunk
+      }
+    } finally {
+      if (blocks.length) await write(true)
+    }
   })
 
   // A question with options (AskUserQuestion) can be answered here or on the

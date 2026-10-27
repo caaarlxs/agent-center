@@ -355,6 +355,25 @@ describe("session events", () => {
     await reader.cancel()
     expect(heard.sort()).toEqual(["bridge", "messages"])
   })
+  test("passes on the answer the model is writing, with its text", async () => {
+    const res = await fetch(`${base()}/api/sessions/${ID}/events`)
+    const reader = res.body!.getReader()
+    let text = ""
+    const listen = (async () => {
+      while (!/event: stream\ndata: (\{.*\})/.test(text)) {
+        const { value, done } = await reader.read()
+        if (done) return
+        text += new TextDecoder().decode(value)
+      }
+    })()
+    await Bun.sleep(300)
+    const live = { turnId: "t1", step: 0, text: "Hola, estoy escribiendo", done: false, at: Date.now() }
+    await mkdir(join(home, ".claude", "agent-center", "stream"), { recursive: true })
+    await writeFile(join(home, ".claude", "agent-center", "stream", `${ID}.json`), JSON.stringify(live))
+    await Promise.race([listen, Bun.sleep(3000)])
+    await reader.cancel()
+    expect(JSON.parse(text.match(/event: stream\ndata: (\{.*\})/)![1]!)).toEqual(live)
+  })
 })
 
 describe("diagnosis", () => {
