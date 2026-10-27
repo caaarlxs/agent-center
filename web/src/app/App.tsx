@@ -14,12 +14,12 @@ export function App() {
 
 // The canvas fills the window; a session's panel slides over its right side.
 function Board() {
-  const openId = useOpenSession()
+  const open = useOpenSession()
   return (
     <TooltipProvider delayDuration={300}>
       <main className="relative h-screen overflow-hidden bg-background text-foreground">
         <Canvas />
-        {openId && <div className="absolute inset-y-0 right-0 z-10 animate-in slide-in-from-right-8 fade-in duration-300"><SessionPanel id={openId} /></div>}
+        {open && <div className="absolute inset-y-0 right-0 z-10 animate-in slide-in-from-right-8 fade-in duration-300"><SessionPanel id={open.id} tab={open.tab} /></div>}
       </main>
       <Toaster />
     </TooltipProvider>

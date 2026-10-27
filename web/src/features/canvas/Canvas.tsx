@@ -26,7 +26,7 @@ const levelOf = (zoom: number): Level => (zoom < 0.62 ? "far" : zoom < 0.9 ? "mi
 
 function SessionNode({ id, data, selected }: NodeProps<Node<SessionNodeData>>) {
   const zoom = useStore(s => s.transform[2])
-  const isOpen = useOpenSession() === id
+  const isOpen = useOpenSession()?.id === id
   // Far, the title is drawn larger the smaller the canvas is drawn, so it
   // keeps a readable size on screen.
   return <SessionCard card={data.card} now={data.now} level={levelOf(zoom)} textScale={Math.min(1 / zoom, 2)} isSelected={selected || isOpen} />

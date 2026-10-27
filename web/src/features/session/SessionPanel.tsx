@@ -1,30 +1,49 @@
-// The panel of one session, beside the canvas: its state, repo and branch on
-// one row with its buttons, its title under them, and the conversation with
-// the reply box. Esc closes it.
+// The panel of one session, over the canvas: its state, repo and branch on
+// one row with its buttons, its title under them, its views in a row, and the
+// view. Changes, Code and Files are workspaces: the panel takes the whole
+// width. Esc goes back to the conversation from a workspace, then closes.
 import { ArrowUpRight, GitBranch, X } from "lucide-react"
 import { useEffect } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { post } from "@/lib/api"
 import { useLive } from "@/lib/live"
-import { openSession } from "@/app/open-session"
+import { cn } from "@/lib/utils"
+import { type Tab, WORKSPACES, openSession, showTab } from "@/app/open-session"
+import { Changes } from "@/features/changes/Changes"
 import { Composer } from "@/features/conversation/Composer"
 import { ConversationView } from "@/features/conversation/ConversationView"
+import { Prs } from "@/features/prs/Prs"
+import { Tasks } from "@/features/tasks/Tasks"
 import { StateIcon, TONE } from "./StateIcon"
 import { STATE_LABEL, hueOf, stateOf } from "./state"
 
-export function SessionPanel({ id }: { id: string }) {
+const TABS: [Tab, string][] = [["chat", "Conversation"], ["changes", "Changes"], ["code", "Code"], ["files", "Files"], ["prs", "PRs"], ["tasks", "Tasks"]]
+
+function Soon({ name }: { name: string }) {
+  return <p className="grid flex-1 place-items-center text-sm text-muted-foreground">{name} is still on the classic board: it comes here next.</p>
+}
+
+export function SessionPanel({ id, tab }: { id: string; tab: Tab }) {
   const card = useLive(l => l.snapshot?.cards.find(c => c.id === id))
+  const isWorkspace = WORKSPACES.has(tab)
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && !e.defaultPrevented && openSession(null)
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return
+      if (isWorkspace) showTab("chat")
+      else openSession(null)
+    }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [])
+  }, [isWorkspace])
   const openInClaude = () => post(`/api/sessions/${encodeURIComponent(id)}/open`).catch((err: Error) => toast.error(err.message))
   const state = card ? stateOf(card) : null
+  const counts: Partial<Record<Tab, number>> = { prs: card?.prs?.length ?? 0, tasks: card?.taskCount ?? 0 }
   return (
-    <aside className="flex h-full w-[min(680px,46vw)] min-w-[420px] flex-col border-l bg-card shadow-2xl" aria-label="Session">
-      <header className="flex flex-col gap-1.5 border-b px-5 pt-3 pb-3">
+    <aside aria-label="Session"
+      className={cn("flex h-full flex-col border-l bg-card shadow-2xl transition-[width] duration-300 ease-out", isWorkspace ? "w-screen" : "w-[min(680px,46vw)] min-w-[420px]")}>
+      <header className="flex flex-col gap-1.5 border-b px-5 pt-3">
         <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
           {card && state && <><StateIcon card={card} size={18} /><span className={TONE[state].split(" ")[0]}>{STATE_LABEL[state]}</span></>}
           {card && <span className="inline-flex items-center gap-1.5"><i className="size-[7px] rounded-[2px]" style={{ background: `oklch(0.72 0.14 ${hueOf(card.repo)})` }} />{card.repo}</span>}
@@ -35,9 +54,20 @@ export function SessionPanel({ id }: { id: string }) {
           </span>
         </div>
         <h2 className="line-clamp-2 text-base font-semibold leading-snug">{card?.title ?? "Conversation"}</h2>
+        <Tabs value={tab} onValueChange={v => showTab(v as Tab)} className="-mb-px">
+          <TabsList variant="line" className="h-9">
+            {TABS.map(([key, label]) => (
+              <TabsTrigger key={key} value={key}>{label}{(counts[key] ?? 0) > 0 && <span className="text-muted-foreground">{counts[key]}</span>}</TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
       </header>
-      <ConversationView key={id} sessionId={id} />
-      {card && <div className="px-4 pb-4"><Composer card={card} /></div>}
+      {tab === "chat" && <><ConversationView key={id} sessionId={id} />{card && <div className="px-4 pb-4"><Composer card={card} /></div>}</>}
+      {tab === "changes" && <Changes key={id} id={id} />}
+      {tab === "prs" && <Prs key={id} id={id} />}
+      {tab === "tasks" && <Tasks key={id} id={id} />}
+      {tab === "code" && <Soon name="Code" />}
+      {tab === "files" && <Soon name="Files" />}
     </aside>
   )
 }
