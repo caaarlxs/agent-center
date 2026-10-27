@@ -15,6 +15,8 @@ import { SearchPalette } from "@/features/search/SearchPalette"
 import { SessionPanel } from "@/features/session/SessionPanel"
 import { nextAfter, waitingOf } from "@/features/session/waiting"
 import { openSession, useOpenSession } from "./open-session"
+import { useAlerts } from "@/features/alerts/useAlerts"
+import { Dialogs } from "./Dialogs"
 import { Sidebar } from "./Sidebar"
 import { focusCard } from "./view-state"
 
@@ -36,6 +38,7 @@ function Board() {
   const cards = useLive(l => l.snapshot?.cards)
   const waiting = useMemo(() => waitingOf(cards ?? []), [cards])
   const [isSearching, setSearching] = useState(false)
+  useAlerts()
 
   // "Next up" (F): the next session that waits for you; the canvas goes to it.
   const nextUp = () => {
@@ -75,6 +78,7 @@ function Board() {
         {open && <div className="absolute inset-y-0 right-0 z-20 animate-in slide-in-from-right-8 fade-in duration-300"><SessionPanel id={open.id} tab={open.tab} /></div>}
       </main>
       <SearchPalette open={isSearching} onOpenChange={setSearching} />
+      <Dialogs />
     </div>
   )
 }

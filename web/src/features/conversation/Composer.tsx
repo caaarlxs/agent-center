@@ -15,7 +15,7 @@ export const MODES = [["default", "Ask"], ["acceptEdits", "Accept edits"], ["pla
 export const MODELS = [["claude-fable-5-1", "Fable 5.1"], ["claude-opus-5-5", "Opus 5.5"], ["claude-sonnet-5-5", "Sonnet 5.5"], ["claude-haiku-5-5", "Haiku 5.5"]] as const
 export const EFFORTS = [["low", "Low"], ["medium", "Medium"], ["high", "High"], ["xhigh", "Extra high"], ["max", "Max"]] as const
 
-function Pick({ value, options, placeholder, onPick }: { value: string | undefined; options: readonly (readonly [string, string])[]; placeholder: string; onPick: (v: string) => void }) {
+export function Pick({ value, options, placeholder, onPick }: { value: string | undefined; options: readonly (readonly [string, string])[]; placeholder: string; onPick: (v: string) => void }) {
   return (
     <PromptInputSelect value={value} onValueChange={onPick}>
       <PromptInputSelectTrigger className="h-8 w-auto gap-1 border-0 px-2 text-xs shadow-none"><PromptInputSelectValue placeholder={placeholder} /></PromptInputSelectTrigger>

@@ -1,7 +1,6 @@
 // The left column: new session, the repos to filter the canvas by, the plan's
 // limits, and the live connection with Setup at the foot. It folds to icons.
-// New session and Setup open the classic board's dialogs until they move here.
-import { ExternalLink, LayoutGrid, PanelLeft, Plus, Settings } from "lucide-react"
+import { AudioLines, Bell, BellOff, ExternalLink, LayoutGrid, PanelLeft, Plus, Settings, Sun, Volume2, VolumeX } from "lucide-react"
 import { createStore } from "@/lib/store"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
@@ -10,6 +9,8 @@ import { useLive } from "@/lib/live"
 import { useNow } from "@/lib/now"
 import { cn } from "@/lib/utils"
 import { hueOf } from "@/features/session/state"
+import { notify, sound, speech, toggleNotify, toggleSound, toggleSpeech } from "@/features/alerts/prefs"
+import { openDialog } from "./open-dialog"
 import { repoFilter } from "./view-state"
 
 const LIMIT_NAME: Record<string, string> = { five_hour: "5 hours", seven_day: "Week", seven_day_opus: "Week · Opus", seven_day_sonnet: "Week · Sonnet" }
@@ -75,7 +76,9 @@ export function Sidebar() {
   const repos = useLive(l => l.snapshot?.repos) ?? []
   const isConnected = useLive(l => l.isConnected)
   const chosen = repoFilter.use()
-  const classic = (dialog: string) => window.open(`/?dialog=${dialog}`, "_blank")
+  const isSound = sound.use() === "on"
+  const notifyState = notify.use()
+  const speechMode = speech.use().mode
   return (
     <aside className={cn("flex h-full shrink-0 flex-col border-r bg-sidebar text-sm transition-[width] duration-200", isFolded ? "w-14" : "w-60")}
       ref={el => void el?.ownerDocument.documentElement.style.setProperty("--side-w", isFolded ? "56px" : "240px")}>
@@ -84,12 +87,16 @@ export function Sidebar() {
         <Button variant="ghost" size="icon-sm" className={cn(!isFolded && "ml-auto")} onClick={toggleFolded} aria-label={isFolded ? "Show the sidebar" : "Fold the sidebar"}><PanelLeft /></Button>
       </div>
       <div className={cn("px-2 pb-3", isFolded && "px-2")}>
-        <Button className={cn("w-full bg-orange-500 text-white hover:bg-orange-500/90", isFolded ? "px-0" : "justify-start")} onClick={() => classic("new")} title="New session">
+        <Button className={cn("w-full bg-orange-500 text-white hover:bg-orange-500/90", isFolded ? "px-0" : "justify-start")} onClick={() => openDialog({ kind: "new" })} title="New session">
           <Plus />{!isFolded && "New session"}
         </Button>
       </div>
-      <nav className="px-2">
+      <nav className="space-y-0.5 px-2">
         <span className={cn("flex h-8 items-center gap-2.5 rounded-md bg-accent px-2 font-medium", isFolded && "justify-center px-0")}><LayoutGrid className="size-4" />{!isFolded && "Canvas"}</span>
+        <button onClick={() => openDialog({ kind: "digest" })} title="Catch me up"
+          className={cn("flex h-8 w-full items-center gap-2.5 rounded-md px-2 text-muted-foreground hover:bg-accent hover:text-foreground", isFolded && "justify-center px-0")}>
+          <Sun className="size-4" />{!isFolded && "Catch me up"}
+        </button>
       </nav>
       {!isFolded && <div className="mt-5 mb-1 px-4 text-[11px] font-medium text-muted-foreground">Repos</div>}
       <nav className={cn("min-h-0 flex-1 overflow-auto px-2", isFolded && "mt-3")}>
@@ -117,7 +124,12 @@ export function Sidebar() {
           <i className={cn("size-1.5 rounded-full", isConnected ? "bg-emerald-400 shadow-[0_0_0_3px_rgb(52_211_153/0.15)]" : "bg-zinc-500")} />{!isFolded && (isConnected ? "Live" : "Reconnecting…")}
         </span>
         <span className={cn("flex gap-0.5", !isFolded && "ml-auto")}>
-          <Button variant="ghost" size="icon-sm" onClick={() => classic("setup")} title="Setup"><Settings /></Button>
+          <Button variant="ghost" size="icon-sm" className={cn(notifyState === "on" && "text-foreground")} onClick={toggleNotify}
+            title={notifyState === "on" ? "Notifications on" : notifyState === "blocked" ? "The browser blocks notifications" : "Notifications off"}>{notifyState === "on" ? <Bell /> : <BellOff />}</Button>
+          <Button variant="ghost" size="icon-sm" className={cn(isSound && "text-foreground")} onClick={toggleSound} title={isSound ? "Sound on" : "Sound off"}>{isSound ? <Volume2 /> : <VolumeX />}</Button>
+          <Button variant="ghost" size="icon-sm" className={cn(speechMode !== "off" ? "text-foreground" : "opacity-50")} onClick={toggleSpeech}
+            title={speechMode === "off" ? "Read aloud off" : `Read aloud: ${speechMode === "all" ? "every session" : "sessions with the bell"}`}><AudioLines /></Button>
+          <Button variant="ghost" size="icon-sm" onClick={() => openDialog({ kind: "setup" })} title="Setup"><Settings /></Button>
           {!isFolded && <Button variant="ghost" size="icon-sm" onClick={() => window.open("/", "_blank")} title="Open the classic board"><ExternalLink /></Button>}
         </span>
       </footer>

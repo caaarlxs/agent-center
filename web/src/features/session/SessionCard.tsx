@@ -2,7 +2,7 @@
 // it is (or the replies, one click each); a quiet foot with the repo, the age
 // and small signals. `level` is the canvas's semantic zoom: far shows the
 // state and title only, mid adds the line, near shows everything.
-import { GitPullRequest, ListChecks, Mail, Star } from "lucide-react"
+import { Bell, GitPullRequest, ListChecks, Mail, Play, Star } from "lucide-react"
 import { memo, type ReactNode } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -10,6 +10,8 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/h
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import type { Card } from "@/lib/api-types"
 import { cn } from "@/lib/utils"
+import { openDialog } from "@/app/open-dialog"
+import { watched } from "@/features/alerts/prefs"
 import { answer, permit, sendText } from "./actions"
 import { CardMenu } from "./CardMenu"
 import { StateIcon } from "./StateIcon"
@@ -62,8 +64,16 @@ function Signal({ icon: Icon, tip, tone, children }: { icon: typeof Mail; tip: s
 function Signals({ card }: { card: Card }) {
   const prs = card.prs ?? []
   const pct = card.usage ? Math.min(100, Math.round((card.usage.context / card.usage.window) * 100)) : null
+  const isWatched = watched.use().includes(card.id)
   return (
     <span className="ml-auto flex items-center gap-1">
+      {isWatched && <Signal icon={Bell} tip="You will hear when it finishes or asks you" tone="text-sky-400">{null}</Signal>}
+      {card.run && (
+        <button className="nodrag inline-flex h-5 items-center gap-1 rounded-md bg-emerald-400/10 px-1.5 text-[11px] tabular-nums text-emerald-400 hover:bg-emerald-400/20"
+          title="Its project is running" onClick={e => (e.stopPropagation(), openDialog({ kind: "run", card }))}>
+          <Play className="size-3" />{card.run.ports[0] ? `:${card.run.ports[0]}` : "starting"}
+        </button>
+      )}
       {prs.length === 1 && (
         <Signal icon={GitPullRequest} tip={`${prs[0].title}${prs[0].checks ? `\nchecks ${prs[0].checks}` : ""}`}
           tone={prs[0].checks === "pass" ? "text-emerald-400" : prs[0].checks === "fail" ? "text-rose-400" : undefined}>#{prs[0].number}</Signal>

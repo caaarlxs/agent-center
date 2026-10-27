@@ -1,6 +1,7 @@
 // What a card's "…" menu does to its session: open it in Claude, pin it,
-// put it off until later, mark it done (or reopen it), archive it.
-import { Archive, ArrowUpRight, Check, Clock, MoreHorizontal, RotateCcw, Star } from "lucide-react"
+// tell you once when it finishes, run its project, put it off until later,
+// mark it done (or reopen it), archive it.
+import { Archive, ArrowUpRight, Bell, BellOff, Check, Clock, MoreHorizontal, Play, RotateCcw, Star } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import {
@@ -8,6 +9,8 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { post } from "@/lib/api"
 import type { Card } from "@/lib/api-types"
+import { openDialog } from "@/app/open-dialog"
+import { toggleWatch, watched } from "@/features/alerts/prefs"
 import { type BoardAction, LATER, act } from "./actions"
 
 const run = (work: Promise<unknown>, done: string) => work.then(() => toast(done), (err: Error) => toast.error(err.message))
@@ -15,6 +18,7 @@ const run = (work: Promise<unknown>, done: string) => work.then(() => toast(done
 export function CardMenu({ card }: { card: Card }) {
   const doIt = (action: BoardAction, done: string, body?: Record<string, unknown>) => run(act(card.id, action, body), done)
   const isDone = card.column === "done"
+  const isWatched = watched.use().includes(card.id)
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -23,6 +27,8 @@ export function CardMenu({ card }: { card: Card }) {
       <DropdownMenuContent align="end" className="w-52" onClick={e => e.stopPropagation()}>
         <DropdownMenuItem onClick={() => run(post(`/api/sessions/${encodeURIComponent(card.id)}/open`), "Opening in Claude")}><ArrowUpRight />Open in Claude</DropdownMenuItem>
         <DropdownMenuItem onClick={() => doIt(card.pinned ? "unpin" : "pin", card.pinned ? "Unpinned" : "Pinned")}><Star />{card.pinned ? "Unpin" : "Pin"}</DropdownMenuItem>
+        <DropdownMenuItem onClick={() => toggleWatch(card)}>{isWatched ? <BellOff /> : <Bell />}{isWatched ? "Stop telling me" : "Tell me when it finishes"}</DropdownMenuItem>
+        <DropdownMenuItem onClick={() => openDialog({ kind: "run", card })}><Play />Run…</DropdownMenuItem>
         {card.column === "parked" ? (
           <DropdownMenuItem onClick={() => doIt("unpark", "Back on the board")}><Clock />Not later</DropdownMenuItem>
         ) : !isDone && (

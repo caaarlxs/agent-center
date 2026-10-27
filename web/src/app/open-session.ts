@@ -12,6 +12,7 @@ const listeners = new Set<() => void>()
 const set = (next: Open) => ((open = next), listeners.forEach(l => l()))
 
 export const openSession = (id: string | null, tab: Tab = "chat") => set(id ? { id, tab } : null)
+export const openNow = () => open
 export const showTab = (tab: Tab) => open && set({ ...open, tab })
 
 export function useOpenSession(): Open {

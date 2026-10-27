@@ -16,3 +16,23 @@ export function createStore<T>(initial: T) {
     use: () => useSyncExternalStore(subscribe, () => value),
   }
 }
+
+// A store kept in this browser, under the key the classic board uses too
+// ("ac.<key>", JSON): a choice made in one board holds in the other.
+export function persistedStore<T>(key: string, fallback: T) {
+  let initial = fallback
+  try {
+    const raw = localStorage.getItem(`ac.${key}`)
+    if (raw !== null) initial = JSON.parse(raw) as T
+  } catch {}
+  const store = createStore(initial)
+  return {
+    ...store,
+    set(next: T) {
+      store.set(next)
+      try {
+        localStorage.setItem(`ac.${key}`, JSON.stringify(next))
+      } catch {}
+    },
+  }
+}
