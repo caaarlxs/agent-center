@@ -3,13 +3,14 @@
 // the top bar with the view's name, the search and "Next up", the view, and
 // a session's panel sliding over them from the right.
 import { Menu, Plus, Search, X } from "lucide-react"
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Kbd } from "@/components/ui/kbd"
 import { Toaster } from "@/components/ui/sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { DesignSystem } from "@/design/DesignSystem"
+import { get, post } from "@/lib/api"
 import { live, useLive } from "@/lib/live"
 import { clock } from "@/lib/format"
 import { MainView } from "@/features/board/MainView"
@@ -26,6 +27,7 @@ import { HelpDialog } from "@/features/keys/HelpDialog"
 import { useBoardKeys } from "@/features/keys/useBoardKeys"
 import { useHistoryWalk } from "./history-walk"
 import { openDialog } from "./open-dialog"
+import { type Update, isStale } from "./update"
 import { Sidebar } from "./Sidebar"
 import { VIEW_NAME, focusCard, repoFilter, sideOpen, useShownView, view, type View } from "./view-state"
 
@@ -132,6 +134,43 @@ function Offline() {
   )
 }
 
+// After a `git pull` (main.js:801-833): one click brings what runs old code
+// up to date, then the page reloads once the server answers again.
+function UpdateBanner() {
+  const update = useLive(l => l.snapshot?.update as Update | undefined)
+  const loaded = useRef<Update | null>(null)
+  const [isBusy, setBusy] = useState(false)
+  if (update && loaded.current === null) loaded.current = update
+  if (!isStale(update, loaded.current)) return null
+  const run = async () => {
+    setBusy(true)
+    try {
+      const res = await post<{ ok: boolean; isRestarting?: boolean; needsRestart?: boolean }>("/api/update")
+      if (res.needsRestart) return void (setBusy(false), toast("Restart the server to finish"))
+      if (res.isRestarting) await serverBack()
+      location.reload()
+    } catch (err) {
+      setBusy(false)
+      toast((err as Error).message || "Could not update")
+    }
+  }
+  return (
+    <div role="status" className="flex shrink-0 items-center gap-3 bg-brand-soft px-5 py-1.5 text-[12.5px] text-text">
+      <span>A newer version of Agent Center is on disk.</span>
+      <Button className="h-[26px]" disabled={isBusy} onClick={run}>{isBusy ? "Updating…" : "Update"}</Button>
+    </div>
+  )
+}
+
+// The server restarting: answered again, or given up after half a minute.
+async function serverBack() {
+  await new Promise(r => setTimeout(r, 800))
+  for (let i = 0; i < 60; i++) {
+    if (await get("/api/update").then(() => true, () => false)) return
+    await new Promise(r => setTimeout(r, 500))
+  }
+}
+
 // The top bar (main.js:727-750): the view's name and the repo you filter by,
 // the search, and "Next up" with how many things wait for you.
 function TopBar({ waiting, onSearch }: { waiting: number; onSearch: () => void }) {
@@ -210,6 +249,7 @@ function Board() {
       <main className="relative flex min-w-0 flex-1 flex-col">
         <TopBar waiting={waiting.length} onSearch={() => setSearching(true)} />
         <Offline />
+        <UpdateBanner />
         <div className="relative min-h-0 flex-1">{cards ? <MainView /> : <Skeleton />}</div>
       </main>
       <PanelSlot open={open} />

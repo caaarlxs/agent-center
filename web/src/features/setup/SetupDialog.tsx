@@ -27,7 +27,7 @@ const STEPS: Record<string, Meta> = {
     unavailable: <>Install it from <a className="text-brand underline underline-offset-2" href="https://claude.ai/download">claude.ai/download</a> and come back here.</>,
   },
   hook: {
-    title: "Session tracking", need: "Required", action: "Install",
+    title: "Session tracking", need: "Required", action: "Install", outdated: "Update",
     text: "Copies a hook to ~/.claude/hooks and adds it to ~/.claude/settings.json (it saves a backup first). This way the board knows what each session does and whether it asks you something.",
   },
   bridge: {
