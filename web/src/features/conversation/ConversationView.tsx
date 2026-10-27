@@ -27,6 +27,7 @@ import { ForkDialog } from "./ForkDialog"
 import type { Shown, SuggestionItem } from "./items"
 import { Markdown, SessionOf } from "./Markdown"
 import { useLiveAnswer } from "./session-events"
+import { useTypewriter } from "./typewriter"
 import { type Pending, deliveredOf, dropPending, stampOf, takenBack, usePending, waitingOf } from "./pending"
 import { reply, takeBack } from "./send"
 import { dialogAnswer, extOf, familyOf, linesText, nameOf, partsOf, type Family } from "./text"
@@ -445,8 +446,9 @@ function ShownItem({ item, sessionId, asked, suggested, onFork }: { item: Shown;
 
 export function ConversationView({ sessionId, card: session, bridge }: { sessionId: string; card: Card | undefined; bridge: Bridge | null }) {
   const { shown, suggestions, markDismissed, isLoaded, error, hasMore, loadEarlier, refresh } = useConversation(sessionId)
-  // The answer being written now (mod v10), until the transcript has it.
-  const writing = useLiveAnswer(sessionId, shown.length)
+  // The answer being written now (mod v10), until the transcript has it,
+  // its letters appearing one after another.
+  const writing = useTypewriter(useLiveAnswer(sessionId, shown.length))
   const mine = usePending(sessionId)
   const gone = takenBack.use()
   const waiting = useMemo(() => waitingOf(mine, bridge?.queued ?? [], gone), [mine, bridge?.queued, gone])
@@ -528,7 +530,7 @@ export function ConversationView({ sessionId, card: session, bridge }: { session
     if (stick.current) el.scrollTop = el.scrollHeight
     else if (prevLast.current && lastKey !== prevLast.current) setHasNew(true)
     prevLast.current = lastKey
-  }, [lastKey, shown, waiting.length, isLoaded])
+  }, [lastKey, shown, waiting.length, isLoaded, writing])
   const onScroll = () => {
     const el = box.current!
     stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48
