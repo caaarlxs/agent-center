@@ -19,7 +19,7 @@ import { mkdir } from "node:fs/promises"
 import { resolve, sep } from "node:path"
 import { loadBoard } from "./lib/board"
 import { activate } from "./lib/client"
-import { HOSTS, ORIGINS, PORT, PUBLIC_DIR, SESSIONS_DIR } from "./lib/config"
+import { HOSTS, ORIGINS, PORT, PUBLIC_DIR, SESSIONS_DIR, WEB_DIST } from "./lib/config"
 import { json } from "./lib/http"
 import { refreshSoon, startLive } from "./lib/live"
 import { monacoFile } from "./lib/monaco"
@@ -70,6 +70,20 @@ async function route(req: Request): Promise<Response> {
   if (path.startsWith("/vendor/monaco/")) {
     const asset = await monacoFile(path.slice("/vendor/monaco".length))
     return asset ? new Response(asset, { headers: { "cache-control": "max-age=86400" } }) : new Response("Not found", { status: 404 })
+  }
+
+  // The new web app (web/, built into web/dist), at /next while it replaces
+  // the page below. Its files have hashed names: kept; any other path is the
+  // app's own route, answered with its index.
+  if (path === "/next" || path.startsWith("/next/")) {
+    const rel = decodeURIComponent(path.slice("/next".length)) || "/"
+    const file = resolve(WEB_DIST, `.${rel}`)
+    const asset = file.startsWith(WEB_DIST + sep) ? Bun.file(file) : null
+    if (asset && (await asset.exists()))
+      return new Response(asset, { headers: { "cache-control": rel.startsWith("/assets/") ? "max-age=31536000, immutable" : "no-cache" } })
+    const index = Bun.file(resolve(WEB_DIST, "index.html"))
+    return (await index.exists()) ? new Response(index, { headers: { "cache-control": "no-cache" } })
+      : new Response("The web app is not built: run bun run web:build", { status: 404 })
   }
 
   // The page itself. no-cache: every load asks for the current files (they are local and small).

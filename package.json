@@ -6,7 +6,9 @@
     "start": "bun run server.ts",
     "check": "tsc --noEmit",
     "test": "bun test",
-    "demo": "bun scripts/demo.ts"
+    "demo": "bun scripts/demo.ts",
+    "web:dev": "cd web && bun run dev",
+    "web:build": "cd web && bun install && bun run build"
   },
   "devDependencies": {
     "@types/bun": "1.2.21",

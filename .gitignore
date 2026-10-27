@@ -7,3 +7,4 @@ data/
 logs/
 models/
 node_modules/
+web/dist/
