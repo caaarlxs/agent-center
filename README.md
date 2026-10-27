@@ -29,7 +29,8 @@ sessions through a small Claude Code mod, and keeps its own state in a folder of
 - **Next up** (`F`, or the button with the count): opens what waits for you next, its reply box
   ready: approvals, then questions (the longest waiting first), then what is new to review.
 - **Read and reply from the board.** Open a card to read the conversation and reply as if you
-  typed it in Claude. Messages wait 5 s (and while a turn runs) so you can undo them. Attach
+  typed it in Claude. It follows the session as it happens (no polling), and Claude's answer
+  shows as it is written, as in Claude desktop (bridge mod 0.8.0). Messages wait 5 s (and while a turn runs) so you can undo them. Attach
   images, PDFs and any other file; dictate with Whisper on your Mac.
 - **Answer what sessions ask.** Questions with options (AskUserQuestion) and tool approvals
   ("Allow Bash: …") can be answered on the card or in the conversation; the dialog in Claude
