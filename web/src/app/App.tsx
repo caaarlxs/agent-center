@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Kbd } from "@/components/ui/kbd"
 import { Toaster } from "@/components/ui/sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
-import { DesignSystem } from "@/design/DesignSystem"
+import { lazyView } from "@/lib/lazy-view"
 import { get, post } from "@/lib/api"
 import { live, useLive } from "@/lib/live"
 import { clock } from "@/lib/format"
@@ -30,6 +30,9 @@ import { openDialog } from "./open-dialog"
 import { type Update, isStale } from "./update"
 import { Sidebar } from "./Sidebar"
 import { VIEW_NAME, focusCard, repoFilter, sideOpen, useShownView, view, type View } from "./view-state"
+
+// The design system's page (/design), with every example: never in the board's download.
+const DesignSystem = lazyView(() => import("@/design/DesignSystem").then(m => m.DesignSystem))
 
 export function App() {
   if (location.pathname.replace(/\/$/, "").endsWith("/design")) return <DesignSystem />

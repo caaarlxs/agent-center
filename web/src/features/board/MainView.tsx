@@ -6,7 +6,7 @@ import { useRef, useSyncExternalStore } from "react"
 import { useLive } from "@/lib/live"
 import { repoFilter } from "@/app/view-state"
 import { cn } from "@/lib/utils"
-import { Canvas } from "@/features/canvas/Canvas"
+import { lazyView } from "@/lib/lazy-view"
 import type { View } from "./order"
 import { useFlip } from "./flip"
 import { dragging, groupBy, showDone, useBoardCards, view as viewStore, whereTo } from "./state"
@@ -29,6 +29,9 @@ export function useShownView(): View {
   const isNarrow = useNarrow()
   return isNarrow && chosen === "canvas" ? "inbox" : chosen
 }
+
+// React Flow and the canvas load the first time the canvas shows.
+const Canvas = lazyView(() => import("@/features/canvas/Canvas").then(m => m.Canvas))
 
 export const VIEW_TITLE: Record<View, string> = { inbox: "Inbox", board: "Board", canvas: "Canvas", tiers: "Tiers" }
 

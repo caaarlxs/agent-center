@@ -15,15 +15,24 @@ import { cn } from "@/lib/utils"
 import { type Tab, WORKSPACES, openSession, showTab } from "@/app/open-session"
 import { openDialog } from "@/app/open-dialog"
 import { toggleWatch, watched } from "@/features/alerts/prefs"
-import { Changes } from "@/features/changes/Changes"
-import { CodeWorkspace } from "@/features/code/CodeWorkspace"
-import { Files } from "@/features/files/Files"
-import { Chat } from "@/features/conversation/Chat"
-import { Prs } from "@/features/prs/Prs"
-import { Tasks } from "@/features/tasks/Tasks"
+import { lazyView } from "@/lib/lazy-view"
 import { CARD_COLORS, LATER, launch, rename, stopTurn, tintOf } from "./actions"
 import { isWide, toggleWide } from "./panel-width"
 import { STATE_LABEL, repoDot, repoText, stateOf, type StateKey } from "./state"
+
+// The conversation (with its markdown renderer) is not needed to draw the
+// board: it loads once the browser is idle, before you open one. The
+// workspaces load the first time they open (Code brings Monaco, Changes its
+// diff); hovering a tab starts that load.
+const Chat = lazyView(() => import("@/features/conversation/Chat").then(m => m.Chat))
+if (typeof requestIdleCallback === "function") requestIdleCallback(Chat.preload)
+else setTimeout(Chat.preload, 1500)
+const Changes = lazyView(() => import("@/features/changes/Changes").then(m => m.Changes))
+const CodeWorkspace = lazyView(() => import("@/features/code/CodeWorkspace").then(m => m.CodeWorkspace))
+const Files = lazyView(() => import("@/features/files/Files").then(m => m.Files))
+const Prs = lazyView(() => import("@/features/prs/Prs").then(m => m.Prs))
+const Tasks = lazyView(() => import("@/features/tasks/Tasks").then(m => m.Tasks))
+const PRELOAD: Partial<Record<string, () => void>> = { changes: Changes.preload, code: CodeWorkspace.preload, files: Files.preload, prs: Prs.preload, tasks: Tasks.preload }
 
 const TABS: { key: Tab; label: string; icon: ReactNode }[] = [
   { key: "chat", label: "Conversation", icon: <MessageSquare /> },
@@ -232,7 +241,7 @@ export function SessionPanel({ id, tab: asked, file }: { id: string; tab: Tab; f
       </header>
       <nav role="tablist" className="flex shrink-0 gap-0.5 overflow-x-auto border-b border-line px-3 [scrollbar-width:none]">
         {tabs.map(t => (
-          <button key={t.key} role="tab" aria-selected={tab === t.key} onClick={() => showTab(t.key)} title={t.label}
+          <button key={t.key} role="tab" aria-selected={tab === t.key} onClick={() => showTab(t.key)} onPointerEnter={PRELOAD[t.key]} title={t.label}
             className={cn("relative flex items-center gap-1.5 px-2.5 py-[9px] text-[13px] font-[550] whitespace-nowrap text-text-muted transition-colors duration-[120ms] hover:text-text [&_svg]:size-3.5 [&_svg]:opacity-70",
               tab === t.key && "text-text after:absolute after:inset-x-2.5 after:-bottom-px after:h-0.5 after:rounded-sm after:bg-text")}>
             {t.icon}{t.label}{(counts[t.key] ?? 0) > 0 && <span className="text-[11px] text-text-muted tabular-nums">{counts[t.key]}</span>}

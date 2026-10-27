@@ -3,11 +3,14 @@
 import { useEffect } from "react"
 import { get } from "@/lib/api"
 import { persistedStore } from "@/lib/store"
-import { DigestDialog } from "@/features/digest/DigestDialog"
-import { NewSessionDialog } from "@/features/new-session/NewSessionDialog"
-import { RunDialog } from "@/features/run/RunDialog"
-import { SetupDialog } from "@/features/setup/SetupDialog"
+import { lazyView } from "@/lib/lazy-view"
 import { closeDialog, dialog, openDialog } from "./open-dialog"
+
+// Each dialog loads the first time it opens.
+const DigestDialog = lazyView(() => import("@/features/digest/DigestDialog").then(m => m.DigestDialog))
+const NewSessionDialog = lazyView(() => import("@/features/new-session/NewSessionDialog").then(m => m.NewSessionDialog))
+const RunDialog = lazyView(() => import("@/features/run/RunDialog").then(m => m.RunDialog))
+const SetupDialog = lazyView(() => import("@/features/setup/SetupDialog").then(m => m.SetupDialog))
 
 const setupSeen = persistedStore("setupSeen", false)
 const LINKED = ["new", "setup", "digest", "help"] as const
