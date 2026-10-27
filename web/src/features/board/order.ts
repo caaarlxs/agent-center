@@ -4,7 +4,7 @@
 import type { Card } from "@/lib/api-types"
 import { onCanvas, placeCards } from "@/features/canvas/geometry"
 import { byPin, columnsShown, inboxGroups } from "./columns"
-import { TIERS, tierOf } from "./tiers"
+import { TIERS, byRank, tierOf } from "./tiers"
 
 export type View = "inbox" | "board" | "canvas" | "tiers"
 export type GroupBy = "none" | "repo"
@@ -17,7 +17,7 @@ export function canvasOrder(cards: Card[]): Card[] {
 
 export function walkOrder(view: View, cards: Card[], showDone: boolean, groupBy: GroupBy, repos: { root: string }[]): Card[] {
   if (view === "canvas") return canvasOrder(cards)
-  if (view === "tiers") return TIERS.filter(t => t.key !== "close" || showDone).flatMap(t => cards.filter(c => c.column !== "archived" && tierOf(c) === t.key).sort(byPin))
+  if (view === "tiers") return TIERS.flatMap(t => cards.filter(c => c.column !== "archived" && tierOf(c) === t.key).sort(byRank))
   const cols = columnsShown(showDone)
   const inCol = (list: Card[], col: string) => list.filter(c => c.column === col).sort(byPin)
   if (view === "board" && groupBy === "repo") return repos.flatMap(r => cols.flatMap(col => inCol(cards.filter(c => c.repoRoot === r.root), col)))

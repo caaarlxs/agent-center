@@ -229,6 +229,7 @@ async function cardOf(
     pos: item.pos ?? null,
     color: item.color ?? null,
     tier: item.tier ?? "other",
+    tierRank: item.tier_rank ?? null,
     run: await runSummary(id),
     bridge: { ...bridge, wake: wakeState(id) },
   }

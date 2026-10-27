@@ -19,6 +19,7 @@ const SHORTCUTS: [string, string[][]][] = [
   ["Search", [["/"], ["⌘", "K"]]],
   ["Inbox · Board · Canvas · Tiers", [["1"], ["2"], ["3"], ["4"]]],
   ["Tiers: one row up · down", [["["], ["]"]]],
+  ["Tiers: one place left · right", [["<"], [">"]]],
   ["Lanes per repo", [["G"]]],
   ["Next up: what waits for you", [["F"]]],
   ["New session", [["N"]]],

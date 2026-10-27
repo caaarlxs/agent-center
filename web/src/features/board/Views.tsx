@@ -3,7 +3,7 @@
 // tier list (rows by importance, then Paused and Close). A click, or Enter on
 // a focused card or row, opens the conversation; cards drag between columns
 // and rows. Each view's own tools sit at the top: Columns / By repo, Done.
-import { Archive, Check, ChevronDown, ChevronRight, Pause, Plus, Star } from "lucide-react"
+import { Archive, ChevronDown, ChevronRight, Pause, Plus, Star } from "lucide-react"
 import { type CSSProperties, type ReactNode, useState } from "react"
 import type { Card } from "@/lib/api-types"
 import { useLive } from "@/lib/live"
@@ -15,10 +15,10 @@ import { repoFilter } from "@/app/view-state"
 import { Actions, Context, Meta, NewBadge, tintOf } from "@/features/session/parts"
 import { StateIcon } from "@/features/session/StateIcon"
 import { ageOf, hueOf, repoDot, repoText, urgencyOf } from "@/features/session/state"
-import { archiveAll, boardSteps, moveToTier } from "./act"
+import { archiveAll, boardSteps, placeInTier } from "./act"
 import { COLUMN, type ColumnKey, type Step, TONE_DOT, byPin, columnsShown, dropAction, inboxGroups, runsOf } from "./columns"
 import { type View, dragging, drawingZone, groupBy, menu, noteAsked, selected, showDone } from "./state"
-import { TIERS, type TierKey, emptyText, tierOf, toTier } from "./tiers"
+import { TIERS, type TierKey, byRank, emptyText, tierOf, toTier } from "./tiers"
 
 const open = (id: string) => (selected.set(id), openSession(id))
 // A focused card or row opens with Enter or Space, as a click would; keys
@@ -304,39 +304,67 @@ export function Inbox({ cards }: { cards: Card[] }) {
 
 // ---------- tiers ----------
 
-function TierRow({ tier, i, list, isDone }: { tier: (typeof TIERS)[number]; i: number; list: Card[]; isDone: boolean }) {
-  const drop = useDrop(card => toTier(card, tier.key as TierKey), card => void moveToTier(card, tier.key as TierKey))
-  const isClose = tier.key === "close"
-  // Closed ones show only with "Done" on.
-  const shown = isClose && !isDone ? [] : list
+// Where a drop lands in a row of cards laid left to right: before the first
+// card whose middle is right of the pointer.
+function indexAt(box: HTMLElement, x: number, skip: string | undefined) {
+  const cards = [...box.querySelectorAll<HTMLElement>(":scope > [data-slot] > [data-id]")].filter(el => el.dataset.id !== skip)
+  const i = cards.findIndex(el => { const r = el.getBoundingClientRect(); return x < r.left + r.width / 2 })
+  return i === -1 ? cards.length : i
+}
+
+// A wheel turned up or down scrolls a row sideways, when it has nothing to scroll down.
+function wheelSideways(e: React.WheelEvent<HTMLElement>) {
+  const el = e.currentTarget
+  if (e.deltaX !== 0 || el.scrollHeight > el.clientHeight || el.scrollWidth <= el.clientWidth) return
+  el.scrollLeft += e.deltaY
+}
+
+function TierRow({ tier, i, list }: { tier: (typeof TIERS)[number]; i: number; list: Card[] }) {
+  const key = tier.key as TierKey
+  const [at, setAt] = useState<number | null>(null)
+  // Its own cards drop here too: to change their place in the row.
+  const drop = useDrop(card => (tierOf(card) === key ? [] : toTier(card, key)), card => void placeInTier(card, key, list, at ?? list.length))
+  const shown = list
+  const others = shown.filter(c => c.id !== drop.card?.id)
+  const mark = drop.isOver && at !== null ? (others[at]?.id ?? "end") : null
   return (
-    <section data-tier={tier.key} data-group={`tier-${tier.key}`} {...drop.handlers} style={{ ["--tier" as string]: tier.color }}
-      className={cn("grid min-h-24 flex-[1_1_0] grid-cols-[132px_1fr] overflow-hidden rounded-[12px] bg-side transition-[background-color,box-shadow,opacity] duration-120 max-[860px]:flex-none max-[860px]:grid-cols-1",
+    <section data-tier={tier.key} data-group={`tier-${tier.key}`} {...drop.handlers}
+      onDragLeave={e => (drop.handlers.onDragLeave(e), !e.currentTarget.contains(e.relatedTarget as Node) && setAt(null))}
+      onDrop={e => (drop.handlers.onDrop(e), setAt(null))}
+      style={{ ["--tier" as string]: tier.color }}
+      className={cn("grid min-h-24 flex-[1_1_0] grid-cols-[132px_minmax(0,1fr)] overflow-hidden rounded-[12px] bg-side transition-[background-color,box-shadow,opacity] duration-120 max-[860px]:flex-none max-[860px]:grid-cols-1",
         tier.key === "paused" && "flex-grow-[0.8]",
-        isClose && "min-h-[72px] flex-grow-[0.6] border-[1.5px] border-dashed border-line-strong bg-[color-mix(in_srgb,var(--side)_55%,transparent)]",
-        drop.isOver && (isClose ? "border-work bg-work-soft" : "bg-brand-soft shadow-[inset_0_0_0_2px_var(--brand)]"),
+        drop.isOver && "bg-brand-soft shadow-[inset_0_0_0_2px_var(--brand)]",
         drop.card && !drop.steps && tierOf(drop.card) !== tier.key && "opacity-55")}
       data-index={i}>
       <div title={tier.hint}
         className={cn("flex flex-col items-center justify-center gap-1 p-2.5 text-center shadow-[inset_-1px_0_0_var(--line)] max-[860px]:flex-row max-[860px]:justify-start max-[860px]:px-3 max-[860px]:py-2 max-[860px]:shadow-[inset_0_-1px_0_var(--line)]",
-          isClose ? "bg-transparent text-text-muted" : "bg-[color-mix(in_srgb,var(--tier)_22%,var(--surface))]", tier.key === "paused" ? "text-text-muted" : !isClose && "text-text")}>
-        {isClose ? <Check className="size-[18px]" /> : tier.key === "paused" ? <Pause className="size-4" /> : null}
+          "bg-[color-mix(in_srgb,var(--tier)_22%,var(--surface))]", tier.key === "paused" ? "text-text-muted" : "text-text")}>
+        {tier.key === "paused" && <Pause className="size-4" />}
         <b className="text-sm leading-[1.25] font-bold">{tier.label}</b>
         <span className="text-xs font-medium text-text-muted max-[860px]:ml-auto">{list.length || ""}</span>
       </div>
-      <div className="grid min-h-0 grid-cols-[repeat(auto-fill,minmax(260px,1fr))] content-start gap-2 overflow-y-auto p-2.5">
-        {shown.map(card => <BoardCard key={card.id} card={card} />)}
-        {shown.length === 0 && <Empty className="col-span-full self-center py-3.5">{emptyText(tier.key as TierKey, list.length, !!drop.card && !!drop.steps)}</Empty>}
+      {/* One line, left to right, in the order the person gave; a scrollbar to move along it. */}
+      <div onWheel={wheelSideways}
+        onDragOver={e => drop.steps && setAt(indexAt(e.currentTarget, e.clientX, drop.card?.id))}
+        className="flex min-h-0 min-w-0 items-stretch gap-2 overflow-x-auto overflow-y-auto p-2.5 [scrollbar-width:thin]">
+        {shown.map(card => (
+          <div key={card.id} data-slot className="relative w-[272px] flex-none [&>article]:h-full">
+            {mark === card.id && <i className="absolute inset-y-0 -left-[6px] w-[3px] rounded-full bg-brand" />}
+            <BoardCard card={card} />
+          </div>
+        ))}
+        {mark === "end" && shown.length > 0 && <i className="w-[3px] flex-none self-stretch rounded-full bg-brand" />}
+        {shown.length === 0 && <Empty className="flex-1 self-center py-3.5">{emptyText(key, !!drop.card && !!drop.steps && tierOf(drop.card) !== key)}</Empty>}
       </div>
     </section>
   )
 }
 
 export function Tiers({ cards }: { cards: Card[] }) {
-  const isDone = showDone.use()
   return (
     <div className="box-border flex h-full flex-col gap-2 px-5 pt-3.5 pb-5 max-[860px]:h-auto max-[860px]:px-3 max-[860px]:pt-2.5 max-[860px]:pb-4">
-      {TIERS.map((tier, i) => <TierRow key={tier.key} tier={tier} i={i} list={cards.filter(c => tierOf(c) === tier.key).sort(byPin)} isDone={isDone} />)}
+      {TIERS.map((tier, i) => <TierRow key={tier.key} tier={tier} i={i} list={cards.filter(c => tierOf(c) === tier.key).sort(byRank)} />)}
     </div>
   )
 }

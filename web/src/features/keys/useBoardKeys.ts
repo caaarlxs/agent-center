@@ -9,11 +9,11 @@ import { undoLast } from "@/lib/toast"
 import { openDialog } from "@/app/open-dialog"
 import { WORKSPACES, openNow, openSession, showTab, useOpenSession } from "@/app/open-session"
 import { repoFilter } from "@/app/view-state"
-import { boardAct, moveToTier, openInClaude, setOrder, stopSession } from "@/features/board/act"
+import { boardAct, openInClaude, placeInTier, setOrder, stopSession } from "@/features/board/act"
 import { useShownView } from "@/features/board/MainView"
 import { stepFrom, walkOrder } from "@/features/board/order"
 import { groupBy, menu, selected, setView, showDone, useBoardCards } from "@/features/board/state"
-import { tierStep } from "@/features/board/tiers"
+import { byRank, tierOf, tierStep } from "@/features/board/tiers"
 import { CARD_COLORS, PARK_OPTIONS } from "@/features/session/parts"
 import { helpOpen } from "./help-state"
 import { startRename } from "@/features/session/SessionPanel"
@@ -29,7 +29,7 @@ function reveal(id: string) {
   requestAnimationFrame(() => {
     const el = document.querySelector<HTMLElement>(`[data-id="${CSS.escape(id)}"]`)
     if (hadFocus) el?.focus({ preventScroll: true })
-    el?.scrollIntoView({ block: "nearest" })
+    el?.scrollIntoView({ block: "nearest", inline: "nearest" })
   })
 }
 
@@ -127,8 +127,22 @@ export function useBoardKeys({ nextUp, toggleSearch, openSearch, isSearching }: 
           // On the tier list: the selected card one row up ([) or down (]).
           if (!card || view !== "tiers") return
           const key = tierStep(card, e.key === "[" ? -1 : 1)
-          if (key) (e.preventDefault(), void moveToTier(card, key))
-          return
+          if (!key) return
+          e.preventDefault()
+          // At the end of that row (the right).
+          const row = cards.filter(c => c.id !== card.id && tierOf(c) === key).sort(byRank)
+          return void placeInTier(card, key, row, row.length)
+        }
+        case "<": case ">": case ",": case ".": {
+          // On the tier list: the selected card one place left (<) or right (>) in its row.
+          const key = card && tierOf(card)
+          if (!card || !key || view !== "tiers") return
+          const row = cards.filter(c => tierOf(c) === key).sort(byRank)
+          const i = row.findIndex(c => c.id === card.id) + (e.key === "<" || e.key === "," ? -1 : 1)
+          if (i < 0 || i >= row.length) return
+          e.preventDefault()
+          void placeInTier(card, key, row, i)
+          return reveal(card.id)
         }
         case "n": e.preventDefault(); return openDialog({ kind: "new" })
         case "f": e.preventDefault(); return nextUp()
