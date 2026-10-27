@@ -1,36 +1,48 @@
 // What the reply box and "New session" add to the prompt: the paperclip and
 // the files picked (pasted and dropped ones join too), and the microphone.
-import { Mic, Paperclip, Square } from "lucide-react"
+import { FileText, Mic, Paperclip, Square, X } from "lucide-react"
+import { cn } from "@/lib/utils"
 import { useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
-import { Attachment, AttachmentInfo, AttachmentPreview, AttachmentRemove, Attachments } from "@/components/ai-elements/attachments"
-import { PromptInputButton, usePromptInputAttachments, usePromptInputController } from "@/components/ai-elements/prompt-input"
+import { usePromptInputAttachments, usePromptInputController } from "@/components/ai-elements/prompt-input"
 import { Spinner } from "@/components/ui/spinner"
 import { canDictate, canRecord, dictate, hasWhisper, recordVoice, type Recording } from "./voice"
 
 export const fileErrors = (err: { code: string }) =>
-  toast.error(err.code === "max_files" ? "Up to 10 files per message" : "Each file can be up to 500 MB")
+  toast(err.code === "max_files" ? "Up to 10 files per message" : "Each file can be up to 500 MB (and cannot be empty)")
 
+// The files picked for the message (attachments.js): 64px pictures and file
+// chips, each with a round × to remove it.
+const remover = "absolute -top-1.5 -right-1.5 grid size-[18px] place-items-center rounded-full bg-black/75 text-white opacity-90 hover:opacity-100 [&_svg]:size-[11px]"
 export function PickedFiles() {
   const { files, remove } = usePromptInputAttachments()
   if (!files.length) return null
   return (
-    <Attachments variant="inline" className="w-full px-3 pt-3">
-      {files.map(f => (
-        <Attachment key={f.id} data={f} onRemove={() => remove(f.id)}>
-          <AttachmentPreview /><AttachmentInfo /><AttachmentRemove />
-        </Attachment>
+    <div className="flex w-full flex-wrap gap-2 px-3 pt-2.5">
+      {files.map(f => f.mediaType?.startsWith("image/") ? (
+        <span key={f.id} className="relative">
+          <img src={f.url} alt="" className="block size-16 rounded-lg border border-line object-cover" />
+          <button type="button" className={remover} onClick={() => remove(f.id)} title="Remove the image"><X /></button>
+        </span>
+      ) : (
+        <span key={f.id} className="relative inline-flex h-16 max-w-[260px] items-center gap-1.5 rounded-lg border border-line bg-side pr-3 pl-2.5 text-[12.5px]">
+          <FileText className="size-3.5 shrink-0 text-text-muted" /><span className="truncate">{f.filename}</span>
+          <button type="button" className={remover} onClick={() => remove(f.id)} title="Remove the file"><X /></button>
+        </span>
       ))}
-    </Attachments>
+    </div>
   )
 }
 
 export function AttachButton() {
   const { openFileDialog } = usePromptInputAttachments()
-  return <PromptInputButton onClick={openFileDialog} tooltip="Attach files (or paste or drop them)" aria-label="Attach files"><Paperclip /></PromptInputButton>
+  return <button type="button" className={toolIcon} onClick={openFileDialog} title="Attach images, PDFs or any file (you can also paste or drag them)" aria-label="Attach files"><Paperclip /></button>
 }
 
-const BARS = 24
+// A toolbar icon of the reply box (.composer-tools .icon-btn): 30px, muted.
+export const toolIcon = "inline-grid size-[30px] shrink-0 place-items-center rounded-md text-text-muted transition-[background-color,color,transform] duration-[120ms] ease-(--ease-out) hover:bg-hover hover:text-text active:scale-[0.92] [&_svg]:size-[15px]"
+
+const BARS = 34
 
 type MicState =
   | { kind: "idle" }
@@ -99,30 +111,41 @@ export function MicButton() {
   })
 
   if (!isWhisper && !canDictate) return null
-  if (mic.kind === "transcribing") return <PromptInputButton size="sm" disabled><Spinner />Transcribing…</PromptInputButton>
+  const pill = "pill-open inline-flex h-[30px] shrink-0 items-center gap-2 rounded-[15px] pr-2.5 pl-[9px] text-xs font-semibold tabular-nums"
+  if (mic.kind === "transcribing") return <span className={cn(pill, "bg-brand-soft text-brand")}><Spinner className="size-3" />Transcribing…</span>
   if (mic.kind === "recording") {
     const s = Math.floor((Date.now() - mic.rec.startedAt) / 1000)
     return (
-      <PromptInputButton size="sm" className="gap-2 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20" onClick={() => finish(mic.rec)} tooltip="Write it (↵) · drop it (Esc)">
-        <i className="size-2 animate-pulse rounded-full bg-rose-500" />
-        <span className="flex h-4 items-center gap-px">{levels.map((l, i) => <i key={i} className="w-0.5 rounded-full bg-current" style={{ height: `${Math.max(12, l * 100)}%`, opacity: 0.35 + 0.65 * (i / BARS) }} />)}</span>
-        <span className="tabular-nums">{Math.floor(s / 60)}:{String(s % 60).padStart(2, "0")}</span>
-      </PromptInputButton>
+      <button type="button" onClick={() => finish(mic.rec)} title="Stop and write (↵) · discard (Esc)"
+        className={cn(pill, "cursor-pointer border border-[color-mix(in_srgb,var(--bad)_35%,transparent)] bg-bad-soft text-bad hover:bg-[color-mix(in_srgb,var(--bad)_22%,transparent)]")}>
+        <i className="rec-dot size-2 rounded-full bg-bad" />
+        <span className="flex h-5 w-[102px] items-center gap-px">{levels.map((l, i) => <i key={i} className="w-0.5 shrink-0 rounded-full bg-current" style={{ height: `${Math.max(10, l * 100)}%`, opacity: 0.3 + 0.7 * (i / BARS) }} />)}</span>
+        <span>{Math.floor(s / 60)}:{String(s % 60).padStart(2, "0")}</span>
+        <Square className="size-[11px] fill-current" />
+      </button>
     )
   }
-  if (mic.kind === "dictating") return <PromptInputButton className="text-rose-400" onClick={mic.stop} tooltip="Stop dictating"><Square /></PromptInputButton>
+  if (mic.kind === "dictating") return <button type="button" className={cn(toolIcon, "text-bad hover:text-bad")} onClick={mic.stop} title="Stop dictation (Chrome uses Google's servers)"><Mic /></button>
 
   const start = async () => {
     if (!isWhisper) {
       const base = textInput.value
-      const d = dictate(heard => add(heard, base), () => setMic({ kind: "idle" }))
-      return setMic({ kind: "dictating", stop: d.stop })
+      try {
+        const d = dictate(heard => add(heard, base), error => {
+          setMic({ kind: "idle" })
+          if (error === "not-allowed") toast("Chrome has no permission to use the microphone")
+          else if (error && error !== "no-speech" && error !== "aborted") toast(`Dictation stopped: ${error}`)
+        })
+        return setMic({ kind: "dictating", stop: d.stop })
+      } catch {
+        return void toast("Could not start dictation")
+      }
     }
     try {
       setMic({ kind: "recording", rec: await recordVoice() })
     } catch (err) {
-      toast.error((err as Error)?.name === "NotAllowedError" ? "The browser has no permission to use the microphone" : "Could not start recording")
+      toast((err as Error)?.name === "NotAllowedError" ? "The browser has no permission to use the microphone" : "Could not start recording")
     }
   }
-  return <PromptInputButton onClick={start} tooltip={isWhisper ? "Dictate (Whisper on this Mac)" : "Dictate (the browser's recognition)"} aria-label="Dictate"><Mic /></PromptInputButton>
+  return <button type="button" className={toolIcon} onClick={start} title={isWhisper ? "Dictate (Whisper on this Mac)" : "Dictate"} aria-label="Dictate"><Mic /></button>
 }

@@ -8,6 +8,7 @@ import { get } from "@/lib/api"
 import { useLive } from "@/lib/live"
 import { useNow } from "@/lib/now"
 import { openSession } from "@/app/open-session"
+import { openedResult } from "@/features/session/SessionPanel"
 import { focusCard } from "@/app/view-state"
 import { StateIcon } from "@/features/session/StateIcon"
 import { ago } from "@/features/session/state"
@@ -30,6 +31,8 @@ export function SearchPalette({ open, onOpenChange }: { open: boolean; onOpenCha
   useEffect(() => void (open || setQuery("")), [open])
 
   const go = (id: string) => {
+    const r = shown.find(x => x.id === id)
+    if (r && !byId.has(id)) openedResult.set({ id, title: r.title, repo: r.repo ?? null })
     onOpenChange(false)
     openSession(id)
     focusCard(id)

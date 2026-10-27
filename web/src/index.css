@@ -271,3 +271,18 @@
 .run-dot { animation: run-beat 1.4s ease-out infinite; }
 @keyframes run-beat { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--run) 60%, transparent); } 70%, 100% { box-shadow: 0 0 0 6px transparent; } }
 @media (prefers-reduced-motion: reduce) { .run-dot { animation: none; box-shadow: 0 0 0 2px var(--run-soft); } }
+
+/* Recording: the mic opens into a pill whose dot beats (styles.css:1451-1466). */
+.pill-open { animation: pill-open 260ms var(--ease-out); }
+@keyframes pill-open { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: none; } }
+.rec-dot { animation: rec-dot 1.2s ease-in-out infinite; }
+@keyframes rec-dot { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--bad) 45%, transparent); } 50% { box-shadow: 0 0 0 5px transparent; } }
+/* A change asked of the session, until its mod answers. */
+.blink { animation: blink 1s ease-in-out infinite; }
+@keyframes blink { 50% { opacity: 0.25; } }
+
+/* The reply box (styles.css:604-615): AI Elements' input group in the board's look. */
+.composer-box [data-slot=input-group] { border-radius: 14px; border-color: var(--line-strong); background: var(--raised); box-shadow: none; transition: border-color 120ms ease, box-shadow 120ms ease; }
+.composer-box [data-slot=input-group]:focus-within, .composer-box.drop [data-slot=input-group] { border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-soft); }
+.composer-box textarea { font-size: 13.5px; line-height: 1.5; padding: 11px 14px 4px; min-height: 44px; max-height: 220px; field-sizing: content; }
+.composer-box textarea::placeholder { color: var(--faint); }

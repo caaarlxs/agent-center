@@ -1,28 +1,25 @@
-// The reply box: text, files (picked, pasted or dropped) and dictation go to
-// the session through the bridge mod; a draft stays for three days. The mode
-// and model change in the session (it asks for approval when a mode asks
-// less); the effort only shows, as the app sends its own with every message.
-// Under it, what the session can do with a message now.
-import { Gauge, Square } from "lucide-react"
+// The reply box (composer.js): text, files (picked, pasted or dropped) and
+// dictation go to the session through the bridge mod. The draft stays for
+// three days (the files while the page is open). The mode and model change in
+// the session; the effort only shows, as the app sends its own with every
+// message. Under it, what a message would meet now and how full the context is.
+import { ArrowUp, Square } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
+import type { FileUIPart } from "ai"
 import { toast } from "sonner"
-import {
-  PromptInput, PromptInputBody, PromptInputFooter, PromptInputProvider, PromptInputSelect, PromptInputSelectContent, PromptInputSelectItem,
-  PromptInputSelectTrigger, PromptInputSelectValue, PromptInputSubmit, PromptInputTextarea, PromptInputTools, usePromptInputController,
-} from "@/components/ai-elements/prompt-input"
-import { Button } from "@/components/ui/button"
+import { PromptInput, PromptInputBody, PromptInputProvider, PromptInputTextarea, usePromptInputController } from "@/components/ai-elements/prompt-input"
 import { post } from "@/lib/api"
 import type { Bridge, Card } from "@/lib/api-types"
 import { persistedStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
 import { AttachButton, MicButton, PickedFiles, fileErrors } from "@/features/prompt/PromptExtras"
+import { EFFORTS, MODELS, MODES, Pick, ReadOnly, modelKey } from "@/features/prompt/Settings"
 import { MAX_BYTES, MAX_FILES, messageWith } from "@/features/prompt/files"
-import { stop, wake } from "@/features/session/actions"
+import { launch, stopTurn, wake } from "@/features/session/actions"
+import { UsageMeter } from "@/features/session/UsageMeter"
 import { composerFill, composerFocus, sendMessage } from "./send"
 
-export const MODES = [["default", "Ask"], ["acceptEdits", "Accept edits"], ["plan", "Plan"], ["auto", "Auto"], ["bypassPermissions", "Bypass"]] as const
-export const MODELS = [["claude-fable-5-1", "Fable 5.1"], ["claude-opus-5-5", "Opus 5.5"], ["claude-sonnet-5-5", "Sonnet 5.5"], ["claude-haiku-5-5", "Haiku 5.5"]] as const
-export const EFFORTS = [["low", "Low"], ["medium", "Medium"], ["high", "High"], ["xhigh", "Extra high"], ["max", "Max"]] as const
+export { EFFORTS, MODELS, MODES, Pick } // New session uses them too
 
 const DRAFT_MS = 3 * 24 * 60 * 60_000
 const drafts = persistedStore<Record<string, { text: string; at: number }>>("drafts", {})
@@ -34,121 +31,151 @@ function keepDraft(id: string, text: string) {
   const all = Object.fromEntries(Object.entries(drafts.get()).filter(([key, d]) => key !== id && Date.now() - d.at < DRAFT_MS))
   drafts.set(text.trim() ? { ...all, [id]: { text, at: Date.now() } } : all)
 }
+// The files picked, per session, while the page stays open.
+const draftFiles = new Map<string, (FileUIPart & { id: string })[]>()
 
-export function Pick({ value, options, placeholder, onPick }: { value: string | undefined; options: readonly (readonly [string, string])[]; placeholder: string; onPick: (v: string) => void }) {
+// What a message would meet now (composer.js:158-173). The mod's heartbeat
+// pauses while a tool runs: a recent beat with a turn running means busy.
+type Reach = { tone: "on" | "busy" | "bad" | "off"; text: string }
+export function reachOf(bridge: Bridge | null, isWorking: boolean, isWaking = false): Reach {
+  if (!bridge) return { tone: "off", text: "Checking the session…" }
+  if (bridge.isArchived) return { tone: "bad", text: "Archived in Claude: it does not wake until you unarchive it there (Open in Claude)" }
+  if (bridge.wake?.untrusted) return { tone: "bad", text: "Claude does not trust this session's folder: open it in Claude and accept" }
+  if (bridge.stuck.length) return { tone: "bad", text: "The session did not wake: open it in Claude" }
+  if (bridge.isOpen) return { tone: "on", text: "Session open: it arrives in a few seconds" }
+  if (isWorking && bridge.lastSeen && Date.now() - bridge.lastSeen < 15 * 60_000) return { tone: "busy", text: "Busy: delivered when the turn ends" }
+  if (bridge.pending || isWaking) return { tone: "busy", text: "Waking the session in the background…" }
+  return { tone: "off", text: "Session asleep: when you send, it wakes in the background" }
+}
+const DOT = { on: "bg-work shadow-[0_0_0_3px_var(--work-soft)]", busy: "bg-ask shadow-[0_0_0_3px_var(--ask-soft)]", bad: "bg-bad", off: "bg-faint" }
+const subtle = "inline-flex h-[30px] shrink-0 items-center gap-[5px] rounded-md px-2.5 text-[13px] font-medium text-text-muted transition-[background-color,color,transform] duration-[120ms] hover:bg-hover active:scale-[0.97] [&_svg]:size-3"
+
+// Mode and model, changed through the bridge mod (v4); the effort shows.
+function Settings({ card, bridge }: { card: Card; bridge: Bridge | null }) {
+  const [asked, setAsked] = useState<{ requestId: string; key: "mode" | "model"; value: string } | null>(null)
+  useEffect(() => {
+    if (!asked || bridge?.settings?.id !== asked.requestId) return
+    const failed = Object.values(bridge.settings.results).filter(r => r !== "ok")
+    toast(failed.length ? `Could not change: ${failed.join(" · ")}` : "Change applied")
+    setAsked(null)
+  }, [bridge?.settings?.id])
+  const change = (key: "mode" | "model", value: string) =>
+    post<{ requestId: string; isOpen: boolean }>(`/api/sessions/${encodeURIComponent(card.id)}/settings`, { [key]: value }).then(
+      res => (setAsked({ requestId: res.requestId, key, value }), toast(res.isOpen ? "Change sent: it applies as soon as the session is free" : "Change saved: it applies when the session opens")),
+      (err: Error) => toast(err.message || "Could not request the change"),
+    )
+  const isOld = !!bridge && bridge.version < 4
+  const valueOf = (key: "mode" | "model", current: string | null | undefined) => (asked?.key === key ? asked.value : current ?? "")
+  const old = "This session started with an older bridge mod: close it and open it again"
+  const effort = EFFORTS.find(([e]) => e === card.effort)?.[1]
   return (
-    <PromptInputSelect value={value} onValueChange={onPick}>
-      <PromptInputSelectTrigger className="h-8 w-auto gap-1 border-0 px-2 text-xs shadow-none"><PromptInputSelectValue placeholder={placeholder} /></PromptInputSelectTrigger>
-      <PromptInputSelectContent>{options.map(([v, label]) => <PromptInputSelectItem key={v} value={v}>{label}</PromptInputSelectItem>)}</PromptInputSelectContent>
-    </PromptInputSelect>
+    <div className="flex min-w-0 flex-nowrap gap-0.5">
+      <Pick icon="mode" value={valueOf("mode", card.mode)} options={MODES} isDisabled={!bridge || isOld} isWaiting={asked?.key === "mode"}
+        title={isOld ? old : "Permission mode"} onPick={v => change("mode", v)} />
+      <Pick icon="model" value={valueOf("model", modelKey(card.usage?.model))} options={MODELS} isDisabled={!bridge || isOld} isWaiting={asked?.key === "model"}
+        title={isOld ? old : "Model. Claude desktop still shows the previous one in its picker, but the session uses this one"} onPick={v => change("model", v)} />
+      {effort && <ReadOnly icon="effort" value={effort} title="Effort (read-only). Change it in Claude desktop: it sends its own with every message" />}
+    </div>
   )
 }
 
-// What a message would meet now. The mod's heartbeat pauses while a tool
-// runs: a recent beat with a turn running means busy.
-type Reach = { tone: "on" | "busy" | "bad" | "off"; text: string; fix?: "open" | "wake" }
-export function reachOf(bridge: Bridge | null, isWorking: boolean): Reach {
-  if (!bridge) return { tone: "off", text: "Checking the session…" }
-  if (bridge.isArchived) return { tone: "bad", text: "Archived in Claude: unarchive it there to write", fix: "open" }
-  if (bridge.wake?.untrusted) return { tone: "bad", text: "Claude does not trust this folder: open it in Claude and accept", fix: "open" }
-  if (bridge.stuck.length) return { tone: "bad", text: "The session did not wake", fix: "open" }
-  if (bridge.isOpen) return { tone: "on", text: "Open" }
-  if (isWorking && bridge.lastSeen && Date.now() - bridge.lastSeen < 15 * 60_000) return { tone: "busy", text: "Busy: delivered when the turn ends" }
-  if (bridge.pending) return { tone: "busy", text: "Waking in the background…" }
-  return { tone: "off", text: "Asleep: it wakes when you send", fix: "wake" }
-}
-const DOT = { on: "bg-emerald-400", busy: "bg-amber-400", bad: "bg-rose-400", off: "bg-zinc-500" }
-
-function Box({ card, bridge }: { card: Card; bridge: Bridge | null }) {
+function Box({ id, card, bridge }: { id: string; card: Card | undefined; bridge: Bridge | null }) {
   const { textInput } = usePromptInputController()
   const fill = composerFill.use()
   const focus = composerFocus.use()
   const box = useRef<HTMLDivElement>(null)
-  // Asked for the cursor (a click that opened it, Next up, R): at the end of the text.
+  const [isDrop, setDrop] = useState(false)
+  const [isWaking, setWaking] = useState(false)
+  const cursorAtEnd = () => {
+    const el = box.current?.querySelector("textarea")
+    if (el) (el.focus({ preventScroll: true }), el.setSelectionRange(el.value.length, el.value.length))
+  }
+  // A template reply or Undo fills it; a click that opened it, Next up or R
+  // asks for the cursor (at the end of the text).
   useEffect(() => {
-    if (focus?.id !== card.id) return
-    const field = box.current?.querySelector("textarea")
-    if (!field) return
-    field.focus()
-    field.setSelectionRange(field.value.length, field.value.length)
-  }, [focus, card.id])
-  useEffect(() => {
-    if (fill?.id !== card.id) return
+    if (fill?.id !== id) return
     textInput.setInput(fill.text)
     composerFill.set(null)
-  }, [fill, card.id, textInput])
+    requestAnimationFrame(cursorAtEnd)
+  }, [fill, id, textInput])
+  useEffect(() => void (focus?.id === id && cursorAtEnd()), [focus, id])
+  // The draft: kept as you type, and once more when the chat closes.
+  const latest = useRef(textInput.value)
+  latest.current = textInput.value
   useEffect(() => {
-    const timer = setTimeout(() => keepDraft(card.id, textInput.value), 300)
+    const timer = setTimeout(() => keepDraft(id, textInput.value), 300)
     return () => clearTimeout(timer)
-  }, [card.id, textInput.value])
+  }, [id, textInput.value])
+  useEffect(() => () => keepDraft(id, latest.current), [id])
+  const alive = useRef(true)
+  useEffect(() => () => void (alive.current = false), [])
 
-  // A change goes to the mod, which answers in the bridge: told when it does.
-  const [asked, setAsked] = useState<string | null>(null)
-  const settled = bridge?.settings?.id === asked ? bridge?.settings : null
-  useEffect(() => {
-    if (!settled) return
-    const failed = Object.values(settled.results).filter(r => r !== "ok")
-    if (failed.length) toast.error(`Could not change: ${failed.join(" · ")}`)
-    else toast("Change applied")
-    setAsked(null)
-  }, [settled])
-  const change = (key: "mode" | "model", value: string) =>
-    post<{ requestId: string; isOpen: boolean }>(`/api/sessions/${encodeURIComponent(card.id)}/settings`, { [key]: value }).then(
-      res => (setAsked(res.requestId), toast(res.isOpen ? "Change sent" : "Change saved: it applies when the session opens")),
-      (err: Error) => toast.error(err.message),
-    )
-  const fail = (err: Error) => toast.error(err.message)
-  const isWorking = card.column === "working"
-  const reach = reachOf(bridge, isWorking)
-  const effort = EFFORTS.find(([e]) => e === card.effort)?.[1]
-  const model = MODELS.find(([m]) => card.usage?.model?.startsWith(m))?.[0]
+  const isWorking = card?.column === "working"
+  const reach = reachOf(bridge, isWorking, isWaking)
+  const isStuck = !!bridge && (bridge.stuck.length > 0 || !!bridge.wake?.untrusted || bridge.isArchived)
+  const isBusy = isWorking && !!bridge?.lastSeen && Date.now() - bridge.lastSeen < 15 * 60_000
+  const canWake = !!bridge && !bridge.isOpen && !isBusy && !isWaking && !bridge.pending
+  const startWake = () => {
+    setWaking(true)
+    wake(id).catch((err: Error) => toast(err.message || "Could not wake the session"))
+    setTimeout(() => alive.current && setWaking(false), 8000)
+  }
   return (
-    <div className="space-y-1.5" ref={box}>
+    <div ref={box} className={cn("composer-box shrink-0 border-t border-line bg-surface px-3.5 py-2.5 max-[860px]:px-3 max-[860px]:pt-2 max-[860px]:pb-3", isDrop && "drop")}
+      onDragEnter={e => e.dataTransfer.types.includes("Files") && setDrop(true)}
+      onDragLeave={e => !e.currentTarget.contains(e.relatedTarget as Node) && setDrop(false)}
+      onDrop={() => setDrop(false)}>
       <PromptInput
-        className="rounded-xl" multiple maxFiles={MAX_FILES} maxFileSize={MAX_BYTES} onError={fileErrors}
+        multiple maxFiles={MAX_FILES} maxFileSize={MAX_BYTES} onError={fileErrors}
         onSubmit={async ({ text, files }) => {
           if (!text.trim() && !files.length) return
-          if (bridge?.isArchived) return void toast.error("Archived in Claude: unarchive it there (Open in Claude), then write")
+          if (bridge?.isArchived) return void toast("Archived in Claude: unarchive it there (Open in Claude), then write")
           try {
-            await sendMessage(card.id, await messageWith(card.id, text.trim(), files))
+            await sendMessage(id, await messageWith(id, text.trim(), files))
           } catch (err) {
-            fail(err as Error)
+            toast((err as Error).message || "Could not send")
             throw err // keeps what was typed
           }
         }}
       >
         <PickedFiles />
         <PromptInputBody>
-          <PromptInputTextarea placeholder={card.column === "asking" ? "Answer…" : "Reply…"} />
+          <PromptInputTextarea placeholder="Reply… (paste or drag images and files)" />
         </PromptInputBody>
-        <PromptInputFooter>
-          <PromptInputTools>
-            <AttachButton />
-            <MicButton />
-            <Pick value={card.mode ?? undefined} options={MODES} placeholder="Mode" onPick={v => change("mode", v)} />
-            <Pick value={model} options={MODELS} placeholder="Model" onPick={v => change("model", v)} />
-            {effort && <span className="inline-flex h-8 items-center gap-1 px-2 text-xs text-muted-foreground" title="Effort (read-only). Change it in Claude desktop: it sends its own with every message"><Gauge className="size-3.5" />{effort}</span>}
-          </PromptInputTools>
-          <span className="flex items-center gap-1">
-            {isWorking && <Button type="button" variant="ghost" size="sm" onClick={() => stop(card.id).then(() => toast("Stopping…"), fail)}><Square />Stop</Button>}
-            <PromptInputSubmit disabled={!!bridge?.isArchived} />
-          </span>
-        </PromptInputFooter>
+        <div data-align="block-end" className="order-last flex w-full min-w-0 items-center gap-0.5 pt-1 pr-1.5 pb-1.5 pl-2">
+          <AttachButton />
+          <MicButton />
+          {card && <><span className="mx-1.5 h-[18px] w-px shrink-0 bg-line" /><Settings card={card} bridge={bridge} /></>}
+          <span className="flex-1" />
+          {isWorking && card && (
+            <button type="button" className={cn(subtle, "hover:text-bad")} onClick={() => stopTurn(card)} title="Stops the running turn, like Esc in Claude desktop (S)"><Square />Stop</button>
+          )}
+          {isStuck ? <button type="button" className={subtle} onClick={() => launch(id)} title="Opens the session in Claude desktop">Open in Claude</button>
+            : canWake && <button type="button" className={subtle} onClick={startWake} title="Starts the session in Claude, in the background, so it gets messages">Wake</button>}
+          <button type="submit" disabled={!!bridge?.isArchived}
+            title={bridge?.isArchived ? "Archived in Claude: unarchive it there to write" : "Send (↵) · new line (⇧↵)"}
+            className="ml-1 inline-grid size-8 shrink-0 place-items-center rounded-[10px] border border-brand bg-brand text-brand-text transition-[filter,transform] duration-[120ms] hover:brightness-106 active:scale-[0.97] disabled:opacity-45">
+            <ArrowUp className="size-3.5" />
+          </button>
+        </div>
       </PromptInput>
-      <div className="flex items-center gap-2 px-1 text-xs text-muted-foreground">
-        <i className={cn("size-1.5 rounded-full", DOT[reach.tone])} />
-        <span className={cn(reach.tone === "bad" && "text-rose-300")}>{reach.text}</span>
-        {reach.fix === "wake" && <button className="underline-offset-2 hover:underline" onClick={() => wake(card.id).then(() => toast("Waking the session"), fail)}>Wake</button>}
-        {reach.fix === "open" && <button className="underline-offset-2 hover:underline" onClick={() => post(`/api/sessions/${encodeURIComponent(card.id)}/open`).catch(fail)}>Open in Claude</button>}
+      <div className="flex min-w-0 items-center justify-between gap-3 px-1 pt-[7px]">
+        <span className={cn("inline-flex min-w-0 items-center gap-1.5 text-[11.5px] text-text-muted", reach.tone === "bad" && "text-bad")}>
+          <i className={cn("size-[7px] shrink-0 rounded-full", DOT[reach.tone])} /><span className="truncate">{reach.text}</span>
+        </span>
+        {card?.usage && <UsageMeter usage={card.usage} isWide />}
       </div>
     </div>
   )
 }
 
-export function Composer({ card, bridge }: { card: Card; bridge: Bridge | null }) {
+// card: the session on the board; without one (opened from the search) the
+// box still writes to it, without the mode and model.
+export function Composer({ id, card, bridge }: { id: string; card: Card | undefined; bridge: Bridge | null }) {
   return (
-    <PromptInputProvider key={card.id} initialInput={draftOf(card.id)}>
-      <Box card={card} bridge={bridge} />
+    <PromptInputProvider key={id} initialInput={draftOf(id)} initialFiles={draftFiles.get(id)}
+      onFilesChange={files => void (files.length ? draftFiles.set(id, files) : draftFiles.delete(id))}>
+      <Box id={id} card={card} bridge={bridge} />
     </PromptInputProvider>
   )
 }
