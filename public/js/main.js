@@ -336,6 +336,31 @@ function App() {
     return () => clearTimeout(timer)
   }, [reader])
 
+  // Back and forward (the mouse's side buttons, the window's arrows) walk the
+  // conversations you opened, as in Claude desktop: each one opened is a
+  // history entry. Going back, the panel slides out and the one before
+  // slides in; to an entry with none open, it closes.
+  const fromHistory = useRef(false)
+  useEffect(() => {
+    const id = reader?.id ?? null
+    if (fromHistory.current) return void (fromHistory.current = false)
+    if ((history.state?.reader ?? null) !== id) history.pushState({ reader: id }, "")
+  }, [reader?.id])
+  useEffect(() => {
+    const onPop = e => {
+      const id = e.state?.reader ?? null
+      const now = latest.current.reader?.id ?? null
+      if (id === now) return
+      fromHistory.current = true
+      if (!id) return void (setReader(null), setSelected(null))
+      if (!now) return void openReader(id)
+      setReader(null)
+      setTimeout(() => ((fromHistory.current = true), openReader(id)), 300)
+    }
+    addEventListener("popstate", onPop)
+    return () => removeEventListener("popstate", onPop)
+  }, [])
+
   // Cards travel when they change place; one that leaves flies to where it
   // went: the "Done" button, a folded group, or fades if archived.
   useFlip(contentRef, `${view}|${isNarrow}|${groupBy}|${repoFilter}|${showDone}|${!!data}`, id => {

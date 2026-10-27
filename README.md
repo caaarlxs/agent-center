@@ -227,6 +227,7 @@ for them to stay in Auto once they move into the app, set it in `~/.claude/setti
 |---|---|
 | `J` `K` / `↓` `↑` | Move between sessions |
 | `↵` | Open the conversation |
+| `⌘[` `⌘]`, the mouse's side buttons | The conversation opened before, after |
 | `R` | Reply |
 | `T` | Rename (on the board only) |
 | `O` | Open in Claude |
