@@ -24,6 +24,7 @@ import { useAlerts } from "@/features/alerts/useAlerts"
 import { Dialogs } from "./Dialogs"
 import { HelpDialog } from "@/features/keys/HelpDialog"
 import { useBoardKeys } from "@/features/keys/useBoardKeys"
+import { useHistoryWalk } from "./history-walk"
 import { openDialog } from "./open-dialog"
 import { Sidebar } from "./Sidebar"
 import { VIEW_NAME, focusCard, repoFilter, sideOpen, useShownView, view, type View } from "./view-state"
@@ -67,10 +68,10 @@ function useLinksOutside() {
   }, [])
 }
 
-// A press on empty space closes the panel; on a card, a control or a menu
-// it does what that does (main.js:533-545).
+// A press on empty space closes the panel; on a card, a row, a control or a
+// menu it does what that does (main.js:561-566): a card or row switches it.
 const KEEPS_PANEL =
-  "[data-panel], [data-panel-edge], .react-flow__node, [role=menu], [role=dialog], [role=listbox], [data-sonner-toaster], button, a, input, textarea, select, label, [data-scrim]"
+  "[data-panel], [data-panel-edge], .react-flow__node, [data-id], [role=menu], [role=dialog], [role=listbox], [data-sonner-toaster], button, a, input, textarea, select, label, [data-scrim]"
 function useCloseOnEmpty(isOpen: boolean) {
   useEffect(() => {
     if (!isOpen) return
@@ -189,6 +190,7 @@ function Board() {
   useLinksOutside()
   useCloseOnEmpty(!!open)
   useLinkedOpen()
+  useHistoryWalk()
   const notDone = (cards ?? []).filter(c => c.column !== "done")
   useTabTitle(notDone.filter(c => c.column === "asking").length, notDone.filter(c => c.isUnread).length)
   // "Run" on shell blocks shows only while Setup allows it.
