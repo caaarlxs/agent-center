@@ -22,7 +22,7 @@ import { hasWhisper } from "@/features/prompt/voice"
 import { repoDot } from "@/features/session/state"
 
 type Repo = { root: string; name: string }
-const prefs = persistedStore("newPrefs", { mode: "bypassPermissions", model: "claude-fable-5-1", effort: "high" })
+const prefs = persistedStore("newPrefs", { mode: "auto", model: "claude-fable-5-1", effort: "high" })
 const field = "w-full rounded-md border border-line-strong bg-surface px-2.5 py-[7px] text-[13.5px] focus:border-brand focus:shadow-[0_0_0_3px_var(--brand-soft)] focus:outline-none"
 
 function Folders({ root, onPick }: { root: string | null; onPick: (root: string) => void }) {

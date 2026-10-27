@@ -60,8 +60,13 @@ function Settings({ card, bridge }: { card: Card; bridge: Bridge | null }) {
     setAsked(null)
   }, [bridge?.settings?.id])
   const change = (key: "mode" | "model", value: string) =>
-    post<{ requestId: string; isOpen: boolean }>(`/api/sessions/${encodeURIComponent(card.id)}/settings`, { [key]: value }).then(
-      res => (setAsked({ requestId: res.requestId, key, value }), toast(res.isOpen ? "Change sent: it applies as soon as the session is free" : "Change saved: it applies when the session opens")),
+    post<{ requestId: string; isOpen: boolean; messageId?: string }>(`/api/sessions/${encodeURIComponent(card.id)}/settings`, { [key]: value }).then(
+      res => {
+        // A session in Auto changes its mode when the conversation asks: sent as a message.
+        if (res.messageId) return void toast("Sent as a message: in Auto, Claude changes the mode when the conversation asks")
+        setAsked({ requestId: res.requestId, key, value })
+        toast(res.isOpen ? "Change sent: it applies as soon as the session is free" : "Change saved: it applies when the session opens")
+      },
       (err: Error) => toast(err.message || "Could not request the change"),
     )
   const isOld = !!bridge && bridge.version < 4
