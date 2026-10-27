@@ -250,6 +250,10 @@
 /* Canvas: a card over the others while the pointer is on it (styles.css:824). */
 @media (hover: hover) { .react-flow__node-session:hover:not(.dragging) { z-index: 1000 !important; } }
 
+/* Canvas: a card or note the server moves slides there (styles.css:796, 1160). */
+.react-flow__node-session:not(.dragging), .react-flow__node-note:not(.dragging) { transition: transform 340ms var(--ease-out); }
+.react-flow__pane.selection { cursor: default; }
+
 /* Canvas: a card the canvas went to ("Next up", the search) flashes once. */
 .react-flow__node.flash article { animation: card-flash 1.4s var(--ease-out) 1 !important; }
 @keyframes card-flash { from { box-shadow: 0 0 0 0 color-mix(in srgb, var(--brand) 70%, transparent); } to { box-shadow: 0 0 0 18px transparent; } }

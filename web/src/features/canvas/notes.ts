@@ -36,8 +36,9 @@ export function placeNote(note: Note, p: Point, key: string | null, cardAt: (key
   return card ? { ...note, cardId: key, x: snap(p.x) - card.x, y: snap(p.y) - card.y } : { ...note, cardId: null, x: snap(p.x), y: snap(p.y) }
 }
 
-export function newNote(at: Point, count: number): Note {
-  return { id: crypto.randomUUID(), text: "", x: snap(at.x), y: snap(at.y), ...NOTE_SIZE, color: NOTE_COLORS[count % NOTE_COLORS.length], cardId: null }
+// A new note: always yellow, 216 × 144 (canvas-notes.js newNote).
+export function newNote(at: Point): Note {
+  return { id: crypto.randomUUID(), text: "", x: snap(at.x), y: snap(at.y), ...NOTE_SIZE, color: "yellow", cardId: null }
 }
 
 const ITEM = /^(\s*[-*] \[)( |x|X)(\] ?)(.*)$/
