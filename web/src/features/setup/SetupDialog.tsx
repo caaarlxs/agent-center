@@ -14,6 +14,7 @@ import { Spinner } from "@/components/ui/spinner"
 import { get, post } from "@/lib/api"
 import type { Step } from "@/lib/api-types"
 import { cn } from "@/lib/utils"
+import { shake } from "@/features/board/state"
 import { notify, sound, speech, toggleNotify, toggleSound, type Speech } from "@/features/alerts/prefs"
 
 type Status = { steps: Step[]; isReady: boolean; voiceLanguage: string; organizerNote: string }
@@ -90,6 +91,17 @@ function ReadAloud() {
   )
 }
 
+// Cards that wait for you shake now and then (the board's "shake" choice).
+function Shake() {
+  const isOn = shake.use() === "on"
+  return (
+    <Row title="Shake waiting cards" need="Preference" state={isOn ? <Done label="On" /> : <Todo label="Off" />}>
+      <p className="text-sm text-muted-foreground">A card that asks you something or waits for your approval gives a short shake every few seconds, faster the longer it waits. Turned off, it stays still and only its colour and the time it has waited tell you.</p>
+      <Button variant={isOn ? "outline" : "default"} size="sm" className="self-start" onClick={() => shake.set(isOn ? "off" : "on")}>{isOn ? "Turn off" : "Turn on"}</Button>
+    </Row>
+  )
+}
+
 export function SetupDialog({ onClose }: { onClose: () => void }) {
   const [status, setStatus] = useState<Status | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
@@ -161,6 +173,7 @@ export function SetupDialog({ onClose }: { onClose: () => void }) {
               <Button size="sm" variant={isSound ? "outline" : "default"} onClick={toggleSound}>{isSound ? "Turn off" : "Turn on"}</Button>
             </Row>
             <ReadAloud />
+            <Shake />
           </ol>
         )}
         {status && !status.isReady && <p className="text-sm text-rose-300">Without the required steps the board cannot see or answer the sessions.</p>}

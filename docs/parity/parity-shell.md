@@ -88,7 +88,7 @@ Legend: missing = not in the new app; partial = present but differs (what differ
 - [x] `J`/`K`, `↓`/`↑` move the selection (scroll into view, open panel follows, card focus follows) — classic: main.js:595-614 — new: missing.
 - [x] `↵` opens the selected session (not on buttons/links/options, `ENTER_KEEPS` main.js:26) — classic: main.js:615-617 — new: missing.
 - [x] `O` Open in Claude — classic: main.js:618 — new: missing.
-- [ ] `T` rename (opens panel, starts title edit) — classic: main.js:619-624 — new: missing.
+- [ ] `T` rename (opens panel, starts title edit) — classic: main.js:619-624 — new: partial (the key opens the panel and fires the classic `agents:rename` window event; the panel must listen to it and start the title edit).
 - [x] `R` reply (open panel, focus reply box) — classic: main.js:625-630 — new: missing.
 - [x] `P` pin/unpin — classic: main.js:631 — new: missing.
 - [x] `A` Later menu, then `1`–`5` (PARK_OPTIONS util.js:162-168); on a parked card `A` unparks — classic: main.js:577-585, 632 — new: missing.

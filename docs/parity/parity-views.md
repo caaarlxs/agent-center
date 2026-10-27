@@ -64,7 +64,7 @@ Leyenda de tokens clásicos (`styles.css:3-81`), usados abajo por nombre:
   - Destino: `.tier.drop` anillo accent; `.tier-close.drop { border-color: var(--work); background: var(--work-soft) }`; `no-drop` opacidad .55.
   - Textos vacíos (`tiers.js:35-39`): "Drop here to close it", "N closed · “Done” at the top shows them", "Drag a card here to close it", "Drop here", "Drag a card here to pause it", "Empty".
   - Toast al mover: "`<Tier label>`: `<title>`" (`main.js:421`). Teclas `[` y `]` (`main.js:641-647`). Responsive bajo 860px (`styles.css:712-717`).
-- [ ] **Canvas** — new: partial (existe; ver secciones Canvas, Zones, Notes, Done strip y Zoom).
+- [x] **Canvas** — new: partial (existe; ver secciones Canvas, Zones, Notes, Done strip y Zoom).
 
 ## Card (tarjeta de sesión)
 
@@ -151,7 +151,7 @@ Tarjeta del canvas `.ccard` (`canvas.js:84-160`, `styles.css:789-898`) frente a 
   - botón "Unfold" (icono expand 13);
   - estados como píldoras sólidas alto 19px, radio 5, peso 600, texto `--surface`, fondos `--ask` / `--bad` / `--work` / `--review`, textos "N asks you", "N approval", "N working", "N new" (new usa texto coloreado, "ask you", y "new" en naranja en vez de azul);
   - iconos de estado (máx. 9, new usa 10) como botones que abren la sesión, hover `box-shadow: 0 0 0 2px var(--accent-soft)`; "+N" 11.5px `--muted`.
-- [ ] Nombre de zona legible al alejar — classic: `styles.css:1817` `calc(13px * min(var(--unscale), 2.2))` — new: done (`ZoneNode.tsx:33,57,62`).
+- [x] Nombre de zona legible al alejar — classic: `styles.css:1817` `calc(13px * min(var(--unscale), 2.2))` — new: done (`ZoneNode.tsx:33,57,62`).
 
 ## Notes
 
@@ -176,7 +176,7 @@ Tarjeta del canvas `.ccard` (`canvas.js:84-160`, `styles.css:789-898`) frente a 
 
 - [x] Banda "Done" dentro del lienzo — classic: `canvas.js:1001-1015`, `styles.css:861-874` franja al pie, alto `48 + 144`; `border-top: 1.5px dashed var(--line-strong)`; fondo `color-mix(var(--side) 55%, transparent)`; `transition: background-color 150ms, border-color 150ms`; cabecera alto 40px, padding 0 16px, 12px peso 700 uppercase `.05em` `--muted`, icono check 14, contador `--faint` — new: partial (`DoneDock.tsx:19-31` panel flotante centrado, radio xl, borde dashed, `text-xs font-semibold`, sin mayúsculas).
 - [x] Texto guía — classic: `canvas.js:1004` con tarjetas "Drop a card here to mark it as done · lift it out to reopen it", sin tarjetas "Drop a card here to mark it as done"; `.done-hint` 12px peso 450 `--faint`, `--work` al soltar — new: partial (`DoneDock.tsx:23` "Drop a card here to mark it done" solo sin tarjetas).
-- [ ] Destino al soltar — classic: `styles.css:866,873` `background: var(--work-soft); border-color: var(--work)` — new: done (`DoneDock.tsx:21` emerald).
+- [x] Destino al soltar — classic: `styles.css:866,873` `background: var(--work-soft); border-color: var(--work)` — new: done (`DoneDock.tsx:21` emerald).
 - [x] Tarjetas Done como tarjetas atenuadas — classic: `canvas.js:1007-1011`, `styles.css:894-896` una fila de tarjetas completas, `opacity .62`, sin sombra, título 550; hover/selección 1 — new: missing (chips con título).
 - [x] Sacar una tarjeta de Done la reabre — classic: `canvas.js:833-838` la deja donde cae y llama `undone`; soltada otra vez en Done vuelve a su hueco con 280 ms `cubic-bezier(0.22,1,0.36,1)` (`772-778`) — new: missing (las chips no se arrastran).
 - [x] Mosaico "+N more done" y su lista — classic: `canvas.js:364-384,1012-1014,1026`, `styles.css:876-893` mosaico 72px, `1.5px dashed`, radio 12, número 20px; `.on` y hover borde accent; lista 420px, `max-height min(60%, 520px)`, `--raised`, `--shadow-pop`; cabecera "N more done"; filas con título + "repo · age", botón "Reopen: back on the canvas" (undo) y "Archive"; se cierra con clic fuera o Esc — new: missing (todas las chips en línea con scroll horizontal).
@@ -206,7 +206,7 @@ Clásico: `main.js:552-658` y `canvas.js:891-912`. Nuevo: `app/App.tsx:51-60`, `
 - [x] `j` / `↓`, `k` / `↑` mover la selección en el orden de la vista; el foco sigue y hace `scrollIntoView({block:"nearest"})`; con el panel abierto cambia la sesión — classic: `main.js:595-614`; orden del canvas: arriba-abajo, luego izquierda-derecha (`canvas-layout.js:36-40`) — new: missing.
 - [x] `Enter` abre la seleccionada (no sobre botones ni roles interactivos, `main.js:26`); Enter/Espacio sobre una tarjeta con foco la abre (`components.js:35-39`) — new: missing.
 - [x] `O` abrir en Claude — classic: `main.js:618` — new: missing.
-- [ ] `T` renombrar — classic: `main.js:619-624` — new: missing.
+- [ ] `T` renombrar — classic: `main.js:619-624` — new: partial (la tecla abre el panel y lanza el evento clásico `agents:rename`; falta que el panel lo escuche y empiece a editar el título).
 - [x] `R` responder (abre y enfoca el campo) — classic: `main.js:625-630` — new: missing.
 - [x] `P` fijar/soltar — classic: `main.js:631` — new: missing.
 - [x] `A` Later (abre el menú; 1–5 eligen) o quitar de Later — classic: `main.js:577-585,632` — new: missing.
@@ -238,7 +238,7 @@ Clásico: `main.js:552-658` y `canvas.js:891-912`. Nuevo: `app/App.tsx:51-60`, `
   - Sin destino: `opacity 0, scale(.96) translateY(-4px)` 220 ms.
   - Nada se anima al cambiar de vista, filtro o búsqueda (`scope`).
 - [x] Sacudida de tarjetas que esperan — classic: `styles.css:843-858` `.ccard.state-asking, .ccard.state-permission { --amp: 1.4; animation: nudge 7s ease-in-out infinite; transform-origin: 50% 0 }`; `urgent-mid { --amp: 2; animation-duration: 5s }`; `urgent-high { --amp: 2.6; animation-duration: 3.6s }`; pausa en hover; `@keyframes nudge { 0%,9%,100% { transform: none } 1.5% { rotate(-amp deg) } 3% { rotate(amp) } 4.5% { rotate(-.7 amp) } 6% { rotate(.5 amp) } 7.5% { rotate(-.2 amp) } }`; retraso escalonado `-(hash(id) % 7000)/1000 s` (`canvas.js:90,131`) — new: missing.
-- [ ] Ajuste "Shake waiting cards" (on/off) — classic: `main.js:88-90,721` clase `.no-shake` en `.app` (`styles.css:849`) — new: missing (no existe la preferencia).
+- [x] Ajuste "Shake waiting cards" (on/off) — classic: `main.js:88-90,721` clase `.no-shake` en `.app` (`styles.css:849`) — new: missing (no existe la preferencia).
 - [x] Brillo `breathe` de la tarjeta que trabaja — ver Card — new: missing.
 - [x] Giro del anillo `spin-ring 1.6s linear` — classic: `styles.css:322-323` — new: partial (`animate-spin` 1 s).
 - [x] Latido `run-beat` del punto en segundo plano — ver Card — new: missing.
