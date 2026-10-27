@@ -37,9 +37,9 @@ Leyenda de tokens clásicos (`styles.css:3-81`), usados abajo por nombre:
 
 ## Views: Inbox / Board / Tiers / Canvas
 
-- [ ] Selector de vistas en la barra lateral y con teclas 1 2 3 4 — classic: `main.js:637-640`, `main.js:144` (`setView` guarda `view` en localStorage, cancela el dibujo de zona), título `main.js:729` (`Board`/`Canvas`/`Tiers`/`Inbox`), enlace `?view=` `main.js:239-241` — new: missing (`app/Sidebar.tsx:95` muestra solo "Canvas", fijo).
-- [ ] Vista estrecha: el canvas cae a Inbox bajo 860px — classic: `main.js:111-135` — new: missing.
-- [ ] **Inbox** completa — classic: `board.js:163-220`, CSS `styles.css:347-397` — new: missing. Detalle para implementar:
+- [x] Selector de vistas en la barra lateral y con teclas 1 2 3 4 — classic: `main.js:637-640`, `main.js:144` (`setView` guarda `view` en localStorage, cancela el dibujo de zona), título `main.js:729` (`Board`/`Canvas`/`Tiers`/`Inbox`), enlace `?view=` `main.js:239-241` — new: missing (`app/Sidebar.tsx:95` muestra solo "Canvas", fijo).
+- [x] Vista estrecha: el canvas cae a Inbox bajo 860px — classic: `main.js:111-135` — new: missing.
+- [x] **Inbox** completa — classic: `board.js:163-220`, CSS `styles.css:347-397` — new: missing. Detalle para implementar:
   - Grupos en orden: `Pinned` (estrella `tone-ask`), luego `COLUMNS` = asking, review, working, pending, parked, done (`util.js:14`), con etiquetas `Asking you`, `To review`, `Working`, `Pending`, `Later`, `Done` y tonos ask/review/work/pending/muted/muted (`util.js:3-10`). Done solo con `showDone`. Un grupo vacío se oculta, salvo `asking`.
   - `Later` plegado por defecto (`board.js:190`). Un grupo plegado se abre si contiene la tarjeta seleccionada.
   - Cabecera `.group-head`: alto 32px, padding 0 8px, 12px, peso 650, `uppercase`, `letter-spacing .04em`, color `--muted`, radio 7px, hover `--hover`; chevron (`chevron`/`down`, 14px) en `--faint`; punto de tono 7px; contador `--faint` peso 500 (`styles.css:351-358`).
@@ -49,15 +49,15 @@ Leyenda de tokens clásicos (`styles.css:3-81`), usados abajo por nombre:
   - Contenido: StateIcon 24, NewBadge, título 13.5px peso 600 (unread 750, leído 550, `styles.css:929-930`), RepoTag, estrella 11px, Context 1 línea, Meta, edad, Actions a tamaño completo (`board.js:165-186`).
   - Acciones con `opacity 0`, visibles en hover, selección, lectura o `:focus-within`, `transition opacity 120ms` (`styles.css:386-389`).
   - Contenedor estrecho `@container (max-width: 760px)`: oculta meta y acciones (`styles.css:392-397`).
-- [ ] **Board** por columnas — classic: `board.js:10-161`, CSS `styles.css:399-450, 671-678` — new: missing. Detalle:
+- [x] **Board** por columnas — classic: `board.js:10-161`, CSS `styles.css:399-450, 671-678` — new: missing. Detalle:
   - Grid `grid-auto-flow: column; grid-auto-columns: minmax(270px, 1fr); gap 12px; padding 14px 20px 20px` (`styles.css:401-404`).
   - Columna: fondo `--side`, radio 12px, padding 10px 8px 8px, `transition: background-color/box-shadow/opacity 120ms ease`; h2 12px peso 650 uppercase `.04em` con punto de tono y contador a la derecha (`styles.css:405-412`).
   - Tarjetas agrupadas en "stacks" por repo consecutivo: fondo `hsl(var(--hue) 50% 50% / .07)`, `inset 0 0 0 1px hsl(var(--hue) 50% 50% / .18)`, radio 12, padding 6, gap 6; cabecera con RepoIcon 16 + nombre 12px peso 650 + contador (`board.js:56-75`, `styles.css:672-678`).
   - Arrastre HTML5: `.column.drop { box-shadow: inset 0 0 0 2px var(--accent); background: var(--accent-soft) }`, `.is-dragging .column.no-drop { opacity: .55 }`; reglas de destino en `dropAction` (`board.js:46-54`); texto vacío "Drop here" / "Nothing waiting for you" / "Empty" (`board.js:98`).
   - Columna Done solo con `showDone` o durante un arrastre (`board.js:117`); `Archive all` en su cabecera, oculto al arrastrar (`board.js:108-110`).
-- [ ] **Board** por repo (swimlanes) — classic: `board.js:129-160`, CSS `styles.css:719-740` — new: missing. Control segmentado `Columns`/`By repo` (`main.js:735-738`, `styles.css:742-745`: alto 24px, botón `.on` fondo `--text` y texto `--bg`), tecla `G`. Cabeceras pegajosas (`position: sticky; top: 0; z-index: 4`). Título de carril: alto 36px, 13.5px peso 650, chevron, RepoIcon 18, contador, píldora "N asking you" (`--ask-soft`, radio 9px). Borde izquierdo `3px solid hsl(var(--hue) 55% 50% / .5)`. Carriles plegados guardados en `foldedLanes`.
-- [ ] Botón "Done" (mostrar terminadas) en Inbox/Board/Tiers — classic: `main.js:745` `data-fly="done"`, título "Show done sessions", `.btn.on` cuando activo; guardado `showDone` — new: missing.
-- [ ] **Tiers** — classic: `tiers.js:1-78`, CSS `styles.css:680-717` — new: missing. Detalle:
+- [x] **Board** por repo (swimlanes) — classic: `board.js:129-160`, CSS `styles.css:719-740` — new: missing. Control segmentado `Columns`/`By repo` (`main.js:735-738`, `styles.css:742-745`: alto 24px, botón `.on` fondo `--text` y texto `--bg`), tecla `G`. Cabeceras pegajosas (`position: sticky; top: 0; z-index: 4`). Título de carril: alto 36px, 13.5px peso 650, chevron, RepoIcon 18, contador, píldora "N asking you" (`--ask-soft`, radio 9px). Borde izquierdo `3px solid hsl(var(--hue) 55% 50% / .5)`. Carriles plegados guardados en `foldedLanes`.
+- [x] Botón "Done" (mostrar terminadas) en Inbox/Board/Tiers — classic: `main.js:745` `data-fly="done"`, título "Show done sessions", `.btn.on` cuando activo; guardado `showDone` — new: missing.
+- [x] **Tiers** — classic: `tiers.js:1-78`, CSS `styles.css:680-717` — new: missing. Detalle:
   - Filas: `Main task` (#ef4444), `Fixes` (#f97316), `Searches` (#eab308), `Other` (#22c55e), `Paused` (#64748b, `flex-grow .8`), `Close` (`--faint`, `flex-grow .6`, `min-height 72px`, borde `1.5px dashed var(--line-strong)`). Pistas como `title`: "What matters most right now", "Bugs and corrections", "Look-ups and research", "Everything not sorted yet", "Set aside for later: drop here to pause it", "Drop here to close the conversation".
   - Fila: grid `132px 1fr`, `flex: 1 1 0`, `min-height 96px`, fondo `--side`, radio 12px. Etiqueta: fondo `color-mix(in srgb, var(--tier) 22%, var(--surface))`, título 14px peso 700, contador 12px; iconos check 18 (Close) y pause 16 (Paused).
   - Tarjetas en grid `repeat(auto-fill, minmax(260px, 1fr))`, gap 8, padding 10.
@@ -87,8 +87,8 @@ Tarjeta del canvas `.ccard` (`canvas.js:84-160`, `styles.css:789-898`) frente a 
 - [x] Toasts de respuesta — classic: `main.js:510` "Replied: “<60 chars>”" o "Reply queued: it arrives when the session is free"; `components.js:135` "Allowed"/"Denied"; `156` "Answer sent" — new: partial ("Reply sent", "Allowed", "Denied", "Answer sent").
 - [x] Pie: repo con tooltip `repo · branch` y edad — classic: `canvas.js:141-143`, `styles.css:812-815` 11.5px `--faint`, gap `4px 8px` — new: done (`SessionCard.tsx:127-131`).
 - [x] Edad en meses — classic: `util.js:139` `"N mo"` desde 30 días — new: missing (`state.ts:43-50` sin meses).
-- [ ] Edad con urgencia — classic: `styles.css:667-669` `.urgent-low .age { color: #ca8a04 }`, `.urgent-mid .age { color: #ea580c; font-weight: 600 }`, `.urgent-high .age { color: var(--bad); font-weight: 650 }`; umbrales `components.js:23-27` (<10 min low, 10–30 mid, >30 high) — new: missing.
-- [ ] Borde de urgencia — classic: `styles.css:664-666` `.card.urgent-low { border-color: rgb(234 179 8/.45) }`, `urgent-mid rgb(249 115 22/.55)`, `urgent-high color-mix(var(--bad) 60%) + background color-mix(var(--bad) 6%, var(--surface))` — new: missing.
+- [x] Edad con urgencia — classic: `styles.css:667-669` `.urgent-low .age { color: #ca8a04 }`, `.urgent-mid .age { color: #ea580c; font-weight: 600 }`, `.urgent-high .age { color: var(--bad); font-weight: 650 }`; umbrales `components.js:23-27` (<10 min low, 10–30 mid, >30 high) — new: missing.
+- [x] Borde de urgencia — classic: `styles.css:664-666` `.card.urgent-low { border-color: rgb(234 179 8/.45) }`, `urgent-mid rgb(249 115 22/.55)`, `urgent-high color-mix(var(--bad) 60%) + background color-mix(var(--bad) 6%, var(--surface))` — new: missing.
 - [x] Borde de "asking"/"permission" — classic: `styles.css:843-844` `color-mix(in srgb, var(--ask) 50%, var(--line))` y `color-mix(var(--bad) 55%, var(--line))` — new: partial (`SessionCard.tsx:110-111` `border-amber-400/40` y `border-rose-400/40` con halo fijo de 3px que no existe en el clásico).
 - [x] Brillo "respira" de la tarjeta que trabaja — classic: `styles.css:838-842` `.ccard.state-working::after { inset: -3px; border-radius: 14px; box-shadow: 0 0 0 2px var(--work-soft), 0 0 14px var(--work-soft); animation: breathe 2.6s ease-in-out infinite }`, `@keyframes breathe { 0%,100% { opacity: .25 } 50% { opacity: 1 } }` — new: missing.
 - [x] Opacidad por estado — classic: `styles.css:834-837` pending `.8`, parked `.55`, hover 1; done `.62` sin sombra (`894-895`) — new: partial (`SessionCard.tsx:112` `opacity-75` para ambos).
@@ -112,9 +112,9 @@ Tarjeta del canvas `.ccard` (`canvas.js:84-160`, `styles.css:789-898`) frente a 
 - [x] StateIcon: forma y tamaños — classic: `components.js:59-76`, `styles.css:306-326` círculo con fondo `--tone-soft`, icono 55 % del tamaño; anillo `r 15.5`, `stroke-width 3.5`, pista `--work-soft`, relleno con `transition: stroke-dasharray 500ms var(--ease-out)`, giro `spin-ring 1.6s linear infinite` sin progreso; núcleo 7px; con tamaño ≥26 muestra "done/total" 9.5px peso 750 — new: partial (`StateIcon.tsx:24-43` r 15, trazo 4, `animate-spin` 1 s, núcleo 6px, sin "done/total").
 - [x] StateIcon: tonos — classic: `styles.css:312-317` pending `color-mix(var(--review) 55%, var(--faint))` sobre `--hover`; stale y parked en `--faint` sobre `--hover` — new: partial (`StateIcon.tsx:10-19` stale naranja, pending zinc).
 - [x] StateIcon: textos — classic: `components.js:44-51,62` etiqueta "Pending", "Interrupted" para sesiones interrumpidas; title "Working: step X of Y · <current>" — new: partial (`state.ts:22` "Idle"; sin "Interrupted"; sin "· current").
-- [ ] Insignia "New" / "Asks you" / "Approval" (Board e Inbox) — classic: `components.js:337-342`, `styles.css:917-924` alto 17px, radio 5px, fondo `--review` (ask `--ask`, permission `--bad`), 10px peso 750 uppercase `.05em` — new: missing.
-- [ ] Tarjeta del Board `.card` — classic: `board.js:12-44`, `styles.css:416-450` StateIcon 30, h3 14px 2 líneas, sub-línea repo/branch mono/edad, NewBadge, pin con title "Pinned: it shows first in its column", Context, Meta completa, Actions compactas en `top: 4px; right: 4px`; `.col-asking .card` borde `color-mix(var(--ask) 35%, var(--line))` — new: missing (no hay Board).
-- [ ] Meta completa (Board/Inbox) — classic: `components.js:197-217` etiquetas "headless", "needs approval", PRs, "N tasks", pendientes, "until <when>"/"no date" en Later, "worktree", "archived in Claude desktop", uso — new: missing.
+- [x] Insignia "New" / "Asks you" / "Approval" (Board e Inbox) — classic: `components.js:337-342`, `styles.css:917-924` alto 17px, radio 5px, fondo `--review` (ask `--ask`, permission `--bad`), 10px peso 750 uppercase `.05em` — new: missing.
+- [x] Tarjeta del Board `.card` — classic: `board.js:12-44`, `styles.css:416-450` StateIcon 30, h3 14px 2 líneas, sub-línea repo/branch mono/edad, NewBadge, pin con title "Pinned: it shows first in its column", Context, Meta completa, Actions compactas en `top: 4px; right: 4px`; `.col-asking .card` borde `color-mix(var(--ask) 35%, var(--line))` — new: missing (no hay Board).
+- [x] Meta completa (Board/Inbox) — classic: `components.js:197-217` etiquetas "headless", "needs approval", PRs, "N tasks", pendientes, "until <when>"/"no date" en Later, "worktree", "archived in Claude desktop", uso — new: missing.
 - [x] Vista previa "peek" — classic: `canvas.js:162-181`, `styles.css:1825-1841` tras 450 ms, ancho 340px, al lado de la tarjeta sin pisar el panel, `--raised`, borde `--line-strong`, radio 12, `--shadow-pop`, `animation: peek-in 160ms var(--ease-out)` (`from { opacity: 0; transform: translateY(4px) scale(.98) }`); "You" + último prompt (3 líneas), texto actual (8 líneas, `--ask` si pregunta), "Step X of Y", pie con repo, rama mono y edad; se cierra al hacer scroll o arrastrar; no sale para la sesión abierta — new: partial (`SessionCard.tsx:105,136-141` HoverCard 450 ms, ancho 320px; falta el pie repo/rama/edad; sale también durante el arrastre y para la sesión abierta).
 
 ## Canvas
@@ -194,7 +194,7 @@ Tarjeta del canvas `.ccard` (`canvas.js:84-160`, `styles.css:789-898`) frente a 
 - [x] Espacio + arrastre o botón central desplaza; cursor `grab`/`grabbing` — classic: `canvas.js:893-898,947-967`, `styles.css:752,1321` — new: partial (React Flow desplaza con arrastre simple; el arrastre simple ya no dibuja la caja).
 - [ ] Ir a una tarjeta ("Next up") con destello — classic: `canvas.js:921-945`, `styles.css:1820-1822` `flash 1.4s var(--ease-out)` `0% { box-shadow: 0 0 0 0 color-mix(var(--accent) 70%) } 100% { 0 0 0 18px transparent }` — new: done (`Canvas.tsx:199-213`, `index.css:137-140`, color naranja fijo).
 - [ ] Desplazamiento en el borde al arrastrar — classic: `canvas.js:47-74` 48px, 14 px/frame — new: done (auto-pan de React Flow).
-- [ ] "Next up" — classic: `main.js:746-748` badge `--ask` con texto `--surface` 18px (`styles.css:1647-1650`), `kbd` al 70 %; title "Open what waits for you next: N (approvals, questions, then what is new) · F" / "Nothing waits for you · F"; toast "Nothing else waits for you" si solo queda la abierta (`main.js:484`) — new: partial (`App.tsx:71-76` badge `bg-orange-500`, title corto, sin el segundo toast).
+- [x] "Next up" — classic: `main.js:746-748` badge `--ask` con texto `--surface` 18px (`styles.css:1647-1650`), `kbd` al 70 %; title "Open what waits for you next: N (approvals, questions, then what is new) · F" / "Nothing waits for you · F"; toast "Nothing else waits for you" si solo queda la abierta (`main.js:484`) — new: partial (`App.tsx:71-76` badge `bg-orange-500`, title corto, sin el segundo toast).
 
 ## Keyboard shortcuts
 
@@ -202,25 +202,25 @@ Clásico: `main.js:552-658` y `canvas.js:891-912`. Nuevo: `app/App.tsx:51-60`, `
 
 - [ ] `⌘K` / `/` buscar — classic: `main.js:557-563` — new: done.
 - [ ] `F` Next up — classic: `main.js:650` — new: done.
-- [ ] `?` ayuda (también Shift+/) — classic: `main.js:559` — new: missing.
-- [ ] `j` / `↓`, `k` / `↑` mover la selección en el orden de la vista; el foco sigue y hace `scrollIntoView({block:"nearest"})`; con el panel abierto cambia la sesión — classic: `main.js:595-614`; orden del canvas: arriba-abajo, luego izquierda-derecha (`canvas-layout.js:36-40`) — new: missing.
-- [ ] `Enter` abre la seleccionada (no sobre botones ni roles interactivos, `main.js:26`); Enter/Espacio sobre una tarjeta con foco la abre (`components.js:35-39`) — new: missing.
-- [ ] `O` abrir en Claude — classic: `main.js:618` — new: missing.
+- [x] `?` ayuda (también Shift+/) — classic: `main.js:559` — new: missing.
+- [x] `j` / `↓`, `k` / `↑` mover la selección en el orden de la vista; el foco sigue y hace `scrollIntoView({block:"nearest"})`; con el panel abierto cambia la sesión — classic: `main.js:595-614`; orden del canvas: arriba-abajo, luego izquierda-derecha (`canvas-layout.js:36-40`) — new: missing.
+- [x] `Enter` abre la seleccionada (no sobre botones ni roles interactivos, `main.js:26`); Enter/Espacio sobre una tarjeta con foco la abre (`components.js:35-39`) — new: missing.
+- [x] `O` abrir en Claude — classic: `main.js:618` — new: missing.
 - [ ] `T` renombrar — classic: `main.js:619-624` — new: missing.
-- [ ] `R` responder (abre y enfoca el campo) — classic: `main.js:625-630` — new: missing.
-- [ ] `P` fijar/soltar — classic: `main.js:631` — new: missing.
-- [ ] `A` Later (abre el menú; 1–5 eligen) o quitar de Later — classic: `main.js:577-585,632` — new: missing.
-- [ ] `E` hecha / reabrir — classic: `main.js:633` — new: missing.
-- [ ] `C` menú de color; 1–7 eligen, 0 quita — classic: `main.js:586-594,634` — new: missing.
-- [ ] `Z` deshacer la última acción — classic: `main.js:635` — new: missing.
-- [ ] `G` agrupar por repo — classic: `main.js:636` — new: missing.
-- [ ] `1` `2` `3` `4` vistas — classic: `main.js:637-640` — new: missing.
-- [ ] `[` `]` subir/bajar de fila en Tiers — classic: `main.js:641-647` — new: missing.
-- [ ] `N` nueva sesión — classic: `main.js:649` — new: missing.
-- [ ] `D` "Catch me up" — classic: `main.js:651` — new: missing.
-- [ ] `S` parar el turno (solo working) con toast "Stopping “<title>”…" — classic: `main.js:249-252,652` — new: missing.
-- [ ] `U` marcar para revisar (solo pending) — classic: `main.js:653` — new: missing.
-- [ ] `Esc` en cadena: salir del campo; cerrar menú Later; cerrar menú color; de un workspace a la conversación; cerrar el panel y soltar la tarjeta; soltar la selección — classic: `main.js:565-574` — new: partial (`SessionPanel.tsx:28-35` solo workspace → chat → cerrar).
+- [x] `R` responder (abre y enfoca el campo) — classic: `main.js:625-630` — new: missing.
+- [x] `P` fijar/soltar — classic: `main.js:631` — new: missing.
+- [x] `A` Later (abre el menú; 1–5 eligen) o quitar de Later — classic: `main.js:577-585,632` — new: missing.
+- [x] `E` hecha / reabrir — classic: `main.js:633` — new: missing.
+- [x] `C` menú de color; 1–7 eligen, 0 quita — classic: `main.js:586-594,634` — new: missing.
+- [x] `Z` deshacer la última acción — classic: `main.js:635` — new: missing.
+- [x] `G` agrupar por repo — classic: `main.js:636` — new: missing.
+- [x] `1` `2` `3` `4` vistas — classic: `main.js:637-640` — new: missing.
+- [x] `[` `]` subir/bajar de fila en Tiers — classic: `main.js:641-647` — new: missing.
+- [x] `N` nueva sesión — classic: `main.js:649` — new: missing.
+- [x] `D` "Catch me up" — classic: `main.js:651` — new: missing.
+- [x] `S` parar el turno (solo working) con toast "Stopping “<title>”…" — classic: `main.js:249-252,652` — new: missing.
+- [x] `U` marcar para revisar (solo pending) — classic: `main.js:653` — new: missing.
+- [x] `Esc` en cadena: salir del campo; cerrar menú Later; cerrar menú color; de un workspace a la conversación; cerrar el panel y soltar la tarjeta; soltar la selección — classic: `main.js:565-574` — new: partial (`SessionPanel.tsx:28-35` solo workspace → chat → cerrar).
 - [x] Canvas `+`/`=`, `-`, `0` zoom — classic: `canvas.js:901-906` — new: missing.
 - [x] Canvas `Espacio` (mantener) para desplazar, salvo en controles y el panel (`canvas.js:387`) — classic: `canvas.js:893-899,908-912` — new: missing.
 - [x] Canvas `Esc` suelta la selección múltiple — classic: `canvas.js:900` — new: missing.
@@ -246,7 +246,7 @@ Clásico: `main.js:552-658` y `canvas.js:891-912`. Nuevo: `app/App.tsx:51-60`, `
 - [ ] Llegada del menú, toast y peek con `@starting-style` / keyframes — ver Card y Toasts — new: partial.
 - [ ] Plegar/desplegar zona y soltar en carpeta — ver Zones y Canvas — new: missing.
 - [ ] Panel: entra con `translateX(28px)` + opacidad, 420 ms `cubic-bezier(0.25, 1, 0.5, 1)` — classic: `styles.css:170-176`, `main.js:319-336` — new: partial (`App.tsx:78` `slide-in-from-right-8 fade-in duration-300`; sin animación de salida).
-- [ ] Skeleton mientras carga — classic: `main.js:753-754`, `styles.css:1013-1017` 5 filas 52px, radio 9px, `shimmer 1.2s linear infinite` — new: partial (`Canvas.tsx:215` texto "Connecting…").
+- [x] Skeleton mientras carga — classic: `main.js:753-754`, `styles.css:1013-1017` 5 filas 52px, radio 9px, `shimmer 1.2s linear infinite` — new: partial (`Canvas.tsx:215` texto "Connecting…").
 
 ## Toasts
 
@@ -257,10 +257,10 @@ Clásico: `main.js:552-658` y `canvas.js:891-912`. Nuevo: `app/App.tsx:51-60`, `
 
 ## Other
 
-- [ ] Selección con teclado y tarjeta enfocable — classic: `tabindex="0"` en cada tarjeta y fila (`canvas.js:132`, `board.js:18,170`) — new: missing.
-- [ ] Arrastre HTML5 entre columnas y filas, con `cursor: grabbing` al pulsar — classic: `board.js:18-25`, `styles.css:444` — new: missing (no hay Board ni Tiers).
-- [ ] Clase `is-dragging` atenúa los destinos no válidos — classic: `main.js:721`, `styles.css:414,711` — new: missing.
-- [ ] Al quitar una tarjeta de la lista (Done sin `showDone`, Later) la selección pasa a la siguiente — classic: `main.js:396-400` — new: missing.
+- [x] Selección con teclado y tarjeta enfocable — classic: `tabindex="0"` en cada tarjeta y fila (`canvas.js:132`, `board.js:18,170`) — new: missing.
+- [x] Arrastre HTML5 entre columnas y filas, con `cursor: grabbing` al pulsar — classic: `board.js:18-25`, `styles.css:444` — new: missing (no hay Board ni Tiers).
+- [x] Clase `is-dragging` atenúa los destinos no válidos — classic: `main.js:721`, `styles.css:414,711` — new: missing.
+- [x] Al quitar una tarjeta de la lista (Done sin `showDone`, Later) la selección pasa a la siguiente — classic: `main.js:396-400` — new: missing.
 - [ ] Marcar como leída al abrir y mantener "no leída" tras "Mark to review" — classic: `main.js:440-447,474-475,493-496` — new: fuera de alcance (panel); verifícalo allí.
 - [ ] Campana de aviso en la tarjeta — classic: `components.js:283-285` botón en la barra de acciones — new: done (`CardMenu.tsx:30`; además `SessionCard.tsx:71` muestra una señal de campana, que el clásico no tiene).
 - [ ] Clic en tarjeta abre el panel con el cursor en el campo de respuesta (solo puntero, no en móvil) — classic: `main.js:464-478` — new: fuera de alcance (panel); verifícalo allí.

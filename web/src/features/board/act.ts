@@ -9,6 +9,7 @@ import { stop } from "@/features/session/actions"
 import { patchOf } from "./overrides"
 import { overrides, selected, showDone } from "./state"
 import type { Step } from "./columns"
+import { TIERS, type TierKey, toTier } from "./tiers"
 
 export type Action = "pin" | "unpin" | "park" | "unpark" | "done" | "undone" | "archive" | "unarchive" | "seen" | "unseen" | "color" | "tier"
 
@@ -52,6 +53,14 @@ export async function boardAct(card: Card, action: Action, payload: Record<strin
 // Several steps in a row (a drop on another tier).
 export async function boardSteps(card: Card, steps: Step[]) {
   for (const [action, payload] of steps) await boardAct(card, action, payload)
+}
+
+// The tier list: a row up or down, or to the one named. "Close" marks it done.
+export async function moveToTier(card: Card, key: TierKey) {
+  const steps = toTier(card, key)
+  if (!steps) return
+  await boardSteps(card, steps)
+  if (key !== "close" && key !== "paused") toast(`${TIERS.find(t => t.key === key)!.label}: ${card.title}`)
 }
 
 // Archive all (Done): one toast, one Undo for all of them.

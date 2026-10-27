@@ -231,6 +231,8 @@
     --animate-breathe: breathe 2.6s ease-in-out infinite;
     --animate-spin-ring: spin-ring 1.6s linear infinite;
     --animate-run-beat: run-beat 1.4s ease-out infinite;
+    --animate-shimmer: shimmer 1.2s linear infinite;
+    @keyframes shimmer { to { background-position: -200% 0; } }
     @keyframes breathe { 0%, 100% { opacity: 0.25; } 50% { opacity: 1; } }
     @keyframes spin-ring { from { transform: rotate(-90deg); } to { transform: rotate(270deg); } }
     @keyframes run-beat {

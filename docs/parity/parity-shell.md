@@ -54,7 +54,7 @@ Legend: missing = not in the new app; partial = present but differs (what differ
 - [ ] Read aloud toggle tooltip + toast — classic: sidebar.js:75; main.js:67-72 (toast "Read aloud off" / "Read aloud on: every session|only sessions with the bell") — new: partial (`Sidebar.tsx:131`; `prefs.ts:28-33` no toast).
 - [ ] Notifications test toast — classic: main.js:270-271 ("Test notification sent. If you do not see it, check the macOS notification settings for this app" / "Chrome could not show the notification: …") — new: partial (`prefs.ts:59-60` only the error toast).
 - [ ] Setup gear tooltip — classic: sidebar.js:77 ("Setup: hook, mod, dictation, tasks…") — new: partial ("Setup").
-- [ ] Keyboard help button — classic: sidebar.js:79-81 (keyboard icon + kbd `?`, title "Keyboard shortcuts (?)") — new: missing.
+- [x] Keyboard help button — classic: sidebar.js:79-81 (keyboard icon + kbd `?`, title "Keyboard shortcuts (?)") — new: missing.
 - [ ] Extra in new: "Open the classic board" (`Sidebar.tsx:133`) — keep or drop deliberately.
 
 ## Limits
@@ -80,27 +80,27 @@ Legend: missing = not in the new app; partial = present but differs (what differ
 
 ## Keyboard shortcuts & help
 
-- [ ] `?` opens help (also Shift+/) — classic: main.js:559 — new: missing.
+- [x] `?` opens help (also Shift+/) — classic: main.js:559 — new: missing.
 - [ ] `⌘K` and `/` search — classic: main.js:557-564 — new: done (`App.tsx:53-55`).
 - [ ] `F` Next up — classic: main.js:650 — new: done (`App.tsx:56`).
-- [ ] `N` new session — classic: main.js:649 — new: missing.
-- [ ] `D` Catch me up — classic: main.js:651 — new: missing.
-- [ ] `J`/`K`, `↓`/`↑` move the selection (scroll into view, open panel follows, card focus follows) — classic: main.js:595-614 — new: missing.
-- [ ] `↵` opens the selected session (not on buttons/links/options, `ENTER_KEEPS` main.js:26) — classic: main.js:615-617 — new: missing.
-- [ ] `O` Open in Claude — classic: main.js:618 — new: missing.
+- [x] `N` new session — classic: main.js:649 — new: missing.
+- [x] `D` Catch me up — classic: main.js:651 — new: missing.
+- [x] `J`/`K`, `↓`/`↑` move the selection (scroll into view, open panel follows, card focus follows) — classic: main.js:595-614 — new: missing.
+- [x] `↵` opens the selected session (not on buttons/links/options, `ENTER_KEEPS` main.js:26) — classic: main.js:615-617 — new: missing.
+- [x] `O` Open in Claude — classic: main.js:618 — new: missing.
 - [ ] `T` rename (opens panel, starts title edit) — classic: main.js:619-624 — new: missing.
-- [ ] `R` reply (open panel, focus reply box) — classic: main.js:625-630 — new: missing.
-- [ ] `P` pin/unpin — classic: main.js:631 — new: missing.
-- [ ] `A` Later menu, then `1`–`5` (PARK_OPTIONS util.js:162-168); on a parked card `A` unparks — classic: main.js:577-585, 632 — new: missing.
-- [ ] `E` done / reopen — classic: main.js:633 — new: missing.
-- [ ] `C` colour menu, then `1`–`7` / `0` none — classic: main.js:586-594, 634 — new: missing.
-- [ ] `Z` undo the last toast action — classic: main.js:635, 359 — new: missing.
-- [ ] `G` lanes per repo, `1`–`4` views, `[`/`]` tier — classic: main.js:636-648 — new: missing (only matters if the views return).
-- [ ] `S` stop the running turn — classic: main.js:652 — new: missing.
-- [ ] `U` mark to review — classic: main.js:653 — new: missing.
-- [ ] `Esc` chain — classic: main.js:565-574 (in a field: blur; else close Later menu; else colour menu; else workspace → Conversation; else close panel and deselect) — new: partial (`features/session/SessionPanel.tsx:28-36` ignores focus: `Esc` inside the reply box closes the whole panel).
+- [x] `R` reply (open panel, focus reply box) — classic: main.js:625-630 — new: missing.
+- [x] `P` pin/unpin — classic: main.js:631 — new: missing.
+- [x] `A` Later menu, then `1`–`5` (PARK_OPTIONS util.js:162-168); on a parked card `A` unparks — classic: main.js:577-585, 632 — new: missing.
+- [x] `E` done / reopen — classic: main.js:633 — new: missing.
+- [x] `C` colour menu, then `1`–`7` / `0` none — classic: main.js:586-594, 634 — new: missing.
+- [x] `Z` undo the last toast action — classic: main.js:635, 359 — new: missing.
+- [x] `G` lanes per repo, `1`–`4` views, `[`/`]` tier — classic: main.js:636-648 — new: missing (only matters if the views return).
+- [x] `S` stop the running turn — classic: main.js:652 — new: missing.
+- [x] `U` mark to review — classic: main.js:653 — new: missing.
+- [x] `Esc` chain — classic: main.js:565-574 (in a field: blur; else close Later menu; else colour menu; else workspace → Conversation; else close panel and deselect) — new: partial (`features/session/SessionPanel.tsx:28-36` ignores focus: `Esc` inside the reply box closes the whole panel).
 - [ ] Shortcuts off while a dialog/search is open; typing detection incl. Monaco — classic: main.js:555-556, util.js:194-195 — new: done (`App.tsx:33-34, 54`).
-- [ ] Help dialog — classic: dialogs.js:127-166, css:1052-1058 (title "Keyboard shortcuts"; width `min(440px, 100vw−32px)`; rows 7px 0 with 1px `--line` divider; label muted; keys as kbd joined by "or" (11px muted); 22 rows: Move J K or ↓ ↑ · Open conversation ↵ · Reply R · Rename T · Open in Claude O · Pin P · Colour C or 0–7 · Later A or 1–5 · Mark as done E · Undo Z · Search / or ⌘ K · Inbox · Board · Canvas · Tiers 1 2 3 4 · Tiers: one row up · down [ ] · Lanes per repo G · Next up: what waits for you F · New session N · Catch me up D · Stop the running turn S · Mark to review U · Canvas: zoom in · zoom out · fit + − 0 · Canvas: move the view (hold and drag) Space · Close Esc; backdrop click closes) — new: missing (list only the shortcuts the new app has).
+- [x] Help dialog — classic: dialogs.js:127-166, css:1052-1058 (title "Keyboard shortcuts"; width `min(440px, 100vw−32px)`; rows 7px 0 with 1px `--line` divider; label muted; keys as kbd joined by "or" (11px muted); 22 rows: Move J K or ↓ ↑ · Open conversation ↵ · Reply R · Rename T · Open in Claude O · Pin P · Colour C or 0–7 · Later A or 1–5 · Mark as done E · Undo Z · Search / or ⌘ K · Inbox · Board · Canvas · Tiers 1 2 3 4 · Tiers: one row up · down [ ] · Lanes per repo G · Next up: what waits for you F · New session N · Catch me up D · Stop the running turn S · Mark to review U · Canvas: zoom in · zoom out · fit + − 0 · Canvas: move the view (hold and drag) Space · Close Esc; backdrop click closes) — new: missing (list only the shortcuts the new app has).
 
 ## Reader panel (session panel)
 
@@ -271,7 +271,7 @@ Legend: missing = not in the new app; partial = present but differs (what differ
 - [ ] New session prompt — classic: dialogs.js:99-120 (placeholder "What you want Claude to do (optional) — or dictate it"; ⌘↵ sends; explanation "Send: the first turn runs here, headless, with this mode, model and effort, and the session shows up at once. Open it in Claude when you want." / "Without a prompt, it opens in Claude for you to write there (with Claude's settings)."; "Open in Claude" button; "Send ⌘↵" / "Launching…") — new: partial (`NewSessionDialog.tsx:97-123` no explanation, icon-only submit, no kbd).
 - [ ] New session pickers — classic: dialogs.js:108-110 (icons lock/bot/gauge with hints; titles "Permission mode for the first turn", "Model", "Effort for the first turn") — new: partial.
 - [ ] New session toasts — classic: main.js:520-531 ("Session created: Claude is working" then opens after 600 ms; "New session opened in Claude") — new: partial ("Session started").
-- [ ] Help dialog — classic: dialogs.js:152-166 — new: missing (see Keyboard).
+- [x] Help dialog — classic: dialogs.js:152-166 — new: missing (see Keyboard).
 - [ ] Catch me up — classic: dialogs.js:170-256, css:1060-1096 (width min(640px), max-h min(78vh,760px); sun icon `--ask`; "Since Tue 27, 14:20" (`when`, util.js:152); counts as pills (radius 999, waiting ask-soft, stuck bad-soft); "START WITH" focus card accent-soft with accent 35% border; group h3 uppercase 11.5px/700; next pill accent-soft accent; group label "For later"; wait text "Claude reads what your sessions did. It takes about 10 seconds."; footer "A separate request to Claude with your account: it does not open or touch your sessions. It covers what happened since the last summary and what still waits for you."; stale body .5 in 200ms) — new: partial (`DigestDialog.tsx` amber instead of accent, counts as plain text, "Since 2 h", "Later", no footer, shorter wait text).
 - [ ] Setup texts — classic: setup.js:14-63, 139 (intro "Each step changes something on this Mac and runs only when you press it. Sessions that were already open load the mod when they restart."; long step texts) — new: partial (`SetupDialog.tsx:23-32` shortened, no intro).
 - [ ] Setup step look — classic: css:1521-1547 (card radius 10; done step on `--side`; need badge radius 999, Required accent-soft/accent; working state accent; progress 6px accent; busy "One moment…") — new: partial (rose/amber badges, spinner).

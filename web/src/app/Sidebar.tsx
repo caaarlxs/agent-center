@@ -1,14 +1,17 @@
 // The left column: new session, the repos to filter the canvas by, the plan's
 // limits, and the live connection with Setup at the foot. It folds to icons.
-import { AudioLines, Bell, BellOff, ExternalLink, LayoutGrid, PanelLeft, Plus, Settings, Sun, Volume2, VolumeX } from "lucide-react"
+import { AudioLines, Bell, BellOff, ExternalLink, Keyboard, PanelLeft, Plus, Settings, Sun, Volume2, VolumeX } from "lucide-react"
 import { persistedStore } from "@/lib/store"
 import { Button } from "@/components/ui/button"
+import { Kbd } from "@/components/ui/kbd"
 import { Progress } from "@/components/ui/progress"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useLive } from "@/lib/live"
 import { useNow } from "@/lib/now"
 import { cn } from "@/lib/utils"
 import { repoDot } from "@/features/session/state"
+import { ViewNav } from "@/features/board/ViewNav"
+import { helpOpen } from "@/features/keys/help-state"
 import { notify, sound, speech, toggleNotify, toggleSound, toggleSpeech } from "@/features/alerts/prefs"
 import { openDialog } from "./open-dialog"
 import { repoFilter } from "./view-state"
@@ -79,7 +82,7 @@ export function Sidebar() {
         </Button>
       </div>
       <nav className="space-y-0.5 px-2">
-        <span className={cn("flex h-8 items-center gap-2.5 rounded-md bg-accent px-2 font-medium", isFolded && "justify-center px-0")}><LayoutGrid className="size-4" />{!isFolded && "Canvas"}</span>
+        <ViewNav isFolded={isFolded} />
         <button onClick={() => openDialog({ kind: "digest" })} title="Catch me up"
           className={cn("flex h-8 w-full items-center gap-2.5 rounded-md px-2 text-muted-foreground hover:bg-accent hover:text-foreground", isFolded && "justify-center px-0")}>
           <Sun className="size-4" />{!isFolded && "Catch me up"}
@@ -117,6 +120,7 @@ export function Sidebar() {
           <Button variant="ghost" size="icon-sm" className={cn(speechMode !== "off" ? "text-foreground" : "opacity-50")} onClick={toggleSpeech}
             title={speechMode === "off" ? "Read aloud off" : `Read aloud: ${speechMode === "all" ? "every session" : "sessions with the bell"}`}><AudioLines /></Button>
           <Button variant="ghost" size="icon-sm" onClick={() => openDialog({ kind: "setup" })} title="Setup"><Settings /></Button>
+          <Button variant="ghost" size={isFolded ? "icon-sm" : "sm"} className="px-1.5" onClick={() => helpOpen.set(true)} title="Keyboard shortcuts (?)"><Keyboard />{!isFolded && <Kbd>?</Kbd>}</Button>
           {!isFolded && <Button variant="ghost" size="icon-sm" onClick={() => window.open("/", "_blank")} title="Open the classic board"><ExternalLink /></Button>}
         </span>
       </footer>

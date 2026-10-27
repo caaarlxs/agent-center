@@ -2,7 +2,7 @@
 // board uses, with made-up data); everything else is the board: the sidebar,
 // the canvas with its toolbar, and a session's panel over the canvas.
 import { Search } from "lucide-react"
-import { useEffect, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Kbd } from "@/components/ui/kbd"
@@ -10,13 +10,15 @@ import { Toaster } from "@/components/ui/sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { DesignSystem } from "@/design/DesignSystem"
 import { useLive } from "@/lib/live"
-import { Canvas } from "@/features/canvas/Canvas"
+import { MainView } from "@/features/board/MainView"
 import { SearchPalette } from "@/features/search/SearchPalette"
 import { SessionPanel } from "@/features/session/SessionPanel"
 import { nextAfter, waitingOf } from "@/features/session/waiting"
 import { openSession, useOpenSession } from "./open-session"
 import { useAlerts } from "@/features/alerts/useAlerts"
 import { Dialogs } from "./Dialogs"
+import { HelpDialog } from "@/features/keys/HelpDialog"
+import { useBoardKeys } from "@/features/keys/useBoardKeys"
 import { Sidebar } from "./Sidebar"
 import { focusCard } from "./view-state"
 
@@ -30,9 +32,6 @@ export function App() {
   )
 }
 
-const isTyping = (el: EventTarget | null) =>
-  el instanceof HTMLElement && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || !!el.closest(".monaco-editor"))
-
 function Board() {
   const open = useOpenSession()
   const cards = useLive(l => l.snapshot?.cards)
@@ -44,34 +43,26 @@ function Board() {
   const nextUp = () => {
     const next = nextAfter(waiting, open?.id ?? null)
     if (!next) return void toast("Nothing waits for you")
+    if (next.id === open?.id) return void toast("Nothing else waits for you")
     openSession(next.id)
     focusCard(next.id)
   }
-  // Read on each key, so it uses the newest list.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") return void (e.preventDefault(), setSearching(s => !s))
-      if (e.metaKey || e.ctrlKey || e.altKey || isTyping(e.target) || document.querySelector("[role=dialog]")) return
-      if (e.key === "/") (e.preventDefault(), setSearching(true))
-      else if (e.key.toLowerCase() === "f") (e.preventDefault(), nextUp())
-    }
-    window.addEventListener("keydown", onKey)
-    return () => window.removeEventListener("keydown", onKey)
-  })
+  // Every shortcut of the board (features/keys).
+  useBoardKeys({ nextUp, toggleSearch: () => setSearching(s => !s), openSearch: () => setSearching(true), isSearching })
 
   return (
     <div className="flex h-screen overflow-hidden bg-background text-foreground">
       <Sidebar />
       <main className="relative min-w-0 flex-1">
-        <Canvas />
+        <MainView />
         <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-center gap-2 p-3">
           <Button variant="outline" size="sm" className="pointer-events-auto w-64 justify-start bg-background/80 text-muted-foreground backdrop-blur" onClick={() => setSearching(true)}>
             <Search />Search<Kbd className="ml-auto">⌘K</Kbd>
           </Button>
           <Button size="sm" variant="outline" className="pointer-events-auto ml-auto bg-background/80 backdrop-blur" onClick={nextUp}
-            title={waiting.length ? `What waits for you next: ${waiting.length}` : "Nothing waits for you"}>
+            title={waiting.length ? `Open what waits for you next: ${waiting.length} (approvals, questions, then what is new) · F` : "Nothing waits for you · F"}>
             Next up
-            {waiting.length > 0 && <span className="grid min-w-5 place-items-center rounded-full bg-orange-500 px-1.5 text-[11px] font-semibold text-white">{waiting.length}</span>}
+            {waiting.length > 0 && <span className="grid min-w-5 place-items-center h-[18px] rounded-[9px] bg-ask px-1.5 text-[11px] font-bold text-surface">{waiting.length}</span>}
             <Kbd>F</Kbd>
           </Button>
         </div>
@@ -79,6 +70,7 @@ function Board() {
       </main>
       <SearchPalette open={isSearching} onOpenChange={setSearching} />
       <Dialogs />
+      <HelpDialog />
     </div>
   )
 }
