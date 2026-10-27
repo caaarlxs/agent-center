@@ -182,7 +182,7 @@ Tarjeta del canvas `.ccard` (`canvas.js:84-160`, `styles.css:789-898`) frente a 
 - [x] Mosaico "+N more done" y su lista — classic: `canvas.js:364-384,1012-1014,1026`, `styles.css:876-893` mosaico 72px, `1.5px dashed`, radio 12, número 20px; `.on` y hover borde accent; lista 420px, `max-height min(60%, 520px)`, `--raised`, `--shadow-pop`; cabecera "N more done"; filas con título + "repo · age", botón "Reopen: back on the canvas" (undo) y "Archive"; se cierra con clic fuera o Esc — new: missing (todas las chips en línea con scroll horizontal).
 - [x] "Archive all" con deshacer — classic: `canvas.js:1005`, `main.js:424-433` toast "1 session archived" / "N sessions archived" con Undo (unarchive) — new: partial (`DoneDock.tsx:16-17` "N archived", sin Undo).
 - [x] Dock al hacer zoom — classic: `canvas.js:1019-1023`, `styles.css:1301-1310` barra fija 44px, `backdrop-filter: blur(6px)`, fondo `color-mix(var(--side) 92%)`, chips 200px máx.; texto "Drop here to mark it as done" — new: partial (el panel nuevo hace este papel siempre).
-- [ ] Destino `data-fly="done"` con pulso al llegar — classic: `canvas.js:1002`, `motion.js:155-168` — new: missing.
+- [x] Destino `data-fly="done"` con pulso al llegar — classic: `canvas.js:1002`, `motion.js:155-168` — new: missing.
 
 ## Zoom & navigation
 
@@ -229,7 +229,7 @@ Clásico: `main.js:552-658` y `canvas.js:891-912`. Nuevo: `app/App.tsx:51-60`, `
 
 ## Animations
 
-- [ ] FLIP de tarjetas — classic: `motion.js:69-186` — new: missing. Detalle:
+- [x] FLIP de tarjetas — classic: `motion.js:69-186` — new: missing. Detalle:
   - Aparece: `opacity 0, translateY(6px) scale(.98)` → normal, 260 ms, `cubic-bezier(0.22, 1, 0.36, 1)` (`motion.js:89-92`).
   - Mismo grupo, otro sitio: desliza 320 ms con el mismo easing (`104`).
   - Otro grupo: una copia vuela por encima con arco (`translate(dx*.5, dy*.5-14) scale(1.03)` y sombra `0 18px 40px rgb(0 0 0/.35)` en la mitad), duración `min(620, 320 + distancia*0.3)` ms; al llegar `scale(1.015)` → normal 180 ms (`109-133`).
@@ -243,8 +243,8 @@ Clásico: `main.js:552-658` y `canvas.js:891-912`. Nuevo: `app/App.tsx:51-60`, `
 - [x] Giro del anillo `spin-ring 1.6s linear` — classic: `styles.css:322-323` — new: partial (`animate-spin` 1 s).
 - [x] Latido `run-beat` del punto en segundo plano — ver Card — new: missing.
 - [ ] Punto `pulse` 1.6s del chip "Working" — classic: `styles.css:259-260` — new: fuera de alcance (chip de estado del panel).
-- [ ] Llegada del menú, toast y peek con `@starting-style` / keyframes — ver Card y Toasts — new: partial.
-- [ ] Plegar/desplegar zona y soltar en carpeta — ver Zones y Canvas — new: missing.
+- [x] Llegada del menú, toast y peek con `@starting-style` / keyframes — ver Card y Toasts — new: partial.
+- [x] Plegar/desplegar zona y soltar en carpeta — ver Zones y Canvas — new: missing.
 - [ ] Panel: entra con `translateX(28px)` + opacidad, 420 ms `cubic-bezier(0.25, 1, 0.5, 1)` — classic: `styles.css:170-176`, `main.js:319-336` — new: partial (`App.tsx:78` `slide-in-from-right-8 fade-in duration-300`; sin animación de salida).
 - [x] Skeleton mientras carga — classic: `main.js:753-754`, `styles.css:1013-1017` 5 filas 52px, radio 9px, `shimmer 1.2s linear infinite` — new: partial (`Canvas.tsx:215` texto "Connecting…").
 

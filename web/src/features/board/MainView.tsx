@@ -2,12 +2,14 @@
 // Tiers; keys 1 2 3 4), its own tools at the top, and a skeleton until the
 // first snapshot. The canvas needs room: in a window under 860 px the inbox
 // stands in for it (main.js:111-135).
-import { useSyncExternalStore } from "react"
+import { useRef, useSyncExternalStore } from "react"
 import { useLive } from "@/lib/live"
+import { repoFilter } from "@/app/view-state"
 import { cn } from "@/lib/utils"
 import { Canvas } from "@/features/canvas/Canvas"
 import type { View } from "./order"
-import { dragging, useBoardCards, view as viewStore } from "./state"
+import { useFlip } from "./flip"
+import { dragging, groupBy, showDone, useBoardCards, view as viewStore, whereTo } from "./state"
 import { Board, Inbox, Tiers, ViewTools, useViewCards } from "./Views"
 
 const NARROW = "(max-width: 860px)"
@@ -35,9 +37,13 @@ export function MainView() {
   const hasData = useLive(l => !!l.snapshot)
   const cards = useViewCards(useBoardCards())
   const isDragging = !!dragging.use()
+  const root = useRef<HTMLDivElement>(null)
+  const scope = `${view}|${groupBy.use()}|${repoFilter.use()}|${showDone.use()}|${hasData}`
+  // The canvas runs its own (Canvas.tsx), once React Flow has drawn.
+  useFlip(root, scope, whereTo, view !== "canvas")
   if (view === "canvas" && hasData) return <Canvas />
   return (
-    <div className={cn("absolute inset-0 flex flex-col", isDragging && "is-dragging")}>
+    <div ref={root} className={cn("absolute inset-0 flex flex-col", isDragging && "is-dragging")}>
       <div className="pointer-events-none absolute inset-x-0 top-0 z-[5] flex justify-center gap-1.5 pt-3">{hasData && view !== "canvas" && <ViewTools view={view} />}</div>
       <div className="min-h-0 flex-1 overflow-auto pt-14">
         {!hasData ? (

@@ -21,10 +21,11 @@ import { cn } from "@/lib/utils"
 import { openSession, useOpenSession } from "@/app/open-session"
 import { focusRequest, repoFilter } from "@/app/view-state"
 import { boardAct } from "@/features/board/act"
-import { drawingZone, selected as selectedCard, useBoardCards } from "@/features/board/state"
+import { drawingZone, selected as selectedCard, useBoardCards, whereTo } from "@/features/board/state"
 import { moveTo } from "@/features/session/actions"
 import { type Level, SessionCard } from "@/features/session/SessionCard"
 import { hueOf } from "@/features/session/state"
+import { quietly, useFlip } from "@/features/board/flip"
 import { DoneBand, isOverDone } from "./DoneBand"
 import { CARD_W, GRID, type Point, entryBox, entrySlots, isInZone, newZone, onCanvas, placeCards, placeIn, snap } from "./geometry"
 import { NoteNode, type NoteNodeData } from "./NoteNode"
@@ -255,6 +256,7 @@ export function Canvas() {
   // as it lands), then takes a free place inside the zone for when it unfolds.
   const dropInFolder = (zone: Zone, moving: Node[]) => {
     const putIn = () => {
+      quietly(moving.map(m => m.id))
       const taken = all.filter(c => isInZone(zone, at[c.id]) && !moving.some(m => m.id === c.id)).map(c => ({ ...at[c.id], w: CARD_W, h: heightOf(c.id) }))
       let z = zone
       for (const m of moving) {
@@ -353,13 +355,14 @@ export function Canvas() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focus])
   const shown = useMemo(() => (flashId ? nodes.map(n => (n.id === flashId ? { ...n, className: "flash" } : n)) : nodes), [nodes, flashId])
+  const box = useRef<HTMLDivElement>(null)
   const [fit, setFit] = useState(1)
   const fitRef = useRef(1)
   fitRef.current = fit
 
   if (!hasData) return <div className="grid h-full place-items-center text-sm text-text-muted">Connecting…</div>
   return (
-    <div className="relative size-full" onDoubleClick={e => {
+    <div ref={box} className="relative size-full" data-group="canvas" onDoubleClick={e => {
       if (!(e.target as HTMLElement).classList.contains("react-flow__pane") || !flow.current) return
       addNote(flow.current.screenToFlowPosition({ x: e.clientX, y: e.clientY }))
     }}>
@@ -383,6 +386,7 @@ export function Canvas() {
         style={{ "--xy-selection-background-color": "color-mix(in srgb, var(--brand) 12%, transparent)", "--xy-selection-border": "1.5px solid var(--brand)" } as CSSProperties}
       >
         <CanvasKeys />
+        <CanvasFlip root={box} />
         <FitTracker onFit={setFit} />
         <Panel position="top-center" className="!mt-3 flex gap-1.5">
           <button className={cn(btn, isDrawing ? "border-text bg-text text-bg" : "hover:bg-hover")} aria-pressed={isDrawing}
@@ -395,6 +399,14 @@ export function Canvas() {
       <DoneBand cards={done} isTarget={isOverDoneNow} onLift={lift} />
     </div>
   )
+}
+
+// Cards that arrive on the canvas or leave it (to Done, archived) animate as
+// on the other views (flip.ts); run when React Flow has drawn its nodes.
+function CanvasFlip({ root }: { root: React.RefObject<HTMLDivElement | null> }) {
+  useStore(s => s.nodes)
+  useFlip(root, `canvas|${repoFilter.use()}`, whereTo)
+  return null
 }
 
 // Keeps the fit zoom at hand for the pinch's save (onMoveEnd).

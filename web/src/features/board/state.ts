@@ -4,7 +4,7 @@
 // ahead of the server (overrides.ts).
 import { useEffect, useMemo } from "react"
 import type { Card } from "@/lib/api-types"
-import { useLive } from "@/lib/live"
+import { live, useLive } from "@/lib/live"
 import { createStore, persistedStore } from "@/lib/store"
 import type { GroupBy, View } from "./order"
 import { type Overrides, settle, withOverrides } from "./overrides"
@@ -42,4 +42,10 @@ export function useBoardCards(): Card[] {
     if (cards) overrides.set(settle(overrides.get(), cards, Date.now()))
   }, [cards])
   return useMemo(() => withOverrides(cards ?? [], ov), [cards, ov])
+}
+
+// Where a card that left a view went: what was just done here, else the
+// server's word; gone from the snapshot, it was archived.
+export function whereTo(id: string) {
+  return overrides.get()[id]?.column ?? live().snapshot?.cards.find(c => c.id === id)?.column ?? "archived"
 }

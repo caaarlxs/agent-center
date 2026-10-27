@@ -117,7 +117,7 @@ export function DoneBand({ cards, isTarget, onLift }: { cards: Card[]; isTarget:
   const more = cards.slice(shown.length)
   useEffect(() => void (more.length || setMoreOpen(false)), [more.length])
   return (
-    <section id={DONE_BAND} data-fly="done" style={{ height: DONE_H }}
+    <section id={DONE_BAND} data-fly="done" data-group="done" style={{ height: DONE_H }}
       className={cn("absolute inset-x-0 bottom-0 z-10 border-t-[1.5px] border-dashed transition-[background-color,border-color] duration-150",
         isTarget ? "border-work bg-work-soft" : "border-line-strong bg-[color-mix(in_srgb,var(--side)_55%,transparent)]")}>
       <header className="flex h-10 items-center gap-2 px-4 text-xs font-bold tracking-[0.05em] text-text-muted uppercase">

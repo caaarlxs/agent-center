@@ -60,7 +60,8 @@ function SessionCardView({ card, now, level = "near", unscale = 1, isSelected = 
   const state = stateOf(card)
   const isDone = state === "done"
   const urgency = isDone ? null : urgencyOf(card, now)
-  const isShaking = (state === "asking" || state === "permission") && shake.use() === "on" && !isDragging
+  const isShakeOn = shake.use() === "on"
+  const isShaking = (state === "asking" || state === "permission") && isShakeOn && !isDragging
   const isMenuOpen = menu.use()?.id === card.id
   const nudge = NUDGE[urgency ?? "none"]
   const ring = isSelected || isReading

@@ -12,6 +12,7 @@ import { openSession } from "@/app/open-session"
 import { StateIcon } from "@/features/session/StateIcon"
 import { hueOf } from "@/features/session/state"
 import { CARD_W, GRID, type Point } from "./geometry"
+import { quietly } from "@/features/board/flip"
 import { useFocusWhenShown } from "./useFocusWhenShown"
 
 export type ZoneNodeData = {
@@ -82,6 +83,7 @@ export function ZoneNode({ data, dragging }: NodeProps<Node<ZoneNodeData>>) {
   // closes up to its size; saved once they are in. Unfolding plays it back.
   const closing = useRef<Animation | null>(null)
   const fold = () => {
+    quietly(members.map(c => c.id))
     if (isCalm() || !box.current) return data.onChange({ ...zone, collapsed: true })
     const flights = members.flatMap((c, i) => {
       const el = cardEl(c.id)
@@ -93,6 +95,7 @@ export function ZoneNode({ data, dragging }: NodeProps<Node<ZoneNodeData>>) {
     closing.current = box.current.animate([{ clipPath: "inset(0 round 14px)" }, { clipPath: folderClip(zone) }], { duration: 260, easing: FOLD_EASE, fill: "forwards" })
     Promise.all([closing.current, ...flights].map(a => a.finished)).catch(() => {}).finally(() => data.onChange({ ...zone, collapsed: true }))
   }
+  const unfold = () => (quietly(members.map(c => c.id)), data.onChange({ ...zone, collapsed: false }))
   const wasFolded = useRef(!!zone.collapsed)
   useLayoutEffect(() => {
     const was = wasFolded.current
@@ -120,7 +123,7 @@ export function ZoneNode({ data, dragging }: NodeProps<Node<ZoneNodeData>>) {
         onPointerDown={e => (down.current = { x: e.clientX, y: e.clientY })}
         onClick={e => {
           const d = down.current
-          if (d && Math.hypot(e.clientX - d.x, e.clientY - d.y) < 4) data.onChange({ ...zone, collapsed: false })
+          if (d && Math.hypot(e.clientX - d.x, e.clientY - d.y) < 4) unfold()
         }}
         className={cn("flex min-h-24 w-72 origin-top-left flex-col gap-1.5 rounded-[14px] pb-2.5", dragging ? "cursor-grabbing" : "cursor-grab")}
         style={{
@@ -131,7 +134,7 @@ export function ZoneNode({ data, dragging }: NodeProps<Node<ZoneNodeData>>) {
           <Folder className="size-[15px] flex-none" />
           <span className="min-w-0 flex-1 truncate">{zone.name}</span>
           <span className="inline-flex h-[18px] min-w-5 flex-none items-center justify-center rounded-[9px] px-1.5 text-[11px] tabular-nums" style={{ background: tone(0.18) }}>{members.length}</span>
-          <button title="Unfold" onClick={e => (e.stopPropagation(), data.onChange({ ...zone, collapsed: false }))}
+          <button title="Unfold" onClick={e => (e.stopPropagation(), unfold())}
             className="nodrag inline-flex size-[22px] items-center justify-center rounded-md text-text-muted hover:bg-press hover:text-text"><Expand className="size-[13px]" /></button>
         </header>
         <div className="flex flex-wrap gap-1 px-3 text-[11.5px]">

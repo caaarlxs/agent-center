@@ -152,7 +152,7 @@ function Cell({ col, list, head, isStacked = false, isLane = false }: { col: Col
     return a ? [a] : null
   })
   return (
-    <section {...drop.handlers}
+    <section {...drop.handlers} data-group={`col-${col}`}
       className={cn("flex min-h-0 flex-col rounded-[12px] px-2 pt-2.5 pb-2 transition-[background-color,box-shadow,opacity] duration-120",
         isLane ? "min-h-14 border border-dashed border-transparent bg-[color-mix(in_srgb,var(--side)_45%,transparent)] pt-2" : "bg-side",
         drop.isOver && (isLane ? "border-brand bg-brand-soft" : "bg-brand-soft shadow-[inset_0_0_0_2px_var(--brand)]"),
@@ -161,7 +161,7 @@ function Cell({ col, list, head, isStacked = false, isLane = false }: { col: Col
       <div className={cn("-m-0.5 flex min-h-0 flex-col gap-2 p-0.5", !isLane && "overflow-y-auto")}>
         {isStacked
           ? runsOf(list).map(run => (
-              <div key={run.cards[0].id} className="flex flex-col gap-1.5 rounded-[12px] p-1.5"
+              <div key={run.cards[0].id} data-stack className="flex flex-col gap-1.5 rounded-[12px] p-1.5"
                 style={{ background: `hsl(${hueOf(run.repo)} 50% 50% / 0.07)`, boxShadow: `inset 0 0 0 1px hsl(${hueOf(run.repo)} 50% 50% / 0.18)` }}>
                 <div className="flex items-center gap-[7px] px-1 pt-px pb-0.5 text-xs font-[650]" style={{ color: repoText(run.repo) }}>
                   <RepoIcon name={run.repo} size={16} /><span className="truncate">{run.repo}</span>
@@ -282,7 +282,7 @@ export function Inbox({ cards }: { cards: Card[] }) {
       {inboxGroups(cards, isDone).map(g => {
         const isFolded = folded[g.key] && !g.cards.some(c => c.id === pointed)
         return (
-          <section key={g.key} className="mt-1.5">
+          <section key={g.key} data-group={`group-${g.key}`} className="mt-1.5">
             <div className="flex items-center gap-2">
               <button data-fly={g.key} onClick={() => setFolded(f => ({ ...f, [g.key]: !f[g.key] }))} aria-expanded={!isFolded}
                 className="flex h-8 w-full flex-1 items-center gap-2 rounded-[7px] px-2 text-xs font-[650] tracking-[0.04em] text-text-muted uppercase hover:bg-hover">
@@ -310,7 +310,7 @@ function TierRow({ tier, i, list, isDone }: { tier: (typeof TIERS)[number]; i: n
   // Closed ones show only with "Done" on.
   const shown = isClose && !isDone ? [] : list
   return (
-    <section data-tier={tier.key} {...drop.handlers} style={{ ["--tier" as string]: tier.color }}
+    <section data-tier={tier.key} data-group={`tier-${tier.key}`} {...drop.handlers} style={{ ["--tier" as string]: tier.color }}
       className={cn("grid min-h-24 flex-[1_1_0] grid-cols-[132px_1fr] overflow-hidden rounded-[12px] bg-side transition-[background-color,box-shadow,opacity] duration-120 max-[860px]:flex-none max-[860px]:grid-cols-1",
         tier.key === "paused" && "flex-grow-[0.8]",
         isClose && "min-h-[72px] flex-grow-[0.6] border-[1.5px] border-dashed border-line-strong bg-[color-mix(in_srgb,var(--side)_55%,transparent)]",
