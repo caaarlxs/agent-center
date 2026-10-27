@@ -13,6 +13,7 @@ import { post } from "@/lib/api"
 import type { Card, Zone } from "@/lib/api-types"
 import { useLive } from "@/lib/live"
 import { useNow } from "@/lib/now"
+import { openSession, useOpenSession } from "@/app/open-session"
 import { moveTo } from "@/features/session/actions"
 import { type Level, SessionCard } from "@/features/session/SessionCard"
 import { hueOf } from "@/features/session/state"
@@ -23,11 +24,12 @@ type ZoneNodeData = { zone: Zone }
 
 const levelOf = (zoom: number): Level => (zoom < 0.62 ? "far" : zoom < 0.9 ? "mid" : "near")
 
-function SessionNode({ data, selected }: NodeProps<Node<SessionNodeData>>) {
+function SessionNode({ id, data, selected }: NodeProps<Node<SessionNodeData>>) {
   const zoom = useStore(s => s.transform[2])
+  const isOpen = useOpenSession() === id
   // Far, the title is drawn larger the smaller the canvas is drawn, so it
   // keeps a readable size on screen.
-  return <SessionCard card={data.card} now={data.now} level={levelOf(zoom)} textScale={Math.min(1 / zoom, 2)} isSelected={selected} />
+  return <SessionCard card={data.card} now={data.now} level={levelOf(zoom)} textScale={Math.min(1 / zoom, 2)} isSelected={selected || isOpen} />
 }
 
 function ZoneNode({ data }: NodeProps<Node<ZoneNodeData>>) {
@@ -122,6 +124,7 @@ export function Canvas() {
     <FlowCanvas
       nodes={nodes} edges={[]} nodeTypes={nodeTypes} onNodesChange={onNodesChange}
       onNodeDragStart={onNodeDragStart} onNodeDrag={onNodeDrag} onNodeDragStop={onNodeDragStop}
+      onNodeClick={(_, node) => node.type === "session" && openSession(node.id)}
       panOnDrag minZoom={0.3} maxZoom={1.6} snapToGrid snapGrid={[24, 24]} proOptions={{ hideAttribution: true }}
     >
       <Controls />

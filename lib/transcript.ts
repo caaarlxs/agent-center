@@ -6,30 +6,12 @@
 import { open, readdir, stat } from "node:fs/promises"
 import { join } from "node:path"
 import { HOME, PROJECTS_DIR as PROJECTS } from "./config"
+import { applyPlanOp, type PlanOp, type PlanStep } from "./plan-op"
 
 const WINDOW = 3 * 1024 * 1024
 const MAX_FOLLOW = 16 * 1024 * 1024 // a follow-up read that fell this far behind starts over at the tail
 
-export type PlanStep = { content: string; status: "pending" | "in_progress" | "completed" }
-export type PlanOp = { advance?: boolean; done?: number[]; start?: number; finish?: boolean }
-
-// The task list the app shows: a full list, then steps moving through it.
-export function applyPlanOp(steps: PlanStep[], op: PlanOp): PlanStep[] {
-  const next = steps.map(s => ({ ...s }))
-  if (op.finish) for (const s of next) if (s.status === "in_progress") s.status = "completed"
-  for (const n of op.done ?? []) if (next[n - 1]) next[n - 1]!.status = "completed"
-  if (op.advance) {
-    const i = next.findIndex(s => s.status === "in_progress")
-    if (i >= 0) next[i]!.status = "completed"
-    const j = next.findIndex(s => s.status === "pending")
-    if (j >= 0) next[j]!.status = "in_progress"
-  }
-  if (op.start && next[op.start - 1]) {
-    for (const s of next) if (s.status === "in_progress") s.status = "pending"
-    next[op.start - 1]!.status = "in_progress"
-  }
-  return next
-}
+export { applyPlanOp, type PlanOp, type PlanStep } from "./plan-op"
 
 // Tool calls the desktop app keeps out of the conversation.
 const HIDDEN_TOOLS = /^(ToolSearch|mcp__ccd_turn__|mcp__ccd_view__|mcp__ccd_session__dismiss_task)/

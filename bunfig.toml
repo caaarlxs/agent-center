@@ -1,0 +1,3 @@
+# bun test runs the server's tests (test/); the web app's run with Vitest (cd web && bun run test).
+[test]
+root = "test"
