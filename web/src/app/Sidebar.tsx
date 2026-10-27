@@ -141,6 +141,7 @@ export function Sidebar() {
   const isSlim = isSlimChosen && !isDrawerOpen // the drawer always shows words
   const repos = useLive(l => l.snapshot?.repos) ?? []
   const cards = useLive(l => l.snapshot?.cards) ?? []
+  const version = useLive(l => l.snapshot?.version) // the commit the board runs
   const isConnected = useLive(l => l.isConnected)
   const chosen = repoFilter.use()
   const shown = view.use()
@@ -227,6 +228,11 @@ export function Sidebar() {
           <span className="inline-flex items-center gap-1.5 text-xs text-text-muted" title={isSlim ? (isConnected ? "Live" : "Reconnecting…") : undefined}>
             <i className={cn("size-[7px] rounded-full", isConnected ? "bg-work shadow-[0_0_0_3px_var(--work-soft)]" : "bg-faint")} />
             {!isSlim && (isConnected ? "Live" : "Reconnecting…")}
+            {!isSlim && version && (
+              <span className="font-mono text-[11px] text-faint" title={`Version ${version.commit} · ${new Date(version.date).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}`}>
+                · {version.commit}
+              </span>
+            )}
           </span>
           {!isSlim && (
             <>
