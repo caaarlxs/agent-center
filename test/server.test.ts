@@ -85,11 +85,13 @@ beforeAll(async () => {
   await writeFile(join(home, "report.md"), "# Zebra report\n\nAll good.\n")
   await writeFile(join(home, "page.html"), "<title>Page</title><p>Hi</p>")
   await writeFile(join(home, "notes.ts"), "export const notes = 1\n")
+  await writeFile(join(home, "filters.xml"), "<feed/>")
   const fileRows = [
     { type: "assistant", uuid: "f1", cwd: home, timestamp: new Date(now - 3000).toISOString(), message: { role: "assistant", content: [
       { type: "tool_use", id: "toolu_f1", name: "SendUserFile", input: { files: ["report.md"], caption: "The report" } },
       { type: "tool_use", id: "toolu_f2", name: "Artifact", input: { file_path: join(home, "page.html") } },
       { type: "tool_use", id: "toolu_f3", name: "Write", input: { file_path: join(home, "notes.ts") } },
+      { type: "tool_use", id: "toolu_f4", name: "mcp__ccd_host__reveal_path", input: { path: join(home, "filters.xml") } },
       // Two tasks it suggests for sessions of their own.
       { type: "tool_use", id: "toolu_s1", name: "mcp__ccd_session__spawn_task", input: { title: "Fix the zebra tests", tldr: "They fail.", prompt: "Fix tests/zebra.test.ts" } },
       { type: "tool_use", id: "toolu_s2", name: "mcp__ccd_session__spawn_task", input: { title: "Tidy the docs", prompt: "Tidy docs/" } },
@@ -636,13 +638,13 @@ describe("memory", () => {
 })
 
 describe("files of a session", () => {
-  test("lists what it sent and published, opens what it wrote, and nothing it did not name", async () => {
+  test("lists what it sent, showed you and published, opens what it wrote, and nothing it did not name", async () => {
     const page = await jsonOf(fetch(`${base()}/api/sessions/${SERVER}/messages`))
     expect(page.items.find((i: any) => i.kind === "files").paths).toEqual(["report.md"])
     expect(page.items.find((i: any) => i.kind === "artifact").url).toBe("https://claude.ai/code/artifact/abc-123")
 
     const { files } = await jsonOf(fetch(`${base()}/api/sessions/${SERVER}/files`))
-    expect(files.map((f: any) => [f.name, f.source]).sort()).toEqual([["page.html", "artifact"], ["report.md", "sent"]])
+    expect(files.map((f: any) => [f.name, f.source]).sort()).toEqual([["filters.xml", "sent"], ["page.html", "artifact"], ["report.md", "sent"]])
 
     const at = (path: string) => fetch(`${base()}/api/sessions/${SERVER}/file?path=${encodeURIComponent(path)}`)
     expect(await (await at("report.md")).text()).toContain("Zebra report")

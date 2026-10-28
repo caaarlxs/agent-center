@@ -1,5 +1,5 @@
 // The files of a session, as its transcript names them: the ones Claude
-// sent you (SendUserFile), wrote or edited, published as an artifact, or
+// sent you (SendUserFile) or showed you (in Finder or your editor), wrote or edited, published as an artifact, or
 // named in its answers (a path in backticks, a link). The "Files" tab lists
 // what it gave you (sent or published); any of them opens in the board's viewer. Only a file a
 // session's transcript names is served for it: the board never reads an
@@ -21,6 +21,7 @@ export type FileRef = {
 
 const RANK = { sent: 3, artifact: 2, written: 1, mentioned: 0 }
 const WRITERS = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"])
+const SHOWERS = new Set(["mcp__ccd_host__reveal_path", "mcp__ccd_host__open_in_editor"])
 const MAX_VIEW_BYTES = 30 * 1024 * 1024
 
 // writes: per file, the ids of the tool calls that wrote it (a copy of a
@@ -76,6 +77,7 @@ function ingest(scan: Scan, chunk: string) {
       if (b?.type === "tool_use") {
         const input = b.input ?? {}
         if (b.name === "SendUserFile") for (const f of input.files ?? []) note(scan, f, "sent", at)
+        else if (SHOWERS.has(b.name)) note(scan, input.path, "sent", at)
         else if (WRITERS.has(b.name)) {
           const raw = input.file_path ?? input.notebook_path
           note(scan, raw, "written", at)
