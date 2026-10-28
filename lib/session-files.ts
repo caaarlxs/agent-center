@@ -1,7 +1,7 @@
 // The files of a session, as its transcript names them: the ones Claude
 // sent you (SendUserFile), wrote or edited, published as an artifact, or
 // named in its answers (a path in backticks, a link). The "Files" tab lists
-// the first three; any of them opens in the board's viewer. Only a file a
+// what it gave you (sent or published); any of them opens in the board's viewer. Only a file a
 // session's transcript names is served for it: the board never reads an
 // arbitrary path of this Mac. Each transcript is read once, then only what
 // it adds.
@@ -113,10 +113,12 @@ async function refsOf(ids: string[]) {
   return all
 }
 
-// For the "Files" tab: what the session sent, published or wrote, still on
-// disk, newest first.
+// For the "Files" tab: what the session sent you or published, still on
+// disk, newest first. What it only wrote stays out (it opens from the
+// conversation, and the Changes tab lists it).
+const GIVEN = new Set<FileRef["source"]>(["sent", "artifact"])
 export async function sessionFiles(ids: string[]) {
-  const refs = [...(await refsOf(ids)).values()].filter(f => f.source !== "mentioned").sort((a, b) => b.at - a.at).slice(0, 200)
+  const refs = [...(await refsOf(ids)).values()].filter(f => GIVEN.has(f.source)).sort((a, b) => b.at - a.at).slice(0, 200)
   const out = []
   for (const f of refs) {
     const info = await stat(f.path).catch(() => null)

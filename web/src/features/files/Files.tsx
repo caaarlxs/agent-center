@@ -25,7 +25,7 @@ import { CopyMark, useCopyMoment } from "@/components/icona/marks"
 type Listed = { path: string; name: string; size: number; modifiedAt: number; source: "sent" | "artifact" | "written"; url?: string }
 type Info = { path: string; size: number; isViewable: boolean; error?: string }
 
-const SOURCE = { sent: "sent", artifact: "published", written: "written" }
+const SOURCE = { sent: "sent", artifact: "published", written: "written" } // written: a file opened from the conversation
 const MAX_ROWS = 1000
 const at = (id: string, what: string, path: string) => `/api/sessions/${encodeURIComponent(id)}/${what}?path=${encodeURIComponent(path)}`
 const home = (path: string) => path.replace(/^\/Users\/[^/]+/, "~")
@@ -158,7 +158,7 @@ export function Files({ id, file }: { id: string; file?: string }) {
     <div className="grid min-h-0 flex-1 grid-cols-[minmax(240px,24%)_minmax(0,1fr)]">
       <ul className="m-0 min-h-0 list-none overflow-auto border-r border-line bg-side p-1.5">
         {files === null && <li className="px-2.5 py-2 text-[12.5px] text-text-muted">Looking…</li>}
-        {files?.length === 0 && !file && <li className="px-2.5 py-2 text-[12.5px] text-text-muted">This session has not sent or written any file yet.</li>}
+        {files?.length === 0 && !file && <li className="px-2.5 py-2 text-[12.5px] text-text-muted">No files shared yet</li>}
         {files?.map(f => (
           <li key={f.path}>
             <button onClick={() => setChosen(f)} title={f.path}
