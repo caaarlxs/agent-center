@@ -13,7 +13,7 @@ import type { Bridge, Card } from "@/lib/api-types"
 import { persistedStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
 import { AttachButton, MicButton, PickedFiles, fileErrors } from "@/features/prompt/PromptExtras"
-import { EFFORTS, MODELS, MODES, Pick, ReadOnly, modelKey } from "@/features/prompt/Settings"
+import { EFFORTS, MODELS, MODES, Pick, ReadOnly, modelKey, modelNow } from "@/features/prompt/Settings"
 import { MAX_BYTES, MAX_FILES, messageWith } from "@/features/prompt/files"
 import { launch, stopTurn, wake } from "@/features/session/actions"
 import { UsageMeter } from "@/features/session/UsageMeter"
@@ -38,9 +38,20 @@ const draftFiles = new Map<string, (FileUIPart & { id: string })[]>()
 const DOT = { on: "bg-work shadow-[0_0_0_3px_var(--work-soft)]", busy: "bg-ask shadow-[0_0_0_3px_var(--ask-soft)]", bad: "bg-bad", off: "bg-faint" }
 const subtle = "inline-flex h-[30px] shrink-0 items-center gap-[5px] rounded-md px-2.5 text-[13px] font-medium text-text-muted transition-[background-color,color,transform] duration-[120ms] hover:bg-hover active:scale-[0.97] [&_svg]:size-3"
 
-// Mode and model, changed through the bridge mod (v4); the effort shows.
+// Mode and model, changed through the bridge mod (v4); the effort too, which
+// the mod (v11) puts on every request to the model, since Claude desktop
+// sends its own with each message (its picker keeps showing that one).
 function Settings({ card, bridge }: { card: Card; bridge: Bridge | null }) {
   const [asked, setAsked] = useState<{ requestId: string; key: "mode" | "model"; value: string } | null>(null)
+  const [effortAsked, setEffortAsked] = useState<string | null>(null) // shown until the bridge says it
+  useEffect(() => void (bridge?.effort === effortAsked && setEffortAsked(null)), [bridge?.effort])
+  const changeEffort = (value: string) => {
+    setEffortAsked(value)
+    post(`/api/sessions/${encodeURIComponent(card.id)}/settings`, { effort: value }).then(
+      () => toast("Effort set: it applies from the next request to the model"),
+      (err: Error) => (setEffortAsked(null), toast(err.message || "Could not set the effort")),
+    )
+  }
   useEffect(() => {
     if (!asked || bridge?.settings?.id !== asked.requestId) return
     const failed = Object.values(bridge.settings.results).filter(r => r !== "ok")
@@ -60,14 +71,20 @@ function Settings({ card, bridge }: { card: Card; bridge: Bridge | null }) {
   const isOld = !!bridge && bridge.version < 4
   const valueOf = (key: "mode" | "model", current: string | null | undefined) => (asked?.key === key ? asked.value : current ?? "")
   const old = "This session started with an older bridge mod: close it and open it again"
-  const effort = EFFORTS.find(([e]) => e === card.effort)?.[1]
+  const effort = effortAsked ?? bridge?.effort ?? card.effort
+  const canEffort = !!bridge && bridge.version >= 11
   return (
     <div className="flex min-w-0 flex-nowrap gap-0.5">
       <Pick icon="mode" value={valueOf("mode", card.mode)} options={MODES} isDisabled={!bridge || isOld} isWaiting={asked?.key === "mode"}
         title={isOld ? old : "Permission mode"} onPick={v => change("mode", v)} />
-      <Pick icon="model" value={valueOf("model", modelKey(card.usage?.model))} options={MODELS} isDisabled={!bridge || isOld} isWaiting={asked?.key === "model"}
+      <Pick icon="model" value={valueOf("model", modelKey(modelNow(card.usage, bridge?.model)))} options={MODELS} isDisabled={!bridge || isOld} isWaiting={asked?.key === "model"}
         title={isOld ? old : "Model. Claude desktop still shows the previous one in its picker, but the session uses this one"} onPick={v => change("model", v)} />
-      {effort && <ReadOnly icon="effort" value={effort} title="Effort (read-only). Change it in Claude desktop: it sends its own with every message" />}
+      {canEffort ? (
+        <Pick icon="effort" value={effort ?? ""} options={EFFORTS} isWaiting={!!effortAsked} title="Effort. Claude desktop still shows its own in its picker, but every request to the model uses this one"
+          onPick={changeEffort} />
+      ) : (
+        effort && <ReadOnly icon="effort" value={EFFORTS.find(([e]) => e === effort)?.[1] ?? effort} title={bridge ? "Effort (read-only here): this session runs an older bridge mod; close it and open it again to change it from here" : "Effort"} />
+      )}
     </div>
   )
 }

@@ -40,8 +40,9 @@ sessions through a small Claude Code mod, and keeps its own state in a folder of
   focus. Claude desktop runs at most as many sessions as the Mac's memory allows (6 on 16 GB) and
   does not start one in the background past that: the board then runs the turn itself, headless,
   in the same session (marked "headless"; open it in Claude when it ends to see it there).
-- **Stop, mode, model.** Stop a running turn (`S`), switch the permission mode and the model of
-  a session from the reply box. In a session running in Auto the mode change goes as your
+- **Stop, mode, model, effort.** Stop a running turn (`S`), switch the permission mode, the model
+  and the effort of a session from the reply box. The effort goes on every request to the model
+  (bridge mod 0.9.0): Claude desktop sends its own with each message and keeps showing it. In a session running in Auto the mode change goes as your
   message (Auto's classifier lets only the conversation change it); to a mode that asks less,
   Claude desktop asks you to approve it.
 - **Changes and PRs.** Each session's diff against its base branch, with line comments sent

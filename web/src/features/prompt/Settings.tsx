@@ -25,6 +25,14 @@ export const MODELS: readonly Option[] = [
 export const EFFORTS: readonly Option[] = [["low", "Low"], ["medium", "Medium"], ["high", "High"], ["xhigh", "Extra high"], ["max", "Max"]]
 export const modelKey = (model: string | null | undefined) => MODELS.find(([id]) => model?.startsWith(id))?.[0] ?? model ?? ""
 
+// The model a session uses now: the one it last answered with, unless the
+// board switched it (/model) after that answer; Claude desktop's picker
+// keeps its old label either way.
+export function modelNow(usage: { model: string | null; modelAt?: number } | null | undefined, switched: { value: string; at: number } | null | undefined) {
+  if (switched && switched.at > (usage?.modelAt ?? 0)) return switched.value
+  return usage?.model ?? null
+}
+
 const ICONS = { mode: <Lock />, model: <Bot />, effort: <Gauge /> }
 export const pill = "inline-flex h-[30px] items-center gap-[5px] rounded-md pr-1.5 pl-2 text-xs text-text-muted transition-colors [&_svg]:size-[13px] [&_svg]:shrink-0"
 
@@ -60,7 +68,7 @@ export function Pick({ icon, value, options, placeholder, title, isDisabled, isW
   )
 }
 
-// Effort only shows: Claude desktop sends its own with every message.
+// A setting that only shows, when it cannot be changed from here.
 export function ReadOnly({ icon, value, title }: { icon: keyof typeof ICONS; value: ReactNode; title: string }) {
   return <span className={cn(pill, "pr-[9px]")} title={title}>{ICONS[icon]}<span className="font-[550] text-text-muted">{value}</span></span>
 }

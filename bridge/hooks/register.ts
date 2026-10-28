@@ -21,6 +21,8 @@
 //   permits/<session>.json       { id, decision }          the server: the board's allow/deny
 //   stream/<session>.json        { turnId, step, text, done, at }  this mod (v10): the
 //                                answer as the model writes it, for the board to show live
+//   overrides/<session>.json     { effort, at }            the server: the effort picked on
+//                                the board, put on every request to the model (v11)
 //
 // A message waits in the outbox until the session is free (no turn running)
 // and its `notBefore` has passed: until then the server can still take it
@@ -30,8 +32,21 @@ import type { EngineInterface, Register } from 'claude-code'
 
 const POLL_MS = 2000
 const STREAM_MS = 120 // how often the answer being written is passed on
+const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
+
+// The effort picked on the board, if any: Claude desktop sends its own with
+// every message and has no way for a session to change its own, so it goes
+// on each request to the model instead.
+async function pickedEffort($: EngineInterface, b: Bridge) {
+  try {
+    const effort = JSON.parse(await $.fs.read(`${b.base}/overrides/${b.id}.json`)).effort
+    return EFFORTS.includes(effort) ? (effort as 'low' | 'medium' | 'high' | 'xhigh' | 'max') : null
+  } catch {
+    return null
+  }
+}
 const KEEP_ACKS = 100
-const VERSION = 10
+const VERSION = 11
 const ANSWER_POLL_MS = 1000
 
 type Message = { id: string; text: string; notBefore?: number }
@@ -95,10 +110,11 @@ async function readAcks($: EngineInterface, b: Bridge) {
   }
 }
 
-// A change of permission mode, model or effort asked from the board. The mode
-// goes through the desktop app's own tool, which shows its approval card for
-// a mode that asks less; model and effort run as /model and /effort, as if
-// typed. Each result is "ok" or the reason it failed.
+// A change of permission mode or model asked from the board. The mode goes
+// through the desktop app's own tool, which shows its approval card for a
+// mode that asks less; the model runs as /model, as if typed (the effort goes
+// on each request instead: pickedEffort). Each result is "ok" or the reason
+// it failed.
 type SettingsRequest = { id: string; mode?: string; model?: string; effort?: string; at?: number }
 // A mode change that could not reach the client is asked again, every
 // RETRY_MS, for SETTINGS_PATIENCE_MS: right after a new session is imported
@@ -283,6 +299,9 @@ export const register: Register = on => {
   // as it came; the writes do not hold it.
   on('turn.step', async function* ($, e, next) {
     const b = bridge
+    // A model without effort has none to change.
+    const effort = b && e.effort !== undefined ? await pickedEffort($, b) : null
+    if (effort && effort !== e.effort) e = { ...e, effort }
     if (!b || e.agentId !== undefined) return yield* next(e)
     const path = `${b.base}/stream/${b.id}.json`
     const blocks: string[] = []
