@@ -4,37 +4,23 @@
 // panel-width.ts; its left edge drags to a width of yours (double-click: back
 // to the default), off in a medium window, where it is a 640px sheet.
 import { AnimatePresence, motion } from "motion/react"
-import { useEffect, useState } from "react"
-import { type Open, WORKSPACES } from "@/app/open-session"
-import { sideFolded } from "@/app/Sidebar"
+import { useState } from "react"
+import type { Open } from "@/app/open-session"
 import { cn } from "@/lib/utils"
-import { MEDIUM_MAX, NARROW_MAX, clampWidth, isWide, needsRoom, panelWidth, savedWidth } from "./panel-width"
+import { MEDIUM_MAX, clampWidth, isWide, panelWidth, savedWidth, useViewportWidth } from "./panel-width"
 import { SessionPanel } from "./SessionPanel"
 
 const EASE = [0.25, 1, 0.5, 1] as const
 const SLIDE = { duration: 0.42, ease: EASE }
 
-function useViewportWidth() {
-  const [vw, setVw] = useState(window.innerWidth)
-  useEffect(() => {
-    const on = () => setVw(window.innerWidth)
-    window.addEventListener("resize", on)
-    return () => window.removeEventListener("resize", on)
-  }, [])
-  return vw
-}
 
 export function PanelSlot({ open }: { open: Open }) {
   const vw = useViewportWidth()
   const saved = savedWidth.use()
   const wide = isWide.use()
-  const room = needsRoom.use()
-  const isSlim = sideFolded.use()
   const [dragged, setDragged] = useState<number | null>(null) // the width while the edge is dragged
-  const isWorkspace = !!open && WORKSPACES.has(open.tab)
-  const sideW = vw <= NARROW_MAX ? 0 : isSlim ? 60 : 256
-  const width = dragged ?? panelWidth({ vw, saved, isWide: wide || room, isWorkspace, sideW })
-  const canResize = vw > MEDIUM_MAX && !isWorkspace
+  const width = dragged ?? panelWidth({ vw, saved, isWide: wide })
+  const canResize = vw > MEDIUM_MAX
 
   const startDrag = (e: React.PointerEvent) => {
     e.preventDefault()

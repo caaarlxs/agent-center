@@ -18,6 +18,7 @@ import { useMonaco, useMonacoTheme } from "@/lib/monaco"
 import { cn } from "@/lib/utils"
 import { showTab } from "@/app/open-session"
 import { sendMessage } from "@/features/conversation/send"
+import { SideFlyout, useSideRoom } from "@/features/session/SideFlyout"
 import { ChangedTree } from "./ChangedTree"
 import { type LineComment, keyOf, reviewMessage } from "./review"
 import { Anim } from "@/components/icons/animated"
@@ -150,6 +151,7 @@ function FileBlock({ file, comments, editing, setEditing, save, remove }: {
 // Monaco's diff view of the chosen file: where the branch started on the
 // left, as it is now on the right; the tree of changed files beside it.
 function SideBySide({ id, files }: { id: string; files: FileDiff[] }) {
+  const hasSideRoom = useSideRoom()
   const monaco = useMonaco()
   const { theme, isPlain } = useMonacoTheme()
   const shown = files.filter(f => !f.binary && !f.collapsed)
@@ -166,8 +168,13 @@ function SideBySide({ id, files }: { id: string; files: FileDiff[] }) {
   const wait = !monaco.ready ? (monaco.error ? `The editor could not load: ${monaco.error}` : monaco.progress != null ? `Downloading the editor (VS Code's Monaco, once)… ${Math.round(monaco.progress * 100)}%` : "Loading the editor…")
     : error ?? (!chosen ? "No text file changed." : null)
   return (
-    <div className="grid min-h-0 flex-1 grid-cols-[minmax(210px,28%)_minmax(0,1fr)]">
-      <ChangedTree files={shown} chosen={chosen?.path ?? null} onPick={setChosen} />
+    <div className={cn("min-h-0 flex-1", hasSideRoom ? "flex" : "grid grid-cols-[minmax(210px,28%)_minmax(0,1fr)]")}>
+      {/* The tree opens beside the panel, which keeps its width; inside it where there is no room. */}
+      {hasSideRoom ? (
+        <SideFlyout label="Changed files"><ChangedTree files={shown} chosen={chosen?.path ?? null} onPick={setChosen} /></SideFlyout>
+      ) : (
+        <ChangedTree files={shown} chosen={chosen?.path ?? null} onPick={setChosen} />
+      )}
       <section className="flex min-h-0 min-w-0 flex-col">
         {chosen && <div className="shrink-0 truncate border-b border-line px-3 py-1.5 font-mono text-xs text-text-muted" title={chosen.path}>{chosen.oldPath ? `${chosen.oldPath} → ` : ""}{chosen.path}</div>}
         {wait ? <p className="grid flex-1 place-items-center text-text-muted">{wait}</p> : versions && chosen && (
@@ -185,6 +192,7 @@ function SideBySide({ id, files }: { id: string; files: FileDiff[] }) {
 const seg = (isOn: boolean) => cn("h-6 rounded-md px-2.5 text-xs text-text-muted", isOn && "bg-surface text-text shadow-card")
 
 export function Changes({ id }: { id: string }) {
+  const hasSideRoom = useSideRoom()
   const { data, error, read } = useChanges(id)
   const view = changesView.use()
   const hasTree = changesTree.use()
@@ -236,8 +244,10 @@ export function Changes({ id }: { id: string }) {
       {data.truncated && <p className="m-0 px-3 py-2.5 text-xs text-text-muted">The diff is very large: only the start is shown.</p>}
       {n === 0 && <p className="grid flex-1 place-items-center p-8 text-text-muted">No changes against {data.base}.</p>}
       {view === "lines" && n > 0 && (
-        <div className={cn("flex min-h-0 flex-1", hasTree && "grid grid-cols-[minmax(200px,30%)_minmax(0,1fr)]")}>
-          {hasTree && <ChangedTree files={data.files} chosen={picked} onPick={goTo} notes={notes} />}
+        <div className={cn("flex min-h-0 flex-1", hasTree && !hasSideRoom && "grid grid-cols-[minmax(200px,30%)_minmax(0,1fr)]")}>
+          {hasTree && (hasSideRoom
+            ? <SideFlyout label="Changed files"><ChangedTree files={data.files} chosen={picked} onPick={goTo} notes={notes} /></SideFlyout>
+            : <ChangedTree files={data.files} chosen={picked} onPick={goTo} notes={notes} />)}
           <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-auto px-3 pt-2.5 pb-4">
             {data.files.map(f => <FileBlock key={f.path} file={f} comments={comments} editing={editing} setEditing={setEditing} save={save} remove={remove} />)}
           </div>

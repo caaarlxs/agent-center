@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { clampWidth, defaultWidth, panelWidth } from "./panel-width"
 
-const base = { saved: null, isWide: false, isWorkspace: false, sideW: 256 }
+const base = { saved: null, isWide: false }
 
 describe("panelWidth", () => {
   it("takes 42% of the window, between 420 and 760", () => {
@@ -14,9 +14,10 @@ describe("panelWidth", () => {
     expect(panelWidth({ ...base, vw: 1440, saved: 1300 })).toBe(1140)
   })
   it("widens to 75% of the window", () => expect(panelWidth({ ...base, vw: 1600, isWide: true })).toBe(1200))
-  it("takes all the room beside the sidebar for a workspace", () => expect(panelWidth({ ...base, vw: 1440, isWorkspace: true })).toBe(1184))
+  it("keeps its width whatever tab shows: a workspace's side opens beside it (SideFlyout)", () =>
+    expect(panelWidth({ ...base, vw: 1440 })).toBe(605))
   it("is a 640px sheet in a medium window", () => {
-    expect(panelWidth({ ...base, vw: 1000, isWorkspace: true })).toBe(640)
+    expect(panelWidth({ ...base, vw: 1000 })).toBe(640)
     expect(panelWidth({ ...base, vw: 500 })).toBe(500)
   })
 })

@@ -19,6 +19,7 @@ import type { CodeTree, Mark, Match } from "@/lib/api-types"
 import { ensureMonacoLang } from "@/lib/code-theme"
 import { useMonaco, useMonacoTheme } from "@/lib/monaco"
 import { cn } from "@/lib/utils"
+import { SideFlyout, useSideRoom } from "@/features/session/SideFlyout"
 import { type Folder, changedFolders, parentsOf, rankFiles, spanOf, treeOf } from "./tree"
 
 const WATCH_MS = 3000
@@ -171,7 +172,10 @@ function QuickOpen({ files, onPick, onClose }: { files: string[]; onPick: (path:
   )
 }
 
-export function CodeWorkspace({ id }: { id: string }) {
+// isShown: the Code tab shows (it stays mounted while another does), so its
+// tree opens beside the panel only then.
+export function CodeWorkspace({ id, isShown = true }: { id: string; isShown?: boolean }) {
+  const hasSideRoom = useSideRoom()
   const monacoState = useMonaco()
   const { theme, isPlain } = useMonacoTheme()
   const plain = useRef(isPlain)
@@ -359,16 +363,8 @@ export function CodeWorkspace({ id }: { id: string }) {
   const showSearch = () => (setSide("search"), requestAnimationFrame(() => searchField.current?.select()))
   const toggle = (p: string) => setOpenDirs(d => (d.has(p) ? new Set([...d].filter(x => x !== p)) : new Set([...d, p])))
 
-  if (treeError) return <p className="p-6 text-sm text-muted-foreground">{treeError}</p>
-  return (
-    <div className="relative grid min-h-0 flex-1 grid-cols-[minmax(210px,28%)_minmax(0,1fr)]"
-      onKeyDown={e => {
-        if (!(e.metaKey || e.ctrlKey)) return
-        if (e.key === "p") (e.preventDefault(), setQuick(true))
-        else if (e.key === "s") (e.preventDefault(), void save())
-        else if (e.key.toLowerCase() === "f" && e.shiftKey) (e.preventDefault(), showSearch())
-      }}>
-      <aside className="flex min-h-0 flex-col border-r border-line bg-side" aria-label="Files">
+  const sidePanel = (
+    <>
         <header className="flex items-center justify-between gap-1.5 pt-2 pr-2 pb-1.5 pl-3 text-[11.5px] tracking-[0.04em] text-text-muted uppercase">
           <b className="truncate font-semibold" title={tree?.root}>{side === "search" ? "Search" : (tree?.name ?? "…")}</b>
           <span className="flex gap-0.5">
@@ -381,7 +377,19 @@ export function CodeWorkspace({ id }: { id: string }) {
           {root ? <TreeRows node={root} depth={0} open={openDirs} toggle={toggle} status={tree!.status} changed={changed} active={active} onOpen={p => void open(p)} /> : <p className="p-3 text-text-muted">Reading the folder…</p>}
           {tree?.truncated && <p className="p-3 text-text-muted">Only the first {tree.files.length} files show.</p>}
         </div>
-      </aside>
+    </>
+  )
+  if (treeError) return <p className="p-6 text-sm text-muted-foreground">{treeError}</p>
+  return (
+    <div className={cn("relative grid min-h-0 flex-1", hasSideRoom ? "grid-cols-1" : "grid-cols-[minmax(210px,28%)_minmax(0,1fr)]")}
+      onKeyDown={e => {
+        if (!(e.metaKey || e.ctrlKey)) return
+        if (e.key === "p") (e.preventDefault(), setQuick(true))
+        else if (e.key === "s") (e.preventDefault(), void save())
+        else if (e.key.toLowerCase() === "f" && e.shiftKey) (e.preventDefault(), showSearch())
+      }}>
+      {/* The tree opens beside the panel, which keeps its width; inside it where there is no room. */}
+      {hasSideRoom ? isShown && <SideFlyout label="Files">{sidePanel}</SideFlyout> : <aside className="flex min-h-0 flex-col border-r border-line bg-side" aria-label="Files">{sidePanel}</aside>}
       <section className="relative flex min-h-0 min-w-0 flex-col">
       {isQuick && <QuickOpen files={tree?.files ?? []} onPick={p => void open(p)} onClose={() => setQuick(false)} />}
         {tabs.length > 0 && (

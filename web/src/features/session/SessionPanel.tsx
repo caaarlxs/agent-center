@@ -257,7 +257,7 @@ export function SessionPanel({ id, tab: asked, file }: { id: string; tab: Tab; f
         {tab === "prs" && <Prs key={id} id={id} />}
         {tab === "tasks" && <Tasks key={id} id={id} />}
         {tab === "files" && <Files key={id} id={id} file={file} />}
-        {hasCode && <div className={cn("flex min-h-0 flex-1 flex-col", tab !== "code" && "hidden")}><CodeWorkspace key={id} id={id} /></div>}
+        {hasCode && <div className={cn("flex min-h-0 flex-1 flex-col", tab !== "code" && "hidden")}><CodeWorkspace key={id} id={id} isShown={tab === "code"} /></div>}
       </div>
     </aside>
   )

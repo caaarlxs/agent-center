@@ -60,7 +60,7 @@ export function ChangedTree({ files, chosen, onPick, notes = null }: { files: Fi
     return next
   })
   return (
-    <aside aria-label="Changed files" className="flex min-h-0 flex-col border-r border-line bg-side">
+    <aside aria-label="Changed files" className="flex min-h-0 flex-1 flex-col border-r border-line bg-side">
       <header className="flex items-center gap-1.5 pt-2 pr-2 pb-1.5 pl-3 text-[11.5px] tracking-[0.04em] text-text-muted uppercase">
         <b className="truncate font-semibold">{files.length} {files.length === 1 ? "file" : "files"} changed</b>
       </header>
