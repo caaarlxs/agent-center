@@ -389,7 +389,7 @@ export function CodeWorkspace({ id, isShown = true }: { id: string; isShown?: bo
         else if (e.key.toLowerCase() === "f" && e.shiftKey) (e.preventDefault(), showSearch())
       }}>
       {/* The tree opens beside the panel, which keeps its width; inside it where there is no room. */}
-      {hasSideRoom ? isShown && <SideFlyout label="Files">{sidePanel}</SideFlyout> : <aside className="flex min-h-0 flex-col border-r border-line bg-side" aria-label="Files">{sidePanel}</aside>}
+      {hasSideRoom ? <SideFlyout label="Files" isOpen={isShown}>{sidePanel}</SideFlyout> : <aside className="flex min-h-0 flex-col border-r border-line bg-side" aria-label="Files">{sidePanel}</aside>}
       <section className="relative flex min-h-0 min-w-0 flex-col">
       {isQuick && <QuickOpen files={tree?.files ?? []} onPick={p => void open(p)} onClose={() => setQuick(false)} />}
         {tabs.length > 0 && (
