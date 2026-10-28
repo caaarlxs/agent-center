@@ -7,6 +7,7 @@ import { open, readdir, stat } from "node:fs/promises"
 import { join } from "node:path"
 import { HOME, PROJECTS_DIR as PROJECTS } from "./config"
 import { applyPlanOp, type PlanOp, type PlanStep } from "./plan-op"
+import { hasWidget, resultOf, type Widget, widgetOf } from "./widgets"
 
 const WINDOW = 3 * 1024 * 1024
 const MAX_FOLLOW = 16 * 1024 * 1024 // a follow-up read that fell this far behind starts over at the tail
@@ -48,7 +49,18 @@ export type Item = { key: string } & (
   // session's own repository).
   | { kind: "suggestion"; taskId: string | null; title: string; tldr: string | null; prompt: string; folder: string | null }
   | { kind: "suggestionGone"; taskId: string }
+  // What a connector's tool gave back, drawn as the app's widget (lib/widgets.ts).
+  | { kind: "widget"; widget: Widget }
 )
+
+// The calls whose result is drawn, by id: the result can come in a later read
+// than the call (a live session), so they outlive one read.
+const CALLS_KEPT = 2000
+const widgetCalls = new Map<string, { name: string; input: unknown }>()
+function rememberCall(id: string, name: string, input: unknown) {
+  widgetCalls.set(id, { name, input })
+  if (widgetCalls.size > CALLS_KEPT) widgetCalls.delete(widgetCalls.keys().next().value!)
+}
 
 const pathCache = new Map<string, string>()
 
@@ -146,6 +158,15 @@ function editOf(result: any): { path: string; added: number; removed: number } |
   return { path: result.filePath, added, removed }
 }
 
+// The widgets a row of tool results brings, one per result whose call has one.
+function widgetItems(blocks: any[], row: any, uuid: string): Item[] {
+  return blocks.flatMap((b: any, i: number): Item[] => {
+    const call = b?.type === "tool_result" && !b.is_error ? widgetCalls.get(b.tool_use_id) : undefined
+    const widget = call && widgetOf(call.name, call.input, resultOf(row.mcpMeta?.structuredContent, b.content))
+    return widget ? [{ key: `${uuid}:widget:${i}`, kind: "widget", widget }] : []
+  })
+}
+
 function toItems(rows: any[]): Item[] {
   const items: Item[] = []
   // What each tool call got back, for the answers to AskUserQuestion.
@@ -178,6 +199,7 @@ function toItems(rows: any[]): Item[] {
     if (row.type === "user" && !row.isMeta) {
       const blocks = typeof content === "string" ? [{ type: "text", text: content }] : Array.isArray(content) ? content : []
       if (blocks.some((b: any) => b?.type === "tool_result")) {
+        items.push(...widgetItems(blocks, row, uuid))
         const edit = editOf(row.toolUseResult)
         if (edit) items.push({ key: `${uuid}:edit`, kind: "edit", ...edit })
         continue
@@ -191,6 +213,7 @@ function toItems(rows: any[]): Item[] {
         if (block?.type === "text" && block.text?.trim()) items.push({ key, kind: "assistant", text: block.text, at })
         else if (block?.type === "tool_use") {
           const name = String(block.name ?? "")
+          if (hasWidget(name)) rememberCall(String(block.id), name, block.input)
           if (name.endsWith("ccd_turn__wrap_up"))
             items.push({
               key,

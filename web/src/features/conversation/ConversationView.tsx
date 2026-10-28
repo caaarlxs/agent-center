@@ -29,6 +29,7 @@ import type { EditsItem, Shown, SuggestionItem } from "./items"
 import { Markdown, SessionOf } from "./Markdown"
 import { useLiveAnswer } from "./session-events"
 import { useTypewriter } from "./typewriter"
+import { WidgetView } from "./Widget"
 import { type Pending, deliveredOf, dropPending, stampOf, takenBack, usePending, waitingOf } from "./pending"
 import { reply, takeBack } from "./send"
 import { dialogAnswer, linesText, nameOf, partsOf } from "./text"
@@ -461,6 +462,8 @@ function ShownItem({ item, sessionId, asked, suggested, onFork }: { item: Shown;
       )
     case "edits":
       return <EditedFiles item={item} />
+    case "widget":
+      return <WidgetView widget={item.widget} sessionId={sessionId} />
     case "artifact":
       return (
         <div className="flex max-w-[520px] items-center gap-2.5 rounded-[10px] border border-line bg-surface px-3 py-2.5">
