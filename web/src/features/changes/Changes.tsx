@@ -13,6 +13,7 @@ import { Kbd } from "@/components/ui/kbd"
 import { get } from "@/lib/api"
 import { persistedStore } from "@/lib/store"
 import type { Changes as ChangesData, FileDiff } from "@/lib/api-types"
+import { type Tokens, useShikiTheme, useTokens } from "@/lib/code-theme"
 import { useMonaco, useMonacoTheme } from "@/lib/monaco"
 import { cn } from "@/lib/utils"
 import { showTab } from "@/app/open-session"
@@ -75,6 +76,18 @@ function CommentEditor({ initial, onSave, onCancel }: { initial: string; onSave:
 
 const STATUS_WORD = { added: ["new", "text-work"], deleted: ["deleted", "text-bad"], renamed: ["renamed", "text-review"], modified: ["", ""] } as const
 
+// One hunk of a file's diff, its lines coloured in the code theme (as one
+// text, so a string or a comment that spans lines reads right), on the
+// theme's own background; plain until the colours are there, or with them off.
+function Hunk({ path, text, children }: { path: string; text: string; children: (tokens: Tokens | null) => React.ReactNode }) {
+  const tokens = useTokens(text, path, useShikiTheme())
+  return (
+    <div className="overflow-x-auto [&+&]:border-t [&+&]:border-dashed [&+&]:border-line" style={tokens ? { background: tokens.bg, color: tokens.fg } : undefined}>
+      {children(tokens)}
+    </div>
+  )
+}
+
 function FileBlock({ file, comments, editing, setEditing, save, remove }: {
   file: FileDiff; comments: Record<string, LineComment>; editing: string | null; setEditing: (key: string | null) => void
   save: (c: LineComment) => void; remove: (key: string) => void
@@ -96,7 +109,7 @@ function FileBlock({ file, comments, editing, setEditing, save, remove }: {
       {isOpen && (file.binary ? <p className="m-0 px-3 py-2.5 text-xs text-text-muted">Binary file.</p>
         : file.collapsed ? <p className="m-0 px-3 py-2.5 text-xs text-text-muted">Generated or dependency file: not shown.</p>
         : file.hunks.map((h, i) => (
-          <div key={i} className="overflow-x-auto [&+&]:border-t [&+&]:border-dashed [&+&]:border-line">
+          <Hunk key={i} path={file.path} text={h.lines.map(l => l.text).join("\n")}>{tokens => (<>
             {h.header && <div className="bg-hover px-2.5 py-[3px] font-mono text-[11.5px] text-faint">{h.header}</div>}
             {h.lines.map((l, j) => {
               const side = l.kind === "del" ? "old" : "new"
@@ -112,7 +125,7 @@ function FileBlock({ file, comments, editing, setEditing, save, remove }: {
                     <span className="pr-2 text-right text-faint select-none">{l.old ?? ""}</span>
                     <span className="pr-2 text-right text-faint select-none">{l.new ?? ""}</span>
                     <span className={cn("text-faint select-none", l.kind === "add" && "text-work", l.kind === "del" && "text-bad")}>{l.kind === "add" ? "+" : l.kind === "del" ? "−" : " "}</span>
-                    <span className="pr-4 whitespace-pre">{l.text || " "}</span>
+                    <span className="pr-4 whitespace-pre">{tokens?.lines[j]?.length ? tokens.lines[j].map((t, k) => <span key={k} style={{ color: t.color, fontStyle: t.fontStyle === 1 ? "italic" : undefined }}>{t.content}</span>) : l.text || " "}</span>
                   </div>
                   {editing === key ? (
                     <CommentEditor initial={comment?.text ?? ""} onCancel={() => setEditing(null)}
@@ -128,7 +141,7 @@ function FileBlock({ file, comments, editing, setEditing, save, remove }: {
                 </div>
               )
             })}
-          </div>
+          </>)}</Hunk>
         )))}
     </section>
   )
@@ -138,7 +151,7 @@ function FileBlock({ file, comments, editing, setEditing, save, remove }: {
 // left, as it is now on the right; the tree of changed files beside it.
 function SideBySide({ id, files }: { id: string; files: FileDiff[] }) {
   const monaco = useMonaco()
-  const theme = useMonacoTheme()
+  const { theme, isPlain } = useMonacoTheme()
   const shown = files.filter(f => !f.binary && !f.collapsed)
   const [chosen, setChosen] = useState<FileDiff | null>(shown[0] ?? null)
   const [versions, setVersions] = useState<{ original: string; modified: string } | null>(null)
@@ -157,7 +170,8 @@ function SideBySide({ id, files }: { id: string; files: FileDiff[] }) {
         {chosen && <div className="shrink-0 truncate border-b border-line px-3 py-1.5 font-mono text-xs text-text-muted" title={chosen.path}>{chosen.oldPath ? `${chosen.oldPath} → ` : ""}{chosen.path}</div>}
         {wait ? <p className="grid flex-1 place-items-center text-text-muted">{wait}</p> : versions && chosen && (
           <div className="min-h-0 flex-1">
-            <DiffEditor original={versions.original} modified={versions.modified} originalModelPath={`base/${chosen.oldPath ?? chosen.path}`} modifiedModelPath={`now/${chosen.path}`}
+            <DiffEditor original={versions.original} modified={versions.modified} originalModelPath={`base/${isPlain ? "plain/" : ""}${chosen.oldPath ?? chosen.path}`} modifiedModelPath={`now/${isPlain ? "plain/" : ""}${chosen.path}`}
+              language={isPlain ? "plaintext" : undefined}
               theme={theme} options={{ readOnly: true, fontSize: 13, automaticLayout: true, useInlineViewWhenSpaceIsLimited: true, renderSideBySide: true }} />
           </div>
         )}

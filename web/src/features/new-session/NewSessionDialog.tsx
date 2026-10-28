@@ -129,7 +129,7 @@ function Prompt({ root, draft, onClose }: { root: string | null; draft?: NewDraf
               else document.execCommand("insertText", false, "\n")
             }} />
         </PromptInputBody>
-        <div data-align="block-end" className="order-last flex w-full min-w-0 items-center gap-0.5 pt-1 pr-1.5 pb-1.5 pl-2">
+        <div data-align="block-end" className="order-last flex w-full min-w-0 flex-wrap items-center gap-0.5 pt-1 pr-1.5 pb-1.5 pl-2">
           <AttachButton />
           <MicButton />
           <span className="mx-1.5 h-[18px] w-px shrink-0 bg-line" />
@@ -160,7 +160,7 @@ export function NewSessionDialog({ draft, onClose }: { draft?: NewDraft; onClose
   const [root, setRoot] = useState<string | null>(draft?.root ?? null)
   return (
     <Dialog open onOpenChange={o => !o && onClose()}>
-      <DialogContent showCloseButton={false} className="gap-2.5">
+      <DialogContent showCloseButton={false} className="gap-2.5 [&>*]:min-w-0">
         <DialogTitle className="mb-1">{draft?.suggestion ? "Start the suggested task" : "New session"}</DialogTitle>
         <Folders root={root} onPick={setRoot} />
         <PromptInputProvider initialInput={draft?.prompt ?? ""}>

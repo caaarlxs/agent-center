@@ -11,6 +11,7 @@
 import { ArrowDown, ChevronDown, ChevronRight, FileText, GitFork, ListChecks, Terminal, Bot, Wrench } from "lucide-react"
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
+import { FileIcon } from "@/components/common/FileIcon"
 import { Button } from "@/components/ui/button"
 import { get, post } from "@/lib/api"
 import type { Bridge, Card, Permission, Snapshot, SuggestionState } from "@/lib/api-types"
@@ -19,18 +20,18 @@ import { useLive } from "@/lib/live"
 import { useNow } from "@/lib/now"
 import { cn } from "@/lib/utils"
 import { openDialog } from "@/app/open-dialog"
-import { openSession, showFile } from "@/app/open-session"
+import { openSession, showFile, showTab } from "@/app/open-session"
 import { fileName, sentFiles } from "@/features/prompt/files"
 import { ago } from "@/features/session/state"
 import { answer, launch, permit } from "@/features/session/actions"
 import { ForkDialog } from "./ForkDialog"
-import type { Shown, SuggestionItem } from "./items"
+import type { EditsItem, Shown, SuggestionItem } from "./items"
 import { Markdown, SessionOf } from "./Markdown"
 import { useLiveAnswer } from "./session-events"
 import { useTypewriter } from "./typewriter"
 import { type Pending, deliveredOf, dropPending, stampOf, takenBack, usePending, waitingOf } from "./pending"
 import { reply, takeBack } from "./send"
-import { dialogAnswer, extOf, familyOf, linesText, nameOf, partsOf, type Family } from "./text"
+import { dialogAnswer, linesText, nameOf, partsOf } from "./text"
 import { type Suggestions, useConversation } from "./useConversation"
 import { Anim } from "@/components/icons/animated"
 
@@ -85,18 +86,6 @@ function Bubble({ text: raw, isPending }: { text: string; isPending?: boolean })
 }
 
 const chip = "inline-flex h-[30px] max-w-[260px] items-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 text-[12.5px] text-text no-underline hover:border-line-strong"
-const FAMILY_TONE: Record<Family, string> = {
-  sheet: "bg-[rgb(22_163_74/0.16)] text-work",
-  doc: "bg-[color-mix(in_srgb,var(--review)_18%,transparent)] text-review",
-  slides: "bg-run-soft text-run",
-  pdf: "bg-bad-soft text-bad",
-  media: "bg-[color-mix(in_srgb,var(--brand)_16%,transparent)] text-brand",
-  code: "bg-hover text-text-muted",
-}
-// A file type's label, tinted by its family (files.js ExtTag).
-export function ExtTag({ ext }: { ext: string }) {
-  return <span className={cn("inline-flex h-[18px] min-w-[26px] shrink-0 items-center justify-center rounded px-1 font-mono text-[9.5px] font-semibold uppercase", FAMILY_TONE[familyOf(ext)])}>{ext || "file"}</span>
-}
 
 // A file Claude showed you: its type, name and size ("gone" when it is no
 // longer there); a click opens it in the Files tab.
@@ -105,9 +94,49 @@ function FileChip({ sessionId, path }: { sessionId: string; path: string }) {
   useEffect(() => void get<{ path: string; size: number }>(`/api/sessions/${encodeURIComponent(sessionId)}/fileinfo?path=${encodeURIComponent(path)}`).then(setInfo, (err: Error) => setInfo({ error: err.message })), [sessionId, path])
   return (
     <button className={chip} onClick={() => showFile(path)} title={info?.path ?? path}>
-      <ExtTag ext={extOf(path)} /><span className="truncate">{nameOf(path)}</span>
+      <FileIcon path={path} /><span className="truncate">{nameOf(path)}</span>
       {info?.size != null ? <small className="shrink-0 text-[11px] text-faint tabular-nums">{bytesText(info.size)}</small> : info?.error && <small className="shrink-0 text-[11px] text-faint">gone</small>}
     </button>
+  )
+}
+
+// A changed file in the Changes tab, once it has drawn; the file itself when
+// the diff does not show it (committed since, or outside the repository).
+function showChange(path: string) {
+  showTab("changes")
+  let tries = 0
+  const find = () => {
+    const at = [...document.querySelectorAll<HTMLElement>("section[id^='df-']")].find(s => path.endsWith(`/${s.id.slice(3)}`))
+    if (at) return at.scrollIntoView({ block: "start", behavior: "smooth" })
+    if (++tries < 15) setTimeout(find, 200)
+    else showFile(path)
+  }
+  setTimeout(find, 100)
+}
+
+// The files a turn changed (the app's "N files changed" box): a click on one
+// shows its diff; "See all" opens the Changes tab.
+function EditedFiles({ item }: { item: EditsItem }) {
+  const added = item.files.reduce((n, f) => n + f.added, 0)
+  const removed = item.files.reduce((n, f) => n + f.removed, 0)
+  const count = (a: number, r: number) => (
+    <span className="ml-auto shrink-0 font-mono text-xs tabular-nums"><span className="text-work">+{a}</span> <span className="text-bad">−{r}</span></span>
+  )
+  return (
+    <div className="max-w-[620px] shrink-0 overflow-hidden rounded-[12px] border border-line bg-surface">
+      <div className="border-b border-line px-3.5 py-2.5 text-[13px] font-medium">{item.files.length === 1 ? "1 file changed" : `${item.files.length} files changed`}</div>
+      {item.files.map(f => (
+        <button key={f.path} onClick={() => showChange(f.path)} title={f.path}
+          className="flex w-full min-w-0 items-center gap-2.5 px-3.5 py-[7px] text-left text-[13px] hover:bg-hover">
+          <FileIcon path={f.path} /><span className="min-w-0 truncate">{nameOf(f.path)}</span>{count(f.added, f.removed)}
+        </button>
+      ))}
+      {item.files.length > 1 && (
+        <button onClick={() => showTab("changes")} className="flex w-full items-center gap-2.5 border-t border-line px-3.5 py-2 text-left text-[13px] text-text-muted hover:bg-hover hover:text-text">
+          See all{count(added, removed)}
+        </button>
+      )}
+    </div>
   )
 }
 
@@ -430,6 +459,8 @@ function ShownItem({ item, sessionId, asked, suggested, onFork }: { item: Shown;
           <div className="flex flex-wrap gap-1.5">{item.paths.map(p => <FileChip key={p} sessionId={sessionId} path={p} />)}</div>
         </div>
       )
+    case "edits":
+      return <EditedFiles item={item} />
     case "artifact":
       return (
         <div className="flex max-w-[520px] items-center gap-2.5 rounded-[10px] border border-line bg-surface px-3 py-2.5">

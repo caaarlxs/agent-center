@@ -25,15 +25,5 @@ export function useMonaco(): State {
   return state
 }
 
-// The editor's theme follows the system's, live, as the page does.
-const darkQuery = matchMedia("(prefers-color-scheme: dark)")
-export const monacoTheme = () => (darkQuery.matches ? "vs-dark" : "vs")
-export function useMonacoTheme() {
-  const [theme, setTheme] = useState(monacoTheme)
-  useEffect(() => {
-    const on = () => setTheme(monacoTheme())
-    darkQuery.addEventListener("change", on)
-    return () => darkQuery.removeEventListener("change", on)
-  }, [])
-  return theme
-}
+// Its theme and colours: lib/code-theme.ts (useMonacoTheme).
+export { useMonacoTheme } from "./code-theme"

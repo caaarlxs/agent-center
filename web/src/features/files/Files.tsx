@@ -14,9 +14,8 @@ import { bytesText } from "@/lib/format"
 import { useMonaco, useMonacoTheme } from "@/lib/monaco"
 import { useNow } from "@/lib/now"
 import { cn } from "@/lib/utils"
-import { ExtTag } from "@/features/conversation/ConversationView"
+import { FileIcon } from "@/components/common/FileIcon"
 import { Markdown, copyText } from "@/features/conversation/Markdown"
-import { extOf } from "@/features/conversation/text"
 import { ago } from "@/features/session/state"
 import { kindOf, parseDelimited } from "./kinds"
 import { OfficeDoc } from "./OfficeDoc"
@@ -46,12 +45,12 @@ function Body({ id, file, info, isSource }: { id: string; file: Listed; info: In
   const fileUrl = at(id, "file", file.path)
   const text = useText(info.isViewable && ["markdown", "code", "table"].includes(kind) ? fileUrl : null)
   const monaco = useMonaco()
-  const theme = useMonacoTheme()
+  const { theme, isPlain } = useMonacoTheme()
   const rows = useMemo(() => (kind === "table" && text ? parseDelimited(text, file.name.endsWith(".tsv") ? "\t" : ",", MAX_ROWS) : []), [kind, text, file.name])
   const [hasNoPreview, setNoPreview] = useState(false)
   if (!info.isViewable) return <p className={muted}>Too large to show here ({bytesText(info.size)}).</p>
   const code = monaco.ready && text !== null
-    ? <div className="h-full min-h-0"><Editor value={text} path={`files/${file.path}`} theme={theme} options={{ readOnly: true, fontSize: 13, minimap: { enabled: false }, automaticLayout: true }} /></div>
+    ? <div className="h-full min-h-0"><Editor value={text} path={`files/${isPlain ? "plain/" : ""}${file.path}`} language={isPlain ? "plaintext" : undefined} theme={theme} options={{ readOnly: true, fontSize: 13, minimap: { enabled: false }, automaticLayout: true }} /></div>
     : <p className={muted}>Loading…</p>
   switch (kind) {
     case "markdown":
@@ -164,7 +163,7 @@ export function Files({ id, file }: { id: string; file?: string }) {
           <li key={f.path}>
             <button onClick={() => setChosen(f)} title={f.path}
               className={cn("flex h-[30px] w-full items-center gap-2 rounded-[7px] px-2 text-left text-[12.5px] text-text", chosen?.path === f.path ? "bg-select" : "hover:bg-hover")}>
-              <ExtTag ext={extOf(f.path)} />
+              <FileIcon path={f.path} />
               <span className="min-w-0 flex-1 truncate">{f.name}</span>
               <small className="shrink-0 text-[11px] text-faint">{SOURCE[f.source] ?? f.source} · {ago(f.modifiedAt, now)}</small>
             </button>

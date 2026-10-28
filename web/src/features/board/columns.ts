@@ -46,7 +46,7 @@ export function inboxGroups(cards: Card[], showDone: boolean): Group[] {
 }
 
 // What a card dropped on a column asks of the server, or null (no drop).
-export type Step = [action: "park" | "done" | "seen" | "unpark" | "undone" | "tier", payload: Record<string, unknown>]
+export type Step = [action: "park" | "done" | "seen" | "unpark" | "undone" | "tier" | "rank", payload: Record<string, unknown>]
 export function dropAction(card: Card | null, column: ColumnKey): Step | null {
   if (!card || card.column === column) return null
   if (column === "parked") return ["park", { until: null }]

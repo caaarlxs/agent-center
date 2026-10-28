@@ -10,10 +10,10 @@ import { patchOf } from "./overrides"
 import { keepUnread } from "./seen"
 import { overrides, selected, showDone } from "./state"
 import type { Step } from "./columns"
-import { TIERS, type TierKey, toTier } from "./tiers"
+import { ranksAt, type TierKey, tierOf, TIERS, toTier } from "./tiers"
 import { archivedIcon } from "@/components/icona/marks"
 
-export type Action = "pin" | "unpin" | "park" | "unpark" | "done" | "undone" | "archive" | "unarchive" | "seen" | "unseen" | "color" | "tier"
+export type Action = "pin" | "unpin" | "park" | "unpark" | "done" | "undone" | "archive" | "unarchive" | "seen" | "unseen" | "color" | "tier" | "rank"
 
 const INVERSE: Partial<Record<Action, Action>> = { pin: "unpin", unpin: "pin", park: "unpark", done: "undone", archive: "unarchive", unseen: "seen" }
 const MESSAGE: Partial<Record<Action, string>> = { done: "Marked as done", park: "Moved to Later", pin: "Pinned", unpin: "Unpinned", archive: "Archived", unseen: "Marked to review" }
@@ -38,7 +38,7 @@ export async function boardAct(card: Card, action: Action, payload: Record<strin
   }
   if (action === "unseen") keepUnread(card.id)
   const patch = patchOf(action, payload)
-  if (patch) overrides.set({ ...overrides.get(), [card.id]: { ...patch, at: Date.now() } })
+  if (patch) overrides.set({ ...overrides.get(), [card.id]: { ...overrides.get()[card.id], ...patch, at: Date.now() } })
   try {
     await send(card.id, action, payload)
   } catch (err) {
@@ -58,12 +58,19 @@ export async function boardSteps(card: Card, steps: Step[]) {
   for (const [action, payload] of steps) await boardAct(card, action, payload)
 }
 
-// The tier list: a row up or down, or to the one named. "Close" marks it done.
+// The tier list: a row up or down, or to the one named.
 export async function moveToTier(card: Card, key: TierKey) {
   const steps = toTier(card, key)
   if (!steps) return
   await boardSteps(card, steps)
-  if (key !== "close" && key !== "paused") toast(`${TIERS.find(t => t.key === key)!.label}: ${card.title}`)
+  if (key !== "paused") toast(`${TIERS.find(t => t.key === key)!.label}: ${card.title}`)
+}
+
+// A card put at `index` of a row (`row`: that row's cards, in order), from
+// another row or from its own: moved there first, then given its place.
+export async function placeInTier(card: Card, key: TierKey, row: Card[], index: number) {
+  if (tierOf(card) !== key) await moveToTier(card, key)
+  for (const [id, rank] of ranksAt(row, card.id, index)) await boardAct(row.find(c => c.id === id) ?? card, "rank", { rank })
 }
 
 // Archive all (Done): one toast, one Undo for all of them.

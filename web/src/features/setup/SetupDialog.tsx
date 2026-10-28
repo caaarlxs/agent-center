@@ -2,9 +2,9 @@
 // A step changes something on the Mac only when you press it (lib/setup.ts
 // does it), so each one says what it changes. Then how the board tells you
 // things (notifications, the chime, the Mac reading the recap aloud) and
-// whether waiting cards shake. It opens by itself while a required step is
+// whether waiting cards shake, the code colours. It opens by itself while a required step is
 // missing.
-import { Check } from "lucide-react"
+import { Check, ChevronLeft, ChevronRight } from "lucide-react"
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { Spinner } from "@/components/ui/spinner"
 import { get, post } from "@/lib/api"
 import type { Step } from "@/lib/api-types"
+import { type CodeThemeOption, chosenKey, codeTheme, useCodeThemes, useIsDark, useTokens } from "@/lib/code-theme"
 import { cn } from "@/lib/utils"
 import { notify, shake, sound, speech, toggleNotify, toggleSound, type Speech } from "@/features/alerts/prefs"
 import { CopyMark, useCopyMoment } from "@/components/icona/marks"
@@ -151,6 +152,64 @@ function Diagnostics() {
   )
 }
 
+const SAMPLE = `// Waiting cards first
+export function sortCards(cards: Card[]) {
+  const rank = { asking: 0, review: 1 } as const
+  return cards.filter(c => c.isOpen).length > 0
+}`
+
+// One theme in the carousel: its name and a sample drawn in it; a click picks it.
+function ThemeCard({ option, isChosen, onPick }: { option: CodeThemeOption; isChosen: boolean; onPick: () => void }) {
+  const isDark = useIsDark()
+  const tokens = useTokens(SAMPLE, "sample.ts", isDark ? option.dark : option.light)
+  return (
+    <button type="button" onClick={onPick} aria-pressed={isChosen} data-theme-key={option.key}
+      className={cn("flex w-[236px] shrink-0 snap-start flex-col gap-1.5 rounded-[10px] border p-1.5 text-left transition-[border-color,box-shadow] duration-100",
+        isChosen ? "border-brand shadow-[0_0_0_3px_var(--brand-soft)]" : "border-line hover:border-line-strong")}>
+      <pre className="m-0 h-[104px] overflow-hidden rounded-md px-2.5 py-2 font-mono text-[10px]/[1.55] whitespace-pre" style={tokens ? { background: tokens.bg, color: tokens.fg } : undefined}>
+        {tokens
+          ? tokens.lines.map((line, i) => <div key={i}>{line.length ? line.map((t, k) => <span key={k} style={{ color: t.color, fontStyle: t.fontStyle === 1 ? "italic" : undefined }}>{t.content}</span>) : " "}</div>)
+          : <span className="text-faint">{SAMPLE}</span>}
+      </pre>
+      <span className="flex min-w-0 items-center gap-1.5 px-1 pb-0.5">
+        <span className={cn("min-w-0 truncate text-[12.5px]", isChosen ? "font-semibold text-text" : "text-text-muted")}>{option.label}</span>
+        {option.from && <span className="shrink-0 rounded-full bg-brand-soft px-1.5 py-px text-[10.5px] font-semibold text-brand">Your {option.from}</span>}
+        {isChosen && <Check className="ml-auto size-3.5 shrink-0 text-brand" />}
+      </span>
+    </button>
+  )
+}
+
+// The code viewer's colours (lib/code-theme.ts): on or off, and the theme,
+// picked from a carousel where each one shows a sample of code in it.
+function CodeColours() {
+  const chosen = codeTheme.use()
+  const options = useCodeThemes()
+  const key = chosenKey(chosen.theme, options)
+  const strip = useRef<HTMLDivElement>(null)
+  // The chosen one in view when the carousel opens (and when the editor's own arrives).
+  useEffect(() => {
+    strip.current?.querySelector<HTMLElement>(`[data-theme-key="${CSS.escape(key)}"]`)?.scrollIntoView({ block: "nearest", inline: "center" })
+  }, [chosen.isOn, options.length]) // eslint-disable-line react-hooks/exhaustive-deps
+  const slide = (step: 1 | -1) => strip.current?.scrollBy({ left: step * 488, behavior: "smooth" })
+  const arrow = "absolute top-[52px] z-[1] grid size-7 place-items-center rounded-full border border-line bg-raised text-text-muted shadow-card hover:text-text"
+  return (
+    <Row title="Code colours" need="Preference" isDone={chosen.isOn} state={chosen.isOn ? <Done label="On" /> : <Todo label="Off" />}
+      actions={<Button variant={chosen.isOn ? "outline" : "default"} onClick={() => codeTheme.set({ ...chosen, isOn: !chosen.isOn })}>{chosen.isOn ? "Turn off" : "Turn on"}</Button>}>
+      <p className={text}>Syntax colours, as an IDE shows code, in the Code and Files tabs, in Changes and in the code a conversation shows. Turned off, code shows plain. Pick a theme below; where it has both, it follows the light or dark look of your Mac. Your own theme from Cursor or VS Code shows first.</p>
+      {chosen.isOn && (
+        <div className="relative mt-2.5">
+          <button type="button" className={cn(arrow, "-left-2")} onClick={() => slide(-1)} title="Previous themes"><ChevronLeft className="size-4" /></button>
+          <div ref={strip} className="flex snap-x snap-mandatory gap-2 overflow-x-auto scroll-smooth px-1 pt-0.5 pb-2 [scrollbar-width:thin]">
+            {options.map(o => <ThemeCard key={o.key} option={o} isChosen={o.key === key} onPick={() => codeTheme.set({ ...chosen, theme: o.key })} />)}
+          </div>
+          <button type="button" className={cn(arrow, "-right-2")} onClick={() => slide(1)} title="More themes"><ChevronRight className="size-4" /></button>
+        </div>
+      )}
+    </Row>
+  )
+}
+
 export function SetupDialog({ onClose }: { onClose: () => void }) {
   const [status, setStatus] = useState<Status | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
@@ -242,6 +301,7 @@ export function SetupDialog({ onClose }: { onClose: () => void }) {
                 actions={<Button variant={isShaking ? "outline" : "default"} onClick={() => shake.set(isShaking ? "off" : "on")}>{isShaking ? "Turn off" : "Turn on"}</Button>}>
                 <p className={text}>A card that asks you something or waits for your approval gives a short shake every few seconds, faster the longer it waits. Turned off, it stays still and only its colour and the time it has waited tell you.</p>
               </Row>
+              <CodeColours />
               <ReadAloud />
               <Diagnostics />
             </>

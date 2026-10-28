@@ -3,7 +3,7 @@
 // the folder of sent files, and the live connection, alerts, Setup and the
 // keyboard help at the foot. It folds to icons (slim), and in a narrow window
 // it is a drawer over the page.
-import { BellOff, Columns3, Inbox, List, PanelLeft, Paperclip, Volume2, VolumeX } from "lucide-react"
+import { BellOff, BookText, Columns3, Inbox, List, PanelLeft, Paperclip, Volume2, VolumeX } from "lucide-react"
 import { useState, type ReactNode } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -187,6 +187,10 @@ export function Sidebar() {
             title="Summary of what your sessions did since you last looked (D)">
             <Anim.Sun size={14} />{!isSlim && <>Catch me up<Kbd className="ml-auto">D</Kbd></>}
           </Button>
+          <Button variant="outline" className={cn("h-[34px] w-full justify-start gap-2", isSlim && "justify-center gap-0 px-0")} onClick={() => openDialog({ kind: "context" })}
+            title="General context: ~/.claude/CLAUDE.md, what Claude reads in every session. See it and edit it">
+            <BookText className="size-3.5" />{!isSlim && "General context"}
+          </Button>
         </div>
         <nav className="flex flex-col gap-px">
           {VIEWS.map(v => (
@@ -227,12 +231,14 @@ export function Sidebar() {
         <SessionsMemory cards={cards} isSlim={isSlim} />
         <SentFiles isSlim={isSlim} />
         <footer className={cn("mt-2 flex items-center justify-between border-t border-line px-1.5 pt-2.5", isSlim && "flex-col gap-2 px-0")}>
-          <span className="inline-flex items-center gap-1.5 text-xs text-text-muted" title={isSlim ? (isConnected ? "Live" : "Reconnecting…") : undefined}>
+          {/* The version under "Live", so the row of buttons never breaks in a narrow window. */}
+          {/* Two columns: the dot beside "Live", the version under its text. */}
+          <span className="grid shrink-0 grid-cols-[7px_auto] items-center gap-x-1.5 text-xs leading-tight text-text-muted" title={isSlim ? (isConnected ? "Live" : "Reconnecting…") : undefined}>
             <i className={cn("size-[7px] rounded-full", isConnected ? "bg-work shadow-[0_0_0_3px_var(--work-soft)]" : "bg-faint")} />
-            {!isSlim && (isConnected ? "Live" : "Reconnecting…")}
+            {!isSlim && <span className="whitespace-nowrap">{isConnected ? "Live" : "Reconnecting…"}</span>}
             {!isSlim && version && (
-              <span className="font-mono text-[11px] text-faint" title={`Version ${version.commit} · ${new Date(version.date).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}`}>
-                · {version.commit}
+              <span className="col-start-2 font-mono text-[10.5px] text-faint" title={`Version ${version.commit} · ${new Date(version.date).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}`}>
+                {version.commit}
               </span>
             )}
           </span>

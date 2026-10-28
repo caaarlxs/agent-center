@@ -1,4 +1,4 @@
-// The open dialog, if any. A link can open one (?dialog=new|setup|digest|help),
+// The open dialog, if any. A link can open one (?dialog=new|setup|digest|context|help),
 // and Setup opens by itself while a required step is missing, until closed once.
 import { useEffect } from "react"
 import { get } from "@/lib/api"
@@ -7,13 +7,14 @@ import { lazyView } from "@/lib/lazy-view"
 import { closeDialog, dialog, openDialog } from "./open-dialog"
 
 // Each dialog loads the first time it opens.
+const ContextDialog = lazyView(() => import("@/features/context/ContextDialog").then(m => m.ContextDialog))
 const DigestDialog = lazyView(() => import("@/features/digest/DigestDialog").then(m => m.DigestDialog))
 const NewSessionDialog = lazyView(() => import("@/features/new-session/NewSessionDialog").then(m => m.NewSessionDialog))
 const RunDialog = lazyView(() => import("@/features/run/RunDialog").then(m => m.RunDialog))
 const SetupDialog = lazyView(() => import("@/features/setup/SetupDialog").then(m => m.SetupDialog))
 
 const setupSeen = persistedStore("setupSeen", false)
-const LINKED = ["new", "setup", "digest", "help"] as const
+const LINKED = ["new", "setup", "digest", "context", "help"] as const
 
 export function Dialogs() {
   const open = dialog.use()
@@ -32,6 +33,7 @@ export function Dialogs() {
   if (open.kind === "new") return <NewSessionDialog draft={open.draft} onClose={closeDialog} />
   if (open.kind === "setup") return <SetupDialog onClose={() => (setupSeen.set(true), closeDialog())} />
   if (open.kind === "digest") return <DigestDialog onClose={closeDialog} />
+  if (open.kind === "context") return <ContextDialog onClose={closeDialog} />
   if (open.kind === "run") return <RunDialog card={open.card} onClose={closeDialog} />
   return null // help: the keyboard help dialog draws itself
 }

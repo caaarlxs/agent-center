@@ -1,8 +1,8 @@
 // The tree of changed files (code.js ChangedTree): compact folders that fold,
 // each file with its type, comments, +/− and status letter.
-import { ChevronRight, Folder, FolderOpen, Pencil } from "lucide-react"
+import { ChevronRight, Pencil } from "lucide-react"
 import { useMemo, useState } from "react"
-import { FileIcon } from "@/components/common/FileIcon"
+import { FileIcon, FolderIcon } from "@/components/common/FileIcon"
 import type { FileDiff } from "@/lib/api-types"
 import { cn } from "@/lib/utils"
 import { compactTree, type Folder as Node } from "@/features/code/tree"
@@ -23,7 +23,7 @@ function Rows({ node, depth, byPath, chosen, onPick, folded, onFold, notes }: {
           <div key={dir.path}>
             <button className={cn(row, "gap-[5px]")} style={{ paddingLeft: 8 + depth * 12 }} onClick={() => onFold(dir.path)} aria-expanded={isOpen}>
               <ChevronRight className={cn("size-3 shrink-0 text-text-muted transition-transform duration-[120ms] ease-(--ease-out)", isOpen && "rotate-90")} />
-              {isOpen ? <FolderOpen className="size-3.5 shrink-0 fill-[#dcb67a]/25 text-[#dcb67a]" /> : <Folder className="size-3.5 shrink-0 fill-[#c99a3b]/25 text-[#c99a3b]" />}
+              <FolderIcon path={label} isOpen={isOpen} />
               <span className="min-w-0 flex-1 truncate">{label}</span>
             </button>
             {isOpen && <Rows node={dir} depth={depth + 1} byPath={byPath} chosen={chosen} onPick={onPick} folded={folded} onFold={onFold} notes={notes} />}
