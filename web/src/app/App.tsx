@@ -79,9 +79,10 @@ function useLinksOutside() {
 }
 
 // A press anywhere outside the panel only closes it: on a card, a note, a
-// zone or a control it does nothing else. Menus, dialogs and toasts (the
-// panel's, or over it) and the search palette keep it.
-const KEEPS_PANEL = "[data-panel], [data-panel-edge], [role=menu], [role=dialog], [role=listbox], [data-sonner-toaster], [data-scrim]"
+// zone or a control it does nothing else. The sidebar on the left works as
+// it does; menus, dialogs and toasts (the panel's, or over it) and the
+// search palette keep it too.
+const KEEPS_PANEL = "[data-panel], [data-panel-edge], [data-sidebar], [role=menu], [role=dialog], [role=listbox], [data-sonner-toaster], [data-scrim]"
 function useCloseOnOutside(isOpen: boolean) {
   useEffect(() => {
     if (!isOpen) return

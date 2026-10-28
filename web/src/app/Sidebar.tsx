@@ -160,7 +160,7 @@ export function Sidebar() {
       {/* The drawer's scrim, in a narrow window. */}
       <div onClick={() => sideOpen.set(false)} aria-hidden
         className={cn("fixed inset-0 z-[44] bg-black/30 transition-opacity duration-200 min-[861px]:hidden", isDrawerOpen ? "opacity-100" : "pointer-events-none opacity-0")} />
-      <aside
+      <aside data-sidebar
         className={cn(
           "flex h-full shrink-0 flex-col border-r border-line bg-side transition-[width,translate] duration-200 ease-(--ease-out)",
           isSlim ? "w-[60px] px-2 pt-3.5 pb-2.5" : "w-64 px-2.5 pt-3.5 pb-2.5",
