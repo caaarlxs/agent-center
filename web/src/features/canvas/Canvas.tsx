@@ -279,8 +279,17 @@ export function Canvas() {
       ?.animate([{ transform: "none" }, { transform: "scale(1.05)", offset: 0.6 }, { transform: "none" }], { duration: 300, delay: 120, easing: FOLD_EASE })
     Promise.all(flights.map(f => f.finished)).catch(() => {}).finally(() => (putIn(), flights.forEach(f => f.cancel())))
   }
+  // A drag follows the pointer freely; on drop the nodes glide the last few
+  // pixels onto the grid (the "settle" class, for one short transition).
+  const [settling, setSettling] = useState<Set<string>>(new Set())
+  useEffect(() => {
+    if (!settling.size) return
+    const timer = setTimeout(() => setSettling(new Set()), 240)
+    return () => clearTimeout(timer)
+  }, [settling])
   const onNodeDragStop: OnNodeDrag = (e, node, dragged) => {
     const p = pointOf(e as unknown as MouseEvent)
+    setSettling(new Set([...dragged.map(d => d.id), ...[...(carried.current?.cards ?? []), ...(carried.current?.notes ?? [])].map(k => k.id)]))
     setOverDone(false)
     setFolderOver(null)
     setNoteTarget(null)
@@ -363,7 +372,9 @@ export function Canvas() {
     return () => clearTimeout(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focus])
-  const shown = useMemo(() => (flashId ? nodes.map(n => (n.id === flashId ? { ...n, className: "flash" } : n)) : nodes), [nodes, flashId])
+  const shown = useMemo(() => (flashId || settling.size
+    ? nodes.map(n => (n.id === flashId || settling.has(n.id) ? { ...n, className: cn(n.id === flashId && "flash", settling.has(n.id) && "settle") } : n))
+    : nodes), [nodes, flashId, settling])
   const box = useRef<HTMLDivElement>(null)
   const [fit, setFit] = useState(1)
   const fitRef = useRef(1)
@@ -390,7 +401,7 @@ export function Canvas() {
           if (saved === null ? Math.abs(v.zoom - fitRef.current) > 0.01 : Math.abs(v.zoom - saved) > 0.001) savedZoom.set(Math.abs(v.zoom - fitRef.current) < 0.01 ? null : v.zoom)
         }}
         panOnDrag={[1]} selectionOnDrag selectionMode={SelectionMode.Partial} panActivationKeyCode="Space" multiSelectionKeyCode={["Meta", "Shift"]} selectionKeyCode={null}
-        minZoom={minZoomOf(fit)} maxZoom={ZOOM.max} snapToGrid snapGrid={[GRID, GRID]} fitView={false} proOptions={{ hideAttribution: true }}
+        minZoom={minZoomOf(fit)} maxZoom={ZOOM.max} fitView={false} proOptions={{ hideAttribution: true }}
         className={cn(isOverDoneNow && "[&_.react-flow__node.dragging]:opacity-90")}
         style={{ "--xy-selection-background-color": "color-mix(in srgb, var(--brand) 12%, transparent)", "--xy-selection-border": "1.5px solid var(--brand)" } as CSSProperties}
       >

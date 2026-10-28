@@ -271,6 +271,9 @@ html[data-theme-switch]::view-transition-new(root) { animation: theme-curtain 60
 /* Canvas: a card the canvas went to ("Next up", the search) flashes once. */
 .react-flow__node.flash article { animation: card-flash 1.4s var(--ease-out) 1 !important; }
 @keyframes card-flash { from { box-shadow: 0 0 0 0 color-mix(in srgb, var(--brand) 70%, transparent); } to { box-shadow: 0 0 0 18px transparent; } }
+/* Canvas: a dropped node glides onto the grid (drags themselves are free). */
+.react-flow__node.settle { transition: transform 180ms var(--ease-out); }
+@media (prefers-reduced-motion: reduce) { .react-flow__node.settle { transition: none; } }
 @media (prefers-reduced-motion: reduce) { .react-flow__node.flash article { animation: none !important; border-color: var(--brand); } }
 
 /* Loading: bars with a light passing over them (styles.css:1013-1017). */
