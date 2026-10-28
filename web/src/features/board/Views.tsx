@@ -67,7 +67,7 @@ export function BoardCard({ card, inStack = false }: { card: Card; inStack?: boo
   const tint = tintOf(card.color)
   const ring = isSelected || isReading
   const style: CSSProperties = {
-    ...(tint ? { borderColor: `color-mix(in srgb, ${tint} 45%, var(--line))`, background: `color-mix(in srgb, ${tint} 9%, var(--surface))`, boxShadow: `inset 3px 0 0 ${tint}, 0 1px 1px rgb(0 0 0 / 0.02)` } : {}),
+    ...(tint ? { borderColor: `color-mix(in srgb, ${tint} 45%, var(--line))`, background: `color-mix(in srgb, ${tint} 9%, var(--surface))`, boxShadow: "0 1px 1px rgb(0 0 0 / 0.02)" } : {}),
     ...(card.column === "asking" ? { borderColor: "color-mix(in srgb, var(--ask) 35%, var(--line))" } : {}),
     ...(urgency ? URGENT_EDGE[urgency] : {}),
     ...(ring ? { borderColor: "var(--brand)", boxShadow: "0 0 0 3px var(--brand-soft)" } : {}),

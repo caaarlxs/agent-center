@@ -32,7 +32,7 @@ function lookOf(card: Card, o: { isSelected: boolean; isUrgent: boolean; isNoteT
   const state = stateOf(card)
   const tint = tintOf(card.color)
   const look: CSSProperties = {}
-  if (tint) Object.assign(look, { borderColor: mix(tint, 45), background: mix(tint, 9, "var(--surface)"), boxShadow: `inset 3px 0 0 ${tint}, 0 1px 1px rgb(0 0 0 / 0.02)`, ["--tint" as string]: tint })
+  if (tint) Object.assign(look, { borderColor: mix(tint, 45), background: mix(tint, 9, "var(--surface)"), boxShadow: "0 1px 1px rgb(0 0 0 / 0.02)", ["--tint" as string]: tint })
   if (o.isSelected || o.isNoteTarget) Object.assign(look, { borderColor: "var(--brand)", boxShadow: "0 0 0 3px var(--brand-soft)" })
   if (state === "asking") look.borderColor = mix("var(--ask)", 50)
   if (state === "permission") look.borderColor = mix("var(--bad)", 55)
