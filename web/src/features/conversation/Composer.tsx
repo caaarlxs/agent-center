@@ -1,8 +1,9 @@
 // The reply box (composer.js): text, files (picked, pasted or dropped) and
 // dictation go to the session through the bridge mod. The draft stays for
-// three days (the files while the page is open). The mode and model change in
-// the session; the effort only shows, as the app sends its own with every
-// message. Under it, what a message would meet now and how full the context is.
+// three days (the files while the page is open). The mode (a row of toggles)
+// and the model change in the session; the effort only shows, as the app
+// sends its own with every message. Under it, what a message would meet now
+// and how full the context is (a ring).
 import { Square } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import type { FileUIPart } from "ai"
@@ -13,7 +14,9 @@ import type { Bridge, Card } from "@/lib/api-types"
 import { persistedStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
 import { AttachButton, MicButton, PickedFiles, fileErrors } from "@/features/prompt/PromptExtras"
-import { EFFORTS, MODELS, MODES, Pick, ReadOnly, modelKey } from "@/features/prompt/Settings"
+import { modelKey } from "@/features/prompt/Settings"
+import { ModeToggles } from "@/features/prompt/ModeToggles"
+import { ModelEffort } from "@/features/prompt/ModelEffort"
 import { MAX_BYTES, MAX_FILES, messageWith } from "@/features/prompt/files"
 import { launch, stopTurn, wake } from "@/features/session/actions"
 import { UsageMeter } from "@/features/session/UsageMeter"
@@ -21,8 +24,6 @@ import { isBusyNow, isStuckNow, reachOf } from "./reach"
 import { composerFill, composerFocus, sendMessage } from "./send"
 import { Anim } from "@/components/icons/animated"
 import { SendMark, useSendMoment } from "@/components/icona/marks"
-
-export { EFFORTS, MODELS, MODES, Pick } // New session uses them too
 
 const DRAFT_MS = 3 * 24 * 60 * 60_000
 const drafts = persistedStore<Record<string, { text: string; at: number }>>("drafts", {})
@@ -40,7 +41,8 @@ const draftFiles = new Map<string, (FileUIPart & { id: string })[]>()
 const DOT = { on: "bg-work shadow-[0_0_0_3px_var(--work-soft)]", busy: "bg-ask shadow-[0_0_0_3px_var(--ask-soft)]", bad: "bg-bad", off: "bg-faint" }
 const subtle = "inline-flex h-[30px] shrink-0 items-center gap-[5px] rounded-md px-2.5 text-[13px] font-medium text-text-muted transition-[background-color,color,transform] duration-[120ms] hover:bg-hover active:scale-[0.97] [&_svg]:size-3"
 
-// Mode and model, changed through the bridge mod (v4); the effort shows.
+// Mode (toggles) and model (with the effort, which only shows), changed
+// through the bridge mod (v4).
 function Settings({ card, bridge }: { card: Card; bridge: Bridge | null }) {
   const [asked, setAsked] = useState<{ requestId: string; key: "mode" | "model"; value: string } | null>(null)
   useEffect(() => {
@@ -62,14 +64,12 @@ function Settings({ card, bridge }: { card: Card; bridge: Bridge | null }) {
   const isOld = !!bridge && bridge.version < 4
   const valueOf = (key: "mode" | "model", current: string | null | undefined) => (asked?.key === key ? asked.value : current ?? "")
   const old = "This session started with an older bridge mod: close it and open it again"
-  const effort = EFFORTS.find(([e]) => e === card.effort)?.[1]
   return (
-    <div className="flex min-w-0 flex-nowrap gap-0.5">
-      <Pick icon="mode" value={valueOf("mode", card.mode)} options={MODES} isDisabled={!bridge || isOld} isWaiting={asked?.key === "mode"}
-        title={isOld ? old : "Permission mode"} onPick={v => change("mode", v)} />
-      <Pick icon="model" value={valueOf("model", modelKey(card.usage?.model))} options={MODELS} isDisabled={!bridge || isOld} isWaiting={asked?.key === "model"}
-        title={isOld ? old : "Model. Claude desktop still shows the previous one in its picker, but the session uses this one"} onPick={v => change("model", v)} />
-      {effort && <ReadOnly icon="effort" value={effort} title="Effort (read-only). Change it in Claude desktop: it sends its own with every message" />}
+    <div className="flex min-w-0 flex-nowrap items-center gap-1.5">
+      <ModeToggles value={valueOf("mode", card.mode)} isDisabled={!bridge || isOld} isWaiting={asked?.key === "mode"}
+        disabledTip={isOld ? old : undefined} onPick={v => change("mode", v)} />
+      <ModelEffort model={valueOf("model", modelKey(card.usage?.model))} effort={card.effort} isEffortLocked isDisabled={!bridge || isOld} isWaiting={asked?.key === "model"}
+        title={isOld ? old : "Model and effort. Claude desktop still shows the previous model in its picker, but the session uses this one"} onModel={v => change("model", v)} />
     </div>
   )
 }
@@ -160,7 +160,7 @@ function Box({ id, card, bridge }: { id: string; card: Card | undefined; bridge:
         <span className={cn("inline-flex min-w-0 items-center gap-1.5 text-[11.5px] text-text-muted", reach.tone === "bad" && "text-bad")}>
           <i className={cn("size-[7px] shrink-0 rounded-full", DOT[reach.tone])} /><span className="truncate">{reach.text}</span>
         </span>
-        {card?.usage && <UsageMeter usage={card.usage} isWide />}
+        {card?.usage && <UsageMeter key={id} usage={card.usage} />}
       </div>
     </div>
   )
