@@ -78,19 +78,23 @@ function useLinksOutside() {
   }, [])
 }
 
-// A press on empty space closes the panel; on a card, a row, a control or a
-// menu it does what that does (main.js:561-566): a card or row switches it.
-const KEEPS_PANEL =
-  "[data-panel], [data-panel-edge], .react-flow__node, [data-id], [role=menu], [role=dialog], [role=listbox], [data-sonner-toaster], button, a, input, textarea, select, label, [data-scrim]"
-function useCloseOnEmpty(isOpen: boolean) {
+// A press anywhere outside the panel only closes it: on a card, a note, a
+// zone or a control it does nothing else. Menus, dialogs and toasts (the
+// panel's, or over it) and the search palette keep it.
+const KEEPS_PANEL = "[data-panel], [data-panel-edge], [role=menu], [role=dialog], [role=listbox], [data-sonner-toaster], [data-scrim]"
+function useCloseOnOutside(isOpen: boolean) {
   useEffect(() => {
     if (!isOpen) return
+    const swallow = (e: Event) => (e.preventDefault(), e.stopPropagation())
     const onDown = (e: PointerEvent) => {
       if (e.button !== 0 || (e.target as Element).closest?.(KEEPS_PANEL)) return
+      swallow(e) // no mousedown follows: no drag, no focus
+      window.addEventListener("click", swallow, { capture: true, once: true })
+      setTimeout(() => window.removeEventListener("click", swallow, true), 600)
       openSession(null)
     }
-    document.addEventListener("pointerdown", onDown)
-    return () => document.removeEventListener("pointerdown", onDown)
+    window.addEventListener("pointerdown", onDown, true)
+    return () => window.removeEventListener("pointerdown", onDown, true)
   }, [isOpen])
 }
 
@@ -235,7 +239,7 @@ function Board() {
   useAlerts()
   useMarkSeen()
   useLinksOutside()
-  useCloseOnEmpty(!!open)
+  useCloseOnOutside(!!open)
   useLinkedOpen()
   useHistoryWalk()
   const notDone = (cards ?? []).filter(c => c.column !== "done")
