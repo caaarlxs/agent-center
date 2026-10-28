@@ -4,10 +4,11 @@
 // in the Files tab, other links in a new window. Streamdown parses; the look is
 // the .md block in index.css.
 import { Check, Copy, Play } from "lucide-react"
-import { createContext, memo, useContext, useEffect, useRef, useState, type ComponentProps, type ReactNode } from "react"
+import { createContext, Fragment, memo, useContext, useEffect, useRef, useState, type ComponentProps, type ReactNode } from "react"
 import { Streamdown, type Components } from "streamdown"
 import { cjk } from "@streamdown/cjk"
 import { post } from "@/lib/api"
+import { useShikiTheme, useTokens } from "@/lib/code-theme"
 import { cn } from "@/lib/utils"
 import { showFile } from "@/app/open-session"
 import { endOf, pathInCode, pathInLink, SHELL_LANG, nameOf } from "./text"
@@ -88,6 +89,8 @@ function CodeBox({ text, lang }: { text: string; lang: string }) {
   const [runs, setRuns] = useState(0) // each Run starts a new output
   const [isRunning, setRunning] = useState(false)
   const isShell = SHELL_LANG.test(lang)
+  const fence = lang.split(/\s+/).find(c => c.startsWith("language-")) ?? null
+  const tokens = useTokens(text.replace(/\n$/, ""), fence, useShikiTheme())
   const copy = () =>
     copyText(text.replace(/\n$/, "")).then(
       () => (setCopied("Copied"), setTimeout(() => setCopied("Copy"), 1500)),
@@ -104,7 +107,15 @@ function CodeBox({ text, lang }: { text: string; lang: string }) {
           {copied === "Copied" ? <Check className="size-[13px]" /> : <Copy className="size-[13px]" />}{copied}
         </button>
       </div>
-      <pre className={cn(isShell ? "pr-[82px] [.can-run_&]:pr-[150px]" : "pr-[82px]")}><code className={lang}>{text}</code></pre>
+      <pre className={cn(isShell ? "pr-[82px] [.can-run_&]:pr-[150px]" : "pr-[82px]")} style={tokens ? { background: tokens.bg, color: tokens.fg, borderColor: "transparent" } : undefined}>
+        <code className={lang}>
+          {tokens
+            ? tokens.lines.map((line, i) => (
+                <Fragment key={i}>{i > 0 && "\n"}{line.map((t, k) => <span key={k} style={{ color: t.color, fontStyle: t.fontStyle === 1 ? "italic" : undefined }}>{t.content}</span>)}</Fragment>
+              ))
+            : text}
+        </code>
+      </pre>
       {runs > 0 && sessionId && <RunOutput key={runs} sessionId={sessionId} command={text.trim()} onEnd={() => setRunning(false)} />}
     </div>
   )

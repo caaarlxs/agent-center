@@ -41,6 +41,7 @@ export type Item = { key: string } & (
   | { kind: "planStep"; op: PlanOp }
   // Files Claude showed you (SendUserFile) and pages it published (Artifact).
   | { kind: "files"; paths: string[]; caption: string | null }
+  | { kind: "edit"; path: string; added: number; removed: number }
   | { kind: "artifact"; path: string | null; url: string | null }
   // A task Claude suggests for a session of its own (spawn_task), and Claude
   // taking one back (dismiss_task). `folder`: where it runs (null: the
@@ -129,6 +130,22 @@ function answerTo(result: string | undefined, question: string) {
   return end > from ? result.slice(from, end) : null
 }
 
+// A file Claude edited or wrote, from the tool's result: its lines added and
+// removed (a new file: all its lines added). Null for any other result.
+function editOf(result: any): { path: string; added: number; removed: number } | null {
+  if (!result || typeof result !== "object" || typeof result.filePath !== "string") return null
+  const hunks = Array.isArray(result.structuredPatch) ? result.structuredPatch : null
+  if (!hunks && result.type !== "create") return null
+  let added = 0
+  let removed = 0
+  for (const h of hunks ?? [])
+    for (const line of Array.isArray(h?.lines) ? h.lines : [])
+      if (typeof line === "string" && line.startsWith("+")) added++
+      else if (typeof line === "string" && line.startsWith("-")) removed++
+  if (!hunks?.length && result.type === "create" && typeof result.content === "string") added = result.content ? result.content.replace(/\n$/, "").split("\n").length : 0
+  return { path: result.filePath, added, removed }
+}
+
 function toItems(rows: any[]): Item[] {
   const items: Item[] = []
   // What each tool call got back, for the answers to AskUserQuestion.
@@ -160,7 +177,11 @@ function toItems(rows: any[]): Item[] {
     }
     if (row.type === "user" && !row.isMeta) {
       const blocks = typeof content === "string" ? [{ type: "text", text: content }] : Array.isArray(content) ? content : []
-      if (blocks.some((b: any) => b?.type === "tool_result")) continue
+      if (blocks.some((b: any) => b?.type === "tool_result")) {
+        const edit = editOf(row.toolUseResult)
+        if (edit) items.push({ key: `${uuid}:edit`, kind: "edit", ...edit })
+        continue
+      }
       const raw = blocks.filter((b: any) => b?.type === "text").map((b: any) => b.text).join("\n").trim()
       const text = raw && promptText(raw)
       if (text) items.push({ key: uuid, kind: "user", text, at })

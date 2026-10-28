@@ -6,6 +6,7 @@ import { isTaskId, setNotes, setSuggestion, setZones } from "../lib/board"
 import { requestSettings } from "../lib/bridge"
 import { activate, newInClient, pickFolder } from "../lib/client"
 import { EFFORTS, MODES } from "../lib/config"
+import { writeContext } from "../lib/context"
 import { readDesktop } from "../lib/desktop"
 import { makeDigest, type DigestItem } from "../lib/digest"
 import { act as prAction } from "../lib/github"
@@ -148,6 +149,12 @@ export async function handleWrite(path: string, body: Record<string, unknown>): 
       const stopped = await stopForgotten()
       setTimeout(() => void rescan(knownSessionIds()).then(refreshSoon), 1500)
       return json({ ok: true, stopped })
+    }
+    // A context file (~/.claude/CLAUDE.md or a project's memory), saved from its dialog.
+    case "/api/context": {
+      const saved = await writeContext(body.path, body.text, body.version)
+      if (saved === "changed") return json({ error: "The file changed on disk since you opened it. Reload it to see the newer version." }, 409)
+      return typeof saved === "string" ? json({ error: saved }, 400) : json(saved)
     }
     // After a `git pull`: what runs old code, brought up to date (lib/freshness.ts).
     case "/api/update":

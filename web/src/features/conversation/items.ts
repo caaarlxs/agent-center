@@ -6,7 +6,10 @@ import type { Item } from "@/lib/api-types"
 export type NextItem = Extract<Item, { kind: "next" }> & { picked?: string }
 // A suggested task Claude took back (dismiss_task) says so: `isGone`.
 export type SuggestionItem = Extract<Item, { kind: "suggestion" }> & { isGone?: boolean }
-export type Shown = Exclude<Item, { kind: "next" | "planStep" | "suggestion" | "suggestionGone" }> | NextItem | SuggestionItem
+// The files a turn changed, as the app's "N files changed" box: one row per
+// file, its edits added up, in the order first changed.
+export type EditsItem = { key: string; kind: "edits"; files: { path: string; added: number; removed: number }[] }
+export type Shown = Exclude<Item, { kind: "next" | "planStep" | "suggestion" | "suggestionGone" | "edit" }> | NextItem | SuggestionItem | EditsItem
 
 // Items read later join the list: a task list's step moves the list it
 // belongs to, and tool runs that follow each other are one run.
@@ -28,12 +31,16 @@ const squash = (t: unknown) => String(t ?? "").replace(/\s+/g, " ").trim()
 // As the app shows a turn: one "next step" box (the last one sent) at the end
 // of the turn, with the button the person picked when their next message is
 // that button's text (a template counts when the message starts with it);
-// one task list per turn, the newest; tool runs split only by invisible steps
-// are one run; a suggested task Claude took back says so.
+// one task list per turn, the newest; the files the turn changed in one box
+// at its end, before the "next step" box; tool runs split only by invisible
+// steps are one run; a suggested task Claude took back says so.
 export function normalize(items: Item[]): Shown[] {
   const out: Shown[] = []
   let next: NextItem | null = null
+  let edits: EditsItem | null = null
   const close = (reply: Extract<Item, { kind: "user" }> | null) => {
+    if (edits) out.push(edits)
+    edits = null
     if (!next) return
     const pick = reply && next.actions.find(a => {
       const m = squash(a.message)
@@ -47,6 +54,15 @@ export function normalize(items: Item[]): Shown[] {
   for (const item of items) {
     const last = out.at(-1)
     if (item.kind === "suggestionGone" || item.kind === "planStep") continue
+    if (item.kind === "edit") {
+      edits ??= { key: `${item.key}:edits`, kind: "edits", files: [] }
+      const file = edits.files.find(f => f.path === item.path)
+      if (file) {
+        file.added += item.added
+        file.removed += item.removed
+      } else edits.files.push({ path: item.path, added: item.added, removed: item.removed })
+      continue
+    }
     if (item.kind === "suggestion" && item.taskId && gone.has(item.taskId)) out.push({ ...item, isGone: true })
     else if (item.kind === "next") next = item
     else if (item.kind === "user" && !item.isMidTurn) (close(item), out.push(item), (planAt = -1))

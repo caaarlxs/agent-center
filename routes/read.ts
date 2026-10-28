@@ -5,6 +5,8 @@
 import { basename } from "node:path"
 import { status as bridgeStatus } from "../lib/bridge"
 import { changesOf } from "../lib/changes"
+import { isContextPath, listContext, readContext } from "../lib/context"
+import { editorThemes } from "../lib/editor-theme"
 import { codeTree, marksOf, readCode, searchCode, versionsOf } from "../lib/code"
 import { HOME } from "../lib/config"
 import { board } from "../lib/board"
@@ -238,6 +240,12 @@ export async function handleRead(url: URL): Promise<Response | null> {
   if (path === "/api/search") return json({ results: await searchResults(url.searchParams.get("q") ?? "") })
   if (path === "/api/transcribe") return json({ ready: await voiceReady() })
   if (path === "/api/setup") return json(await setupStatus())
+  if (path === "/api/context") return json(await listContext())
+  if (path === "/api/editor-themes") return json({ themes: await editorThemes() })
+  if (path === "/api/context/file") {
+    const file = url.searchParams.get("path")
+    return isContextPath(file) ? json(await readContext(file)) : json({ error: "not a context file" }, 400)
+  }
   if (path === "/api/monaco") return json(await monacoState())
   if (path === "/api/update") return json(await freshness({ fresh: true }))
   if (path === "/api/diagnostics") return json({ text: await report() })
