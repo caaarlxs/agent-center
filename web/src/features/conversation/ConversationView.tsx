@@ -8,7 +8,7 @@
 // choices it offers, the approval it asks for, and your messages it has not
 // received yet, each with Undo. A "New messages" pill shows when more arrives
 // while you read further up.
-import { ArrowDown, ChevronDown, ChevronRight, FileText, GitFork, Globe, ListChecks, Terminal, Bot, Wrench } from "lucide-react"
+import { ArrowDown, ChevronDown, ChevronRight, FileText, GitFork, Globe, ListChecks, Square, Terminal, Bot, Wrench } from "lucide-react"
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 import { FileIcon } from "@/components/common/FileIcon"
@@ -385,7 +385,8 @@ function RunningNow({ sessionId }: { sessionId: string }) {
       <>
         {idle && <span className={cn("shrink-0 text-[11px] text-faint", i.isForgotten && "text-run")} title={i.isForgotten ? "Up for hours and unused for a while: likely forgotten" : "No CPU used lately"}>{idle}</span>}
         <span className={cn("shrink-0 text-[11.5px] text-text-muted tabular-nums", i.bytes >= MEMORY_WARN && "font-semibold text-run")}>{memText(i.bytes)}</span>
-        <button className={cn(linkBtn, "shrink-0 text-[11.5px]")} title={`Stop it (and what it started)${i.cwd ? `: ${i.cwd}` : ""}`} onClick={() => stopAt(i)}>Stop</button>
+        <button className="inline-grid size-6 shrink-0 place-items-center rounded-md text-text-muted transition-[background-color,color,transform] duration-150 hover:bg-bad-soft hover:text-bad active:scale-[0.92]"
+          title={`Stop it (and what it started)${i.cwd ? `: ${i.cwd}` : ""}`} aria-label={`Stop ${i.label}`} onClick={() => stopAt(i)}><Square className="size-[11px] fill-current" /></button>
       </>
     )
   }
