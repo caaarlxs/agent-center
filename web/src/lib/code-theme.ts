@@ -7,11 +7,12 @@
 // (the server reads it there: lib/editor-theme.ts). Shiki and the themes load
 // the first time code shows, not with the page.
 import { type Monaco, loader } from "@monaco-editor/react"
-import { useEffect, useState, useSyncExternalStore } from "react"
+import { useEffect, useState } from "react"
 import type { HighlighterGeneric, ThemeRegistrationAny, ThemedToken } from "shiki"
 import { get } from "./api"
 import type { EditorTheme } from "./api-types"
 import { createStore, persistedStore } from "./store"
+import { useIsDark } from "./theme"
 
 // Each theme has a light and a dark side, as the page follows the system; the
 // dark-only ones keep their dark side in both (an IDE's dark panel).
@@ -55,12 +56,8 @@ export function useCodeThemes(): CodeThemeOption[] {
   return [...(mine ?? []).map(optionOf), ...CODE_THEMES]
 }
 
-const darkQuery = matchMedia("(prefers-color-scheme: dark)")
-export const useIsDark = () =>
-  useSyncExternalStore(
-    on => (darkQuery.addEventListener("change", on), () => darkQuery.removeEventListener("change", on)),
-    () => darkQuery.matches,
-  )
+// Light or dark as the page shows it (lib/theme.ts: the system's, or Setup's).
+export { useIsDark } from "./theme"
 
 // The Shiki theme to draw code with now, or null when colours are off.
 export function useShikiTheme(): string | null {

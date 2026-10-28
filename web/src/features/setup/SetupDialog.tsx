@@ -14,6 +14,7 @@ import { get, post } from "@/lib/api"
 import type { Step } from "@/lib/api-types"
 import { type CodeThemeOption, chosenKey, codeTheme, useCodeThemes, useIsDark, useTokens } from "@/lib/code-theme"
 import { cn } from "@/lib/utils"
+import { type ThemeChoice, chooseTheme, themeChoice } from "@/lib/theme"
 import { notify, shake, sound, speech, toggleNotify, toggleSound, type Speech } from "@/features/alerts/prefs"
 import { CopyMark, useCopyMoment } from "@/components/icona/marks"
 import { SwapText } from "@/components/watermelon/SwapText"
@@ -210,6 +211,27 @@ function CodeColours() {
   )
 }
 
+// Light or dark: the system's (macOS), or one of them always (lib/theme.ts).
+const APPEARANCES: [ThemeChoice, string][] = [["system", "System"], ["light", "Light"], ["dark", "Dark"]]
+function Appearance() {
+  const choice = themeChoice.use()
+  return (
+    <Row title="Appearance" need="Preference" isDone state={<Done label={APPEARANCES.find(([v]) => v === choice)?.[1] ?? "System"} />}
+      actions={
+        <div role="radiogroup" aria-label="Appearance" className="inline-flex rounded-lg border border-line-strong bg-surface p-0.5">
+          {APPEARANCES.map(([value, label]) => (
+            <button key={value} type="button" role="radio" aria-checked={choice === value} onClick={() => chooseTheme(value)}
+              className={cn("h-6 rounded-md px-2.5 text-[12.5px] font-[550] transition-colors", choice === value ? "bg-text text-bg" : "text-text-muted hover:text-text")}>
+              {label}
+            </button>
+          ))}
+        </div>
+      }>
+      <p className={text}>System follows macOS.</p>
+    </Row>
+  )
+}
+
 export function SetupDialog({ onClose }: { onClose: () => void }) {
   const [status, setStatus] = useState<Status | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
@@ -301,6 +323,7 @@ export function SetupDialog({ onClose }: { onClose: () => void }) {
                 actions={<Button variant={isShaking ? "outline" : "default"} onClick={() => shake.set(isShaking ? "off" : "on")}>{isShaking ? "Turn off" : "Turn on"}</Button>}>
                 <p className={text}>A card that asks you something or waits for your approval gives a short shake every few seconds, faster the longer it waits. Turned off, it stays still and only its colour and the time it has waited tell you.</p>
               </Row>
+              <Appearance />
               <CodeColours />
               <ReadAloud />
               <Diagnostics />

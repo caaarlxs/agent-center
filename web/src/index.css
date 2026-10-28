@@ -2,8 +2,8 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-/* Dark follows the system, as the classic board does. */
-@custom-variant dark (@media (prefers-color-scheme: dark));
+/* Dark: <html data-theme=dark> (lib/theme.ts), the system's or Setup's choice. */
+@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
 
 /* The board's own palette (the classic board's tokens, styles.css:3-81).
    Two names differ, as shadcn uses them for something else: the classic
@@ -17,7 +17,7 @@
     --press: rgb(0 0 0 / 0.07);
     --text: #1c1c1a;
     --text-muted: #6e6d68;
-    --faint: #a19f98;
+    --faint: #85837c; /* 3.5:1 on the page (the classic #a19f98 was 2.4:1) */
     --line: #e5e3dc;
     --line-strong: #d6d3ca;
     --brand: #c25a32;
@@ -46,43 +46,42 @@
     color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-    :root {
-        --bg: #0c0c0e;
-        --side: #0f0f11;
-        --surface: #151518;
-        --raised: #1c1c20;
-        --hover: rgb(255 255 255 / 0.04);
-        --press: rgb(255 255 255 / 0.07);
-        --text: #ededf0;
-        --text-muted: #93939c;
-        --faint: #5f5f68;
-        --line: rgb(255 255 255 / 0.07);
-        --line-strong: rgb(255 255 255 / 0.12);
-        --brand: #e8825a;
-        --brand-text: #1a1310;
-        --brand-soft: rgb(232 130 90 / 0.14);
-        --ask: #f5b544;
-        --ask-soft: rgb(245 181 68 / 0.13);
-        --bad: #f87171;
-        --bad-soft: rgb(248 113 113 / 0.13);
-        --work: #4ade80;
-        --work-soft: rgb(74 222 128 / 0.12);
-        --run: #fb923c;
-        --run-soft: rgb(251 146 60 / 0.15);
-        --review: #84a9ff;
-        --review-soft: rgb(132 169 255 / 0.13);
-        --select: rgb(232 130 90 / 0.1);
-        --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 4px 16px rgb(0 0 0 / 0.25);
-        --shadow-pop: 0 12px 40px rgb(0 0 0 / 0.5), 0 0 0 1px rgb(255 255 255 / 0.06);
-        --repo-l: 70%;
-        --code-text: #f28b82;
-        --code-bg: rgb(242 139 130 / 0.1);
-        --code-line: rgb(242 139 130 / 0.2);
-        --scroll: rgb(255 255 255 / 0.13);
-        --scroll-hover: rgb(255 255 255 / 0.28);
-        color-scheme: dark;
-    }
+/* Dark, by <html data-theme> (lib/theme.ts): the system's, or Setup's choice. */
+:root[data-theme=dark] {
+    --bg: #0c0c0e;
+    --side: #0f0f11;
+    --surface: #151518;
+    --raised: #1c1c20;
+    --hover: rgb(255 255 255 / 0.04);
+    --press: rgb(255 255 255 / 0.07);
+    --text: #ededf0;
+    --text-muted: #93939c;
+    --faint: #6c6c75; /* 3.5:1 on a card (the classic #5f5f68 was 2.9:1) */
+    --line: rgb(255 255 255 / 0.07);
+    --line-strong: rgb(255 255 255 / 0.12);
+    --brand: #e8825a;
+    --brand-text: #1a1310;
+    --brand-soft: rgb(232 130 90 / 0.14);
+    --ask: #f5b544;
+    --ask-soft: rgb(245 181 68 / 0.13);
+    --bad: #f87171;
+    --bad-soft: rgb(248 113 113 / 0.13);
+    --work: #4ade80;
+    --work-soft: rgb(74 222 128 / 0.12);
+    --run: #fb923c;
+    --run-soft: rgb(251 146 60 / 0.15);
+    --review: #84a9ff;
+    --review-soft: rgb(132 169 255 / 0.13);
+    --select: rgb(232 130 90 / 0.1);
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 4px 16px rgb(0 0 0 / 0.25);
+    --shadow-pop: 0 12px 40px rgb(0 0 0 / 0.5), 0 0 0 1px rgb(255 255 255 / 0.06);
+    --repo-l: 70%;
+    --code-text: #f28b82;
+    --code-bg: rgb(242 139 130 / 0.1);
+    --code-line: rgb(242 139 130 / 0.2);
+    --scroll: rgb(255 255 255 / 0.13);
+    --scroll-hover: rgb(255 255 255 / 0.28);
+    color-scheme: dark;
 }
 
 /* shadcn's names, on the board's palette: every component takes it. */

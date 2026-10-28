@@ -4,8 +4,17 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/icon.svg" />
     <link rel="manifest" href="/manifest.webmanifest" />
-    <meta name="theme-color" content="#141416" media="(prefers-color-scheme: dark)" />
-    <meta name="theme-color" content="#f6f5f2" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#f6f5f2" />
+    <script>
+      // Light or dark before the first paint (lib/theme.ts keeps it after): Setup's choice, or the system's.
+      try {
+        var c = JSON.parse(localStorage.getItem("ac.theme") || '"system"')
+        var t = c === "light" || c === "dark" ? c : matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"
+        document.documentElement.dataset.theme = t
+        document.documentElement.style.colorScheme = t
+        if (t === "dark") document.querySelector('meta[name="theme-color"]').setAttribute("content", "#141416")
+      } catch (e) {}
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Agent Center</title>
   </head>

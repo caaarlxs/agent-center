@@ -1,10 +1,12 @@
 import { Toaster as Sonner, type ToasterProps } from "sonner"
+import { theme as pageTheme } from "@/lib/theme"
 import { CircleCheckIcon, InfoIcon, TriangleAlertIcon, OctagonXIcon, Loader2Icon } from "lucide-react"
 
 const Toaster = ({ ...props }: ToasterProps) => {
+  const theme = pageTheme.use() // the page's light or dark, not only the system's
   return (
     <Sonner
-      theme="system"
+      theme={theme}
       position="bottom-right"
       visibleToasts={3}
       duration={3500}
