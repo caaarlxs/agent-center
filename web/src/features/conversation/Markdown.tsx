@@ -154,11 +154,12 @@ const components: Components = {
   },
 }
 
+// A table shows whole, however tall (Streamdown caps it at 300px otherwise).
 // isStreaming: text still being written; markdown left open (a ** not yet
 // closed) shows as it will once it is.
 export const Markdown = memo(function Markdown({ children, className, isStreaming = false }: { children: string; className?: string; isStreaming?: boolean }) {
   return (
-    <Streamdown className={cn("md", className)} components={components} plugins={{ cjk }} controls={false} parseIncompleteMarkdown={isStreaming}>
+    <Streamdown className={cn("md", className)} components={components} plugins={{ cjk }} controls={false} tableMaxHeight={0} parseIncompleteMarkdown={isStreaming}>
       {children}
     </Streamdown>
   )
