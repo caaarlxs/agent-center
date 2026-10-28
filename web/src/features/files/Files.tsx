@@ -1,5 +1,5 @@
 // The "Files" workspace (files.js): what the session sent you, published or
-// wrote, and what you sent it from the board, newest first (read again every 10 s), and a viewer for the chosen one:
+// wrote, newest first (read again every 10 s), and a viewer for the chosen one:
 // Markdown drawn (or its source), code in Monaco, pictures, video, sound, PDFs
 // and pages as they are (pages sandboxed: no access to the board), Word and
 // Excel as the server converts them (OfficeDoc), CSV as a table, and anything
@@ -22,10 +22,10 @@ import { OfficeDoc } from "./OfficeDoc"
 import { Anim } from "@/components/icons/animated"
 import { CopyMark, useCopyMoment } from "@/components/icona/marks"
 
-type Listed = { path: string; name: string; size: number; modifiedAt: number; source: "sent" | "yours" | "artifact" | "written"; url?: string }
+type Listed = { path: string; name: string; size: number; modifiedAt: number; source: "sent" | "artifact" | "written"; url?: string }
 type Info = { path: string; size: number; isViewable: boolean; error?: string }
 
-const SOURCE = { sent: "sent", yours: "you sent", artifact: "published", written: "written" }
+const SOURCE = { sent: "sent", artifact: "published", written: "written" }
 const MAX_ROWS = 1000
 const at = (id: string, what: string, path: string) => `/api/sessions/${encodeURIComponent(id)}/${what}?path=${encodeURIComponent(path)}`
 const home = (path: string) => path.replace(/^\/Users\/[^/]+/, "~")
@@ -158,7 +158,7 @@ export function Files({ id, file }: { id: string; file?: string }) {
     <div className="grid min-h-0 flex-1 grid-cols-[minmax(240px,24%)_minmax(0,1fr)]">
       <ul className="m-0 min-h-0 list-none overflow-auto border-r border-line bg-side p-1.5">
         {files === null && <li className="px-2.5 py-2 text-[12.5px] text-text-muted">Looking…</li>}
-        {files?.length === 0 && !file && <li className="px-2.5 py-2 text-[12.5px] text-text-muted">No file sent or written in this session yet.</li>}
+        {files?.length === 0 && !file && <li className="px-2.5 py-2 text-[12.5px] text-text-muted">This session has not sent or written any file yet.</li>}
         {files?.map(f => (
           <li key={f.path}>
             <button onClick={() => setChosen(f)} title={f.path}
