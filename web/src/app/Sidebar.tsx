@@ -229,12 +229,14 @@ export function Sidebar() {
         <SessionsMemory cards={cards} isSlim={isSlim} />
         <SentFiles isSlim={isSlim} />
         <footer className={cn("mt-2 flex items-center justify-between border-t border-line px-1.5 pt-2.5", isSlim && "flex-col gap-2 px-0")}>
-          <span className="inline-flex items-center gap-1.5 text-xs text-text-muted" title={isSlim ? (isConnected ? "Live" : "Reconnecting…") : undefined}>
+          {/* The version under "Live", so the row of buttons never breaks in a narrow window. */}
+          {/* Two columns: the dot beside "Live", the version under its text. */}
+          <span className="grid shrink-0 grid-cols-[7px_auto] items-center gap-x-1.5 text-xs leading-tight text-text-muted" title={isSlim ? (isConnected ? "Live" : "Reconnecting…") : undefined}>
             <i className={cn("size-[7px] rounded-full", isConnected ? "bg-work shadow-[0_0_0_3px_var(--work-soft)]" : "bg-faint")} />
-            {!isSlim && (isConnected ? "Live" : "Reconnecting…")}
+            {!isSlim && <span className="whitespace-nowrap">{isConnected ? "Live" : "Reconnecting…"}</span>}
             {!isSlim && version && (
-              <span className="font-mono text-[11px] text-faint" title={`Version ${version.commit} · ${new Date(version.date).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}`}>
-                · {version.commit}
+              <span className="col-start-2 font-mono text-[10.5px] text-faint" title={`Version ${version.commit} · ${new Date(version.date).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}`}>
+                {version.commit}
               </span>
             )}
           </span>
