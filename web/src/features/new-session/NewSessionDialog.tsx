@@ -19,7 +19,7 @@ import { openSession } from "@/app/open-session"
 import type { NewDraft } from "@/app/open-dialog"
 import { repoFilter } from "@/app/view-state"
 import { AttachButton, MicButton, PickedFiles, fileErrors } from "@/features/prompt/PromptExtras"
-import { ModeToggles } from "@/features/prompt/ModeToggles"
+import { ModePicker } from "@/features/prompt/ModePicker"
 import { ModelEffort } from "@/features/prompt/ModelEffort"
 import { MAX_BYTES, MAX_FILES, messageWith } from "@/features/prompt/files"
 import { hasWhisper } from "@/features/prompt/voice"
@@ -133,7 +133,7 @@ function Prompt({ root, draft, onClose }: { root: string | null; draft?: NewDraf
           <AttachButton />
           <MicButton />
           <span className="mx-1.5 h-[18px] w-px shrink-0 bg-line" />
-          <ModeToggles value={chosen.mode} onPick={mode => prefs.set({ ...prefs.get(), mode })} />
+          <ModePicker value={chosen.mode} onPick={mode => prefs.set({ ...prefs.get(), mode })} />
           <span className="mx-1 h-[18px] w-px shrink-0 bg-line" />
           <ModelEffort model={chosen.model} effort={chosen.effort} defaults={DEFAULTS} title="Model and effort for the first turn"
             onModel={model => prefs.set({ ...prefs.get(), model })} onEffort={effort => prefs.set({ ...prefs.get(), effort })} />

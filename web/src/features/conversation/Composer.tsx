@@ -15,7 +15,7 @@ import { persistedStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
 import { AttachButton, MicButton, PickedFiles, fileErrors } from "@/features/prompt/PromptExtras"
 import { modelKey } from "@/features/prompt/Settings"
-import { ModeToggles } from "@/features/prompt/ModeToggles"
+import { ModePicker } from "@/features/prompt/ModePicker"
 import { ModelEffort } from "@/features/prompt/ModelEffort"
 import { MAX_BYTES, MAX_FILES, messageWith } from "@/features/prompt/files"
 import { launch, stopTurn, wake } from "@/features/session/actions"
@@ -66,7 +66,7 @@ function Settings({ card, bridge }: { card: Card; bridge: Bridge | null }) {
   const old = "This session started with an older bridge mod: close it and open it again"
   return (
     <div className="flex min-w-0 flex-nowrap items-center gap-1.5">
-      <ModeToggles value={valueOf("mode", card.mode)} isDisabled={!bridge || isOld} isWaiting={asked?.key === "mode"}
+      <ModePicker value={valueOf("mode", card.mode)} isDisabled={!bridge || isOld} isWaiting={asked?.key === "mode"}
         disabledTip={isOld ? old : undefined} onPick={v => change("mode", v)} />
       <ModelEffort model={valueOf("model", modelKey(card.usage?.model))} effort={card.effort} isEffortLocked isDisabled={!bridge || isOld} isWaiting={asked?.key === "model"}
         title={isOld ? old : "Model and effort. Claude desktop still shows the previous model in its picker, but the session uses this one"} onModel={v => change("model", v)} />

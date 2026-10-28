@@ -1,5 +1,5 @@
 // The session's permission modes, models and efforts, each with its hint,
-// and the quiet pill the reply box's pickers share (ModeToggles, ModelEffort).
+// and the quiet pill the reply box's pickers share (ModePicker, ModelEffort).
 export type Option = readonly [value: string, label: string, hint?: string]
 
 export const MODES: readonly Option[] = [
