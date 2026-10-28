@@ -79,6 +79,16 @@ sessions through a small Claude Code mod, and keeps its own state in a folder of
   `[` and `]`; Paused puts it in Later. A row lays its cards left to right, with a scrollbar when they
   do not fit, in the order you give them: drag a card to its place, or move it with `<` and `>`.
   Activity never reorders them. Done cards are on no row: close them from the card.
+- **General context**: the sidebar's button shows what Claude reads when a session starts:
+  `~/.claude/CLAUDE.md` and each project's memory (`~/.claude/projects/<folder>/memory/`), to read
+  and edit. A save keeps the version before it (`.before-edit`) and refuses to overwrite a file
+  changed elsewhere since you opened it.
+- **Files changed**: at the end of a turn that edited files, the conversation shows them with their
+  lines added and removed, as Claude desktop does; a click opens the change in Changes.
+- **File icons**: files and folders wear VS Code's Material Icon Theme (MIT), loaded on first use.
+- **Code colours**: Setup → "Code colours" colours code everywhere it shows (Code, Files, Changes,
+  the conversation) with Shiki, or turns it off. Pick a theme from the carousel; your own Cursor or
+  VS Code theme is read from that editor on this Mac and is the default.
 - **Still cards**: Setup → "Shake waiting cards" turns off the shake of the cards that wait for you.
 - **Overlaps**: a card warns when another open session edited the same files in the last hours,
   or works in the same folder right now.

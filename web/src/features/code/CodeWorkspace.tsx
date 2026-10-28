@@ -6,11 +6,11 @@
 // marks what changed since the branch started. Open files and folders are
 // remembered per session; unsaved text is not.
 import Editor, { DiffEditor, type Monaco, type OnMount } from "@monaco-editor/react"
-import { ChevronRight, Folder as FolderIcon, FolderOpen, Search, X } from "lucide-react"
+import { ChevronRight, Folder as FolderGlyph, Search, X } from "lucide-react"
 import type { editor } from "monaco-editor"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
-import { FileIcon } from "@/components/common/FileIcon"
+import { FileIcon, FolderIcon } from "@/components/common/FileIcon"
 import { Button } from "@/components/ui/button"
 import { Kbd } from "@/components/ui/kbd"
 import { ApiError, get, post } from "@/lib/api"
@@ -30,7 +30,7 @@ const row = "flex h-6 w-full items-center rounded-[5px] pr-1.5 text-left text-[1
 const MARK_CLASS = { add: "gm-add", mod: "gm-mod", del: "gm-del" }
 const nameOf = (p: string) => p.split("/").pop() ?? p
 
-type Doc = { model: editor.ITextModel; mtime: number; saved: number }
+type Doc = { model: editor.ITextModel; mtime: number; saved: number; lang: string } // lang: Monaco's, by its name
 type Notice = { path: string; kind: "conflict" | "changed" }
 type FileRead = { path: string; mtime: number; size: number; text?: string; binary?: boolean; tooBig?: boolean }
 
@@ -54,7 +54,7 @@ function TreeRows({ node, depth, open, toggle, status, changed, active, onOpen }
         <div key={dir.path}>
           <button onClick={() => toggle(dir.path)} className={cn(row, "gap-[5px]")} style={{ paddingLeft: 8 + depth * 12 }} aria-expanded={open.has(dir.path)}>
             <ChevronRight className={cn("size-3 shrink-0 text-text-muted transition-transform duration-[120ms] ease-(--ease-out)", open.has(dir.path) && "rotate-90")} />
-            {open.has(dir.path) ? <FolderOpen className="size-3.5 shrink-0 fill-[#dcb67a]/25 text-[#dcb67a]" /> : <FolderIcon className="size-3.5 shrink-0 fill-[#c99a3b]/25 text-[#c99a3b]" />}
+            <FolderIcon path={name} isOpen={open.has(dir.path)} />
             <span className="min-w-0 flex-1 truncate">{name}</span>
             {changed.has(dir.path) && <i className="size-1.5 shrink-0 rounded-full bg-ask opacity-70" title="Has changes" />}
           </button>
@@ -172,7 +172,9 @@ function QuickOpen({ files, onPick, onClose }: { files: string[]; onPick: (path:
 
 export function CodeWorkspace({ id }: { id: string }) {
   const monacoState = useMonaco()
-  const theme = useMonacoTheme()
+  const { theme, isPlain } = useMonacoTheme()
+  const plain = useRef(isPlain)
+  plain.current = isPlain
   const saved = useMemo(() => remembered(id), [id])
   const [tree, setTree] = useState<CodeTree | null>(null)
   const [treeError, setTreeError] = useState<string | null>(null)
@@ -232,7 +234,9 @@ export function CodeWorkspace({ id }: { id: string }) {
       const uri = m.Uri.parse(`file:///${id}/${path}`)
       m.editor.getModel(uri)?.dispose()
       const model = m.editor.createModel(res.text, undefined, uri)
-      docs.current.set(path, { model, mtime: res.mtime, saved: model.getAlternativeVersionId() })
+      const lang = model.getLanguageId()
+      if (plain.current) m.editor.setModelLanguage(model, "plaintext")
+      docs.current.set(path, { model, mtime: res.mtime, saved: model.getAlternativeVersionId(), lang })
       model.onDidChangeContent(() => markDirty(path))
       setTabs(ts => (ts.some(t => t.path === path) ? ts : [...ts, { path, dirty: false }]))
     }
@@ -321,6 +325,12 @@ export function CodeWorkspace({ id }: { id: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, id])
 
+  // Colours off: every open file as plain text; on: each in its language again.
+  useEffect(() => {
+    const m = mon.current
+    if (m) for (const doc of docs.current.values()) m.editor.setModelLanguage(doc.model, isPlain ? "plaintext" : doc.lang)
+  }, [isPlain])
+
   const onMount: OnMount = (e, m) => {
     ed.current = e
     mon.current = m
@@ -360,7 +370,7 @@ export function CodeWorkspace({ id }: { id: string }) {
         <header className="flex items-center justify-between gap-1.5 pt-2 pr-2 pb-1.5 pl-3 text-[11.5px] tracking-[0.04em] text-text-muted uppercase">
           <b className="truncate font-semibold" title={tree?.root}>{side === "search" ? "Search" : (tree?.name ?? "…")}</b>
           <span className="flex gap-0.5">
-            <button className={cn(sideBtn, side === "files" && "bg-press text-text")} onClick={() => setSide("files")} title="Files"><FolderIcon /></button>
+            <button className={cn(sideBtn, side === "files" && "bg-press text-text")} onClick={() => setSide("files")} title="Files"><FolderGlyph /></button>
             <button className={cn(sideBtn, side === "search" && "bg-press text-text")} onClick={showSearch} title="Search in every file (⌘⇧F)"><Search /></button>
           </span>
         </header>
@@ -408,7 +418,7 @@ export function CodeWorkspace({ id }: { id: string }) {
               <div className={cn("absolute inset-0", compare && "invisible")}>
                 <Editor theme={theme} onMount={onMount} options={{ fontSize: 13, minimap: { enabled: true }, automaticLayout: true, scrollBeyondLastLine: false }} />
               </div>
-              {compare && <div className="absolute inset-0"><DiffEditor theme={theme} original={compare.original} modified={compare.modified} options={{ readOnly: true, fontSize: 13, automaticLayout: true }} /></div>}
+              {compare && <div className="absolute inset-0"><DiffEditor theme={theme} language={isPlain ? "plaintext" : active ? docs.current.get(active)?.lang : undefined} original={compare.original} modified={compare.modified} options={{ readOnly: true, fontSize: 13, automaticLayout: true }} /></div>}
               {!active && !compare && <p className="pointer-events-none absolute inset-0 grid place-items-center bg-surface text-[13px] text-text-muted"><span>Open a file from the tree, or press <Kbd>⌘P</Kbd>.</span></p>}
             </>
           )}

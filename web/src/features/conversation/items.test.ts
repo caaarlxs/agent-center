@@ -32,3 +32,10 @@ test("a suggested task Claude took back says so, and the take-back shows nothing
   const shown = normalize([task("a", "task_1"), task("b", "task_2"), { key: "g", kind: "suggestionGone", taskId: "task_1" }])
   expect(shown.map(i => [i.key, "isGone" in i && i.isGone])).toEqual([["a", true], ["b", false]])
 })
+
+test("the files a turn changed show in one box at its end, each file's edits added up", () => {
+  const edit = (key: string, path: string, added: number, removed: number): Item => ({ key, kind: "edit", path, added, removed })
+  const shown = normalize([user("u1", "go"), edit("e1", "/r/a.py", 3, 1), tools("t", "Read b"), edit("e2", "/r/b.md", 1, 0), edit("e3", "/r/a.py", 2, 0), next("n", "Ok"), user("u2", "Ok")])
+  expect(shown.map(i => i.kind)).toEqual(["user", "tools", "edits", "next", "user"])
+  expect(shown[2]).toMatchObject({ files: [{ path: "/r/a.py", added: 5, removed: 1 }, { path: "/r/b.md", added: 1, removed: 0 }] })
+})

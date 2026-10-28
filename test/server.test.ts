@@ -268,6 +268,44 @@ describe("board", () => {
     expect(Object.values(board.items).some((i: any) => "color" in i)).toBe(false)
   })
 
+  test("shows the general context and the projects' memory, saves them, and refuses a stale save or another file", async () => {
+    const path = join(home, ".claude", "CLAUDE.md")
+    await writeFile(path, "# Mine\n")
+    const memory = join(home, ".claude", "projects", "-demo-app", "memory")
+    await mkdir(memory, { recursive: true })
+    await writeFile(join(memory, "MEMORY.md"), "- [Short](short.md)\n")
+    await writeFile(join(memory, "short.md"), "Answer briefly.\n")
+    const list = await jsonOf(fetch(`${base()}/api/context`))
+    expect(list.global).toBe(path)
+    const group = list.memories.find((m: any) => m.dir === "-demo-app")
+    expect(group.files.map((f: any) => f.name)).toEqual(["MEMORY.md", "short.md"])
+    const first = await jsonOf(fetch(`${base()}/api/context/file?path=${encodeURIComponent(path)}`))
+    expect(first.text).toBe("# Mine\n")
+    const saved = await jsonOf(post("/api/context", { path, text: "# Mine\nBe brief.", version: first.version }))
+    expect(saved.text).toBe("# Mine\nBe brief.\n")
+    expect(await readFile(`${path}.before-edit`, "utf8")).toBe("# Mine\n")
+    expect((await post("/api/context", { path, text: "lost", version: first.version })).status).toBe(409)
+    const short = await jsonOf(fetch(`${base()}/api/context/file?path=${encodeURIComponent(join(memory, "short.md"))}`))
+    expect((await post("/api/context", { path: short.path, text: "Answer in Spanish.", version: short.version })).status).toBe(200)
+    expect(await readFile(join(memory, "short.md"), "utf8")).toBe("Answer in Spanish.\n")
+    for (const other of [join(home, ".claude", "settings.json"), join(memory, "..", "x.md"), join(memory, "new.md")])
+      expect((await post("/api/context", { path: other, text: "x", version: 0 })).status).toBe(400)
+    expect((await fetch(`${base()}/api/context/file?path=${encodeURIComponent("/etc/hosts")}`)).status).toBe(400)
+    expect((await post("/api/context", { path, text: "x" }, {})).status).toBe(403)
+  })
+
+  test("finds the colour theme the person uses in Cursor, from the extension that brings it", async () => {
+    const user = join(home, "Library", "Application Support", "Cursor", "User")
+    await mkdir(user, { recursive: true })
+    await writeFile(join(user, "settings.json"), '{\n  // mine\n  "workbench.colorTheme": "Deep Test",\n}\n')
+    const ext = join(home, ".cursor", "extensions", "me.deep-test-1.0.0")
+    await mkdir(join(ext, "themes"), { recursive: true })
+    await writeFile(join(ext, "package.json"), JSON.stringify({ contributes: { themes: [{ label: "Deep Test", uiTheme: "vs-dark", path: "./themes/deep.json" }] } }))
+    await writeFile(join(ext, "themes", "deep.json"), '{ "type": "dark", "colors": { "editor.background": "#141523", }, /* tokens */ "tokenColors": [{ "scope": "comment", "settings": { "foreground": "#6272a4" } }] }')
+    const { themes } = await jsonOf(fetch(`${base()}/api/editor-themes`))
+    expect(themes).toEqual([{ app: "Cursor", label: "Deep Test", type: "dark", theme: { name: "cursor-deep-test", type: "dark", colors: { "editor.background": "#141523" }, tokenColors: [{ scope: "comment", settings: { foreground: "#6272a4" } }] } }])
+  })
+
   test("keeps the tier row the person gives a session, and refuses one it does not know", async () => {
     const tierOnCard = async (want: string) => {
       let tier: unknown

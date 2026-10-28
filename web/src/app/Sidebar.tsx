@@ -3,7 +3,7 @@
 // the folder of sent files, and the live connection, alerts, Setup and the
 // keyboard help at the foot. It folds to icons (slim), and in a narrow window
 // it is a drawer over the page.
-import { AudioLines, Bell, BellOff, Columns3, Gauge, Inbox, Keyboard, LayoutGrid, List, PanelLeft, Paperclip, Plus, Settings, Sun, Volume2, VolumeX } from "lucide-react"
+import { AudioLines, Bell, BellOff, BookText, Columns3, Gauge, Inbox, Keyboard, LayoutGrid, List, PanelLeft, Paperclip, Plus, Settings, Sun, Volume2, VolumeX } from "lucide-react"
 import { useState, type ReactNode } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -184,6 +184,10 @@ export function Sidebar() {
           <Button variant="outline" className={cn("h-[34px] w-full justify-start gap-2", isSlim && "justify-center gap-0 px-0")} onClick={() => openDialog({ kind: "digest" })}
             title="Summary of what your sessions did since you last looked (D)">
             <Sun className="size-3.5" />{!isSlim && <>Catch me up<Kbd className="ml-auto">D</Kbd></>}
+          </Button>
+          <Button variant="outline" className={cn("h-[34px] w-full justify-start gap-2", isSlim && "justify-center gap-0 px-0")} onClick={() => openDialog({ kind: "context" })}
+            title="General context: ~/.claude/CLAUDE.md, what Claude reads in every session. See it and edit it">
+            <BookText className="size-3.5" />{!isSlim && "General context"}
           </Button>
         </div>
         <nav className="flex flex-col gap-px">
