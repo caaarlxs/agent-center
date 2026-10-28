@@ -54,8 +54,9 @@ type MicState =
   | { kind: "dictating"; stop: () => void }
 
 // Whisper while it records: a live wave of the microphone's level and the
-// time; a click or Enter writes the text, Esc drops it. Without Whisper, the
-// browser's dictation writes as you speak.
+// time; a click or Enter writes the text, Esc drops it. Either way the field
+// takes the focus back, the caret at the end, so the next Enter sends.
+// Without Whisper, the browser's dictation writes as you speak.
 export function MicButton() {
   const { textInput } = usePromptInputController()
   const [isWhisper, setWhisper] = useState(false)
@@ -64,6 +65,14 @@ export function MicButton() {
   const [, tick] = useState(0)
   const micNow = useRef(mic)
   micNow.current = mic
+  const button = useRef<HTMLElement>(null) // whichever shows: the field is in its form
+  const backToField = () =>
+    setTimeout(() => {
+      const field = button.current?.closest("form")?.querySelector("textarea")
+      if (!field) return
+      field.focus()
+      field.setSelectionRange(field.value.length, field.value.length)
+    }, 0)
   useEffect(() => void hasWhisper().then(ok => setWhisper(ok && canRecord)), [])
   // Gone mid-recording (the panel or the dialog closed): the microphone stops too.
   useEffect(() => () => {
@@ -82,6 +91,7 @@ export function MicButton() {
       toast.error((err as Error).message)
     }
     setMic({ kind: "idle" })
+    backToField()
   }
 
   const rec = mic.kind === "recording" ? mic.rec : null
@@ -107,7 +117,7 @@ export function MicButton() {
     if (!rec) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Enter" && !e.shiftKey && !e.isComposing) (e.preventDefault(), e.stopImmediatePropagation(), void finish(rec))
-      else if (e.key === "Escape") (e.preventDefault(), e.stopImmediatePropagation(), rec.cancel(), setMic({ kind: "idle" }))
+      else if (e.key === "Escape") (e.preventDefault(), e.stopImmediatePropagation(), rec.cancel(), setMic({ kind: "idle" }), backToField())
     }
     window.addEventListener("keydown", onKey, true)
     return () => window.removeEventListener("keydown", onKey, true)
@@ -115,11 +125,11 @@ export function MicButton() {
 
   if (!isWhisper && !canDictate) return null
   const pill = "pill-open inline-flex h-[30px] shrink-0 items-center gap-2 rounded-[15px] pr-2.5 pl-[9px] text-xs font-semibold tabular-nums"
-  if (mic.kind === "transcribing") return <span className={cn(pill, "bg-brand-soft text-brand")}><ScrubWave levels={levels} />Transcribing…</span>
+  if (mic.kind === "transcribing") return <span ref={button} className={cn(pill, "bg-brand-soft text-brand")}><ScrubWave levels={levels} />Transcribing…</span>
   if (mic.kind === "recording") {
     const s = Math.floor((Date.now() - mic.rec.startedAt) / 1000)
     return (
-      <button type="button" onClick={() => finish(mic.rec)} title="Stop and write (↵) · discard (Esc)"
+      <button ref={button as React.RefObject<HTMLButtonElement>} type="button" onClick={() => finish(mic.rec)} title="Stop and write (↵) · discard (Esc)"
         className={cn(pill, "cursor-pointer border border-[color-mix(in_srgb,var(--bad)_35%,transparent)] bg-bad-soft text-bad hover:bg-[color-mix(in_srgb,var(--bad)_22%,transparent)]")}>
         <Once icon={MicVoiceRippleIcon} size={14} isLoop />
         <LiveWave levels={levels} />
@@ -128,7 +138,7 @@ export function MicButton() {
       </button>
     )
   }
-  if (mic.kind === "dictating") return <button type="button" className={cn(toolIcon, "text-bad hover:text-bad")} onClick={mic.stop} title="Stop dictation (Chrome uses Google's servers)"><Once icon={MicVoiceRippleIcon} size={15} isLoop /></button>
+  if (mic.kind === "dictating") return <button ref={button as React.RefObject<HTMLButtonElement>} type="button" className={cn(toolIcon, "text-bad hover:text-bad")} onClick={() => (mic.stop(), backToField())} title="Stop dictation (Chrome uses Google's servers)"><Once icon={MicVoiceRippleIcon} size={15} isLoop /></button>
 
   const start = async () => {
     if (!isWhisper) {
@@ -150,5 +160,5 @@ export function MicButton() {
       toast((err as Error)?.name === "NotAllowedError" ? "The browser has no permission to use the microphone" : "Could not start recording")
     }
   }
-  return <button type="button" className={toolIcon} onClick={start} title={isWhisper ? "Dictate (Whisper on this Mac)" : "Dictate"} aria-label="Dictate"><Anim.Mic size={15} /></button>
+  return <button ref={button as React.RefObject<HTMLButtonElement>} type="button" className={toolIcon} onClick={start} title={isWhisper ? "Dictate (Whisper on this Mac)" : "Dictate"} aria-label="Dictate"><Anim.Mic size={15} /></button>
 }
