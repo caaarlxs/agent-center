@@ -3,14 +3,17 @@
 // outlived its process: a command launched with `( … &)` leaves the tree, and
 // a session put to sleep leaves its commands running. Those are found by the
 // session id in their command line (Claude Code's scratchpad path carries it).
+// The servers the desktop app runs for a session (lib/servers.ts) count too.
 // Memory is Activity Monitor's "Memory" column (compressed and swapped pages
 // count), read with `top`. The board asks for it with every snapshot (each
 // second while a page is open) and gets the last reading; a new one starts
 // in the background when that is 20 s old.
 
 import { HOME } from "./config"
+import { readDesktop } from "./desktop"
 import { exec } from "./proc"
 import { killTree } from "./runner"
+import { appServers } from "./servers"
 
 // How often it reads; and "forgotten": a command up this long, idle (no CPU)
 // this long. The tests set them shorter (they would wait hours).
@@ -23,7 +26,7 @@ const WRAPPERS = new Set(["safe-chain", "env", "nohup", "caffeinate", "time", "e
 
 export type MemoryItem = {
   pid: number
-  kind: "session" | "command" | "mcp"
+  kind: "session" | "command" | "mcp" | "server"
   label: string
   command: string // the first process's own command line, to match a background task
   cwd: string | null
@@ -32,6 +35,7 @@ export type MemoryItem = {
   isDetached: boolean // left the session's process (the session may be asleep)
   idleSince: number | null // since when it (with its children) has used no CPU
   isForgotten: boolean // up for hours and idle for a while: likely left behind
+  url?: string // a server's, on this Mac
 }
 export type SessionMemory = { total: number; items: MemoryItem[] }
 export type Pressure = "normal" | "warning" | "critical"
@@ -78,6 +82,46 @@ function readable(command: string) {
     return [script ? base(script) : base(words[1]), ...words.slice(2)].join(" ").slice(0, 80)
   }
   return [first, ...words.slice(1).map(w => (w.startsWith("/") && w.length > 30 ? base(w) : w))].join(" ").slice(0, 80)
+}
+
+// The port each process listens on, this Mac's TCP servers.
+async function listeners() {
+  const out = await exec(["/usr/sbin/lsof", "-nP", "-iTCP", "-sTCP:LISTEN", "-Fpn"], { timeoutMs: 4000 })
+  const byPort = new Map<number, number>()
+  let pid = 0
+  for (const line of out.stdout.split("\n")) {
+    const port = Number(line.split(":").pop())
+    if (line.startsWith("p")) pid = Number(line.slice(1))
+    else if (line.startsWith("n") && !byPort.has(port)) byPort.set(port, pid)
+  }
+  return byPort
+}
+
+// A server's process from the app's own child down: never past a session's
+// process (`claude`, or the app's wrapper around one), so a server a
+// session's command started stays that command; outside the app, just it.
+const APP = /\/MacOS\/Claude$/
+const SESSION = /\/MacOS\/claude(\s|$)/
+function serverRoot(rows: Map<number, Row>, pid: number) {
+  let root = pid
+  for (let parent = rows.get(rows.get(pid)?.ppid ?? 0); parent && parent.pid > 1; parent = rows.get(parent.ppid)) {
+    if (APP.test(parent.command)) return root
+    if (SESSION.test(parent.command)) return pid
+    root = parent.pid
+  }
+  return pid
+}
+
+// The servers the desktop app runs for the board's sessions, by the port each listens on.
+async function serversOf(sessionIds: Set<string>, rows: Map<number, Row>) {
+  const servers = await appServers()
+  if (!servers.length) return []
+  const [desktop, byPort] = await Promise.all([readDesktop(), listeners()])
+  return servers.flatMap(s => {
+    const id = desktop.byHost.get(s.hostId)?.cliId
+    const pid = byPort.get(s.port)
+    return id && sessionIds.has(id) && pid ? [{ id, pid: serverRoot(rows, pid), name: s.name, url: `http://localhost:${s.port}` }] : []
+  })
 }
 
 async function scan(sessionIds: Set<string>) {
@@ -141,6 +185,9 @@ async function scan(sessionIds: Set<string>) {
     add(id, { pid: r.pid, kind: "session", label: "Claude (the session)", command: "", cwd: null, bytes: mem.get(r.pid) ?? 0, since: r.since, isDetached: false, idleSince: null, isForgotten: false })
     for (const child of kids.get(r.pid) ?? []) add(id, item(child, "command", false))
   }
+  // The servers the app runs for a session (its Servers list).
+  for (const { id, pid, name, url } of await serversOf(sessionIds, rows))
+    if (!claimed.has(pid)) add(id, { ...item(pid, "command", false), kind: "server", label: name, url, isForgotten: false })
   // What outlived it: the topmost process naming a known session. The
   // desktop app's wrapper around a session (its parent) names it too.
   const sessionPids = new Set(claimed)

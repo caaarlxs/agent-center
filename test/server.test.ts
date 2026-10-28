@@ -4,7 +4,7 @@
 // the person's is read, written or touched. Run: bun test
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises"
+import { appendFile, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -633,6 +633,33 @@ describe("memory", () => {
     } finally {
       await page.cancel()
       if (pid) try { process.kill(pid, "SIGKILL") } catch {}
+    }
+  }, 40_000)
+
+  test("shows the servers the app runs for a session (its Servers list), and stops one", async () => {
+    // A dev server the app started (preview_start or its Servers menu): the
+    // app's child, with no session id in its command line; its log names it.
+    const port = 41000 + Math.floor(Math.random() * 2000)
+    const servers = [{ serverId: "s1", name: "web-dev", port, status: "running", cwd: home, sessionId: "local_demo" }, { serverId: "b1", name: "Browser", port: 0, status: "running", sessionId: "local_demo" }]
+    const stamp = new Date().toISOString().slice(0, 19).replace("T", " ")
+    await mkdir(join(home, "Library", "Logs", "Claude"), { recursive: true })
+    await appendFile(join(home, "Library", "Logs", "Claude", "main.log"), `${stamp} [info] [Launch] Updating active servers store { count: 2, servers: '${JSON.stringify(servers)}' }\n`)
+    const web = Bun.spawn(["bun", "-e", `Bun.serve({ port: ${port}, fetch: () => new Response("hi") })`])
+    const page = (await fetch(`${base()}/api/stream`)).body!.getReader()
+    void (async () => { while (!(await page.read().catch(() => ({ done: true }))).done); })()
+    try {
+      let item: any = null
+      for (let i = 0; i < 60 && !item; i++) {
+        await Bun.sleep(500)
+        const card = (await jsonOf(fetch(`${base()}/api/state`))).cards.find((c: any) => c.id === ID)
+        item = card?.memory?.items.find((m: any) => m.kind === "server")
+      }
+      expect(item).toMatchObject({ pid: web.pid, label: "web-dev", url: `http://localhost:${port}` })
+      expect((await jsonOf(post(`/api/sessions/${ID}/stopprocess`, { pid: item.pid }))).ok).toBe(true)
+      await web.exited
+    } finally {
+      await page.cancel()
+      web.kill()
     }
   }, 40_000)
 

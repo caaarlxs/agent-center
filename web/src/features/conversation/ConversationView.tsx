@@ -8,7 +8,7 @@
 // choices it offers, the approval it asks for, and your messages it has not
 // received yet, each with Undo. A "New messages" pill shows when more arrives
 // while you read further up.
-import { ArrowDown, ChevronDown, ChevronRight, FileText, GitFork, ListChecks, Terminal, Bot, Wrench } from "lucide-react"
+import { ArrowDown, ChevronDown, ChevronRight, FileText, GitFork, Globe, ListChecks, Terminal, Bot, Wrench } from "lucide-react"
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 import { FileIcon } from "@/components/common/FileIcon"
@@ -375,7 +375,7 @@ function RunningNow({ sessionId }: { sessionId: string }) {
     return found
   }
   const rows = tasks.map(t => ({ task: t, proc: processOf(t) }))
-  const others = items.filter(i => !used.has(i.pid) && i.bytes >= 20 * 1024 ** 2)
+  const others = items.filter(i => !used.has(i.pid) && (i.kind === "server" || i.bytes >= 20 * 1024 ** 2))
   if (!rows.length && !others.length) return null
   const stopAt = (i: Proc) => post(`/api/sessions/${encodeURIComponent(sessionId)}/stopprocess`, { pid: i.pid }).then(() => toast(`Stopping ${i.label}…`), (err: Error) => toast(err.message || "Could not stop it"))
   const memCell = (i: Proc | undefined) => {
@@ -407,9 +407,10 @@ function RunningNow({ sessionId }: { sessionId: string }) {
       ))}
       {others.map(i => (
         <div key={i.pid} className={row} title={[i.command, i.cwd].filter(Boolean).join("\n")}>
-          {i.kind === "mcp" ? <Wrench className="size-[13px] shrink-0 text-work" /> : <Terminal className="size-[13px] shrink-0 text-work" />}
-          <span className="min-w-0 flex-1 truncate font-mono text-xs">{i.label}</span>
-          <span className="max-w-[40%] shrink-0 truncate text-[11px] text-faint">{[i.kind === "mcp" ? "MCP server" : i.cwd?.split("/").slice(-2).join("/"), i.isDetached && "left running"].filter(Boolean).join(" · ")}</span>
+          {i.kind === "mcp" ? <Wrench className="size-[13px] shrink-0 text-work" /> : i.kind === "server" ? <Globe className="size-[13px] shrink-0 text-work" /> : <Terminal className="size-[13px] shrink-0 text-work" />}
+          <span className={cn("min-w-0 flex-1 truncate", i.kind !== "server" && "font-mono text-xs")}>{i.label}</span>
+          {i.url ? <a href={i.url} target="_blank" rel="noreferrer" className="max-w-[40%] shrink-0 truncate font-mono text-[11px] text-text-muted hover:text-text hover:underline">{i.url.replace(/^https?:\/\//, "")}</a>
+            : <span className="max-w-[40%] shrink-0 truncate text-[11px] text-faint">{[i.kind === "mcp" ? "MCP server" : i.cwd?.split("/").slice(-2).join("/"), i.isDetached && "left running"].filter(Boolean).join(" · ")}</span>}
           <span className="shrink-0 text-[11px] text-faint">{ago(i.since, now)}</span>
           {memCell(i)}
         </div>
