@@ -191,9 +191,14 @@ export function Canvas() {
       const incoming: Node = { id: "incoming", type: "incoming", position: { x: entry.x, y: entry.y }, draggable: false, selectable: false, focusable: false, zIndex: -2, style: { width: entry.w, height: entry.h }, data: {} }
       const zoneNodes = zones.map(z => {
         const members = all.filter(c => isInZone(z, at[c.id]))
+        const keys = new Set(members.map(cardKey))
+        const riding = notes.flatMap(n => {
+          const p = (n.cardId ? keys.has(n.cardId) : isInZone(z, n)) ? noteAt(n, cardAt) : null
+          return p ? [{ id: `note:${n.id}`, at: p }] : []
+        })
         return keep({
           id: `zone:${z.id}`, type: "zone", position: { x: z.x, y: z.y }, zIndex: z.collapsed ? 0 : -1,
-          data: { zone: z, members, places: at, isNew: fresh === z.id, isDropTarget: folderOver === z.id, onChange: changeZone, onRemove: removeZone } satisfies ZoneNodeData,
+          data: { zone: z, members, places: at, notes: riding, isNew: fresh === z.id, isDropTarget: folderOver === z.id, onChange: changeZone, onRemove: removeZone } satisfies ZoneNodeData,
           ...(z.collapsed ? {} : { style: { width: z.w, height: z.h } }),
         })
       })

@@ -20,6 +20,7 @@ export type ZoneNodeData = {
   zone: Zone
   members: Card[]
   places: Record<string, Point> // where each member sits, for the fold
+  notes: { id: string; at: Point }[] // the notes that fold with it (on its cards, or free in it): node id, place
   isNew: boolean
   isDropTarget: boolean
   onChange: (zone: Zone) => void
@@ -32,6 +33,7 @@ export const FOLDER_H = 96 // about a folder tile's height
 export const isCalm = () => matchMedia("(prefers-reduced-motion: reduce)").matches
 const folderClip = (z: Zone) => `inset(0 ${Math.max(0, z.w - CARD_W)}px ${Math.max(0, z.h - FOLDER_H)}px 0 round 14px)`
 export const cardEl = (id: string) => document.querySelector<HTMLElement>(`.react-flow__node[data-id="${CSS.escape(id)}"] article`)
+const noteEl = (id: string) => document.querySelector<HTMLElement>(`.react-flow__node[data-id="${CSS.escape(id)}"]`)?.firstElementChild as HTMLElement | null
 
 // The way from a card to the middle of its zone's folder, in canvas units.
 export function towardFolder(el: HTMLElement, at: Point, zone: Point) {
@@ -80,18 +82,20 @@ export function ZoneNode({ data, dragging }: NodeProps<Node<ZoneNodeData>>) {
   }
   const startNaming = () => ((settled.current = false), setNaming(true))
 
-  // Folding: the cards fly into the folder one after another and the zone
-  // closes up to its size; saved once they are in. Unfolding plays it back.
+  // Folding: the cards, and their notes, fly into the folder one after
+  // another and the zone closes up to its size; saved once they are in.
+  // Unfolding plays it back.
   const closing = useRef<Animation | null>(null)
+  const riders = () => [
+    ...members.map(c => ({ el: cardEl(c.id), at: data.places[c.id] })),
+    ...data.notes.map(n => ({ el: noteEl(n.id), at: n.at })),
+  ].flatMap(({ el, at }) => (el && at ? [{ el, at }] : []))
   const fold = () => {
     quietly(members.map(c => c.id))
     if (isCalm() || !box.current) return data.onChange({ ...zone, collapsed: true })
-    const flights = members.flatMap((c, i) => {
-      const el = cardEl(c.id)
-      const at = data.places[c.id]
-      if (!el || !at) return []
+    const flights = riders().map(({ el, at }, i) => {
       const { dx, dy } = towardFolder(el, at, zone)
-      return [el.animate([{ transform: "none", opacity: 1 }, { transform: `translate(${dx}px, ${dy}px) scale(0.35)`, opacity: 0 }], { duration: 240, delay: i * 18, easing: FOLD_EASE, fill: "forwards" })]
+      return el.animate([{ transform: "none", opacity: 1 }, { transform: `translate(${dx}px, ${dy}px) scale(0.35)`, opacity: 0 }], { duration: 240, delay: i * 18, easing: FOLD_EASE, fill: "forwards" })
     })
     closing.current = box.current.animate([{ clipPath: "inset(0 round 14px)" }, { clipPath: folderClip(zone) }], { duration: 260, easing: FOLD_EASE, fill: "forwards" })
     Promise.all([closing.current, ...flights].map(a => a.finished)).catch(() => {}).finally(() => data.onChange({ ...zone, collapsed: true }))
@@ -106,10 +110,7 @@ export function ZoneNode({ data, dragging }: NodeProps<Node<ZoneNodeData>>) {
     if (was === !!zone.collapsed || isCalm() || !box.current) return
     if (zone.collapsed) return void box.current.animate([{ transform: "scale(0.96)" }, { transform: "none" }], { duration: 220, easing: FOLD_EASE })
     box.current.animate([{ clipPath: folderClip(zone) }, { clipPath: "inset(0 round 14px)" }], { duration: 300, easing: FOLD_EASE })
-    members.forEach((c, i) => {
-      const el = cardEl(c.id)
-      const at = data.places[c.id]
-      if (!el || !at) return
+    riders().forEach(({ el, at }, i) => {
       const { dx, dy } = towardFolder(el, at, zone)
       el.animate([{ transform: `translate(${dx}px, ${dy}px) scale(0.35)`, opacity: 0 }, { transform: "none", opacity: 1 }], { duration: 320, delay: 40 + i * 22, easing: FOLD_EASE, fill: "backwards" })
     })
