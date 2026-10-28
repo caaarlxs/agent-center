@@ -651,6 +651,17 @@ describe("files of a session", () => {
     // Another session did not name it.
     expect((await fetch(`${base()}/api/sessions/${ID}/file?path=${encodeURIComponent(join(home, "report.md"))}`)).status).toBe(404)
   })
+  test("lists what you sent the session too", async () => {
+    const upload = join(home, ".claude", "agent-center", "uploads", SERVER, "1793170000000-abc123-plan.pdf")
+    await mkdir(join(home, ".claude", "agent-center", "uploads", SERVER), { recursive: true })
+    await writeFile(upload, "%PDF-1.4 plan")
+    const transcript = join(home, ".claude", "projects", "demo", `${SERVER}.jsonl`)
+    const prompt = { type: "user", uuid: "you1", cwd: home, timestamp: new Date().toISOString(), message: { role: "user", content: `Read this.\n\nAttached file (open it with Read): ${upload}` } }
+    await writeFile(transcript, (await readFile(transcript, "utf8")) + JSON.stringify(prompt) + "\n")
+    const { files } = await jsonOf(fetch(`${base()}/api/sessions/${SERVER}/files`))
+    expect(files.find((f: any) => f.path === upload)?.source).toBe("yours")
+    expect(await (await fetch(`${base()}/api/sessions/${SERVER}/file?path=${encodeURIComponent(upload)}`)).text()).toContain("plan")
+  })
 })
 
 describe("suggested tasks", () => {

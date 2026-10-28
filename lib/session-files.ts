@@ -1,7 +1,8 @@
 // The files of a session, as its transcript names them: the ones Claude
 // sent you (SendUserFile), wrote or edited, published as an artifact, or
-// named in its answers (a path in backticks, a link). The "Files" tab lists
-// the first three; any of them opens in the board's viewer. Only a file a
+// named in its answers (a path in backticks, a link), and the ones you sent
+// it from the board (an upload your message names). The "Files" tab lists
+// all but the named ones; any of them opens in the board's viewer. Only a file a
 // session's transcript names is served for it: the board never reads an
 // arbitrary path of this Mac. Each transcript is read once, then only what
 // it adds.
@@ -10,16 +11,19 @@ import { stat } from "node:fs/promises"
 import { basename, extname, isAbsolute, resolve } from "node:path"
 import { HOME } from "./config"
 import { readAppended } from "./files"
-import { transcriptPath } from "./transcript"
+import { isPersonPrompt, queuedPrompt, transcriptPath } from "./transcript"
 
 export type FileRef = {
   path: string
-  source: "sent" | "artifact" | "written" | "mentioned"
+  source: "sent" | "yours" | "artifact" | "written" | "mentioned"
   at: number
   url?: string // an artifact's page on claude.ai
 }
 
-const RANK = { sent: 3, artifact: 2, written: 1, mentioned: 0 }
+const RANK = { sent: 3, yours: 3, artifact: 2, written: 1, mentioned: 0 }
+// A file you sent from the board: saved under uploads/ (lib/uploads.ts), and
+// your message names its path ("Attached file (open it with Read): …").
+const UPLOADED = /\/[^\s]*\/\.claude\/agent-center\/uploads\/[\w-]+\/[^\s/]+/g
 const WRITERS = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"])
 const MAX_VIEW_BYTES = 30 * 1024 * 1024
 
@@ -57,18 +61,30 @@ function mentions(text: string) {
   return out
 }
 
+// The uploads a message of yours names: typed (or sent from the board) as
+// you wrote it, or queued while a turn ran; a tool's output naming one is not.
+function uploadsYouSent(row: any) {
+  const queued = queuedPrompt(row)
+  if (queued === null && !isPersonPrompt(row)) return []
+  const c = row.message?.content
+  const text = queued ?? (typeof c === "string" ? c : (c ?? []).map((b: any) => (b?.type === "text" ? String(b.text ?? "") : "")).join("\n"))
+  return text.match(UPLOADED) ?? []
+}
+
 function ingest(scan: Scan, chunk: string) {
   for (const line of chunk.split("\n")) {
-    if (!line.includes('"tool_use"') && !line.includes('"tool_result"') && !line.includes('"text"')) continue
+    const hasUpload = line.includes("/agent-center/uploads/")
+    if (!hasUpload && !line.includes('"tool_use"') && !line.includes('"tool_result"') && !line.includes('"text"')) continue
     let row: any
     try {
       row = JSON.parse(line)
     } catch {
       continue
     }
+    const at = Date.parse(row.timestamp ?? "") || 0
+    if (hasUpload && !row.isSidechain) for (const p of uploadsYouSent(row)) note(scan, p, "yours", at)
     if (row.isSidechain || (row.type !== "user" && row.type !== "assistant")) continue
     if (typeof row.cwd === "string") scan.cwd = row.cwd
-    const at = Date.parse(row.timestamp ?? "") || 0
     const content = row.message?.content
     if (!Array.isArray(content)) continue
     for (const b of content) {
@@ -120,7 +136,9 @@ export async function sessionFiles(ids: string[]) {
   const out = []
   for (const f of refs) {
     const info = await stat(f.path).catch(() => null)
-    if (info?.isFile()) out.push({ ...f, name: basename(f.path), size: info.size, modifiedAt: info.mtimeMs })
+    // An upload keeps its name after the time and code it was saved with.
+    const name = f.source === "yours" ? basename(f.path).replace(/^\d+-[0-9a-f]{6}-?/, "") || basename(f.path) : basename(f.path)
+    if (info?.isFile()) out.push({ ...f, name, size: info.size, modifiedAt: info.mtimeMs })
   }
   return out
 }
