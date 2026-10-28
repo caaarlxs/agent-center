@@ -434,6 +434,26 @@ describe("diagnosis", () => {
   })
 })
 
+describe("effort and model", () => {
+  const alive = (v: number) =>
+    mkdir(join(home, ".claude", "agent-center", "alive"), { recursive: true }).then(() =>
+      writeFile(join(home, ".claude", "agent-center", "alive", `${HELPER}.json`), JSON.stringify({ at: Date.now(), busy: false, v })))
+  test("keeps the effort picked on the board, for a mod that puts it on every request", async () => {
+    await alive(10)
+    expect((await post(`/api/sessions/${HELPER}/settings`, { effort: "high" })).status).toBe(409) // an older mod
+    await alive(11)
+    expect((await jsonOf(post(`/api/sessions/${HELPER}/settings`, { effort: "high" }))).ok).toBe(true)
+    expect((await jsonOf(fetch(`${base()}/api/sessions/${HELPER}/bridge`))).effort).toBe("high")
+  })
+  test("says the model switched to only once the mod switched it", async () => {
+    const { requestId } = await jsonOf(post(`/api/sessions/${HELPER}/settings`, { model: "claude-sonnet-5-5" }))
+    expect((await jsonOf(fetch(`${base()}/api/sessions/${HELPER}/bridge`))).model).toBeNull()
+    await mkdir(join(home, ".claude", "agent-center", "acks"), { recursive: true })
+    await writeFile(join(home, ".claude", "agent-center", "acks", `${HELPER}.json`), JSON.stringify({ delivered: [], settings: { id: requestId, results: { model: "ok" } } }))
+    expect((await jsonOf(fetch(`${base()}/api/sessions/${HELPER}/bridge`))).model.value).toBe("claude-sonnet-5-5")
+  })
+})
+
 describe("updates after a pull", () => {
   test("puts back a hook older than the repository's, and says when nothing is left", async () => {
     expect((await jsonOf(post("/api/setup/hook", { options: {} }))).ok).toBe(true)

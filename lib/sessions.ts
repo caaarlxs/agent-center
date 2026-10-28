@@ -4,7 +4,7 @@
 import { readdir, readFile, stat } from "node:fs/promises"
 import { join } from "node:path"
 import { SESSIONS_DIR } from "./config"
-import type { DesktopIndex } from "./desktop"
+import { appHostOf, type DesktopIndex } from "./desktop"
 
 export type SessionState = "working" | "asking" | "permission" | "done"
 
@@ -56,9 +56,10 @@ export async function readSessions(): Promise<Session[]> {
 }
 
 // The desktop app's own id for a CLI session (null: never in the app) and its folder.
+// Its desktop id in the account signed in now (lib/desktop.ts appHostOf).
 export async function hostIdOf(id: string, desktop: DesktopIndex) {
   const session = (await readSessions()).find(s => s.session_id === id)
-  return { hostId: session?.host_session_id ?? desktop.byCli.get(id)?.hostId ?? null, cwd: session?.cwd ?? null }
+  return { hostId: appHostOf(id, session?.host_session_id ?? null, desktop), cwd: session?.cwd ?? null }
 }
 
 // A prompt or recap as one line: the engine's reminders out, and what the

@@ -9,6 +9,8 @@
 //   questions/<session>.json     the mod (v5): { id, questions } the question the session
 //                                asks (AskUserQuestion) while it waits; id null once answered
 //   answers/<session>.json       this server: { id, answers } the board's answer to it
+//   overrides/<session>.json     this server: { effort, at } the effort picked on the board,
+//                                which the mod (v11) puts on every request to the model
 //
 // A message waits UNDO_MS before the mod may take it, and the mod (v2) holds
 // it while a turn runs: until delivered, `unsend` takes it back.
@@ -45,6 +47,8 @@ export type BridgeStatus = {
   queued: { id: string; text: string }[] // the messages still waiting, oldest first
   question: Question | null // the question waiting for an answer, which the board can give
   permission: Permission | null // the tool approval the client asks for now (mod v7)
+  effort: string | null // the effort picked on the board (mod v11 applies it), null: the app's
+  model: { value: string; at: number } | null // the last model the mod switched to (/model), and when
 }
 
 export type Permission = { id: string; tool: string; input: Record<string, unknown> }
@@ -150,6 +154,14 @@ export async function putBack(sessionId: string, messages: Message[]) {
   for (const m of messages) await writeJsonAtomic(join(BASE, "outbox", sessionId, `${m.id}.json`), m)
 }
 
+// The effort picked on the board for a session: the mod (v11) puts it on
+// every request to the model, whatever Claude desktop sends (the app has no
+// way for a session to change its own).
+export async function setEffort(sessionId: string, effort: string) {
+  if (!isId(sessionId)) throw new Error("invalid session")
+  await writeJsonAtomic(join(BASE, "overrides", `${sessionId}.json`), { effort, at: Date.now() })
+}
+
 // Asks the session's mod (v4) to change its permission mode, model or effort.
 // Answers the request id; status() reports the mod's results under `settings`.
 export async function requestSettings(sessionId: string, changes: { mode?: string; model?: string; effort?: string }) {
@@ -169,7 +181,7 @@ export async function stop(sessionId: string) {
 // Whether the session's mod is running, and how many messages still wait.
 // Also deletes the messages the mod has acknowledged.
 export async function status(sessionId: string): Promise<BridgeStatus> {
-  if (!isId(sessionId)) return { isOpen: false, pending: 0, lastSeen: null, busy: null, version: 0, limits: null, settings: null, stuck: [], failed: [], queued: [], question: null, permission: null }
+  if (!isId(sessionId)) return { isOpen: false, pending: 0, lastSeen: null, busy: null, version: 0, limits: null, settings: null, stuck: [], failed: [], queued: [], question: null, permission: null, effort: null, model: null }
   let lastSeen: number | null = null
   let busy: boolean | null = null
   let version = 0
@@ -232,5 +244,9 @@ export async function status(sessionId: string): Promise<BridgeStatus> {
       if (p.id && p.tool) permission = { id: String(p.id), tool: String(p.tool), input: p.input ?? {} }
     } catch {}
   }
-  return { isOpen, pending, lastSeen, busy, version, limits, settings, stuck, failed, queued, question, permission }
+  const effort = await readJson(join(BASE, "overrides", `${sessionId}.json`)).then(o => (typeof o.effort === "string" ? o.effort : null), () => null)
+  // The model asked last, once the mod says it switched.
+  const asked = await readJson(join(BASE, "settings", `${sessionId}.json`)).catch(() => null)
+  const model = asked?.model && settings?.id === asked.id && settings?.results.model === "ok" ? { value: String(asked.model), at: Number(asked.at) || 0 } : null
+  return { isOpen, pending, lastSeen, busy, version, limits, settings, stuck, failed, queued, question, permission, effort, model }
 }

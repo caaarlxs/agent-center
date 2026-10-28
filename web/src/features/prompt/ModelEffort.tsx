@@ -14,7 +14,6 @@ import { cn } from "@/lib/utils"
 import { EffortSlider } from "./EffortSlider"
 import { EFFORTS, MODELS, type Option, pill } from "./Settings"
 
-const LOCKED = "Effort (read-only). Change it in Claude desktop: it sends its own with every message"
 const OPEN = { type: "spring", stiffness: 520, damping: 34, mass: 0.7 } as const
 const SWAP = { duration: 0.16, ease: [0.23, 1, 0.32, 1] } as const
 
@@ -22,12 +21,14 @@ type Props = {
   model: string; effort: string | null | undefined; title: string
   defaults?: { model: string; effort: string } // New session: what Reset goes back to
   isEffortLocked?: boolean; isDisabled?: boolean; isWaiting?: boolean
+  // What the slider says on hover: why it cannot move, or what moving it does.
+  lockedTip?: string; effortTip?: string
   onModel: (model: string) => void; onEffort?: (effort: string) => void
 }
 
 const labelOf = (list: readonly Option[], value: string | null | undefined) => list.find(([v]) => v === value)?.[1] ?? value ?? undefined
 
-export function ModelEffort({ model, effort, title, defaults, isEffortLocked, isDisabled, isWaiting, onModel, onEffort }: Props) {
+export function ModelEffort({ model, effort, title, defaults, isEffortLocked, isDisabled, isWaiting, lockedTip, effortTip, onModel, onEffort }: Props) {
   const [isOpen, setOpen] = useState(false)
   const [view, setView] = useState<"main" | "models">("main")
   const step = EFFORTS.findIndex(([e]) => e === effort)
@@ -70,8 +71,8 @@ export function ModelEffort({ model, effort, title, defaults, isEffortLocked, is
                     {modelLabel}<ChevronRight className="size-3.5" />
                   </button>
                 </div>
-                {isEffortLocked ? (
-                  <Tooltip><TooltipTrigger asChild><div>{slider}</div></TooltipTrigger><TooltipContent>{LOCKED}</TooltipContent></Tooltip>
+                {(isEffortLocked ? lockedTip : effortTip) ? (
+                  <Tooltip><TooltipTrigger asChild><div>{slider}</div></TooltipTrigger><TooltipContent className="max-w-[260px]">{isEffortLocked ? lockedTip : effortTip}</TooltipContent></Tooltip>
                 ) : slider}
               </motion.div>
             ) : (

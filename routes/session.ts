@@ -4,7 +4,7 @@
 // park, done, archive, seen, move, rename, color, tier).
 
 import { applyAction, isBoardAction, isTaskId, setSuggestion } from "../lib/board"
-import { answer as answerQuestion, isBusy, permit, requestSettings, send as sendMessage, status as bridgeStatus, stop as stopTurn, unsend } from "../lib/bridge"
+import { answer as answerQuestion, isBusy, permit, requestSettings, send as sendMessage, setEffort, status as bridgeStatus, stop as stopTurn, unsend } from "../lib/bridge"
 import { activate, openInClient } from "../lib/client"
 import { isArchivedInApp, readDesktop } from "../lib/desktop"
 import { commandStatus, runCommand, stopCommand } from "../lib/commands"
@@ -79,7 +79,14 @@ async function settings(id: string, body: Record<string, unknown>) {
     changes.mode = undefined
     refreshSoon()
   }
-  const requestId = changes.mode || changes.model || changes.effort ? await requestSettings(id, changes) : null
+  // The effort is the board's to keep: the mod (v11) puts it on every request
+  // to the model, since Claude desktop sends its own with each message.
+  if (changes.effort) {
+    if (bridge.version < 11) return json({ error: "This session runs an older bridge mod: close it and open it again to change its effort from here" }, 409)
+    await setEffort(id, changes.effort)
+    changes.effort = undefined
+  }
+  const requestId = changes.mode || changes.model ? await requestSettings(id, changes) : null
   return json({ ok: true, requestId, messageId, isOpen: bridge.isOpen })
 }
 

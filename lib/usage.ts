@@ -54,6 +54,7 @@ type Scan = {
   messages: Map<string, { model: string; usage: Usage; isMain: boolean; at: number }>
   lastContext: number
   lastModel: string | null
+  lastModelAt: number // when it last answered with lastModel
 }
 
 const scans = new Map<string, Scan>()
@@ -75,6 +76,7 @@ function ingest(scan: Scan, chunk: string) {
       const u: Usage = msg.usage
       scan.lastContext = (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + (u.output_tokens ?? 0)
       scan.lastModel = msg.model ?? scan.lastModel
+      scan.lastModelAt = Date.parse(row.timestamp ?? "") || scan.lastModelAt
     }
   }
 }
@@ -85,7 +87,7 @@ async function scanned(sessionId: string): Promise<Scan | null> {
   const { size } = await stat(path)
   let scan = scans.get(path)
   if (!scan || size < scan.offset) {
-    scan = { offset: 0, messages: new Map(), lastContext: 0, lastModel: null }
+    scan = { offset: 0, messages: new Map(), lastContext: 0, lastModel: null, lastModelAt: 0 }
     scans.set(path, scan)
   }
   scan.offset = await readAppended(path, scan.offset, size, text => ingest(scan, text))
@@ -93,7 +95,7 @@ async function scanned(sessionId: string): Promise<Scan | null> {
 }
 
 // recentCost: what it spent in the last 5 hours, the plan's short window.
-export type SessionUsage = { context: number; window: number; cost: number; recentCost: number; model: string | null }
+export type SessionUsage = { context: number; window: number; cost: number; recentCost: number; model: string | null; modelAt: number }
 const RECENT_MS = 5 * 3600_000
 
 // `current` is the CLI id running now (its last request is the live
@@ -111,5 +113,5 @@ export async function usageOf(current: string, ids: string[]): Promise<SessionUs
       if (m.at >= since) recentCost += c
     }
   const live = (await scanned(current).catch(() => null)) ?? scans[0]!
-  return { context: live.lastContext, window: WINDOW, cost: Math.round(cost * 100) / 100, recentCost: Math.round(recentCost * 100) / 100, model: live.lastModel }
+  return { context: live.lastContext, window: WINDOW, cost: Math.round(cost * 100) / 100, recentCost: Math.round(recentCost * 100) / 100, model: live.lastModel, modelAt: live.lastModelAt }
 }

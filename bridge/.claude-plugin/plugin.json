@@ -1,5 +1,5 @@
 {
   "name": "agent-center-bridge",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Delivers the messages written in Agent Center to this session as your prompt"
 }

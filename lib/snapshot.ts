@@ -5,7 +5,7 @@
 import { stat } from "node:fs/promises"
 import { HOME } from "./config"
 import { backgroundOf } from "./background"
-import { board, itemOf, type BoardItem } from "./board"
+import { board, itemOf, keepAcrossAccounts, type BoardItem } from "./board"
 import { status as bridgeStatus, type Limits, type Permission } from "./bridge"
 import { canRunCommands } from "./commands"
 import { freshness } from "./freshness"
@@ -139,6 +139,9 @@ async function cardOf(
 ) {
   // A desktop session whose record is gone was deleted in the app.
   if (lead.host_session_id && desktop.ok && !app) return null
+  // Imported into another account, it has a new desktop id: what the board
+  // kept for it under the old one comes along.
+  keepAcrossAccounts(key, ids.flatMap(one => [...(desktop.hostsByCli.get(one) ?? [])]))
   const item = itemOf(key, ids)
   const repo = await repoInfo(lead.cwd)
   const group = { key, id, ids, lead, root: repo.root, branch: repo.branch }

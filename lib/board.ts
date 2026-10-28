@@ -70,6 +70,25 @@ function saveBoard() {
   return job
 }
 
+// A session imported into the account signed in now gets a new desktop id
+// there: its item (place on the canvas, so its zone too; colour, name, tier,
+// pin) and its notes move to the new key, from the first former key that has
+// one. True when something moved.
+export function carryOver(b: Board, key: string, formerKeys: string[]) {
+  if (b.items[key]) return false
+  const from = formerKeys.find(k => k !== key && b.items[k])
+  if (!from) return false
+  b.items[key] = b.items[from]!
+  delete b.items[from]
+  for (const n of b.notes ?? []) if (n.cardId === from) n.cardId = key
+  return true
+}
+
+// carryOver on the board itself, saved when something moved.
+export function keepAcrossAccounts(key: string, formerKeys: string[]) {
+  if (carryOver(board, key, formerKeys)) void saveBoard()
+}
+
 // The board item of a group: under its key, or (older items) a CLI id.
 export function itemOf(key: string, ids: string[]): BoardItem {
   return board.items[key] ?? ids.map(id => board.items[id]).find(Boolean) ?? {}
