@@ -6,7 +6,6 @@
 // else as Quick Look's picture of its first page. Only files the session's own
 // transcript names are served (lib/session-files.ts).
 import Editor from "@monaco-editor/react"
-import { ArrowUpRight, Copy } from "lucide-react"
 import { useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -20,6 +19,8 @@ import { Markdown, copyText } from "@/features/conversation/Markdown"
 import { ago } from "@/features/session/state"
 import { kindOf, parseDelimited } from "./kinds"
 import { OfficeDoc } from "./OfficeDoc"
+import { Anim } from "@/components/icons/animated"
+import { CopyMark, useCopyMoment } from "@/components/icona/marks"
 
 type Listed = { path: string; name: string; size: number; modifiedAt: number; source: "sent" | "artifact" | "written"; url?: string }
 type Info = { path: string; size: number; isViewable: boolean; error?: string }
@@ -103,7 +104,8 @@ function Viewer({ id, file }: { id: string; file: Listed }) {
   const isMarkdown = kindOf(file.name) === "markdown"
   const path = info?.path ?? file.path
   const openOnMac = (reveal = false) => post(`/api/sessions/${encodeURIComponent(id)}/openfile`, { path: file.path, reveal }).catch((err: Error) => toast(err.message || "Could not open it"))
-  const copyPath = () => copyText(path).then(() => toast("Path copied"), () => toast("Could not copy"))
+  const copied = useCopyMoment()
+  const copyPath = () => copyText(path).then(() => (copied.play(), toast("Path copied")), () => toast("Could not copy"))
   return (
     <section className="flex min-h-0 min-w-0 flex-1 flex-col">
       <header className="flex shrink-0 items-center gap-2 border-b border-line px-3.5 py-2.5">
@@ -112,10 +114,10 @@ function Viewer({ id, file }: { id: string; file: Listed }) {
           <small className="truncate text-[11.5px] text-faint" title={path}>{home(path)}{info?.size != null && !info.error ? ` · ${bytesText(info.size)}` : ""}</small>
         </div>
         {isMarkdown && <Button variant="ghost" onClick={() => setSource(!isSource)}>{isSource ? "Rendered" : "Source"}</Button>}
-        {file.url && <Button variant="ghost" asChild><a href={file.url} target="_blank" rel="noreferrer">claude.ai<ArrowUpRight className="size-3" /></a></Button>}
+        {file.url && <Button variant="ghost" asChild><a href={file.url} target="_blank" rel="noreferrer">claude.ai<Anim.ArrowUpRight size={12} /></a></Button>}
         {info && !info.error && (
           <>
-            <button className="inline-grid size-7 place-items-center rounded-[7px] text-text-muted hover:bg-press hover:text-text active:scale-[0.92]" onClick={copyPath} title="Copy the path"><Copy className="size-3.5" /></button>
+            <button className={cn("inline-grid size-7 place-items-center rounded-[7px] text-text-muted transition-colors duration-200 hover:bg-press hover:text-text active:scale-[0.92]", copied.step >= 0 && "text-work hover:text-work")} onClick={copyPath} title="Copy the path"><CopyMark moment={copied} size={14} idle={<Anim.Copy size={14} />} /></button>
             <Button variant="ghost" onClick={() => openOnMac(true)} title="Show it in Finder">Show in Finder</Button>
             <Button variant="ghost" onClick={() => openOnMac()} title="Open it in its app on this Mac">Open on the Mac</Button>
           </>

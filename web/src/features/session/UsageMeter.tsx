@@ -1,19 +1,33 @@
-// How full a session's context is (components.js UsageMeter): a small bar
-// and the share, amber from 65%, red from 85%; wide, the tokens too.
+// How full a session's context is, under the reply box: a small ring that
+// fills (amber from 65%, red from 85%) and the share, its digits rolling;
+// the tokens show on hover.
+import { Num } from "@/components/common/Num"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import type { Snapshot } from "@/lib/api-types"
 import { cn } from "@/lib/utils"
+import { usageOf } from "./usage"
 
 type Usage = NonNullable<Snapshot["cards"][number]["usage"]>
 
-export function UsageMeter({ usage, isWide = false }: { usage: Usage; isWide?: boolean }) {
-  const pct = Math.min(100, Math.round((usage.context / usage.window) * 100))
-  const tone = pct >= 85 ? "text-bad [&_i]:bg-bad" : pct >= 65 ? "text-ask [&_i]:bg-ask" : isWide ? "text-text-muted [&_i]:bg-faint" : "text-faint [&_i]:bg-faint"
-  const tokens = usage.context >= 1000 ? `${Math.round(usage.context / 1000)}k` : String(usage.context)
+const R = 5.5
+const LENGTH = 2 * Math.PI * R
+const TONE = { ok: "text-text-muted", ask: "text-ask", bad: "text-bad" }
+
+export function UsageMeter({ usage }: { usage: Usage }) {
+  const { pct, tone, tokens, window } = usageOf(usage)
   return (
-    <span className={cn("inline-flex shrink-0 items-center gap-[5px] text-[11px] font-semibold tabular-nums", isWide && "text-[11.5px] font-medium", tone)}
-      title={`Context used: ${tokens} of ${usage.window / 1000}k tokens (${pct}%)${pct >= 85 ? " — consider starting a new session" : ""}`}>
-      <span className={cn("h-1 overflow-hidden rounded-sm bg-hover", isWide ? "w-16" : "w-7")}><i className="block h-full rounded-sm" style={{ width: `${pct}%` }} /></span>
-      {pct}%{isWide && ` context · ${tokens} tokens`}
-    </span>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className={cn("inline-flex shrink-0 cursor-default items-center gap-[5px] text-[11.5px] font-medium tabular-nums", TONE[tone])} aria-label={`Context used: ${pct}%`}>
+          <svg viewBox="0 0 14 14" className="size-3.5 -rotate-90" aria-hidden="true">
+            <circle cx="7" cy="7" r={R} fill="none" strokeWidth="2" className="stroke-line-strong" />
+            <circle cx="7" cy="7" r={R} fill="none" strokeWidth="2" strokeLinecap="round" className="stroke-current transition-[stroke-dashoffset] duration-300 ease-(--ease-out)"
+              strokeDasharray={LENGTH} strokeDashoffset={LENGTH * (1 - pct / 100)} />
+          </svg>
+          <Num value={pct} suffix="%" />
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="top">Context used: {tokens} of {window} tokens{pct >= 85 ? " — consider starting a new session" : ""}</TooltipContent>
+    </Tooltip>
   )
 }

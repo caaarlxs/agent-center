@@ -2,22 +2,25 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-/* Dark follows the system, as the classic board does. */
-@custom-variant dark (@media (prefers-color-scheme: dark));
+/* Dark: <html data-theme=dark> (lib/theme.ts), the system's or Setup's choice. */
+@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
 
 /* The board's own palette (the classic board's tokens, styles.css:3-81).
+   Surfaces climb in lightness, the same hues in both modes: the frame
+   (sidebar, Done) lowest, then the page and canvas, then cards and panels,
+   then menus and dialogs; in dark each step is 0.03-0.06 of OKLCH lightness.
    Two names differ, as shadcn uses them for something else: the classic
    --muted (secondary text) is --text-muted here, --accent is --brand. */
 :root {
-    --bg: #f6f5f2;
-    --side: #efeee9;
+    --bg: #f2f1ee; /* the page and canvas: a step below the cards */
+    --side: #ebeae5; /* the frame (sidebar, Done): a step below the page */
     --surface: #ffffff;
     --raised: #ffffff;
     --hover: rgb(0 0 0 / 0.04);
     --press: rgb(0 0 0 / 0.07);
     --text: #1c1c1a;
-    --text-muted: #6e6d68;
-    --faint: #a19f98;
+    --text-muted: #6a6964; /* 4.5:1 on the sidebar too */
+    --faint: #82807a; /* 3.5:1 on the page, 4:1 on a card (the classic #a19f98 was 2.4:1) */
     --line: #e5e3dc;
     --line-strong: #d6d3ca;
     --brand: #c25a32;
@@ -46,43 +49,42 @@
     color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-    :root {
-        --bg: #0c0c0e;
-        --side: #0f0f11;
-        --surface: #151518;
-        --raised: #1c1c20;
-        --hover: rgb(255 255 255 / 0.04);
-        --press: rgb(255 255 255 / 0.07);
-        --text: #ededf0;
-        --text-muted: #93939c;
-        --faint: #5f5f68;
-        --line: rgb(255 255 255 / 0.07);
-        --line-strong: rgb(255 255 255 / 0.12);
-        --brand: #e8825a;
-        --brand-text: #1a1310;
-        --brand-soft: rgb(232 130 90 / 0.14);
-        --ask: #f5b544;
-        --ask-soft: rgb(245 181 68 / 0.13);
-        --bad: #f87171;
-        --bad-soft: rgb(248 113 113 / 0.13);
-        --work: #4ade80;
-        --work-soft: rgb(74 222 128 / 0.12);
-        --run: #fb923c;
-        --run-soft: rgb(251 146 60 / 0.15);
-        --review: #84a9ff;
-        --review-soft: rgb(132 169 255 / 0.13);
-        --select: rgb(232 130 90 / 0.1);
-        --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 4px 16px rgb(0 0 0 / 0.25);
-        --shadow-pop: 0 12px 40px rgb(0 0 0 / 0.5), 0 0 0 1px rgb(255 255 255 / 0.06);
-        --repo-l: 70%;
-        --code-text: #f28b82;
-        --code-bg: rgb(242 139 130 / 0.1);
-        --code-line: rgb(242 139 130 / 0.2);
-        --scroll: rgb(255 255 255 / 0.13);
-        --scroll-hover: rgb(255 255 255 / 0.28);
-        color-scheme: dark;
-    }
+/* Dark, by <html data-theme> (lib/theme.ts): the system's, or Setup's choice. */
+:root[data-theme=dark] {
+    --bg: #101012; /* the page and canvas */
+    --side: #09090a; /* the frame (sidebar, Done): below the page */
+    --surface: #1d1d20; /* cards and panels: a clear step above the page */
+    --raised: #252529; /* menus, dialogs: above the cards */
+    --hover: rgb(255 255 255 / 0.04);
+    --press: rgb(255 255 255 / 0.07);
+    --text: #ededf0;
+    --text-muted: #93939c;
+    --faint: #74747d; /* 3.6:1 on a card (the classic #5f5f68 was 2.9:1) */
+    --line: rgb(255 255 255 / 0.07);
+    --line-strong: rgb(255 255 255 / 0.12);
+    --brand: #e8825a;
+    --brand-text: #1a1310;
+    --brand-soft: rgb(232 130 90 / 0.14);
+    --ask: #f5b544;
+    --ask-soft: rgb(245 181 68 / 0.13);
+    --bad: #f87171;
+    --bad-soft: rgb(248 113 113 / 0.13);
+    --work: #4ade80;
+    --work-soft: rgb(74 222 128 / 0.12);
+    --run: #fb923c;
+    --run-soft: rgb(251 146 60 / 0.15);
+    --review: #84a9ff;
+    --review-soft: rgb(132 169 255 / 0.13);
+    --select: rgb(232 130 90 / 0.1);
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 4px 16px rgb(0 0 0 / 0.25);
+    --shadow-pop: 0 12px 40px rgb(0 0 0 / 0.5), 0 0 0 1px rgb(255 255 255 / 0.06);
+    --repo-l: 70%;
+    --code-text: #f28b82;
+    --code-bg: rgb(242 139 130 / 0.1);
+    --code-line: rgb(242 139 130 / 0.2);
+    --scroll: rgb(255 255 255 / 0.13);
+    --scroll-hover: rgb(255 255 255 / 0.28);
+    color-scheme: dark;
 }
 
 /* shadcn's names, on the board's palette: every component takes it. */
@@ -213,6 +215,14 @@
   *:hover { scrollbar-color: var(--scroll-hover) transparent; }
 }
 
+/* Light to dark and back (lib/theme.ts): the new look comes down over the
+   old like a curtain. Only while that switch runs: other transitions keep
+   the browser's own crossfade. */
+html[data-theme-switch]::view-transition-old(root),
+html[data-theme-switch]::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+html[data-theme-switch]::view-transition-new(root) { animation: theme-curtain 600ms cubic-bezier(0.77, 0, 0.175, 1); }
+@keyframes theme-curtain { from { clip-path: inset(0 0 100% 0); } to { clip-path: inset(0); } }
+
 /* Less motion asked: everything moves at once (styles.css:1138-1140). */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
@@ -331,3 +341,6 @@
 .md.file-md h3 { font-size: 16px; margin: 18px 0 8px; }
 .md.file-md table { font-size: 13px; }
 .md.file-md th, .md.file-md td { padding: 5px 8px; }
+/* The dictation pill while Whisper writes (features/prompt/VoiceWave.tsx). */
+.wave-scrub { animation: wave-scrub 1.4s linear infinite; }
+@keyframes wave-scrub { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }

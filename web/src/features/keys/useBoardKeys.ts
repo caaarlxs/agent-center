@@ -56,6 +56,7 @@ export function useBoardKeys({ nextUp, toggleSearch, openSearch, isSearching }: 
       const typing = isTyping(e.target)
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") return void (e.preventDefault(), toggleSearch())
       if (isSearching || helpOpen.get() || document.querySelector("[role=dialog]")) return // a dialog handles its own keys
+      if ((e.target as Element).closest?.("[role=menu], [role=listbox]")) return // so does an open menu (arrows, Esc)
       // "?" arrives as Shift+/ on some layouts and drivers.
       if (!typing && (e.key === "?" || (e.code === "Slash" && e.shiftKey))) return void (e.preventDefault(), helpOpen.set(true))
       if (e.key === "/" && !typing) return void (e.preventDefault(), openSearch())

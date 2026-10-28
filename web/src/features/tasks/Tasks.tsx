@@ -8,6 +8,7 @@ import { get, post } from "@/lib/api"
 import { useLive } from "@/lib/live"
 import { undoable } from "@/lib/toast"
 import { cn } from "@/lib/utils"
+import { doneIcon } from "@/components/icona/marks"
 
 type Task = { file: string; line: number; text: string; priority: "high" | "med" | "low" | null; due: string | null; project: string }
 
@@ -26,7 +27,7 @@ export function Tasks({ id }: { id: string }) {
       toast((err as Error).message || "Could not close the task")
       return void read()
     }
-    undoable(`Task done: ${t.text}`, () => void post("/api/tasks/reopen", task).then(read, read))
+    undoable(`Task done: ${t.text}`, () => void post("/api/tasks/reopen", task).then(read, read), doneIcon())
   }
   const add = async (e: React.FormEvent) => {
     e.preventDefault()

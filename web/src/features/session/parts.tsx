@@ -4,7 +4,7 @@
 // context used) and its action buttons with the Later and Colour menus.
 // The canvas card, the board card and the inbox row all build on these.
 import {
-  Archive, Bell, Check, Clock, ExternalLink, Eye, Gauge, GitPullRequest, ListChecks, Mail, Palette, Play, RotateCcw, Square, Star, TriangleAlert,
+  ListChecks, Mail, Palette, Play, Square, Star, TriangleAlert,
 } from "lucide-react"
 import { motion } from "motion/react"
 import { type ReactNode, useEffect, useRef } from "react"
@@ -21,6 +21,8 @@ import { boardAct, openInClaude, stopSession } from "@/features/board/act"
 import { menu, toggleMenu } from "@/features/board/state"
 import { answer, permit, sendText } from "./actions"
 import { ago } from "./state"
+import { Num } from "@/components/common/Num"
+import { Anim } from "@/components/icons/animated"
 
 const stop = (fn: () => void) => (e: React.MouseEvent) => (e.stopPropagation(), fn())
 const openTab = (id: string, tab: Tab = "chat") => openSession(id, tab)
@@ -192,7 +194,7 @@ function MemoryChip({ card, now, isCompact }: { card: Card; now: number; isCompa
   return (
     <Tag tone={m.total >= 3 * GB ? "bg-bad-soft text-bad" : "bg-run-soft text-run"} isCompact={isCompact}
       title={`Memory on this Mac: ${memText(m.total)}\n${lines.join("\n")}\n\nClick to see it and stop what you do not need`} onClick={() => openTab(card.id)}>
-      <Gauge />{memText(m.total)}
+      <Anim.Gauge size={12} />{memText(m.total)}
     </Tag>
   )
 }
@@ -220,7 +222,7 @@ function PrChip({ pr, card, isCompact }: { pr: Pr; card: Card; isCompact?: boole
   const prRepo = pr.url.split("/")[4]
   return (
     <Tag tone={PR_TONE[state]} isCompact={isCompact} title={title} onClick={() => openTab(card.id, "prs")}>
-      <GitPullRequest />{prRepo && prRepo !== card.repo ? `${prRepo}#${pr.number}` : `#${pr.number}`}
+      <Anim.GitPullRequest size={12} />{prRepo && prRepo !== card.repo ? `${prRepo}#${pr.number}` : `#${pr.number}`}
       {checks && <b className={cn("ml-px font-extrabold", checks[1])}>{checks[0]}</b>}
     </Tag>
   )
@@ -249,7 +251,7 @@ export function UsageMeter({ usage, barW = 28 }: { usage: Card["usage"]; barW?: 
   return (
     <span className={cn("inline-flex flex-none items-center gap-[5px] text-[11px] font-semibold tabular-nums", tone)}
       title={`Context used: ${tokens} of ${usage.window / 1000}k tokens (${pct}%)${pct >= 85 ? " — consider starting a new session" : ""}`}>
-      <span className="h-1 overflow-hidden rounded-[2px] bg-hover" style={{ width: barW }}><i className={cn("block h-full rounded-[2px]", fill)} style={{ width: `${pct}%` }} /></span>{pct}%
+      <span className="h-1 overflow-hidden rounded-[2px] bg-hover" style={{ width: barW }}><i className={cn("block h-full rounded-[2px]", fill)} style={{ width: `${pct}%` }} /></span><Num value={pct} suffix="%" />
     </span>
   )
 }
@@ -266,7 +268,7 @@ export function Signals({ card, now, isMid }: { card: Card; now: number; isMid?:
       <MemoryChip card={card} now={now} isCompact />
       <RunChip card={card} isCompact />
       {prs.length === 1 && <PrChip pr={prs[0]} card={card} isCompact />}
-      {prs.length > 1 && <Tag isCompact title={prs.map(p => `#${p.number} ${p.title}`).join("\n")} onClick={() => openTab(card.id, "prs")}><GitPullRequest />{prs.length}</Tag>}
+      {prs.length > 1 && <Tag isCompact title={prs.map(p => `#${p.number} ${p.title}`).join("\n")} onClick={() => openTab(card.id, "prs")}><Anim.GitPullRequest size={12} />{prs.length}</Tag>}
       {card.taskCount > 0 && <Tag isCompact className="text-text" title={`${card.taskCount} ${card.taskCount === 1 ? "task" : "tasks"}`} onClick={() => openTab(card.id, "tasks")}><ListChecks />{card.taskCount}</Tag>}
       <PendingChip card={card} isCompact />
       <UsageMeter usage={card.usage} barW={22} />
@@ -390,38 +392,38 @@ export function Actions({ card, isCompact, className }: { card: Card; isCompact?
   const p = { isCompact }
   return (
     <div className={cn("flex items-center gap-px", className)} onClick={e => e.stopPropagation()}>
-      <IconBtn {...p} title="Open in Claude (O)" onClick={() => void openInClaude(card.id)}><ExternalLink /></IconBtn>
+      <IconBtn {...p} title="Open in Claude (O)" onClick={() => void openInClaude(card.id)}><Anim.ExternalLink /></IconBtn>
       <IconBtn {...p} isOn={card.pinned} title={card.pinned ? "Unpin (P)" : "Pin (P)"} onClick={() => void boardAct(card, card.pinned ? "unpin" : "pin")}><Star /></IconBtn>
       {card.column !== "done" && (
         <IconBtn {...p} isOn={isWatched} onClick={() => toggleWatch(card)}
-          title={isWatched ? "You will hear when it finishes or asks you: click to stop" : "Tell me when it finishes or asks me something"}><Bell /></IconBtn>
+          title={isWatched ? "You will hear when it finishes or asks you: click to stop" : "Tell me when it finishes or asks me something"}><Anim.Bell /></IconBtn>
       )}
-      <IconBtn {...p} isOn={!!card.run} title="Run: start this session's project" onClick={() => openDialog({ kind: "run", card })}><Play /></IconBtn>
+      <IconBtn {...p} isOn={!!card.run} title="Run: start this session's project" onClick={() => openDialog({ kind: "run", card })}><Anim.Play /></IconBtn>
       <span className="relative">
         <IconBtn {...p} isOn={isColorOpen} tint={isColorOpen ? null : tintOf(card.color)} title="Colour (C)" aria-haspopup="menu" onClick={() => toggleMenu("color", card.id)}><Palette /></IconBtn>
         {isColorOpen && <ColorMenu card={card} />}
       </span>
       {card.column === "pending" && (
-        <IconBtn {...p} title="Mark to review: back to “To review”, as if you had not opened it (U)" onClick={() => void boardAct(card, "unseen")}><Eye /></IconBtn>
+        <IconBtn {...p} title="Mark to review: back to “To review”, as if you had not opened it (U)" onClick={() => void boardAct(card, "unseen")}><Anim.Eye /></IconBtn>
       )}
       {card.column === "working" && (
         <IconBtn {...p} title="Stop the running turn (S)" className="hover:text-bad" onClick={() => void stopSession(card)}><Square /></IconBtn>
       )}
       {card.column === "parked" ? (
-        <IconBtn {...p} isOn title="Remove from Later (A)" onClick={() => void boardAct(card, "unpark")}><Clock /></IconBtn>
+        <IconBtn {...p} isOn title="Remove from Later (A)" onClick={() => void boardAct(card, "unpark")}><Anim.Clock /></IconBtn>
       ) : card.column !== "done" && (
         <span className="relative">
-          <IconBtn {...p} isOn={isParkOpen} title="Later (A)" aria-haspopup="menu" onClick={() => toggleMenu("park", card.id)}><Clock /></IconBtn>
+          <IconBtn {...p} isOn={isParkOpen} title="Later (A)" aria-haspopup="menu" onClick={() => toggleMenu("park", card.id)}><Anim.Clock /></IconBtn>
           {isParkOpen && <ParkMenu card={card} />}
         </span>
       )}
       {card.column === "done" ? (
         <>
-          {!card.isArchived && <IconBtn {...p} title="Reopen (E)" onClick={() => void boardAct(card, "undone")}><RotateCcw /></IconBtn>}
-          <IconBtn {...p} title="Archive: it leaves the board until the session moves again" onClick={() => void boardAct(card, "archive")}><Archive /></IconBtn>
+          {!card.isArchived && <IconBtn {...p} title="Reopen (E)" onClick={() => void boardAct(card, "undone")}><Anim.RotateCcw /></IconBtn>}
+          <IconBtn {...p} title="Archive: it leaves the board until the session moves again" onClick={() => void boardAct(card, "archive")}><Anim.Archive /></IconBtn>
         </>
       ) : (
-        <IconBtn {...p} title="Mark as done (E)" onClick={() => void boardAct(card, "done")}><Check /></IconBtn>
+        <IconBtn {...p} title="Mark as done (E)" onClick={() => void boardAct(card, "done")}><Anim.Check /></IconBtn>
       )}
     </div>
   )

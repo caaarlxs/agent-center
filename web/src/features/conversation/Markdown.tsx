@@ -3,7 +3,7 @@
 // Setup allows it), inline code and relative links that name a file opening it
 // in the Files tab, other links in a new window. Streamdown parses; the look is
 // the .md block in index.css.
-import { Check, Copy, Play } from "lucide-react"
+import { Check, Play } from "lucide-react"
 import { createContext, Fragment, memo, useContext, useEffect, useRef, useState, type ComponentProps, type ReactNode } from "react"
 import { Streamdown, type Components } from "streamdown"
 import { cjk } from "@streamdown/cjk"
@@ -12,6 +12,9 @@ import { useShikiTheme, useTokens } from "@/lib/code-theme"
 import { cn } from "@/lib/utils"
 import { showFile } from "@/app/open-session"
 import { endOf, pathInCode, pathInLink, SHELL_LANG, nameOf } from "./text"
+import { Anim } from "@/components/icons/animated"
+import { CopyMark, useCopyMoment } from "@/components/icona/marks"
+import { SwapText } from "@/components/watermelon/SwapText"
 
 // The session the text belongs to: a shell block runs in its folder.
 export const SessionOf = createContext<string | null>(null)
@@ -89,11 +92,12 @@ function CodeBox({ text, lang }: { text: string; lang: string }) {
   const [runs, setRuns] = useState(0) // each Run starts a new output
   const [isRunning, setRunning] = useState(false)
   const isShell = SHELL_LANG.test(lang)
+  const mark = useCopyMoment()
   const fence = lang.split(/\s+/).find(c => c.startsWith("language-")) ?? null
   const tokens = useTokens(text.replace(/\n$/, ""), fence, useShikiTheme())
   const copy = () =>
     copyText(text.replace(/\n$/, "")).then(
-      () => (setCopied("Copied"), setTimeout(() => setCopied("Copy"), 1500)),
+      () => (setCopied("Copied"), mark.play(), setTimeout(() => setCopied("Copy"), 1600)),
       () => setCopied("Could not copy"),
     )
   return (
@@ -104,7 +108,7 @@ function CodeBox({ text, lang }: { text: string; lang: string }) {
             onClick={() => (setRuns(n => n + 1), setRunning(true))}><Play className="size-3 fill-current" />Run</button>
         )}
         <button type="button" className={cn(toolBtn, copied === "Copied" && "text-work hover:text-work")} title="Copy" onClick={copy}>
-          {copied === "Copied" ? <Check className="size-[13px]" /> : <Copy className="size-[13px]" />}{copied}
+          <CopyMark moment={mark} size={13} idle={copied === "Copied" ? <Check className="size-[13px]" /> : <Anim.Copy size={13} />} /><SwapText text={copied} />
         </button>
       </div>
       <pre className={cn(isShell ? "pr-[82px] [.can-run_&]:pr-[150px]" : "pr-[82px]")} style={tokens ? { background: tokens.bg, color: tokens.fg, borderColor: "transparent" } : undefined}>

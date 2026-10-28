@@ -5,42 +5,46 @@
 // the first turn here, headless, and opens the conversation; "Open in Claude"
 // leaves it in a new session of the desktop app. `draft`: a task a session
 // suggested, started from its card (its folder and prompt, in a new worktree).
-import { GitBranch, Search } from "lucide-react"
+import { GitBranch } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 import { PromptInput, PromptInputBody, PromptInputProvider, PromptInputTextarea, usePromptInputAttachments, usePromptInputController } from "@/components/ai-elements/prompt-input"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { Kbd } from "@/components/ui/kbd"
-import { get, post } from "@/lib/api"
+import { post } from "@/lib/api"
 import { persistedStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
+import { type Repo, knownRepos } from "./repos"
 import { openSession } from "@/app/open-session"
 import type { NewDraft } from "@/app/open-dialog"
 import { repoFilter } from "@/app/view-state"
 import { AttachButton, MicButton, PickedFiles, fileErrors } from "@/features/prompt/PromptExtras"
-import { EFFORTS, MODELS, MODES, Pick } from "@/features/prompt/Settings"
+import { ModePicker } from "@/features/prompt/ModePicker"
+import { ModelEffort } from "@/features/prompt/ModelEffort"
 import { MAX_BYTES, MAX_FILES, messageWith } from "@/features/prompt/files"
 import { hasWhisper } from "@/features/prompt/voice"
 import { repoDot } from "@/features/session/state"
+import { Anim } from "@/components/icons/animated"
 
-type Repo = { root: string; name: string }
-const prefs = persistedStore("newPrefs", { mode: "auto", model: "claude-fable-5-1", effort: "high" })
+const DEFAULTS = { model: "claude-fable-5-1", effort: "high" } // what Reset in the model card goes back to
+const prefs = persistedStore("newPrefs", { mode: "auto", ...DEFAULTS })
 const field = "w-full rounded-md border border-line-strong bg-surface px-2.5 py-[7px] text-[13.5px] focus:border-brand focus:shadow-[0_0_0_3px_var(--brand-soft)] focus:outline-none"
 
 const repoOf = (root: string): Repo => ({ root, name: root.split("/").pop() || root })
 
 function Folders({ root, onPick }: { root: string | null; onPick: (root: string) => void }) {
-  const [repos, setRepos] = useState<Repo[] | null>(null)
+  // The last list at once (kept since the board started), then a fresh one.
+  const repos = knownRepos.use()?.repos ?? null
   // a folder chosen with "Browse…" (or the suggested task's)
   const [picked, setPicked] = useState<Repo | null>(() => (root ? repoOf(root) : null))
   const [filter, setFilter] = useState("")
   const list = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    get<{ repos: Repo[] }>("/api/repos").then(res => {
-      setRepos(res.repos)
-      if (!root && res.repos[0]) onPick(repoFilter.get() ?? res.repos[0].root)
-    }, () => setRepos([]))
+    const pickFirst = (list: Repo[]) => !root && list[0] && onPick(repoFilter.get() ?? list[0].root)
+    const kept = knownRepos.get()?.repos
+    if (kept) pickFirst(kept)
+    knownRepos.load().then(res => !kept && pickFirst(res.repos), () => knownRepos.get() ?? knownRepos.set({ repos: [] }))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   const all = [...(picked && !(repos ?? []).some(r => r.root === picked.root) ? [picked] : []), ...(repos ?? [])]
@@ -69,7 +73,7 @@ function Folders({ root, onPick }: { root: string | null; onPick: (root: string)
             const next = shown[Math.max(0, Math.min(shown.length - 1, i + (e.key === "ArrowDown" ? 1 : -1)))]
             if (next) (onPick(next.root), requestAnimationFrame(() => list.current?.querySelector("[aria-selected=true]")?.scrollIntoView({ block: "nearest" })))
           }} />
-        <Button type="button" variant="outline" className="h-[34px] shrink-0" onClick={browse} title="Pick any folder on the Mac with the system picker"><Search className="size-3.5" />Browse…</Button>
+        <Button type="button" variant="outline" className="h-[34px] shrink-0" onClick={browse} title="Pick any folder on the Mac with the system picker"><Anim.Search size={14} />Browse…</Button>
       </div>
       <div ref={list} role="listbox" className="flex max-h-[260px] flex-col gap-px overflow-y-auto rounded-[10px] border border-line p-1">
         {!repos && <p className="m-2 text-text-muted">Loading folders…</p>}
@@ -130,9 +134,10 @@ function Prompt({ root, draft, onClose }: { root: string | null; draft?: NewDraf
           <AttachButton />
           <MicButton />
           <span className="mx-1.5 h-[18px] w-px shrink-0 bg-line" />
-          <Pick icon="mode" value={chosen.mode} options={MODES} onPick={mode => prefs.set({ ...chosen, mode })} title="Permission mode for the first turn" />
-          <Pick icon="model" value={chosen.model} options={MODELS} onPick={model => prefs.set({ ...chosen, model })} title="Model" />
-          <Pick icon="effort" value={chosen.effort} options={EFFORTS} onPick={effort => prefs.set({ ...chosen, effort })} title="Effort for the first turn" />
+          <ModePicker value={chosen.mode} onPick={mode => prefs.set({ ...prefs.get(), mode })} />
+          <span className="mx-1 h-[18px] w-px shrink-0 bg-line" />
+          <ModelEffort model={chosen.model} effort={chosen.effort} defaults={DEFAULTS} title="Model and effort for the first turn"
+            onModel={model => prefs.set({ ...prefs.get(), model })} onEffort={effort => prefs.set({ ...prefs.get(), effort })} />
           <label className="inline-flex cursor-pointer items-center gap-[5px] rounded-[7px] px-2 py-[3px] text-xs text-text-muted select-none hover:bg-hover"
             title="Runs in a new git worktree of the folder (.claude/worktrees), on a branch of its own, as Claude desktop does: your checkout is left as it is. Only when you send.">
             <input type="checkbox" className="m-0 accent-brand" checked={worktree} onChange={e => setWorktree(e.target.checked)} /><GitBranch className="size-[13px]" />Worktree

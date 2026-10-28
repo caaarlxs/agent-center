@@ -4,13 +4,14 @@
 // Click its text to write; "- [ ] …" lines show as boxes to tick, and Enter
 // on one starts the next.
 import { type Node, type NodeProps, NodeResizeControl, useStore } from "@xyflow/react"
-import { Link, ListChecks, X } from "lucide-react"
+import { Link, ListChecks } from "lucide-react"
 import { type CSSProperties, useRef, useState } from "react"
 import type { Note } from "@/lib/api-types"
 import { cn } from "@/lib/utils"
 import { GRID } from "./geometry"
 import { NOTE_COLORS, continueList, linesOf, tally, toggleItem, withItem } from "./notes"
 import { useFocusWhenShown } from "./useFocusWhenShown"
+import { Anim } from "@/components/icons/animated"
 
 export type NoteNodeData = {
   note: Note
@@ -62,7 +63,7 @@ export function NoteNode({ data, selected, dragging }: NodeProps<Node<NoteNodeDa
         {count && <span className="text-[11px] font-[650] text-text-muted tabular-nums">{count}</span>}
         <span className="flex-1" />
         <button className={noteBtn} title="Add a checkbox" onClick={() => (data.onText(note, withItem(note.text)), setEditing(true))}><ListChecks /></button>
-        <button className={noteBtn} title="Delete the note" onClick={() => data.onRemove(note)}><X /></button>
+        <button className={noteBtn} title="Delete the note" onClick={() => data.onRemove(note)}><Anim.X size={12} /></button>
       </header>
       {isEditing ? (
         <textarea ref={area} defaultValue={note.text} placeholder="Write a note… (- [ ] for a checkbox)" spellCheck={false}

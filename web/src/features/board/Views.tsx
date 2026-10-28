@@ -3,7 +3,7 @@
 // tier list (rows by importance, then Paused and Close). A click, or Enter on
 // a focused card or row, opens the conversation; cards drag between columns
 // and rows. Each view's own tools sit at the top: Columns / By repo, Done.
-import { Archive, ChevronDown, ChevronRight, Pause, Plus, Star } from "lucide-react"
+import { ChevronDown, ChevronRight, Pause, Star } from "lucide-react"
 import { type CSSProperties, type ReactNode, useState } from "react"
 import type { Card } from "@/lib/api-types"
 import { useLive } from "@/lib/live"
@@ -18,7 +18,8 @@ import { ageOf, hueOf, repoDot, repoText, urgencyOf } from "@/features/session/s
 import { archiveAll, boardSteps, placeInTier } from "./act"
 import { COLUMN, type ColumnKey, type Step, TONE_DOT, byPin, columnsShown, dropAction, inboxGroups, runsOf } from "./columns"
 import { type View, dragging, drawingZone, groupBy, menu, noteAsked, selected, showDone } from "./state"
-import { TIERS, type TierKey, byRank, emptyText, tierOf, toTier } from "./tiers"
+import { byRank, emptyText, type TierKey, tierOf, TIERS, toTier } from "./tiers"
+import { Anim } from "@/components/icons/animated"
 
 const open = (id: string) => (selected.set(id), openSession(id))
 // A focused card or row opens with Enter or Space, as a click would; keys
@@ -121,7 +122,7 @@ function ColumnHead({ col, count, done }: { col: ColumnKey; count: number; done:
 const ArchiveAll = ({ cards }: { cards: Card[] }) => (
   <button onClick={() => void archiveAll(cards)} title="Archive all done sessions"
     className="ml-1 inline-flex h-6 items-center gap-[5px] rounded-md px-2 text-[11.5px] font-semibold tracking-normal text-text-muted normal-case hover:bg-press hover:text-text">
-    <Archive className="size-[13px]" />Archive all
+    <Anim.Archive size={13} />Archive all
   </button>
 )
 
@@ -387,9 +388,9 @@ export function ViewTools({ view }: { view: View }) {
     return (
       <>
         <button className={toolBtn(isDrawing)} aria-pressed={isDrawing} title="Draw a named zone on the canvas to group cards (Esc cancels)"
-          onClick={() => drawingZone.set(!isDrawing)}><Plus className="size-3.5" /><span className="max-[1080px]:hidden">Zone</span></button>
+          onClick={() => drawingZone.set(!isDrawing)}><Anim.Plus size={14} /><span className="max-[1080px]:hidden">Zone</span></button>
         <button className={toolBtn()} title="Add a note (or double-click the empty canvas)" onClick={() => noteAsked.set(noteAsked.get() + 1)}>
-          <Plus className="size-3.5" /><span className="max-[1080px]:hidden">Note</span></button>
+          <Anim.Plus size={14} /><span className="max-[1080px]:hidden">Note</span></button>
       </>
     )
   return (

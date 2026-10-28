@@ -77,11 +77,15 @@ function SessionCardView({ card, now, level = "near", unscale = 1, isSelected = 
       <HoverCardTrigger asChild>
         <article data-id={card.id} tabIndex={0} style={style}
           className={cn(
-            "group/card relative flex w-72 origin-top cursor-grab flex-col gap-2 rounded-[12px] border border-line bg-surface px-3 pt-[11px] pb-2.5 shadow-[0_1px_2px_rgb(0_0_0/0.06)] select-none",
+            "group/card relative flex w-72 origin-top cursor-grab flex-col gap-2 rounded-[12px] border border-line bg-surface px-3 pt-[11px] pb-2.5 shadow-[0_1px_2px_rgb(0_0_0/0.06)] select-none dark:border-line-strong",
             "transition-[border-color,box-shadow,opacity] duration-120 hover:[animation-play-state:paused] focus-visible:outline-offset-2",
-            state === "pending" && "opacity-80 hover:opacity-100",
-            state === "parked" && "opacity-55 hover:opacity-100",
-            isDone && !ring && !isDragging && "opacity-62 shadow-none hover:opacity-100",
+            // Quieter cards dim what they say, not the card itself: an opaque
+            // card keeps its edge on the canvas, a see-through one sinks into it.
+            // The action bar keeps its own opacity (hidden until hover).
+            "[&>*:not(.card-bar)]:transition-opacity [&>*:not(.card-bar)]:duration-120 hover:[&>*:not(.card-bar)]:opacity-100",
+            state === "pending" && "[&>*:not(.card-bar)]:opacity-80",
+            state === "parked" && "[&>*:not(.card-bar)]:opacity-55",
+            isDone && !ring && !isDragging && "shadow-none [&>*:not(.card-bar)]:opacity-62",
             isDragging && "cursor-grabbing",
           )}>
           {state === "working" && <i aria-hidden className="pointer-events-none absolute -inset-[3px] animate-breathe rounded-[14px] shadow-[0_0_0_2px_var(--work-soft),0_0_14px_var(--work-soft)]" />}
@@ -106,7 +110,8 @@ function SessionCardView({ card, now, level = "near", unscale = 1, isSelected = 
           {!far && (
             <Actions card={card} isCompact
               className={cn(
-                "absolute -top-3 right-2 rounded-lg border border-line bg-raised p-px shadow-card transition-opacity duration-120",
+                // card-bar: its own opacity (hidden until hover), not the dimming above.
+                "card-bar absolute -top-3 right-2 rounded-lg border border-line bg-raised p-px shadow-card transition-opacity duration-120",
                 ring || isMenuOpen ? "opacity-100" : "pointer-events-none opacity-0 group-hover/card:pointer-events-auto group-hover/card:opacity-100",
                 isDragging && "opacity-0",
               )} />

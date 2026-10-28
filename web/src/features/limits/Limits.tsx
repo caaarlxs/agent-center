@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils"
 import { openSession } from "@/app/open-session"
 import { ago } from "@/features/session/state"
 import { clockOf, limitRows, PACE_SHORT, resetAt, STALE_MS, topSpenders, type Tone } from "./pace"
+import { Num } from "@/components/common/Num"
 
 const PCT_TEXT: Record<Tone, string> = { ok: "", ask: "text-ask", bad: "text-bad" }
 const FILL: Record<Tone, string> = { ok: "bg-work", ask: "bg-ask", bad: "bg-bad" }
@@ -26,7 +27,7 @@ export function Limits() {
         <div key={r.kind} className="text-xs text-text-muted">
           <div className="mb-1.5 flex items-baseline justify-between text-text">
             <b className="font-semibold">{r.label}</b>
-            <span className={cn("font-[650] tabular-nums", PCT_TEXT[r.tone])}>{r.pct}%</span>
+            <span className={cn("font-[650] tabular-nums", PCT_TEXT[r.tone])}><Num value={r.pct} suffix="%" /></span>
           </div>
           <div className="relative h-2 rounded bg-hover" title={r.elapsed !== null ? `${r.elapsed}% of the time has passed` : undefined}>
             <i className={cn("block h-full rounded", FILL[r.tone])} style={{ width: `${Math.min(100, r.pct)}%` }} />
@@ -76,7 +77,7 @@ export function SlimLimits() {
         <span key={r.kind} title={`${r.label}: ${r.pct}% used${r.left ? `, resets in ${r.left}` : ""}`}
           className={cn("grid size-[34px] place-items-center rounded-full text-[10.5px] font-[650] text-text-muted tabular-nums", PCT_TEXT[r.tone])}
           style={{ background: `radial-gradient(circle, var(--side) 12px, transparent 12.5px), conic-gradient(${RING[r.tone]} ${Math.min(100, r.pct)}%, var(--line-strong) 0)` }}>
-          {r.pct}
+          <Num value={r.pct} />
         </span>
       ))}
     </div>

@@ -5,7 +5,7 @@
 // conversation shows; a draft survives closing the panel), with the tree of
 // changed files beside it (it folds away); or side by side in Monaco's diff view.
 import { DiffEditor } from "@monaco-editor/react"
-import { ChevronRight, PanelLeft, Pencil, Send, X } from "lucide-react"
+import { ChevronRight, PanelLeft, Pencil } from "lucide-react"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -13,13 +13,14 @@ import { Kbd } from "@/components/ui/kbd"
 import { get } from "@/lib/api"
 import { persistedStore } from "@/lib/store"
 import type { Changes as ChangesData, FileDiff } from "@/lib/api-types"
-import { type Tokens, useShikiTheme, useTokens } from "@/lib/code-theme"
+import { type Tokens, ensureMonacoLang, useShikiTheme, useTokens } from "@/lib/code-theme"
 import { useMonaco, useMonacoTheme } from "@/lib/monaco"
 import { cn } from "@/lib/utils"
 import { showTab } from "@/app/open-session"
 import { sendMessage } from "@/features/conversation/send"
 import { ChangedTree } from "./ChangedTree"
 import { type LineComment, keyOf, reviewMessage } from "./review"
+import { Anim } from "@/components/icons/animated"
 
 const FOLLOW_MS = 5000
 const MAX_LINES = 400 // a longer file opens folded
@@ -134,7 +135,7 @@ function FileBlock({ file, comments, editing, setEditing, save, remove }: {
                       className="mt-1 mr-2.5 mb-1.5 ml-24 flex cursor-pointer items-start gap-[7px] rounded-lg border border-[color-mix(in_srgb,var(--ask)_35%,transparent)] bg-ask-soft py-[7px] pr-2 pl-2.5 text-[12.5px] whitespace-pre-wrap">
                       <Pencil className="mt-0.5 size-3 shrink-0" /><span className="flex-1">{comment.text}</span>
                       <button className="inline-grid size-5 place-items-center rounded-md text-text-muted hover:bg-press hover:text-text" title="Remove the comment"
-                        onClick={e => (e.stopPropagation(), remove(key))}><X className="size-3" /></button>
+                        onClick={e => (e.stopPropagation(), remove(key))}><Anim.X size={12} /></button>
                     </div>
                   )}
                 </div>
@@ -155,6 +156,8 @@ function SideBySide({ id, files }: { id: string; files: FileDiff[] }) {
   const [chosen, setChosen] = useState<FileDiff | null>(shown[0] ?? null)
   const [versions, setVersions] = useState<{ original: string; modified: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // Its grammar, the first time a file of that language shows.
+  useEffect(() => void (chosen && !isPlain && ensureMonacoLang(chosen.path)), [chosen, isPlain])
   useEffect(() => {
     if (!chosen) return
     const q = new URLSearchParams({ path: chosen.path, ...(chosen.oldPath ? { old: chosen.oldPath } : {}) })
@@ -244,7 +247,7 @@ export function Changes({ id }: { id: string }) {
         <div className="flex shrink-0 items-center gap-2 border-t border-line bg-surface px-4 py-2.5">
           <span className="flex-1 text-[13px] font-semibold">{list.length} {list.length === 1 ? "comment" : "comments"}</span>
           <Button variant="ghost" onClick={() => setComments({})}>Discard</Button>
-          <Button disabled={isSending} onClick={send}><Send className="size-[13px]" />Send to the session</Button>
+          <Button disabled={isSending} onClick={send}><Anim.Send size={13} />Send to the session</Button>
         </div>
       )}
     </div>

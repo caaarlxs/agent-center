@@ -11,12 +11,16 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { Spinner } from "@/components/ui/spinner"
 import { get, post } from "@/lib/api"
-import type { Step } from "@/lib/api-types"
 import { type CodeThemeOption, chosenKey, codeTheme, useCodeThemes, useIsDark, useTokens } from "@/lib/code-theme"
 import { cn } from "@/lib/utils"
+import { type Status, setupStatus } from "./status"
+import { type ThemeChoice, chooseTheme, themeChoice } from "@/lib/theme"
 import { notify, shake, sound, speech, toggleNotify, toggleSound, type Speech } from "@/features/alerts/prefs"
+import { CopyMark, useCopyMoment } from "@/components/icona/marks"
+import { SwapText } from "@/components/watermelon/SwapText"
+import { Checklist } from "./Checklist"
+import { progressOf } from "./progress"
 
-type Status = { steps: Step[]; isReady: boolean; voiceLanguage: string; organizerNote: string }
 type Need = "Required" | "Recommended" | "Optional" | "Preference"
 type Meta = { title: string; need: Need; text: ReactNode; unavailable?: ReactNode; action?: string; outdated?: string; canTurnOff?: boolean }
 
@@ -124,6 +128,8 @@ function ReadAloud() {
 // paste in a message. It holds no conversation, title or message.
 function Diagnostics() {
   const [isBusy, setBusy] = useState(false)
+  const copied = useCopyMoment()
+  const [isDone, setDone] = useState(false) // "Copied" for a moment
   const copy = async () => {
     setBusy(true)
     const res = await get<{ text?: string }>("/api/diagnostics").catch(() => null)
@@ -131,13 +137,16 @@ function Diagnostics() {
     if (!res?.text) return void toast("Could not make the report")
     try {
       await navigator.clipboard.writeText(res.text)
+      copied.play()
+      setDone(true)
+      setTimeout(() => setDone(false), 1800)
       toast("Report copied: paste it in a message")
     } catch {
       toast("Could not copy it: the browser refused the clipboard")
     }
   }
   return (
-    <Row title="Diagnostics" isDone={false} actions={<Button variant="outline" disabled={isBusy} onClick={copy}>{isBusy ? "One moment…" : "Copy report"}</Button>}>
+    <Row title="Diagnostics" isDone={false} actions={<Button variant="outline" disabled={isBusy} onClick={copy}><CopyMark moment={copied} size={14} /><SwapText text={isBusy ? "One moment…" : isDone ? "Copied" : "Copy report"} /></Button>}>
       <p className={text}>Messages or answers that do not reach a session? Copy a report of this Mac and of each session's bridge mod, and send it to whoever helps you.</p>
     </Row>
   )
@@ -201,16 +210,38 @@ function CodeColours() {
   )
 }
 
+// Light or dark: the system's (macOS), or one of them always (lib/theme.ts).
+const APPEARANCES: [ThemeChoice, string][] = [["system", "System"], ["light", "Light"], ["dark", "Dark"]]
+function Appearance() {
+  const choice = themeChoice.use()
+  return (
+    <Row title="Appearance" need="Preference" isDone state={<Done label={APPEARANCES.find(([v]) => v === choice)?.[1] ?? "System"} />}
+      actions={
+        <div role="radiogroup" aria-label="Appearance" className="inline-flex rounded-lg border border-line-strong bg-surface p-0.5">
+          {APPEARANCES.map(([value, label]) => (
+            <button key={value} type="button" role="radio" aria-checked={choice === value} onClick={() => chooseTheme(value)}
+              className={cn("h-6 rounded-md px-2.5 text-[12.5px] font-[550] transition-colors", choice === value ? "bg-text text-bg" : "text-text-muted hover:text-text")}>
+              {label}
+            </button>
+          ))}
+        </div>
+      }>
+      <p className={text}>System follows macOS.</p>
+    </Row>
+  )
+}
+
 export function SetupDialog({ onClose }: { onClose: () => void }) {
-  const [status, setStatus] = useState<Status | null>(null)
+  // The last answer at once (kept since the board started), then a fresh one.
+  const status = setupStatus.use()
   const [busy, setBusy] = useState<string | null>(null)
-  const [language, setLanguage] = useState("auto")
+  const [language, setLanguage] = useState(() => setupStatus.get()?.voiceLanguage ?? "auto")
   const isSound = sound.use() === "on"
   const notifyState = notify.use()
   const isShaking = shake.use() === "on"
   const alive = useRef(true)
   const refresh = () =>
-    get<Status>("/api/setup").then(res => alive.current && (setStatus(res), setLanguage(l => (l === "auto" ? res.voiceLanguage : l))), () => {})
+    setupStatus.load().then(res => alive.current && setLanguage(l => (l === "auto" ? res.voiceLanguage : l)), () => {})
   useEffect(() => (void refresh(), () => void (alive.current = false)), [])
   // While something installs in the background (Whisper), its progress.
   const isWorking = status?.steps.some(s => s.state === "working")
@@ -223,8 +254,7 @@ export function SetupDialog({ onClose }: { onClose: () => void }) {
   const run = async (id: string, options: Record<string, unknown> = {}) => {
     setBusy(id)
     try {
-      const res = await post<Status>(`/api/setup/${id}`, { options })
-      if (alive.current) setStatus(res)
+      setupStatus.set(await post<Status>(`/api/setup/${id}`, { options }))
     } catch (err) {
       toast((err as Error).message || "Could not complete this step")
     }
@@ -234,7 +264,10 @@ export function SetupDialog({ onClose }: { onClose: () => void }) {
   return (
     <Dialog open onOpenChange={o => !o && onClose()}>
       <DialogContent showCloseButton={false} className="w-[min(640px,calc(100vw-32px))] gap-0">
-        <DialogTitle className="mb-3.5">Setup</DialogTitle>
+        <div className="mb-3.5 flex items-center justify-between gap-3">
+          <DialogTitle>Setup</DialogTitle>
+          {status && <Checklist {...progressOf(status.steps.filter(st => STEPS[st.id]).map(st => ({ need: STEPS[st.id].need, isDone: st.state === "done" })))} />}
+        </div>
         <p className="-mt-1 mb-3.5 text-[13px] text-text-muted">Each step changes something on this Mac and runs only when you press it. Sessions that were already open load the mod when they restart.</p>
         {!status && <p className="text-text-muted">Checking…</p>}
         <ol className="m-0 mb-3.5 flex max-h-[min(62vh,640px)] list-none flex-col gap-2 overflow-y-auto p-0">
@@ -289,6 +322,7 @@ export function SetupDialog({ onClose }: { onClose: () => void }) {
                 actions={<Button variant={isShaking ? "outline" : "default"} onClick={() => shake.set(isShaking ? "off" : "on")}>{isShaking ? "Turn off" : "Turn on"}</Button>}>
                 <p className={text}>A card that asks you something or waits for your approval gives a short shake every few seconds, faster the longer it waits. Turned off, it stays still and only its colour and the time it has waited tell you.</p>
               </Row>
+              <Appearance />
               <CodeColours />
               <ReadAloud />
               <Diagnostics />

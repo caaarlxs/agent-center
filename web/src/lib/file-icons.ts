@@ -4,6 +4,7 @@
 // SVG of its own. Both load the first time an icon shows (a chunk of their own,
 // each SVG a file the browser caches), not with the page.
 import { createStore } from "./store"
+import { theme } from "./theme"
 
 type Manifest = {
   file: string; folder: string; folderExpanded: string
@@ -21,7 +22,7 @@ export function loadIcons() {
   return loading
 }
 
-const isLight = () => typeof matchMedia === "function" && matchMedia("(prefers-color-scheme: light)").matches
+const isLight = () => theme.get() === "light"
 
 // Some languages the manifest maps by VS Code's language id, not by extension.
 const LANGUAGE_OF: Record<string, string> = { ts: "typescript", tsx: "typescriptreact", js: "javascript", jsx: "javascriptreact", py: "python", sh: "shellscript", md: "markdown" }

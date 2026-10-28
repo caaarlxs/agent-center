@@ -4,7 +4,7 @@
 // remove it (the cards stay). A folder says what of its sessions waits for
 // you; a click unfolds it, a card dropped on it goes in.
 import { type Node, type NodeProps, NodeResizeControl, useStore } from "@xyflow/react"
-import { Expand, Folder, Minimize2, X } from "lucide-react"
+import { Expand, Folder, Minimize2 } from "lucide-react"
 import { useLayoutEffect, useRef, useState } from "react"
 import type { Card, Zone } from "@/lib/api-types"
 import { cn } from "@/lib/utils"
@@ -14,6 +14,7 @@ import { hueOf } from "@/features/session/state"
 import { CARD_W, GRID, type Point } from "./geometry"
 import { quietly } from "@/features/board/flip"
 import { useFocusWhenShown } from "./useFocusWhenShown"
+import { Anim } from "@/components/icons/animated"
 
 export type ZoneNodeData = {
   zone: Zone
@@ -168,7 +169,7 @@ export function ZoneNode({ data, dragging }: NodeProps<Node<ZoneNodeData>>) {
             }} />
         ) : <span className="min-w-0 flex-1 truncate">{zone.name}</span>}
         <ZoneButton title="Fold into a folder (its cards stay where they are)" onClick={fold}><Minimize2 /></ZoneButton>
-        <ZoneButton title="Remove the zone (the cards stay)" onClick={() => data.onRemove(zone)}><X /></ZoneButton>
+        <ZoneButton title="Remove the zone (the cards stay)" onClick={() => data.onRemove(zone)}><Anim.X /></ZoneButton>
       </header>
       {/* The corner: the same size on screen at any zoom. */}
       <NodeResizeControl autoScale={false} position="bottom-right" minWidth={160} minHeight={120}

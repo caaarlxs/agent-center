@@ -76,5 +76,13 @@ export async function update() {
   const isRestarting = now.server && process.env.XPC_SERVICE_NAME === LABEL
   if (isRestarting) setTimeout(() => process.exit(0), 300) // after the answer; launchd's KeepAlive starts it again
   cached = null
+  // The board's snapshot carries the page's print: made again before the
+  // answer, so the page that reloads does not get the old one (and offer
+  // Update once more). A run already going counts the old print: two.
+  if (!isRestarting) {
+    const { refresh } = await import("./live")
+    await refresh()
+    await refresh()
+  }
   return { ok: true, isRestarting, needsRestart: now.server && !isRestarting }
 }

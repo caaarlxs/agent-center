@@ -12,8 +12,15 @@ export function bytesText(n: number): string {
   return `${n.toLocaleString("en-GB", { maximumFractionDigits: n < 10 && i > 0 ? 1 : 0 })} ${units[i]}`
 }
 
-// Memory as Activity Monitor shows it: "340 MB", "1.4 GB".
-export const memText = (b: number) => (b >= GB ? `${(b / GB).toLocaleString("en-GB", { maximumFractionDigits: 1 })} GB` : `${Math.max(1, Math.round(b / MB))} MB`)
+// Memory as Activity Monitor shows it: "340 MB", "1.4 GB"; the number and
+// its unit apart, for the animated digits (components/common/Num.tsx).
+export function memParts(b: number): { value: number; unit: "MB" | "GB"; digits: number } {
+  return b >= GB ? { value: Math.round((b / GB) * 10) / 10, unit: "GB", digits: 1 } : { value: Math.max(1, Math.round(b / MB)), unit: "MB", digits: 0 }
+}
+export const memText = (b: number) => {
+  const { value, unit, digits } = memParts(b)
+  return `${value.toLocaleString("en-GB", { maximumFractionDigits: digits })} ${unit}`
+}
 export const MEMORY_WARN = GB // orange from here
 export const MEMORY_HIGH = 3 * GB // red from here
 export const MEMORY_LISTED = 100 * MB // the sidebar lists sessions from here

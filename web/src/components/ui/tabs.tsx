@@ -3,7 +3,8 @@
 import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "cn"
-import { Tabs as TabsPrimitive } from "radix-ui"
+// Animate UI (MIT + Commons Clause, used as a dependency): the same Radix API, animated.
+import { Tabs as TabsPrimitive } from "@animate-ui/react/primitives/radix-ui"
 
 function Tabs({
   className,

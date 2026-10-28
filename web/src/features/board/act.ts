@@ -10,7 +10,8 @@ import { patchOf } from "./overrides"
 import { keepUnread } from "./seen"
 import { overrides, selected, showDone } from "./state"
 import type { Step } from "./columns"
-import { TIERS, type TierKey, ranksAt, tierOf, toTier } from "./tiers"
+import { ranksAt, type TierKey, tierOf, TIERS, toTier } from "./tiers"
+import { archivedIcon } from "@/components/icona/marks"
 
 export type Action = "pin" | "unpin" | "park" | "unpark" | "done" | "undone" | "archive" | "unarchive" | "seen" | "unseen" | "color" | "tier" | "rank"
 
@@ -48,7 +49,7 @@ export async function boardAct(card: Card, action: Action, payload: Record<strin
   const message = MESSAGE[action]
   if (!message) return
   const text = `${message}: ${card.title}`
-  if (inverse) undoable(text, () => (forget([card.id]), void send(card.id, inverse).catch(() => {})))
+  if (inverse) undoable(text, () => (forget([card.id]), void send(card.id, inverse).catch(() => {})), action === "archive" ? archivedIcon() : undefined)
   else toast(text)
 }
 
@@ -80,7 +81,7 @@ export async function archiveAll(list: Card[]) {
   undoable(list.length === 1 ? "1 session archived" : `${list.length} sessions archived`, () => {
     forget(list.map(c => c.id))
     void Promise.all(list.map(c => send(c.id, "unarchive").catch(() => {})))
-  })
+  }, archivedIcon())
 }
 
 // Ends the running turn, like Esc in the app; opens it in Claude desktop.

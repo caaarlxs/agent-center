@@ -309,3 +309,8 @@ is checked with `claude plugin validate bridge`; after changing it, bump its ver
 MIT — see [LICENSE](LICENSE). The page's packages (`web/package.json`) keep their own licences;
 the Code tab's editor, [Monaco](https://github.com/microsoft/monaco-editor) (MIT, © Microsoft), is
 downloaded from npm on first use (lib/monaco.ts).
+The menus, tooltips, dialogs, hover cards, tabs and select animate with
+[Animate UI](https://animate-ui.com) (`@animate-ui/react`, MIT + Commons Clause: used here as a
+dependency inside the app; its components are not redistributed on their own). Some icons and
+motions come from [Lucide Animated](https://lucide-animated.com) and [Icona](https://icona.works),
+and some components are adapted from [Watermelon UI](https://ui.watermelon.sh), all MIT.
