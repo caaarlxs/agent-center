@@ -19,7 +19,7 @@ export const theme = createStore<Theme>(now())
 // The bar colour an installed app shows over the page, as the page's background.
 const BAR = { light: "#f6f5f2", dark: "#141416" }
 
-function apply() {
+function paint() {
   const t = now()
   theme.set(t)
   const html = document.documentElement
@@ -28,12 +28,23 @@ function apply() {
   document.querySelector('meta[name="theme-color"]')?.setAttribute("content", BAR[t])
 }
 
+// A change of light and dark draws the new one as a curtain coming down
+// over the old (the View Transitions API; index.css: html[data-theme-switch]).
+// At once with reduced motion, without the API, or when nothing changes.
+function apply() {
+  const reduce = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches
+  const html = document.documentElement
+  if (now() === theme.get() || reduce || typeof document.startViewTransition !== "function") return paint()
+  html.dataset.themeSwitch = ""
+  document.startViewTransition(paint).finished.finally(() => delete html.dataset.themeSwitch)
+}
+
 if (typeof document !== "undefined") {
-  apply()
+  paint()
   system?.addEventListener("change", apply)
 }
 
-// Setup's choice: kept, and shown at once.
+// Setup's choice: kept, and shown.
 export const chooseTheme = (next: ThemeChoice) => (themeChoice.set(next), apply())
 
 export const useIsDark = () => theme.use() === "dark"
