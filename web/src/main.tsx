@@ -2,10 +2,11 @@ import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 import "./index.css"
 import { App } from "./app/App"
+import { Guard } from "./components/common/Guard"
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <App />
+    <Guard where="page"><App /></Guard>
   </StrictMode>,
 )
 

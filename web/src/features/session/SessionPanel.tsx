@@ -12,6 +12,7 @@ import type { Card } from "@/lib/api-types"
 import { useLive } from "@/lib/live"
 import { createStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
+import { Guard } from "@/components/common/Guard"
 import { type Tab, WORKSPACES, openSession, showTab } from "@/app/open-session"
 import { openDialog } from "@/app/open-dialog"
 import { toggleWatch, watched } from "@/features/alerts/prefs"
@@ -252,12 +253,12 @@ export function SessionPanel({ id, tab: asked, file }: { id: string; tab: Tab; f
         count: (counts[t.key] ?? 0) > 0 && <span className="text-[11px] text-text-muted tabular-nums"><Num key={id} value={counts[t.key] ?? 0} /></span>,
       }))} />
       <div role="tabpanel" className="flex min-h-0 flex-1 flex-col">
-        {tab === "chat" && <Chat key={id} id={id} card={card} />}
-        {tab === "changes" && <Changes key={id} id={id} />}
-        {tab === "prs" && <Prs key={id} id={id} />}
-        {tab === "tasks" && <Tasks key={id} id={id} />}
-        {tab === "files" && <Files key={id} id={id} file={file} />}
-        {hasCode && <div className={cn("flex min-h-0 flex-1 flex-col", tab !== "code" && "hidden")}><CodeWorkspace key={id} id={id} isShown={tab === "code"} /></div>}
+        {tab === "chat" && <Guard key={id} where="chat"><Chat id={id} card={card} /></Guard>}
+        {tab === "changes" && <Guard key={id} where="changes"><Changes id={id} /></Guard>}
+        {tab === "prs" && <Guard key={id} where="prs"><Prs id={id} /></Guard>}
+        {tab === "tasks" && <Guard key={id} where="tasks"><Tasks id={id} /></Guard>}
+        {tab === "files" && <Guard key={id} where="files"><Files id={id} file={file} /></Guard>}
+        {hasCode && <div className={cn("flex min-h-0 flex-1 flex-col", tab !== "code" && "hidden")}><Guard key={id} where="code"><CodeWorkspace id={id} isShown={tab === "code"} /></Guard></div>}
       </div>
     </aside>
   )

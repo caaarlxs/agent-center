@@ -5,6 +5,7 @@ import { stat } from "node:fs/promises"
 import { isTaskId, setNotes, setSuggestion, setZones } from "../lib/board"
 import { requestSettings } from "../lib/bridge"
 import { activate, newInClient, pickFolder } from "../lib/client"
+import { logClientError } from "../lib/client-errors"
 import { EFFORTS, MODES } from "../lib/config"
 import { writeContext } from "../lib/context"
 import { readDesktop } from "../lib/desktop"
@@ -174,6 +175,10 @@ export async function handleWrite(path: string, body: Record<string, unknown>): 
       return json({ ok: await openFolder() })
     case "/api/pick-folder":
       return json({ ok: true, folder: await pickFolder() })
+    // A view in the page that broke (components/common/Guard.tsx).
+    case "/api/clienterror":
+      await logClientError(body)
+      return json({ ok: true })
     case "/api/new":
       return newSession(body)
     case "/api/digest":

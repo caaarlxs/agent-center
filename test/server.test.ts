@@ -680,6 +680,16 @@ describe("memory", () => {
   }, 20_000)
 })
 
+describe("errors in the page", () => {
+  test("a view that breaks is written to the client errors log", async () => {
+    const res = await post("/api/clienterror", { where: "code", message: "Cannot read properties of undefined (reading 'model')", stack: "at open (CodeWorkspace.tsx:1)" })
+    expect(res.status).toBe(200)
+    const log = await readFile(join(home, "state", "logs", "client-errors.log"), "utf8")
+    expect(log).toContain("[code] Cannot read properties of undefined (reading 'model')")
+    expect(log).toContain("at open (CodeWorkspace.tsx:1)")
+  })
+})
+
 describe("files of a session", () => {
   test("lists what it sent, showed you and published, opens what it wrote, and nothing it did not name", async () => {
     const page = await jsonOf(fetch(`${base()}/api/sessions/${SERVER}/messages`))
