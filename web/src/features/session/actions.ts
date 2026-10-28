@@ -23,6 +23,7 @@ export async function unsend(id: string, messageId: string) {
 // Wakes the session in Claude, in the background, so it gets messages; or
 // ends its running turn, like Esc in the app.
 export const wake = (id: string) => post(at(id, "activate"))
+export const sleep = (id: string) => post(at(id, "sleep"))
 export const stop = (id: string) => post(at(id, "stop"))
 
 // Allow or deny the tool approval the session waits for.

@@ -205,6 +205,23 @@ export async function stopProcess(sessionIds: string[], pid: number) {
   return true
 }
 
+// Put a session to sleep: its own `claude` process gets SIGINT, as Claude
+// desktop does when it pauses an idle one (its log reads "query iterator
+// completed", not an error), and its link wakes it again. A fresh reading
+// first: the process must still be that session's. Answers whether one went.
+export async function sleepSession(sessionIds: string[], known: Set<string>) {
+  await rescan(known)
+  let slept = false
+  for (const i of sessionIds.flatMap(id => latest.bySession.get(id)?.items ?? [])) {
+    if (i.kind !== "session") continue
+    try {
+      process.kill(i.pid, "SIGINT")
+      slept = true
+    } catch {} // ended meanwhile
+  }
+  return slept
+}
+
 // Every command left running and forgotten (see isForgotten), stopped at
 // once; each is checked again before it goes. Answers how many went.
 export async function stopForgotten() {

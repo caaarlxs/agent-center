@@ -14,7 +14,7 @@ import { forkPoint } from "../lib/fork"
 import { errorMessage, json } from "../lib/http"
 import { launch } from "../lib/launch"
 import { latestJson, latestState, refreshSoon } from "../lib/live"
-import { rescan, stopProcess } from "../lib/memory"
+import { rescan, sleepSession, stopProcess } from "../lib/memory"
 import { saveCommand, start as startRun, status as runStatus, stop as stopRun } from "../lib/runner"
 import { sessionFile } from "../lib/session-files"
 import { speakTurn, type Kind } from "../lib/speech"
@@ -135,6 +135,15 @@ export async function handleSession(id: string, action: string, body: Record<str
     case "stopprocess": {
       const ok = await stopProcess(groupOf(id)?.ids ?? [id], Number(body.pid))
       if (!ok) return json({ error: "That process is not one this session started" }, 404)
+      setTimeout(() => void rescan(knownSessionIds()).then(refreshSoon), 1500)
+      return json({ ok })
+    }
+    // "Sleep": frees what the session's process holds; "Wake" or a message
+    // starts it again. Never in the middle of a turn.
+    case "sleep": {
+      if (isBusy(await bridgeStatus(id))) return json({ error: "It is working: stop the turn first" }, 409)
+      const ok = await sleepSession(groupOf(id)?.ids ?? [id], knownSessionIds())
+      if (!ok) return json({ error: "It is asleep already" }, 409)
       setTimeout(() => void rescan(knownSessionIds()).then(refreshSoon), 1500)
       return json({ ok })
     }

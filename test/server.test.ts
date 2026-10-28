@@ -635,6 +635,22 @@ describe("memory", () => {
       if (pid) try { process.kill(pid, "SIGKILL") } catch {}
     }
   }, 40_000)
+
+  test("puts a session to sleep: its own process gets SIGINT, as the app's pause", async () => {
+    const bin = join(home, "bin")
+    const got = join(home, "got-signal")
+    await mkdir(bin, { recursive: true })
+    await writeFile(join(bin, "claude"), `#!/bin/sh\ntrap 'echo INT > ${got}; exit 0' INT\ntrap 'echo TERM > ${got}; exit 0' TERM\nwhile true; do sleep 0.2; done\n`, { mode: 0o755 })
+    const session = Bun.spawn([join(bin, "claude"), `--resume=${ID}`])
+    try {
+      expect((await post(`/api/sessions/${WATCHER}/sleep`)).status).toBe(409) // nothing of its own runs
+      expect((await jsonOf(post(`/api/sessions/${ID}/sleep`))).ok).toBe(true)
+      await session.exited
+      expect((await Bun.file(got).text()).trim()).toBe("INT")
+    } finally {
+      session.kill()
+    }
+  }, 20_000)
 })
 
 describe("files of a session", () => {

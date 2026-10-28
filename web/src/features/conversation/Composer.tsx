@@ -18,7 +18,7 @@ import { modelKey, modelNow } from "@/features/prompt/Settings"
 import { ModePicker } from "@/features/prompt/ModePicker"
 import { ModelEffort } from "@/features/prompt/ModelEffort"
 import { MAX_BYTES, MAX_FILES, messageWith } from "@/features/prompt/files"
-import { launch, stopTurn, wake } from "@/features/session/actions"
+import { launch, sleep, stopTurn, wake } from "@/features/session/actions"
 import { UsageMeter } from "@/features/session/UsageMeter"
 import { isBusyNow, isStuckNow, reachOf } from "./reach"
 import { composerFill, composerFocus, sendMessage } from "./send"
@@ -98,6 +98,7 @@ function Box({ id, card, bridge }: { id: string; card: Card | undefined; bridge:
   const box = useRef<HTMLDivElement>(null)
   const [isDrop, setDrop] = useState(false)
   const [isWaking, setWaking] = useState(false)
+  const [isSleeping, setSleeping] = useState(false) // until the bridge sees it gone (10 s)
   const sent = useSendMoment() // the paper plane when the message leaves
   const cursorAtEnd = () => {
     const el = box.current?.querySelector("textarea")
@@ -128,6 +129,12 @@ function Box({ id, card, bridge }: { id: string; card: Card | undefined; bridge:
   const isStuck = isStuckNow(bridge)
   const isBusy = isBusyNow(bridge, isWorking)
   const canWake = !!bridge && !bridge.isOpen && !isBusy && !isWaking && !bridge.pending
+  const canSleep = !!bridge?.isOpen && !isBusy && !isWorking && !isWaking && !isSleeping
+  const startSleep = () => {
+    setSleeping(true)
+    sleep(id).catch((err: Error) => toast(err.message || "Could not put it to sleep"))
+    setTimeout(() => alive.current && setSleeping(false), 12_000)
+  }
   const startWake = () => {
     setWaking(true)
     wake(id).catch((err: Error) => toast(err.message || "Could not wake the session"))
@@ -165,7 +172,8 @@ function Box({ id, card, bridge }: { id: string; card: Card | undefined; bridge:
             <button type="button" className={cn(subtle, "hover:text-bad")} onClick={() => stopTurn(card)} title="Stops the running turn, like Esc in Claude desktop (S)"><Square />Stop</button>
           )}
           {isStuck ? <button type="button" className={subtle} onClick={() => launch(id)} title="Opens the session in Claude desktop">Open in Claude</button>
-            : canWake && <button type="button" className={subtle} onClick={startWake} title="Starts the session in Claude, in the background, so it gets messages">Wake</button>}
+            : canWake ? <button type="button" className={subtle} onClick={startWake} title="Starts the session in Claude, in the background, so it gets messages">Wake</button>
+            : canSleep && <button type="button" className={subtle} onClick={startSleep} title="Stops the session's process to free memory; Wake or a message starts it again">Sleep</button>}
           <button type="submit" disabled={!!bridge?.isArchived}
             title={bridge?.isArchived ? "Archived in Claude: unarchive it there to write" : "Send (↵) · new line (⇧↵)"}
             className="ml-1 inline-grid size-8 shrink-0 place-items-center rounded-[10px] border border-brand bg-brand text-brand-text transition-[filter,transform] duration-[120ms] hover:brightness-106 active:scale-[0.97] disabled:opacity-45">
