@@ -19,6 +19,7 @@ import { ago } from "@/features/session/state"
 import { mergeState, readinessRows, type Readiness, type Row } from "./readiness"
 import { Anim } from "@/components/icons/animated"
 import { doneIcon } from "@/components/icona/marks"
+import { MergeButton } from "./MergeButton"
 
 const CHIP = {
   OPEN: ["Open", "bg-work-soft text-work"],
@@ -123,11 +124,8 @@ function PrItem({ pr, sessionId, onDone }: { pr: PrDetail; sessionId?: string; o
         <div className="mt-0.5 flex flex-wrap items-center gap-2 border-t border-line pt-2.5">
           {isOpen && !pr.isDraft && (
             <>
-              <Button disabled={!merge.canMerge || !!busy} onClick={() => setConfirm("merge")}>{busy === "merge" ? BUSY.merge : "Merge"}</Button>
-              <select className="h-[30px] rounded-md border border-line-strong bg-surface px-2 text-[12.5px]" value={method} title="Merge method"
-                onChange={e => mergeMethod.set(e.target.value as Method)}>
-                {Object.entries(METHODS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-              </select>
+              <MergeButton label={busy === "merge" ? BUSY.merge : "Merge"} method={method} methods={METHODS} isDisabled={!merge.canMerge || !!busy}
+                onMerge={() => setConfirm("merge")} onMethod={m => mergeMethod.set(m)} />
               <label className="inline-flex cursor-pointer items-center gap-1.5 text-[12.5px] text-text-muted">
                 <input type="checkbox" className="accent-brand" checked={isDeleting} onChange={e => deleteBranch.set(e.target.checked)} />Delete branch
               </label>

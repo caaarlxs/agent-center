@@ -15,6 +15,9 @@ import type { Step } from "@/lib/api-types"
 import { cn } from "@/lib/utils"
 import { notify, shake, sound, speech, toggleNotify, toggleSound, type Speech } from "@/features/alerts/prefs"
 import { CopyMark, useCopyMoment } from "@/components/icona/marks"
+import { SwapText } from "@/components/watermelon/SwapText"
+import { Checklist } from "./Checklist"
+import { progressOf } from "./progress"
 
 type Status = { steps: Step[]; isReady: boolean; voiceLanguage: string; organizerNote: string }
 type Need = "Required" | "Recommended" | "Optional" | "Preference"
@@ -125,6 +128,7 @@ function ReadAloud() {
 function Diagnostics() {
   const [isBusy, setBusy] = useState(false)
   const copied = useCopyMoment()
+  const [isDone, setDone] = useState(false) // "Copied" for a moment
   const copy = async () => {
     setBusy(true)
     const res = await get<{ text?: string }>("/api/diagnostics").catch(() => null)
@@ -133,13 +137,15 @@ function Diagnostics() {
     try {
       await navigator.clipboard.writeText(res.text)
       copied.play()
+      setDone(true)
+      setTimeout(() => setDone(false), 1800)
       toast("Report copied: paste it in a message")
     } catch {
       toast("Could not copy it: the browser refused the clipboard")
     }
   }
   return (
-    <Row title="Diagnostics" isDone={false} actions={<Button variant="outline" disabled={isBusy} onClick={copy}><CopyMark moment={copied} size={14} />{isBusy ? "One moment…" : "Copy report"}</Button>}>
+    <Row title="Diagnostics" isDone={false} actions={<Button variant="outline" disabled={isBusy} onClick={copy}><CopyMark moment={copied} size={14} /><SwapText text={isBusy ? "One moment…" : isDone ? "Copied" : "Copy report"} /></Button>}>
       <p className={text}>Messages or answers that do not reach a session? Copy a report of this Mac and of each session's bridge mod, and send it to whoever helps you.</p>
     </Row>
   )
@@ -178,7 +184,10 @@ export function SetupDialog({ onClose }: { onClose: () => void }) {
   return (
     <Dialog open onOpenChange={o => !o && onClose()}>
       <DialogContent showCloseButton={false} className="w-[min(640px,calc(100vw-32px))] gap-0">
-        <DialogTitle className="mb-3.5">Setup</DialogTitle>
+        <div className="mb-3.5 flex items-center justify-between gap-3">
+          <DialogTitle>Setup</DialogTitle>
+          {status && <Checklist {...progressOf(status.steps.filter(st => STEPS[st.id]).map(st => ({ need: STEPS[st.id].need, isDone: st.state === "done" })))} />}
+        </div>
         <p className="-mt-1 mb-3.5 text-[13px] text-text-muted">Each step changes something on this Mac and runs only when you press it. Sessions that were already open load the mod when they restart.</p>
         {!status && <p className="text-text-muted">Checking…</p>}
         <ol className="m-0 mb-3.5 flex max-h-[min(62vh,640px)] list-none flex-col gap-2 overflow-y-auto p-0">

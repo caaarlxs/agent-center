@@ -5,9 +5,9 @@ import { cn } from "@/lib/utils"
 import { useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 import { usePromptInputAttachments, usePromptInputController } from "@/components/ai-elements/prompt-input"
-import { Spinner } from "@/components/ui/spinner"
 import { canDictate, canRecord, dictate, hasWhisper, recordVoice, type Recording } from "./voice"
 import { Anim } from "@/components/icons/animated"
+import { Elapsed, LiveWave, ScrubWave } from "./VoiceWave"
 import { MicVoiceRippleIcon } from "@/components/icona/mic-voice-ripple"
 import { Once } from "@/components/icona/moment"
 
@@ -115,15 +115,15 @@ export function MicButton() {
 
   if (!isWhisper && !canDictate) return null
   const pill = "pill-open inline-flex h-[30px] shrink-0 items-center gap-2 rounded-[15px] pr-2.5 pl-[9px] text-xs font-semibold tabular-nums"
-  if (mic.kind === "transcribing") return <span className={cn(pill, "bg-brand-soft text-brand")}><Spinner className="size-3" />Transcribing…</span>
+  if (mic.kind === "transcribing") return <span className={cn(pill, "bg-brand-soft text-brand")}><ScrubWave levels={levels} />Transcribing…</span>
   if (mic.kind === "recording") {
     const s = Math.floor((Date.now() - mic.rec.startedAt) / 1000)
     return (
       <button type="button" onClick={() => finish(mic.rec)} title="Stop and write (↵) · discard (Esc)"
         className={cn(pill, "cursor-pointer border border-[color-mix(in_srgb,var(--bad)_35%,transparent)] bg-bad-soft text-bad hover:bg-[color-mix(in_srgb,var(--bad)_22%,transparent)]")}>
         <Once icon={MicVoiceRippleIcon} size={14} isLoop />
-        <span className="flex h-5 w-[102px] items-center gap-px">{levels.map((l, i) => <i key={i} className="w-0.5 shrink-0 rounded-full bg-current" style={{ height: `${Math.max(10, l * 100)}%`, opacity: 0.3 + 0.7 * (i / BARS) }} />)}</span>
-        <span>{Math.floor(s / 60)}:{String(s % 60).padStart(2, "0")}</span>
+        <LiveWave levels={levels} />
+        <Elapsed seconds={s} />
         <Square className="size-[11px] fill-current" />
       </button>
     )

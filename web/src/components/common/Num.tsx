@@ -4,12 +4,12 @@
 import NumberFlow from "@number-flow/react"
 import { memParts } from "@/lib/format"
 
-type NumProps = { value: number; suffix?: string; prefix?: string; digits?: number; className?: string; title?: string }
+type NumProps = { value: number; suffix?: string; prefix?: string; digits?: number; minDigits?: number; className?: string; title?: string }
 
-export function Num({ value, suffix, prefix, digits = 0, className, title }: NumProps) {
+export function Num({ value, suffix, prefix, digits = 0, minDigits = 1, className, title }: NumProps) {
   return (
     <NumberFlow value={value} suffix={suffix} prefix={prefix} locales="en-GB" title={title}
-      format={{ maximumFractionDigits: digits, useGrouping: false }} className={className} willChange={false} />
+      format={{ maximumFractionDigits: digits, minimumIntegerDigits: minDigits, useGrouping: false }} className={className} willChange={false} />
   )
 }
 

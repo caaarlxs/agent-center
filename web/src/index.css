@@ -331,3 +331,6 @@
 .md.file-md h3 { font-size: 16px; margin: 18px 0 8px; }
 .md.file-md table { font-size: 13px; }
 .md.file-md th, .md.file-md td { padding: 5px 8px; }
+/* The dictation pill while Whisper writes (features/prompt/VoiceWave.tsx). */
+.wave-scrub { animation: wave-scrub 1.4s linear infinite; }
+@keyframes wave-scrub { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }

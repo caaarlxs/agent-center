@@ -118,7 +118,7 @@ function Viewer({ id, file }: { id: string; file: Listed }) {
         {file.url && <Button variant="ghost" asChild><a href={file.url} target="_blank" rel="noreferrer">claude.ai<Anim.ArrowUpRight size={12} /></a></Button>}
         {info && !info.error && (
           <>
-            <button className="inline-grid size-7 place-items-center rounded-[7px] text-text-muted hover:bg-press hover:text-text active:scale-[0.92]" onClick={copyPath} title="Copy the path"><CopyMark moment={copied} size={14} idle={<Anim.Copy size={14} />} /></button>
+            <button className={cn("inline-grid size-7 place-items-center rounded-[7px] text-text-muted transition-colors duration-200 hover:bg-press hover:text-text active:scale-[0.92]", copied.step >= 0 && "text-work hover:text-work")} onClick={copyPath} title="Copy the path"><CopyMark moment={copied} size={14} idle={<Anim.Copy size={14} />} /></button>
             <Button variant="ghost" onClick={() => openOnMac(true)} title="Show it in Finder">Show in Finder</Button>
             <Button variant="ghost" onClick={() => openOnMac()} title="Open it in its app on this Mac">Open on the Mac</Button>
           </>

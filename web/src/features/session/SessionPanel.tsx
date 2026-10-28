@@ -21,6 +21,8 @@ import { isWide, toggleWide } from "./panel-width"
 import { STATE_LABEL, repoDot, repoText, stateOf, type StateKey } from "./state"
 import { Num } from "@/components/common/Num"
 import { Anim } from "@/components/icons/animated"
+import { PanelTabs } from "./PanelTabs"
+import { EditActions } from "./EditActions"
 
 // The conversation (with its markdown renderer) is not needed to draw the
 // board: it loads once the browser is idle, before you open one. The
@@ -154,8 +156,9 @@ function Actions({ card }: { card: Card }) {
 const renameAsked = createStore(0)
 export const startRename = () => renameAsked.set(renameAsked.get() + 1)
 
-// The title, renamed here with a double click, the pencil or T: Enter or a
-// blur keeps it, Esc drops it (reader.js Title).
+// The title, renamed here with a double click, the pencil or T: Enter, a
+// blur or ✓ keeps it, Esc or ✕ drops it (reader.js Title). The input shows
+// at once; its two buttons rise in beside it (EditActions).
 function Title({ card, fallback }: { card: Card | undefined; fallback: string }) {
   const [isEditing, setEditing] = useState(false)
   const [shown, setShown] = useState<string | null>(null) // the new name, until the snapshot has it
@@ -176,13 +179,16 @@ function Title({ card, fallback }: { card: Card | undefined; fallback: string })
   }
   if (isEditing)
     return (
-      <input ref={input} defaultValue={card.title} maxLength={140} aria-label="Name"
-        className="w-full rounded-md border border-brand bg-surface px-2 py-1 text-[15px] font-[650] shadow-[0_0_0_3px_var(--brand-soft)] outline-none"
-        onKeyDown={e => {
-          if (e.key === "Enter") finish(true)
-          if (e.key === "Escape") (e.stopPropagation(), e.preventDefault(), finish(false))
-        }}
-        onBlur={() => finish(true)} />
+      <div className="flex items-center gap-1">
+        <input ref={input} defaultValue={card.title} maxLength={140} aria-label="Name"
+          className="w-full min-w-0 rounded-md border border-brand bg-surface px-2 py-1 text-[15px] font-[650] shadow-[0_0_0_3px_var(--brand-soft)] outline-none"
+          onKeyDown={e => {
+            if (e.key === "Enter") finish(true)
+            if (e.key === "Escape") (e.stopPropagation(), e.preventDefault(), finish(false))
+          }}
+          onBlur={() => finish(true)} />
+        <EditActions onSave={() => finish(true)} onCancel={() => finish(false)} />
+      </div>
     )
   return (
     <h2 className="group m-0 flex items-center gap-1.5 text-base leading-[1.3] font-[650] tracking-[-0.01em]" title="Double-click or T to rename (on the board only)" onDoubleClick={() => setEditing(true)}>
@@ -241,15 +247,10 @@ export function SessionPanel({ id, tab: asked, file }: { id: string; tab: Tab; f
         </div>
         <Title card={card} fallback={fromSearch?.title ?? "Conversation"} />
       </header>
-      <nav role="tablist" className="flex shrink-0 gap-0.5 overflow-x-auto border-b border-line px-3 [scrollbar-width:none]">
-        {tabs.map(t => (
-          <button key={t.key} role="tab" aria-selected={tab === t.key} onClick={() => showTab(t.key)} onPointerEnter={PRELOAD[t.key]} title={t.label}
-            className={cn("relative flex items-center gap-1.5 px-2.5 py-[9px] text-[13px] font-[550] whitespace-nowrap text-text-muted transition-colors duration-[120ms] hover:text-text [&_svg]:size-3.5 [&_svg]:opacity-70",
-              tab === t.key && "text-text after:absolute after:inset-x-2.5 after:-bottom-px after:h-0.5 after:rounded-sm after:bg-text")}>
-            {t.icon}{t.label}{(counts[t.key] ?? 0) > 0 && <span className="text-[11px] text-text-muted tabular-nums"><Num key={id} value={counts[t.key] ?? 0} /></span>}
-          </button>
-        ))}
-      </nav>
+      <PanelTabs id={id} tab={tab} onPick={showTab} tabs={tabs.map(t => ({
+        ...t, onHover: PRELOAD[t.key],
+        count: (counts[t.key] ?? 0) > 0 && <span className="text-[11px] text-text-muted tabular-nums"><Num key={id} value={counts[t.key] ?? 0} /></span>,
+      }))} />
       <div role="tabpanel" className="flex min-h-0 flex-1 flex-col">
         {tab === "chat" && <Chat key={id} id={id} card={card} />}
         {tab === "changes" && <Changes key={id} id={id} />}
