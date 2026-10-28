@@ -1,9 +1,11 @@
 // Read-only view of the Claude desktop app's own session records: title,
 // archived and starred state, and the CLI session id each one runs.
-// Never written here: those files belong to the app.
+// Never written here: those files belong to the app. It keeps them per
+// account (claude-code-sessions/<account>/<org>/), and shows only the
+// account signed in now (config.json, lastKnownAccountUuid).
 
 import { readdir, stat } from "node:fs/promises"
-import { join } from "node:path"
+import { basename, dirname, join } from "node:path"
 import { DESKTOP_DIR } from "./config"
 import { readJson } from "./files"
 
@@ -12,6 +14,7 @@ const ROOT = join(DESKTOP_DIR, "claude-code-sessions")
 export type DesktopSession = {
   hostId: string
   cliId: string | null
+  account: string // the account folder the record is in
   title: string | null
   cwd: string | null
   isArchived: boolean
@@ -31,6 +34,26 @@ export type DesktopIndex = {
   ok: boolean
   byCli: Map<string, DesktopSession>
   byHost: Map<string, DesktopSession>
+  hostsByCli: Map<string, Set<string>> // every desktop id, in any account, that runs a CLI session
+  activeAccount: string | null // the account signed in, when the app's config says
+}
+
+// The desktop id a session has in the account signed in now: the hook's
+// (`hookHost`) or the app's own, if that account has it. Null when only
+// another account has it (signed in with that one before): then the app
+// imports it. Without the app's config, the newest copy, as before.
+export function appHostOf(cliId: string, hookHost: string | null, desktop: DesktopIndex) {
+  const candidates = [hookHost, ...(desktop.hostsByCli.get(cliId) ?? [])].filter((h): h is string => !!h)
+  if (!desktop.activeAccount) return hookHost ?? desktop.byCli.get(cliId)?.hostId ?? null
+  return candidates.find(h => desktop.byHost.get(h)?.account === desktop.activeAccount) ?? null
+}
+
+async function activeAccount() {
+  try {
+    return String((await readJson(join(DESKTOP_DIR, "config.json"))).lastKnownAccountUuid ?? "") || null
+  } catch {
+    return null
+  }
 }
 
 const cache = new Map<string, { mtimeMs: number; session: DesktopSession | null }>()
@@ -46,8 +69,9 @@ async function dirs(path: string): Promise<string[]> {
 export async function readDesktop(): Promise<DesktopIndex> {
   const byCli = new Map<string, DesktopSession>()
   const byHost = new Map<string, DesktopSession>()
+  const hostsByCli = new Map<string, Set<string>>()
   const accounts = await dirs(ROOT)
-  if (accounts.length === 0) return { ok: false, byCli, byHost }
+  if (accounts.length === 0) return { ok: false, byCli, byHost, hostsByCli, activeAccount: null }
 
   // The app keeps a copy of a session per account and organization folder it
   // was seen in; an old copy can still name a CLI session that is long gone.
@@ -80,6 +104,7 @@ export async function readDesktop(): Promise<DesktopIndex> {
               session: {
                 hostId: raw.sessionId,
                 cliId: raw.cliSessionId ?? null,
+                account: basename(dirname(org)),
                 title: raw.title ?? null,
                 cwd: raw.cwd ?? null,
                 isArchived: !!raw.isArchived,
@@ -112,15 +137,20 @@ export async function readDesktop(): Promise<DesktopIndex> {
   }
   for (const { session } of newest.values()) byHost.set(session.hostId, session)
   for (const { session } of copies) if (session.cliId) byCli.set(session.cliId, byHost.get(session.hostId)!)
+  for (const { session } of copies) if (session.cliId) hostsByCli.set(session.cliId, (hostsByCli.get(session.cliId) ?? new Set()).add(session.hostId))
   for (const path of [...cache.keys()]) if (!seen.has(path)) cache.delete(path)
-  return { ok: true, byCli, byHost }
+  return { ok: true, byCli, byHost, hostsByCli, activeAccount: await activeAccount() }
 }
 
 // Archived in the app: it starts no session there until it is unarchived
 // (the app has no link for that), so a message for it would only wait.
+// In another account it is not: opening it imports it into this one.
 export async function isArchivedInApp(ids: string[]) {
   const desktop = await readDesktop()
-  return ids.some(id => desktop.byCli.get(id)?.isArchived)
+  return ids.some(id => {
+    const host = appHostOf(id, null, desktop)
+    return host ? desktop.byHost.get(host)?.isArchived : false
+  })
 }
 
 export type SuggestionState = { state: "started" | "dismissed"; session: string | null }
