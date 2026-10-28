@@ -12,9 +12,10 @@ import { PromptInput, PromptInputBody, PromptInputProvider, PromptInputTextarea,
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { Kbd } from "@/components/ui/kbd"
-import { get, post } from "@/lib/api"
+import { post } from "@/lib/api"
 import { persistedStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
+import { type Repo, knownRepos } from "./repos"
 import { openSession } from "@/app/open-session"
 import type { NewDraft } from "@/app/open-dialog"
 import { repoFilter } from "@/app/view-state"
@@ -26,7 +27,6 @@ import { hasWhisper } from "@/features/prompt/voice"
 import { repoDot } from "@/features/session/state"
 import { Anim } from "@/components/icons/animated"
 
-type Repo = { root: string; name: string }
 const DEFAULTS = { model: "claude-fable-5-1", effort: "high" } // what Reset in the model card goes back to
 const prefs = persistedStore("newPrefs", { mode: "auto", ...DEFAULTS })
 const field = "w-full rounded-md border border-line-strong bg-surface px-2.5 py-[7px] text-[13.5px] focus:border-brand focus:shadow-[0_0_0_3px_var(--brand-soft)] focus:outline-none"
@@ -34,16 +34,17 @@ const field = "w-full rounded-md border border-line-strong bg-surface px-2.5 py-
 const repoOf = (root: string): Repo => ({ root, name: root.split("/").pop() || root })
 
 function Folders({ root, onPick }: { root: string | null; onPick: (root: string) => void }) {
-  const [repos, setRepos] = useState<Repo[] | null>(null)
+  // The last list at once (kept since the board started), then a fresh one.
+  const repos = knownRepos.use()?.repos ?? null
   // a folder chosen with "Browse…" (or the suggested task's)
   const [picked, setPicked] = useState<Repo | null>(() => (root ? repoOf(root) : null))
   const [filter, setFilter] = useState("")
   const list = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    get<{ repos: Repo[] }>("/api/repos").then(res => {
-      setRepos(res.repos)
-      if (!root && res.repos[0]) onPick(repoFilter.get() ?? res.repos[0].root)
-    }, () => setRepos([]))
+    const pickFirst = (list: Repo[]) => !root && list[0] && onPick(repoFilter.get() ?? list[0].root)
+    const kept = knownRepos.get()?.repos
+    if (kept) pickFirst(kept)
+    knownRepos.load().then(res => !kept && pickFirst(res.repos), () => knownRepos.get() ?? knownRepos.set({ repos: [] }))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   const all = [...(picked && !(repos ?? []).some(r => r.root === picked.root) ? [picked] : []), ...(repos ?? [])]

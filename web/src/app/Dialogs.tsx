@@ -1,9 +1,11 @@
 // The open dialog, if any. A link can open one (?dialog=new|setup|digest|context|help),
 // and Setup opens by itself while a required step is missing, until closed once.
 import { useEffect } from "react"
-import { get } from "@/lib/api"
+import { whenIdle } from "@/lib/cached"
 import { persistedStore } from "@/lib/store"
 import { lazyView } from "@/lib/lazy-view"
+import { knownRepos } from "@/features/new-session/repos"
+import { setupStatus } from "@/features/setup/status"
 import { closeDialog, dialog, openDialog } from "./open-dialog"
 
 // Each dialog loads the first time it opens.
@@ -27,8 +29,17 @@ export function Dialogs() {
       history.replaceState(null, "", `${location.pathname}${params.size ? `?${params}` : ""}`)
       return
     }
-    get<{ isReady: boolean }>("/api/setup").then(res => !res.isReady && !setupSeen.get() && !dialog.get() && openDialog({ kind: "setup" }), () => {})
   }, [])
+  // Setup opens by itself while a required step is missing, until closed once;
+  // its answer is kept for the dialog (features/setup/status.ts).
+  useEffect(() => void setupStatus.load().then(res => !res.isReady && !setupSeen.get() && !dialog.get() && openDialog({ kind: "setup" }), () => {}), [])
+  // When the browser is idle: the code and the data of the two dialogs opened
+  // most, so they open whole instead of growing as their parts arrive.
+  useEffect(() => whenIdle(() => {
+    NewSessionDialog.preload()
+    SetupDialog.preload()
+    void knownRepos.load().catch(() => {})
+  }), [])
   if (!open) return null
   if (open.kind === "new") return <NewSessionDialog draft={open.draft} onClose={closeDialog} />
   if (open.kind === "setup") return <SetupDialog onClose={() => (setupSeen.set(true), closeDialog())} />

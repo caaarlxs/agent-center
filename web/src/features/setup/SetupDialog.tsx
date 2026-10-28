@@ -11,9 +11,9 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { Spinner } from "@/components/ui/spinner"
 import { get, post } from "@/lib/api"
-import type { Step } from "@/lib/api-types"
 import { type CodeThemeOption, chosenKey, codeTheme, useCodeThemes, useIsDark, useTokens } from "@/lib/code-theme"
 import { cn } from "@/lib/utils"
+import { type Status, setupStatus } from "./status"
 import { type ThemeChoice, chooseTheme, themeChoice } from "@/lib/theme"
 import { notify, shake, sound, speech, toggleNotify, toggleSound, type Speech } from "@/features/alerts/prefs"
 import { CopyMark, useCopyMoment } from "@/components/icona/marks"
@@ -21,7 +21,6 @@ import { SwapText } from "@/components/watermelon/SwapText"
 import { Checklist } from "./Checklist"
 import { progressOf } from "./progress"
 
-type Status = { steps: Step[]; isReady: boolean; voiceLanguage: string; organizerNote: string }
 type Need = "Required" | "Recommended" | "Optional" | "Preference"
 type Meta = { title: string; need: Need; text: ReactNode; unavailable?: ReactNode; action?: string; outdated?: string; canTurnOff?: boolean }
 
@@ -233,15 +232,16 @@ function Appearance() {
 }
 
 export function SetupDialog({ onClose }: { onClose: () => void }) {
-  const [status, setStatus] = useState<Status | null>(null)
+  // The last answer at once (kept since the board started), then a fresh one.
+  const status = setupStatus.use()
   const [busy, setBusy] = useState<string | null>(null)
-  const [language, setLanguage] = useState("auto")
+  const [language, setLanguage] = useState(() => setupStatus.get()?.voiceLanguage ?? "auto")
   const isSound = sound.use() === "on"
   const notifyState = notify.use()
   const isShaking = shake.use() === "on"
   const alive = useRef(true)
   const refresh = () =>
-    get<Status>("/api/setup").then(res => alive.current && (setStatus(res), setLanguage(l => (l === "auto" ? res.voiceLanguage : l))), () => {})
+    setupStatus.load().then(res => alive.current && setLanguage(l => (l === "auto" ? res.voiceLanguage : l)), () => {})
   useEffect(() => (void refresh(), () => void (alive.current = false)), [])
   // While something installs in the background (Whisper), its progress.
   const isWorking = status?.steps.some(s => s.state === "working")
@@ -254,8 +254,7 @@ export function SetupDialog({ onClose }: { onClose: () => void }) {
   const run = async (id: string, options: Record<string, unknown> = {}) => {
     setBusy(id)
     try {
-      const res = await post<Status>(`/api/setup/${id}`, { options })
-      if (alive.current) setStatus(res)
+      setupStatus.set(await post<Status>(`/api/setup/${id}`, { options }))
     } catch (err) {
       toast((err as Error).message || "Could not complete this step")
     }
