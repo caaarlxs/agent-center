@@ -6,7 +6,7 @@
 // Besides the built-in themes, the one the person uses in Cursor or VS Code
 // (the server reads it there: lib/editor-theme.ts). Shiki and the themes load
 // the first time code shows, not with the page.
-import { loader } from "@monaco-editor/react"
+import { type Monaco, loader } from "@monaco-editor/react"
 import { useEffect, useState, useSyncExternalStore } from "react"
 import type { HighlighterGeneric, ThemeRegistrationAny, ThemedToken } from "shiki"
 import { get } from "./api"
@@ -77,19 +77,22 @@ export function useShikiTheme(): string | null {
 
 // ---------- Shiki ----------
 
-// Loaded up front, for Monaco (it only takes the languages loaded when it is
-// bound); any other one loads when a block of it shows.
-const BASE_LANGS = [
-  "typescript", "tsx", "javascript", "jsx", "json", "jsonc", "python", "markdown", "html", "css", "scss", "less", "yaml", "toml",
-  "shellscript", "go", "rust", "java", "kotlin", "swift", "c", "cpp", "csharp", "php", "ruby", "sql", "dockerfile", "xml", "graphql", "ini", "diff",
-]
+// No language up front: each grammar loads the first time a block, a diff or
+// an open file of it shows (useTokens, ensureMonacoLang). Up front they were
+// some 3 MB of JavaScript to parse on the first code shown.
 type Highlighter = HighlighterGeneric<string, string>
 let highlighter: Promise<Highlighter> | null = null
 
 export function getHighlighter() {
-  highlighter ??= Promise.all([import("shiki"), loadEditorThemes()]).then(
-    ([{ createHighlighter }, mine]) =>
-      createHighlighter({ themes: [...THEME_NAMES, ...mine.map(t => t.theme as ThemeRegistrationAny)], langs: BASE_LANGS }) as unknown as Promise<Highlighter>,
+  // Shiki's JavaScript regex engine, not its WebAssembly one: a fraction of
+  // the download; "forgiving" skips the few patterns it cannot run.
+  highlighter ??= Promise.all([import("shiki"), import("shiki/engine/javascript"), loadEditorThemes()]).then(
+    ([{ createHighlighter }, { createJavaScriptRegexEngine }, mine]) =>
+      createHighlighter({
+        themes: [...THEME_NAMES, ...mine.map(t => t.theme as ThemeRegistrationAny)],
+        langs: [],
+        engine: createJavaScriptRegexEngine({ forgiving: true }),
+      }) as unknown as Promise<Highlighter>,
   )
   return highlighter
 }
@@ -132,19 +135,46 @@ export function useTokens(text: string, of: string | null, theme: string | null)
 
 // ---------- Monaco ----------
 
-// Monaco takes Shiki's tokens and themes once; its own themes (vs, vs-dark)
-// stay for when colours are off.
-let bound: Promise<void> | null = null
+// Monaco takes Shiki's themes and the tokens of the languages loaded so far;
+// its own themes (vs, vs-dark) stay for when colours are off. A language
+// loaded later binds again from Monaco's own functions, so the wrappers
+// never stack, and the theme in use is put back.
+
+let bound: Promise<Monaco> | null = null
+let native: { setTheme: Monaco["editor"]["setTheme"]; create: Monaco["editor"]["create"] } | null = null
+let themeNow: string | null = null
+
+async function bindShiki(h: Highlighter, monaco: Monaco) {
+  const { shikiToMonaco } = await import("@shikijs/monaco")
+  native ??= { setTheme: monaco.editor.setTheme.bind(monaco.editor), create: monaco.editor.create }
+  monaco.editor.setTheme = native.setTheme
+  monaco.editor.create = native.create
+  shikiToMonaco(h as never, monaco as never)
+  const shiki = monaco.editor.setTheme
+  const names = new Set(h.getLoadedThemes())
+  monaco.editor.setTheme = (name: string) => ((themeNow = name), names.has(name) ? shiki(name) : native!.setTheme(name))
+  if (themeNow) monaco.editor.setTheme(themeNow)
+}
+
 function bindMonaco() {
-  bound ??= Promise.all([getHighlighter(), loader.init()]).then(async ([h, monaco]) => {
-    const { shikiToMonaco } = await import("@shikijs/monaco")
-    const native = monaco.editor.setTheme.bind(monaco.editor)
-    shikiToMonaco(h as never, monaco as never)
-    const shiki = monaco.editor.setTheme
-    const names = new Set(h.getLoadedThemes())
-    monaco.editor.setTheme = (name: string) => (names.has(name) ? shiki(name) : native(name))
-  })
+  bound ??= Promise.all([getHighlighter(), loader.init()]).then(async ([h, monaco]) => (await bindShiki(h, monaco), monaco))
   return bound
+}
+
+// Monaco's language for a file (by its extension or name, from Monaco's own
+// list) gets its grammar from Shiki before the file shows in colour.
+export async function ensureMonacoLang(path: string) {
+  const monaco = await bindMonaco()
+  const name = path.split("/").pop()!.toLowerCase()
+  const langs: { id: string; filenames?: string[]; extensions?: string[] }[] = monaco.languages.getLanguages()
+  const lang = langs.find(l => l.filenames?.some(f => f.toLowerCase() === name) || l.extensions?.some(e => name.endsWith(e.toLowerCase())))?.id
+  if (!lang || lang === "plaintext") return
+  const h = await getHighlighter()
+  if (h.getLoadedLanguages().includes(lang)) return
+  const { bundledLanguages } = await import("shiki")
+  if (!(lang in bundledLanguages)) return
+  await h.loadLanguage(lang as never).catch(() => {})
+  if (h.getLoadedLanguages().includes(lang)) await bindShiki(h, monaco)
 }
 
 // The theme for a Monaco editor, and whether its text shows plain (the editor

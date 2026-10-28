@@ -13,7 +13,7 @@ import { Kbd } from "@/components/ui/kbd"
 import { get } from "@/lib/api"
 import { persistedStore } from "@/lib/store"
 import type { Changes as ChangesData, FileDiff } from "@/lib/api-types"
-import { type Tokens, useShikiTheme, useTokens } from "@/lib/code-theme"
+import { type Tokens, ensureMonacoLang, useShikiTheme, useTokens } from "@/lib/code-theme"
 import { useMonaco, useMonacoTheme } from "@/lib/monaco"
 import { cn } from "@/lib/utils"
 import { showTab } from "@/app/open-session"
@@ -156,6 +156,8 @@ function SideBySide({ id, files }: { id: string; files: FileDiff[] }) {
   const [chosen, setChosen] = useState<FileDiff | null>(shown[0] ?? null)
   const [versions, setVersions] = useState<{ original: string; modified: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // Its grammar, the first time a file of that language shows.
+  useEffect(() => void (chosen && !isPlain && ensureMonacoLang(chosen.path)), [chosen, isPlain])
   useEffect(() => {
     if (!chosen) return
     const q = new URLSearchParams({ path: chosen.path, ...(chosen.oldPath ? { old: chosen.oldPath } : {}) })

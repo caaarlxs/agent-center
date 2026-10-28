@@ -16,6 +16,7 @@ import { Kbd } from "@/components/ui/kbd"
 import { ApiError, get, post } from "@/lib/api"
 import { keep, load } from "@/lib/store"
 import type { CodeTree, Mark, Match } from "@/lib/api-types"
+import { ensureMonacoLang } from "@/lib/code-theme"
 import { useMonaco, useMonacoTheme } from "@/lib/monaco"
 import { cn } from "@/lib/utils"
 import { type Folder, changedFolders, parentsOf, rankFiles, spanOf, treeOf } from "./tree"
@@ -235,6 +236,7 @@ export function CodeWorkspace({ id }: { id: string }) {
       m.editor.getModel(uri)?.dispose()
       const model = m.editor.createModel(res.text, undefined, uri)
       const lang = model.getLanguageId()
+      void ensureMonacoLang(path) // its grammar, the first time a file of it opens
       if (plain.current) m.editor.setModelLanguage(model, "plaintext")
       docs.current.set(path, { model, mtime: res.mtime, saved: model.getAlternativeVersionId(), lang })
       model.onDidChangeContent(() => markDirty(path))
