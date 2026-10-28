@@ -5,8 +5,8 @@
 import { Sun } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { Spinner } from "@/components/ui/spinner"
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { get, post } from "@/lib/api"
 import type { Card, Digest, DigestEntry, DigestGroup } from "@/lib/api-types"
 import { when } from "@/lib/format"
@@ -14,6 +14,9 @@ import { cn } from "@/lib/utils"
 import { openSession } from "@/app/open-session"
 import { focusCard } from "@/app/view-state"
 import { StateIcon } from "@/features/session/StateIcon"
+import { SunSlowSpinIcon } from "@/components/icona/sun-slow-spin"
+import { RefreshSpinIcon } from "@/components/icona/refresh-spin"
+import { Once } from "@/components/icona/moment"
 
 const GROUPS: [DigestGroup, string][] = [
   ["waiting", "Waiting for you"],
@@ -74,10 +77,10 @@ export function DigestDialog({ onClose }: { onClose: () => void }) {
     <Dialog open onOpenChange={o => !o && onClose()}>
       <DialogContent showCloseButton={false} className="flex max-h-[min(78vh,760px)] w-[min(640px,calc(100vw-32px))] flex-col gap-0 p-0">
         <header className="flex flex-wrap items-center gap-3 border-b border-line px-5 pt-[18px] pb-3">
-          <DialogTitle className="inline-flex items-center gap-2"><Sun className="size-[18px] text-ask" />Catch me up</DialogTitle>
+          <DialogTitle className="inline-flex items-center gap-2">{isWriting ? <Once icon={SunSlowSpinIcon} size={18} className="text-ask" isLoop /> : <Sun className="size-[18px] text-ask" />}Catch me up</DialogTitle>
           <span className="min-w-0 flex-1 text-xs text-text-muted">{digest && `Since ${when(digest.since)}`}</span>
           <Button variant="outline" disabled={isWriting} onClick={write} title="A new summary since the last one">
-            {isWriting ? <><Spinner className="size-3 border-[1.5px]" />Reading…</> : "Refresh"}
+            {isWriting ? <><Once icon={RefreshSpinIcon} size={12} isLoop />Reading…</> : "Refresh"}
           </Button>
         </header>
         {error && <p className="mx-5 mt-3 mb-0 rounded-lg bg-bad-soft px-2.5 py-2 text-[12.5px] text-bad">{error}</p>}

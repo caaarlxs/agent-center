@@ -14,6 +14,7 @@ import { get, post } from "@/lib/api"
 import type { Step } from "@/lib/api-types"
 import { cn } from "@/lib/utils"
 import { notify, shake, sound, speech, toggleNotify, toggleSound, type Speech } from "@/features/alerts/prefs"
+import { CopyMark, useCopyMoment } from "@/components/icona/marks"
 
 type Status = { steps: Step[]; isReady: boolean; voiceLanguage: string; organizerNote: string }
 type Need = "Required" | "Recommended" | "Optional" | "Preference"
@@ -123,6 +124,7 @@ function ReadAloud() {
 // paste in a message. It holds no conversation, title or message.
 function Diagnostics() {
   const [isBusy, setBusy] = useState(false)
+  const copied = useCopyMoment()
   const copy = async () => {
     setBusy(true)
     const res = await get<{ text?: string }>("/api/diagnostics").catch(() => null)
@@ -130,13 +132,14 @@ function Diagnostics() {
     if (!res?.text) return void toast("Could not make the report")
     try {
       await navigator.clipboard.writeText(res.text)
+      copied.play()
       toast("Report copied: paste it in a message")
     } catch {
       toast("Could not copy it: the browser refused the clipboard")
     }
   }
   return (
-    <Row title="Diagnostics" isDone={false} actions={<Button variant="outline" disabled={isBusy} onClick={copy}>{isBusy ? "One moment…" : "Copy report"}</Button>}>
+    <Row title="Diagnostics" isDone={false} actions={<Button variant="outline" disabled={isBusy} onClick={copy}><CopyMark moment={copied} size={14} />{isBusy ? "One moment…" : "Copy report"}</Button>}>
       <p className={text}>Messages or answers that do not reach a session? Copy a report of this Mac and of each session's bridge mod, and send it to whoever helps you.</p>
     </Row>
   )

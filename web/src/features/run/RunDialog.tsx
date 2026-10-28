@@ -14,6 +14,7 @@ import type { Card, RunState } from "@/lib/api-types"
 import { clock } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { Anim } from "@/components/icons/animated"
+import { RunMark, useRunMoment } from "@/components/icona/marks"
 
 type RunInfo = { command: string | null; suggestion: string | null; repo: string; cwd: string; run: (RunState & { isRunning: boolean }) | null }
 
@@ -29,6 +30,7 @@ function RunLine({ run }: { run: RunInfo["run"] }) {
 export function RunDialog({ card, onClose }: { card: Card; onClose: () => void }) {
   const [info, setInfo] = useState<RunInfo | null>(null)
   const [isBusy, setBusy] = useState(false)
+  const started = useRunMoment() // play turns to pause as it starts
   const input = useRef<HTMLInputElement>(null)
   const log = useRef<HTMLPreElement>(null)
   const url = `/api/sessions/${encodeURIComponent(card.id)}`
@@ -47,7 +49,7 @@ export function RunDialog({ card, onClose }: { card: Card; onClose: () => void }
     const command = input.current?.value.trim()
     if (!command) return input.current?.focus()
     setBusy(true)
-    await post(`${url}/run`, { command }).then(refresh, (err: Error) => toast(err.message || "Could not start"))
+    await post(`${url}/run`, { command }).then(() => (started.play(), refresh()), (err: Error) => toast(err.message || "Could not start"))
     setBusy(false)
   }
   const stop = () => post(`${url}/stoprun`).then(() => setTimeout(refresh, 800), (err: Error) => toast(err.message))
@@ -70,7 +72,7 @@ export function RunDialog({ card, onClose }: { card: Card; onClose: () => void }
                 : <span className="text-text-muted">Waiting for it to open a port…</span>)}
               <span className="flex-1" />
               {run?.isRunning && <Button variant="outline" className="text-bad" onClick={stop}><Square className="size-3" />Stop</Button>}
-              <Button disabled={isBusy} onClick={start}><Anim.Play size={12} />{run?.isRunning ? "Restart" : "Start"}</Button>
+              <Button disabled={isBusy} onClick={start}><RunMark moment={started} size={12} idle={<Anim.Play size={12} />} />{run?.isRunning ? "Restart" : "Start"}</Button>
             </div>
             {lines.length > 0 && <pre ref={log} className="mt-3 mb-0 max-h-[260px] overflow-auto rounded-[9px] border border-line bg-side px-3 py-2.5 font-mono text-[11.5px]/[1.5] [overflow-wrap:anywhere] whitespace-pre-wrap text-text-muted">{lines.join("\n")}</pre>}
           </>

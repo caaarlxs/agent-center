@@ -18,6 +18,7 @@ import { sendMessage } from "@/features/conversation/send"
 import { ago } from "@/features/session/state"
 import { mergeState, readinessRows, type Readiness, type Row } from "./readiness"
 import { Anim } from "@/components/icons/animated"
+import { doneIcon } from "@/components/icona/marks"
 
 const CHIP = {
   OPEN: ["Open", "bg-work-soft text-work"],
@@ -75,7 +76,7 @@ function PrItem({ pr, sessionId, onDone }: { pr: PrDetail; sessionId?: string; o
     setBusy(action)
     try {
       await post("/api/prs/action", { url: pr.url, action, ...extra })
-      toast(`#${pr.number} ${DONE[action]}`)
+      toast(`#${pr.number} ${DONE[action]}`, action === "merge" ? { icon: doneIcon() } : undefined)
     } catch (err) {
       toast(`Could not do it: ${(err as Error).message || "gh error"}`)
     }

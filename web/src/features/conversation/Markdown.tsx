@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils"
 import { showFile } from "@/app/open-session"
 import { endOf, pathInCode, pathInLink, SHELL_LANG, nameOf } from "./text"
 import { Anim } from "@/components/icons/animated"
+import { CopyMark, useCopyMoment } from "@/components/icona/marks"
 
 // The session the text belongs to: a shell block runs in its folder.
 export const SessionOf = createContext<string | null>(null)
@@ -89,9 +90,10 @@ function CodeBox({ text, lang }: { text: string; lang: string }) {
   const [runs, setRuns] = useState(0) // each Run starts a new output
   const [isRunning, setRunning] = useState(false)
   const isShell = SHELL_LANG.test(lang)
+  const mark = useCopyMoment()
   const copy = () =>
     copyText(text.replace(/\n$/, "")).then(
-      () => (setCopied("Copied"), setTimeout(() => setCopied("Copy"), 1500)),
+      () => (setCopied("Copied"), mark.play(), setTimeout(() => setCopied("Copy"), 1600)),
       () => setCopied("Could not copy"),
     )
   return (
@@ -102,7 +104,7 @@ function CodeBox({ text, lang }: { text: string; lang: string }) {
             onClick={() => (setRuns(n => n + 1), setRunning(true))}><Play className="size-3 fill-current" />Run</button>
         )}
         <button type="button" className={cn(toolBtn, copied === "Copied" && "text-work hover:text-work")} title="Copy" onClick={copy}>
-          {copied === "Copied" ? <Check className="size-[13px]" /> : <Anim.Copy size={13} />}{copied}
+          <CopyMark moment={mark} size={13} idle={copied === "Copied" ? <Check className="size-[13px]" /> : <Anim.Copy size={13} />} />{copied}
         </button>
       </div>
       <pre className={cn(isShell ? "pr-[82px] [.can-run_&]:pr-[150px]" : "pr-[82px]")}><code className={lang}>{text}</code></pre>

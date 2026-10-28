@@ -8,6 +8,8 @@ import { usePromptInputAttachments, usePromptInputController } from "@/component
 import { Spinner } from "@/components/ui/spinner"
 import { canDictate, canRecord, dictate, hasWhisper, recordVoice, type Recording } from "./voice"
 import { Anim } from "@/components/icons/animated"
+import { MicVoiceRippleIcon } from "@/components/icona/mic-voice-ripple"
+import { Once } from "@/components/icona/moment"
 
 export const fileErrors = (err: { code: string }) =>
   toast(err.code === "max_files" ? "Up to 10 files per message" : "Each file can be up to 500 MB (and cannot be empty)")
@@ -119,14 +121,14 @@ export function MicButton() {
     return (
       <button type="button" onClick={() => finish(mic.rec)} title="Stop and write (↵) · discard (Esc)"
         className={cn(pill, "cursor-pointer border border-[color-mix(in_srgb,var(--bad)_35%,transparent)] bg-bad-soft text-bad hover:bg-[color-mix(in_srgb,var(--bad)_22%,transparent)]")}>
-        <i className="rec-dot size-2 rounded-full bg-bad" />
+        <Once icon={MicVoiceRippleIcon} size={14} isLoop />
         <span className="flex h-5 w-[102px] items-center gap-px">{levels.map((l, i) => <i key={i} className="w-0.5 shrink-0 rounded-full bg-current" style={{ height: `${Math.max(10, l * 100)}%`, opacity: 0.3 + 0.7 * (i / BARS) }} />)}</span>
         <span>{Math.floor(s / 60)}:{String(s % 60).padStart(2, "0")}</span>
         <Square className="size-[11px] fill-current" />
       </button>
     )
   }
-  if (mic.kind === "dictating") return <button type="button" className={cn(toolIcon, "text-bad hover:text-bad")} onClick={mic.stop} title="Stop dictation (Chrome uses Google's servers)"><Anim.Mic size={15} /></button>
+  if (mic.kind === "dictating") return <button type="button" className={cn(toolIcon, "text-bad hover:text-bad")} onClick={mic.stop} title="Stop dictation (Chrome uses Google's servers)"><Once icon={MicVoiceRippleIcon} size={15} isLoop /></button>
 
   const start = async () => {
     if (!isWhisper) {

@@ -20,6 +20,7 @@ import { UsageMeter } from "@/features/session/UsageMeter"
 import { isBusyNow, isStuckNow, reachOf } from "./reach"
 import { composerFill, composerFocus, sendMessage } from "./send"
 import { Anim } from "@/components/icons/animated"
+import { SendMark, useSendMoment } from "@/components/icona/marks"
 
 export { EFFORTS, MODELS, MODES, Pick } // New session uses them too
 
@@ -80,6 +81,7 @@ function Box({ id, card, bridge }: { id: string; card: Card | undefined; bridge:
   const box = useRef<HTMLDivElement>(null)
   const [isDrop, setDrop] = useState(false)
   const [isWaking, setWaking] = useState(false)
+  const sent = useSendMoment() // the paper plane when the message leaves
   const cursorAtEnd = () => {
     const el = box.current?.querySelector("textarea")
     if (el) (el.focus({ preventScroll: true }), el.setSelectionRange(el.value.length, el.value.length))
@@ -126,6 +128,7 @@ function Box({ id, card, bridge }: { id: string; card: Card | undefined; bridge:
           if (bridge?.isArchived) return void toast("Archived in Claude: unarchive it there (Open in Claude), then write")
           try {
             await sendMessage(id, await messageWith(id, text.trim(), files))
+            sent.play()
           } catch (err) {
             toast((err as Error).message || "Could not send")
             throw err // keeps what was typed
@@ -149,7 +152,7 @@ function Box({ id, card, bridge }: { id: string; card: Card | undefined; bridge:
           <button type="submit" disabled={!!bridge?.isArchived}
             title={bridge?.isArchived ? "Archived in Claude: unarchive it there to write" : "Send (↵) · new line (⇧↵)"}
             className="ml-1 inline-grid size-8 shrink-0 place-items-center rounded-[10px] border border-brand bg-brand text-brand-text transition-[filter,transform] duration-[120ms] hover:brightness-106 active:scale-[0.97] disabled:opacity-45">
-            <Anim.ArrowUp size={14} />
+            <SendMark moment={sent} size={14} idle={<Anim.ArrowUp size={14} />} />
           </button>
         </div>
       </PromptInput>

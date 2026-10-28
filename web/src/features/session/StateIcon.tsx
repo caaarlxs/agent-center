@@ -2,6 +2,8 @@
 // While Claude works, a ring fills with the turn's task list (4 of 6 steps:
 // two thirds); with no list, the ring turns (components.js StateIcon).
 import { AlertTriangle, Check, Clock, Eye, List, Lock, MessageCircleQuestion } from "lucide-react"
+import { useEffect, useRef } from "react"
+import { AskMark, useAskMoment } from "@/components/icona/marks"
 import type { Card } from "@/lib/api-types"
 import { cn } from "@/lib/utils"
 import { type StateKey, labelOf, stateOf } from "./state"
@@ -21,6 +23,7 @@ export const TONE: Record<StateKey, string> = {
 
 export function StateIcon({ card, size = 28 }: { card: Card; size?: number }) {
   const state = stateOf(card)
+  const rang = useStartsAsking(card.id, state)
   const label = labelOf(card)
   const p = card.progress
   const title = p ? `${label}: step ${Math.min(p.done + 1, p.total)} of ${p.total}${p.current ? ` · ${p.current}` : ""}` : label
@@ -40,7 +43,20 @@ export function StateIcon({ card, size = 28 }: { card: Card; size?: number }) {
   const Icon = ICON[state]
   return (
     <span className={cn("relative inline-flex flex-none items-center justify-center rounded-full", TONE[state])} style={{ width: size, height: size }} role="img" aria-label={title} title={title}>
-      <Icon style={{ width: Math.round(size * 0.55), height: Math.round(size * 0.55) }} />
+      <AskMark moment={rang} size={Math.round(size * 0.55)} idle={<Icon style={{ width: Math.round(size * 0.55), height: Math.round(size * 0.55) }} />} />
     </span>
   )
+}
+
+// The bell rings once when this session starts asking you; the same icon
+// showing another session (the panel on j/k) does not count.
+function useStartsAsking(id: string, state: StateKey) {
+  const rang = useAskMoment()
+  const last = useRef({ id, state })
+  useEffect(() => {
+    const was = last.current
+    last.current = { id, state }
+    if (was.id === id && was.state !== "asking" && state === "asking") rang.play()
+  }, [id, state, rang.play])
+  return rang
 }
