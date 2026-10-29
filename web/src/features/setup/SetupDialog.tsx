@@ -1,9 +1,10 @@
-// "Setup" (setup.js): what this Mac needs for the board, one step at a time.
-// A step changes something on the Mac only when you press it (lib/setup.ts
-// does it), so each one says what it changes. Then how the board tells you
-// things (notifications, the chime, the Mac reading the recap aloud) and
-// whether waiting cards shake, the code colours. It opens by itself while a required step is
-// missing.
+// Settings, in four sections. Setup (setup.js): what this Mac needs for the
+// board, one step at a time; a step changes something on the Mac only when
+// you press it (lib/setup.ts does it), so each one says what it changes.
+// Alerts: how the board tells you things (notifications, the chime, the Mac
+// reading the recap aloud, waiting cards that shake). Look: light or dark,
+// the canvas's animated background, the code colours. Help: the diagnostics
+// report. It opens by itself, on Setup, while a required step is missing.
 import { Check, ChevronLeft, ChevronRight } from "lucide-react"
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import { toast } from "sonner"
@@ -20,6 +21,7 @@ import { CopyMark, useCopyMoment } from "@/components/icona/marks"
 import { SwapText } from "@/components/watermelon/SwapText"
 import { Checklist } from "./Checklist"
 import { progressOf } from "./progress"
+import { animatedBackdrop } from "@/features/canvas/backdrop-pref"
 
 type Need = "Required" | "Recommended" | "Optional" | "Preference"
 type Meta = { title: string; need: Need; text: ReactNode; unavailable?: ReactNode; action?: string; outdated?: string; canTurnOff?: boolean }
@@ -231,14 +233,90 @@ function Appearance() {
   )
 }
 
-export function SetupDialog({ onClose }: { onClose: () => void }) {
-  // The last answer at once (kept since the board started), then a fresh one.
-  const status = setupStatus.use()
-  const [busy, setBusy] = useState<string | null>(null)
-  const [language, setLanguage] = useState(() => setupStatus.get()?.voiceLanguage ?? "auto")
+// One step of the Mac's setup: what it is, its state, and the button that does it.
+type StepProps = { step: Status["steps"][number]; status: Status; busy: string | null; language: string; setLanguage: (l: string) => void; run: (id: string, options?: Record<string, unknown>) => void }
+function SetupStep({ step, status, busy, language, setLanguage, run }: StepProps) {
+  const meta = STEPS[step.id]
+  if (!meta) return null
+  // Installed dictation keeps the language picker: a new choice applies at once.
+  const newLanguage = step.id === "whisper" && step.state === "done" && language !== status.voiceLanguage
+  const label = step.state === "outdated" ? meta.outdated : newLanguage ? "Save language" : step.state === "done" ? null : meta.action
+  const state = step.state === "done" ? <Done />
+    : step.state === "working" ? <span className="inline-flex items-center gap-[5px] text-brand"><Spinner className="size-3 border-[1.5px]" />{step.detail === "model" ? "Downloading the model" : "Installing"}</span>
+    : step.state === "outdated" ? <Todo label={`Version ${step.detail}`} /> : <Todo />
+  const actions = (label || (meta.canTurnOff && step.state === "done")) && (
+    <>
+      {label && <Button disabled={busy !== null || step.state === "working"} onClick={() => run(step.id, step.id === "whisper" ? { voiceLanguage: language } : {})}>{busy === step.id ? "One moment…" : label}</Button>}
+      {meta.canTurnOff && step.state === "done" && <Button variant="outline" disabled={busy !== null} onClick={() => run(step.id, { off: true })}>Turn off</Button>}
+    </>
+  )
+  return (
+    <Row title={meta.title} need={meta.need} state={state} isDone={step.state === "done"} actions={actions}>
+      <p className={text}>{step.state === "unavailable" && meta.unavailable ? meta.unavailable : meta.text}</p>
+      {step.id === "whisper" && (
+        <Field label="Dictation language">
+          <select className={select} value={language} onChange={e => setLanguage(e.target.value)}>{LANGUAGES.map(([v, name]) => <option key={v} value={v}>{name}</option>)}</select>
+        </Field>
+      )}
+      {step.id === "whisper" && step.state === "working" && step.progress != null && (
+        <div className="mt-2 h-1.5 overflow-hidden rounded-[3px] bg-hover"><i className="block h-full bg-brand transition-[width] duration-300" style={{ width: `${Math.round(step.progress * 100)}%` }} /></div>
+      )}
+      {step.id === "whisper" && step.detail && step.state === "missing" && <p className="mt-1.5 text-xs text-bad">{step.detail}</p>}
+      {step.id === "organizer" && step.state !== "done" && (
+        <details className="mt-2 text-xs">
+          <summary className="cursor-pointer text-text-muted">The note for CLAUDE.md</summary>
+          <pre className="mt-1.5 rounded-lg border border-line bg-side px-2.5 py-2 font-mono text-xs whitespace-pre-wrap">{status.organizerNote}</pre>
+        </details>
+      )}
+      {step.id === "github" && step.state !== "done" && <p className={text}>In the terminal: <code>{step.detail === "not-installed" ? "brew install gh && gh auth login" : "gh auth login"}</code></p>}
+    </Row>
+  )
+}
+
+// How the board tells you things: notifications, the chime, waiting cards that shake, the Mac reading aloud.
+function Alerts() {
   const isSound = sound.use() === "on"
   const notifyState = notify.use()
   const isShaking = shake.use() === "on"
+  return (
+    <>
+      <Row title="Notifications" need="Optional" isDone={notifyState === "on"} state={notifyState === "on" ? <Done /> : <Todo />}
+        actions={notifyState !== "on" && <Button onClick={toggleNotify}>Turn on</Button>}>
+        <p className={text}>A system notification when a session asks you something and you are in another window.</p>
+      </Row>
+      <Row title="Sound" need="Optional" isDone={isSound} state={isSound ? <Done label="On" /> : <Todo label="Off" />}
+        actions={<Button variant={isSound ? "outline" : "default"} onClick={toggleSound}>{isSound ? "Turn off" : "Turn on"}</Button>}>
+        <p className={text}>A short chime when a session finishes its turn or asks you something, also while you look at the board (notifications only reach you in another window). The speaker in the sidebar turns it on and off.</p>
+      </Row>
+      <Row title="Shake waiting cards" need="Preference" isDone={isShaking} state={isShaking ? <Done label="On" /> : <Todo label="Off" />}
+        actions={<Button variant={isShaking ? "outline" : "default"} onClick={() => shake.set(isShaking ? "off" : "on")}>{isShaking ? "Turn off" : "Turn on"}</Button>}>
+        <p className={text}>A card that asks you something or waits for your approval gives a short shake every few seconds, faster the longer it waits. Turned off, it stays still and only its colour and the time it has waited tell you.</p>
+      </Row>
+      <ReadAloud />
+    </>
+  )
+}
+
+const SECTIONS = [["setup", "Setup"], ["alerts", "Alerts"], ["look", "Look"], ["help", "Help"]] as const
+type Section = (typeof SECTIONS)[number][0]
+
+// The canvas's slow field of dots: off until you turn it on.
+function AnimatedBackground() {
+  const isOn = animatedBackdrop.use() === "on"
+  return (
+    <Row title="Animated background" need="Preference" isDone={isOn} state={isOn ? <Done label="On" /> : <Todo label="Off" />}
+      actions={<Button variant={isOn ? "outline" : "default"} onClick={() => animatedBackdrop.set(isOn ? "off" : "on")}>{isOn ? "Turn off" : "Turn on"}</Button>}>
+      <p className={text}>A field of dots that drifts very slowly behind the canvas, in the theme's colours. It stands still if you ask macOS for less motion.</p>
+    </Row>
+  )
+}
+
+export function SetupDialog({ onClose }: { onClose: () => void }) {
+  // The last answer at once (kept since the board started), then a fresh one.
+  const status = setupStatus.use()
+  const [section, setSection] = useState<Section>("setup")
+  const [busy, setBusy] = useState<string | null>(null)
+  const [language, setLanguage] = useState(() => setupStatus.get()?.voiceLanguage ?? "auto")
   const alive = useRef(true)
   const refresh = () =>
     setupStatus.load().then(res => alive.current && setLanguage(l => (l === "auto" ? res.voiceLanguage : l)), () => {})
@@ -264,70 +342,31 @@ export function SetupDialog({ onClose }: { onClose: () => void }) {
   return (
     <Dialog open onOpenChange={o => !o && onClose()}>
       <DialogContent showCloseButton={false} className="w-[min(640px,calc(100vw-32px))] gap-0">
-        <div className="mb-3.5 flex items-center justify-between gap-3">
-          <DialogTitle>Setup</DialogTitle>
-          {status && <Checklist {...progressOf(status.steps.filter(st => STEPS[st.id]).map(st => ({ need: STEPS[st.id].need, isDone: st.state === "done" })))} />}
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <DialogTitle>Settings</DialogTitle>
+          {status && section === "setup" && <Checklist {...progressOf(status.steps.filter(st => STEPS[st.id]).map(st => ({ need: STEPS[st.id].need, isDone: st.state === "done" })))} />}
         </div>
-        <p className="-mt-1 mb-3.5 text-[13px] text-text-muted">Each step changes something on this Mac and runs only when you press it. Sessions that were already open load the mod when they restart.</p>
+        <div role="tablist" aria-label="Sections" className="mb-3.5 inline-flex w-fit rounded-lg border border-line-strong bg-surface p-0.5">
+          {SECTIONS.map(([key, label]) => (
+            <button key={key} type="button" role="tab" aria-selected={section === key} onClick={() => setSection(key)}
+              className={cn("h-7 rounded-md px-3 text-[12.5px] font-[550] transition-colors", section === key ? "bg-text text-bg" : "text-text-muted hover:text-text")}>
+              {label}
+            </button>
+          ))}
+        </div>
+        {section === "setup" && <p className="-mt-1 mb-3.5 text-[13px] text-text-muted">Each step changes something on this Mac and runs only when you press it. Sessions that were already open load the mod when they restart.</p>}
         {!status && <p className="text-text-muted">Checking…</p>}
         <ol className="m-0 mb-3.5 flex max-h-[min(62vh,640px)] list-none flex-col gap-2 overflow-y-auto p-0">
-          {status?.steps.map(step => {
-            const meta = STEPS[step.id]
-            if (!meta) return null
-            // Installed dictation keeps the language picker: a new choice applies at once.
-            const newLanguage = step.id === "whisper" && step.state === "done" && language !== status.voiceLanguage
-            const label = step.state === "outdated" ? meta.outdated : newLanguage ? "Save language" : step.state === "done" ? null : meta.action
-            const state = step.state === "done" ? <Done />
-              : step.state === "working" ? <span className="inline-flex items-center gap-[5px] text-brand"><Spinner className="size-3 border-[1.5px]" />{step.detail === "model" ? "Downloading the model" : "Installing"}</span>
-              : step.state === "outdated" ? <Todo label={`Version ${step.detail}`} /> : <Todo />
-            const actions = (label || (meta.canTurnOff && step.state === "done")) && (
-              <>
-                {label && <Button disabled={busy !== null || step.state === "working"} onClick={() => run(step.id, step.id === "whisper" ? { voiceLanguage: language } : {})}>{busy === step.id ? "One moment…" : label}</Button>}
-                {meta.canTurnOff && step.state === "done" && <Button variant="outline" disabled={busy !== null} onClick={() => run(step.id, { off: true })}>Turn off</Button>}
-              </>
-            )
-            return (
-              <Row key={step.id} title={meta.title} need={meta.need} state={state} isDone={step.state === "done"} actions={actions}>
-                <p className={text}>{step.state === "unavailable" && meta.unavailable ? meta.unavailable : meta.text}</p>
-                {step.id === "whisper" && (
-                  <Field label="Dictation language">
-                    <select className={select} value={language} onChange={e => setLanguage(e.target.value)}>{LANGUAGES.map(([v, name]) => <option key={v} value={v}>{name}</option>)}</select>
-                  </Field>
-                )}
-                {step.id === "whisper" && step.state === "working" && step.progress != null && (
-                  <div className="mt-2 h-1.5 overflow-hidden rounded-[3px] bg-hover"><i className="block h-full bg-brand transition-[width] duration-300" style={{ width: `${Math.round(step.progress * 100)}%` }} /></div>
-                )}
-                {step.id === "whisper" && step.detail && step.state === "missing" && <p className="mt-1.5 text-xs text-bad">{step.detail}</p>}
-                {step.id === "organizer" && step.state !== "done" && (
-                  <details className="mt-2 text-xs">
-                    <summary className="cursor-pointer text-text-muted">The note for CLAUDE.md</summary>
-                    <pre className="mt-1.5 rounded-lg border border-line bg-side px-2.5 py-2 font-mono text-xs whitespace-pre-wrap">{status.organizerNote}</pre>
-                  </details>
-                )}
-                {step.id === "github" && step.state !== "done" && <p className={text}>In the terminal: <code>{step.detail === "not-installed" ? "brew install gh && gh auth login" : "gh auth login"}</code></p>}
-              </Row>
-            )
-          })}
-          {status && (
+          {section === "setup" && status?.steps.map(step => <SetupStep key={step.id} step={step} status={status} busy={busy} language={language} setLanguage={setLanguage} run={run} />)}
+          {status && section === "alerts" && <Alerts />}
+          {section === "look" && (
             <>
-              <Row title="Notifications" need="Optional" isDone={notifyState === "on"} state={notifyState === "on" ? <Done /> : <Todo />}
-                actions={notifyState !== "on" && <Button onClick={toggleNotify}>Turn on</Button>}>
-                <p className={text}>A system notification when a session asks you something and you are in another window.</p>
-              </Row>
-              <Row title="Sound" need="Optional" isDone={isSound} state={isSound ? <Done label="On" /> : <Todo label="Off" />}
-                actions={<Button variant={isSound ? "outline" : "default"} onClick={toggleSound}>{isSound ? "Turn off" : "Turn on"}</Button>}>
-                <p className={text}>A short chime when a session finishes its turn or asks you something, also while you look at the board (notifications only reach you in another window). The speaker in the sidebar turns it on and off.</p>
-              </Row>
-              <Row title="Shake waiting cards" need="Preference" isDone={isShaking} state={isShaking ? <Done label="On" /> : <Todo label="Off" />}
-                actions={<Button variant={isShaking ? "outline" : "default"} onClick={() => shake.set(isShaking ? "off" : "on")}>{isShaking ? "Turn off" : "Turn on"}</Button>}>
-                <p className={text}>A card that asks you something or waits for your approval gives a short shake every few seconds, faster the longer it waits. Turned off, it stays still and only its colour and the time it has waited tell you.</p>
-              </Row>
               <Appearance />
+              <AnimatedBackground />
               <CodeColours />
-              <ReadAloud />
-              <Diagnostics />
             </>
           )}
+          {section === "help" && <Diagnostics />}
         </ol>
         <div className="mt-1 flex items-center gap-2">
           <span className="flex-1 text-xs text-text-muted">{status && !status.isReady ? "Required steps are missing: without them the board cannot see or answer the sessions." : ""}</span>

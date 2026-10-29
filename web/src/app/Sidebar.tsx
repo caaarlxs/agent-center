@@ -253,12 +253,12 @@ export function Sidebar() {
                 {isSound ? <Volume2 className="size-[15px]" /> : <VolumeX className="size-[15px]" />}
               </button>
               <button className={footBtn(speechMode !== "off")} onClick={toggleSpeech}
-                title={speechMode !== "off" ? `Read aloud on (${speechMode === "all" ? "every session" : "sessions with the bell"}): the Mac says what a session did when its turn ends. Click to turn it off` : "Read aloud what a session did when its turn ends (voice and speed in Setup)"}>
+                title={speechMode !== "off" ? `Read aloud on (${speechMode === "all" ? "every session" : "sessions with the bell"}): the Mac says what a session did when its turn ends. Click to turn it off` : "Read aloud what a session did when its turn ends (voice and speed in Settings › Alerts)"}>
                 <Anim.AudioLines size={15} />
               </button>
             </>
           )}
-          <button className={footBtn()} onClick={() => openDialog({ kind: "setup" })} title="Setup: hook, mod, dictation, tasks…"><Anim.Settings size={15} /></button>
+          <button className={footBtn()} onClick={() => openDialog({ kind: "setup" })} title="Settings: setup, alerts, look"><Anim.Settings size={15} /></button>
           {!isSlim && (
             <button className={footBtn()} onClick={() => openDialog({ kind: "help" })} title="Keyboard shortcuts (?)">
               <Anim.Keyboard size={15} /><Kbd>?</Kbd>
