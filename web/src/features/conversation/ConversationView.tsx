@@ -23,7 +23,7 @@ import { Orb } from "@yogesharc/thinking-orbs"
 import { useNow } from "@/lib/now"
 import { cn } from "@/lib/utils"
 import { openDialog } from "@/app/open-dialog"
-import { openSession, showFile, showTab } from "@/app/open-session"
+import { openSession, showChange, showFile, showTab } from "@/app/open-session"
 import { fileName, sentFiles } from "@/features/prompt/files"
 import { ago } from "@/features/session/state"
 import { answer, launch, permit } from "@/features/session/actions"
@@ -105,19 +105,6 @@ function FileChip({ sessionId, path }: { sessionId: string; path: string }) {
   )
 }
 
-// A changed file in the Changes tab, once it has drawn; the file itself when
-// the diff does not show it (committed since, or outside the repository).
-function showChange(path: string) {
-  showTab("changes")
-  let tries = 0
-  const find = () => {
-    const at = [...document.querySelectorAll<HTMLElement>("section[id^='df-']")].find(s => path.endsWith(`/${s.id.slice(3)}`))
-    if (at) return at.scrollIntoView({ block: "start", behavior: "smooth" })
-    if (++tries < 15) setTimeout(find, 200)
-    else showFile(path)
-  }
-  setTimeout(find, 100)
-}
 
 // The files a turn changed (the app's "N files changed" box): a click on one
 // shows its diff; "See all" opens the Changes tab.

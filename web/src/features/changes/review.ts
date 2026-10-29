@@ -12,3 +12,8 @@ export function reviewMessage(comments: LineComment[], branch: string | null): s
     .join("\n\n")
   return `Comments on your changes${branch ? ` (branch ${branch})` : ""}:\n\n${body}\n\nApply these comments and tell me what you changed.`
 }
+
+// The changed file a path from the conversation names: the path itself, or one
+// that ends with it (the conversation's paths are absolute, the diff's relative).
+export const changeFor = <F extends { path: string }>(files: F[], path: string): F | undefined =>
+  files.find(f => f.path === path || path.endsWith(`/${f.path}`))

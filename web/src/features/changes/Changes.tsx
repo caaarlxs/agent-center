@@ -16,11 +16,11 @@ import type { Changes as ChangesData, FileDiff } from "@/lib/api-types"
 import { type Tokens, ensureMonacoLang, useShikiTheme, useTokens } from "@/lib/code-theme"
 import { useMonaco, useMonacoTheme } from "@/lib/monaco"
 import { cn } from "@/lib/utils"
-import { showTab } from "@/app/open-session"
+import { doneWithFile, showFile, showTab } from "@/app/open-session"
 import { sendMessage } from "@/features/conversation/send"
 import { SideFlyout, useSideRoom } from "@/features/session/SideFlyout"
 import { ChangedTree } from "./ChangedTree"
-import { type LineComment, keyOf, reviewMessage } from "./review"
+import { type LineComment, changeFor, keyOf, reviewMessage } from "./review"
 import { Anim } from "@/components/icons/animated"
 
 const FOLLOW_MS = 5000
@@ -150,12 +150,14 @@ function FileBlock({ file, comments, editing, setEditing, save, remove }: {
 
 // Monaco's diff view of the chosen file: where the branch started on the
 // left, as it is now on the right; the tree of changed files beside it.
-function SideBySide({ id, files }: { id: string; files: FileDiff[] }) {
+function SideBySide({ id, files, want }: { id: string; files: FileDiff[]; want: { path: string } | null }) {
   const hasSideRoom = useSideRoom()
   const monaco = useMonaco()
   const { theme, isPlain } = useMonacoTheme()
   const shown = files.filter(f => !f.binary && !f.collapsed)
-  const [chosen, setChosen] = useState<FileDiff | null>(shown[0] ?? null)
+  const wanted = () => shown.find(f => f.path === want?.path) ?? shown[0] ?? null
+  const [chosen, setChosen] = useState<FileDiff | null>(wanted)
+  useEffect(() => void (want && setChosen(wanted())), [want])
   const [versions, setVersions] = useState<{ original: string; modified: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
   // Its grammar, the first time a file of that language shows.
@@ -191,7 +193,7 @@ function SideBySide({ id, files }: { id: string; files: FileDiff[] }) {
 
 const seg = (isOn: boolean) => cn("h-6 rounded-md px-2.5 text-xs text-text-muted", isOn && "bg-surface text-text shadow-card")
 
-export function Changes({ id }: { id: string }) {
+export function Changes({ id, file }: { id: string; file?: string }) {
   const hasSideRoom = useSideRoom()
   const { data, error, read } = useChanges(id)
   const view = changesView.use()
@@ -200,6 +202,18 @@ export function Changes({ id }: { id: string }) {
   const [editing, setEditing] = useState<string | null>(null)
   const [picked, setPicked] = useState<string | null>(null)
   const [isSending, setSending] = useState(false)
+  // A file from the conversation: shown once the diff is in, or in Files when the diff lacks it.
+  const [want, setWant] = useState<{ path: string } | null>(null) // a new one each time, so the same file shows again
+  useEffect(() => {
+    if (!file || !data) return
+    const f = changeFor(data.files, file)
+    if (!f) return void showFile(file)
+    setPicked(f.path)
+    setWant({ path: f.path })
+    doneWithFile()
+    // A jump to a new view, maybe far down: at once, not a long glide.
+    setTimeout(() => document.getElementById(`df-${f.path}`)?.scrollIntoView({ block: "start" }), 50)
+  }, [file, data])
   const notes = useMemo(() => Object.values(comments).reduce<Record<string, number>>((n, c) => ((n[c.path] = (n[c.path] ?? 0) + 1), n), {}), [comments])
   if (error && !data) return <p className="grid flex-1 place-items-center p-8 text-text-muted">{error}</p>
   if (!data) return <p className="grid flex-1 place-items-center p-8"><span className="spinner" /></p>
@@ -240,7 +254,7 @@ export function Changes({ id }: { id: string }) {
         </span>
         <Button variant="ghost" onClick={() => void read()}>Refresh</Button>
       </div>
-      {view === "side" && n > 0 && <SideBySide key={data.files.map(f => f.path).join("|")} id={id} files={data.files} />}
+      {view === "side" && n > 0 && <SideBySide key={data.files.map(f => f.path).join("|")} id={id} files={data.files} want={want} />}
       {data.truncated && <p className="m-0 px-3 py-2.5 text-xs text-text-muted">The diff is very large: only the start is shown.</p>}
       {n === 0 && <p className="grid flex-1 place-items-center p-8 text-text-muted">No changes against {data.base ?? "where the session started"}.</p>}
       {view === "lines" && n > 0 && (

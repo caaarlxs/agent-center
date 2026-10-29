@@ -1,5 +1,5 @@
-import { expect, test } from "vitest"
-import { keyOf, reviewMessage } from "./review"
+import { describe, expect, it, test } from "vitest"
+import { changeFor, keyOf, reviewMessage } from "./review"
 
 test("comments go as one message, by file and line, deleted lines marked", () => {
   const msg = reviewMessage(
@@ -19,4 +19,15 @@ test("comments go as one message, by file and line, deleted lines marked", () =>
 
 test("a comment's key names its file, side and line", () => {
   expect(keyOf({ path: "a.ts", side: "new", no: 4 })).toBe("a.ts:new:4")
+})
+
+describe("changeFor", () => {
+  const files = [{ path: "src/a.ts" }, { path: "b.md" }]
+  it("finds the changed file a conversation path names", () => {
+    expect(changeFor(files, "/Users/x/repo/src/a.ts")).toEqual({ path: "src/a.ts" })
+    expect(changeFor(files, "b.md")).toEqual({ path: "b.md" })
+  })
+  it("finds none for a file the diff lacks", () => {
+    expect(changeFor(files, "/Users/x/repo/src/xa.ts")).toBeUndefined()
+  })
 })

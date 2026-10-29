@@ -260,7 +260,7 @@ export function SessionPanel({ id, tab: asked, file }: { id: string; tab: Tab; f
       }))} />
       <div role="tabpanel" className="flex min-h-0 flex-1 flex-col">
         {tab === "chat" && <Guard key={id} where="chat"><Chat id={id} card={card} /></Guard>}
-        {tab === "changes" && <Guard key={id} where="changes"><Changes id={id} /></Guard>}
+        {tab === "changes" && <Guard key={id} where="changes"><Changes id={id} file={file} /></Guard>}
         {tab === "prs" && <Guard key={id} where="prs"><Prs id={id} /></Guard>}
         {tab === "tasks" && <Guard key={id} where="tasks"><Tasks id={id} /></Guard>}
         {tab === "files" && <Guard key={id} where="files"><Files id={id} file={file} /></Guard>}

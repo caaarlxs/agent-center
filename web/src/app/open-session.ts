@@ -1,7 +1,7 @@
 // Which session the panel shows, if any, and which of its views: one value
 // for the whole page, set by a click on a card, cleared by Esc or the close
 // button. Changes, Code and Files are workspaces: they take the whole width.
-// file: a file to show in Files (a link in the conversation).
+// file: a file to show in Files or Changes (a link in the conversation).
 import { useSyncExternalStore } from "react"
 import { focusComposer } from "@/features/conversation/send"
 
@@ -27,6 +27,10 @@ export const openNow = () => open
 export const showTab = (tab: Tab) => open && set({ id: open.id, tab })
 // One of the open session's files, in its Files tab.
 export const showFile = (file: string) => open && set({ id: open.id, tab: "files", file })
+// One of its changed files, in Changes; that tab sends it on to Files when the diff lacks it.
+export const showChange = (file: string) => open && set({ id: open.id, tab: "changes", file })
+// The file was shown: the next click on the same one shows it again.
+export const doneWithFile = () => open?.file && set({ id: open.id, tab: open.tab })
 
 export function useOpenSession(): Open {
   return useSyncExternalStore(
