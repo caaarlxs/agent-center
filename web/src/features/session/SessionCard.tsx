@@ -11,7 +11,7 @@ import type { Card } from "@/lib/api-types"
 import { cn } from "@/lib/utils"
 import { menu, shake } from "@/features/board/state"
 import { useIsDots } from "@/lib/board-style"
-import { Actions, Context, Replies, Signals, tintOf } from "./parts"
+import { Actions, Context, Corner, Replies, Signals, tintOf } from "./parts"
 import { StateIcon } from "./StateIcon"
 import { ageOf, repoDot, stateOf, urgencyOf } from "./state"
 
@@ -90,13 +90,14 @@ function SessionCardView({ card, now, level = "near", unscale = 1, isSelected = 
             isDone && !ring && !isDragging && "shadow-none [&>*:not(.card-bar)]:opacity-62",
             isDragging && "cursor-grabbing",
           )}>
-          {state === "working" && <i aria-hidden className="pointer-events-none absolute -inset-[3px] animate-breathe rounded-[14px] shadow-[0_0_0_2px_color-mix(in_srgb,var(--work)_55%,transparent),0_0_22px_color-mix(in_srgb,var(--work)_35%,transparent)]" />}
+          <Corner state={state} />
+          {state === "working" && <i aria-hidden className="work-glow pointer-events-none absolute -inset-[3px] animate-breathe rounded-[14px] shadow-[0_0_0_2px_color-mix(in_srgb,var(--work)_55%,transparent),0_0_22px_color-mix(in_srgb,var(--work)_35%,transparent)]" />}
           <div className={cn("flex min-w-0 gap-[9px]", isDots ? "items-center" : "items-start")}>
             <span className={cn(!isDots && "-mt-px")}><StateIcon card={card} size={Math.round(big(isDots ? 34 : 22, 1.8))} /></span>
             <span title={card.title} className={cn("line-clamp-2 min-w-0 flex-1 text-sm leading-[1.3] [overflow-wrap:anywhere]", isDone ? "font-[550]" : "font-semibold")}
               style={far ? { fontSize: big(14, 2), lineHeight: 1.2 } : undefined}>{card.title}</span>
             {card.pinned && <span className="ml-auto flex-none text-ask" title="Pinned"><Star className="size-3" /></span>}
-            {card.isUnread && <i className="mt-1.5 size-[7px] flex-none rounded-full bg-brand" title="New since you last looked" />}
+            {card.isUnread && <i className="unread-dot mt-1.5 size-[7px] flex-none rounded-full bg-brand" title="New since you last looked" />}
           </div>
           {!isDone && (!far || card.column === "asking") && (
             <Context card={card} lines={level === "mid" ? 1 : 2} className="text-[12.5px] leading-[1.4]" />
@@ -104,9 +105,9 @@ function SessionCardView({ card, now, level = "near", unscale = 1, isSelected = 
           {!isDone && !far && <Replies card={card} isSmall />}
           <footer className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px] text-faint" style={far ? { fontSize: big(11.5, 1.8) } : undefined}>
             <span className="inline-flex min-w-0 items-center gap-[5px] truncate" title={card.branch ? `${card.repo} · ${card.branch}` : card.repo}>
-              <i className="size-[7px] flex-none rounded-[2px]" style={{ background: repoDot(card.repo) }} />{card.repo}
+              <i className="repo-dot size-[7px] flex-none rounded-[2px]" style={{ background: repoDot(card.repo) }} />{card.repo}
             </span>
-            {!far && <span className="flex-none whitespace-nowrap">{ageOf(card, now)}</span>}
+            {!far && <span className="dot-time flex-none whitespace-nowrap">{ageOf(card, now)}</span>}
             {!isDone && !far && <Signals card={card} now={now} isMid={level === "mid"} />}
           </footer>
           {!far && (
@@ -138,9 +139,9 @@ function Peek({ card, now }: { card: Card; now: number }) {
       {text && <p className={cn("line-clamp-[8] [overflow-wrap:anywhere]", card.column === "asking" && "text-ask")}>{text}</p>}
       {p && card.column === "working" && <p className="text-[11.5px] text-text-muted">Step {Math.min(p.done + 1, p.total)} of {p.total}</p>}
       <footer className="flex min-w-0 items-center gap-2 text-[11.5px] text-faint">
-        <span className="inline-flex items-center gap-[5px]"><i className="size-[7px] rounded-[2px]" style={{ background: repoDot(card.repo) }} />{card.repo}</span>
+        <span className="inline-flex items-center gap-[5px]"><i className="repo-dot size-[7px] rounded-[2px]" style={{ background: repoDot(card.repo) }} />{card.repo}</span>
         {card.branch && <span className="min-w-0 truncate font-mono">{card.branch}</span>}
-        <span className="flex-none">{ageOf(card, now)}</span>
+        <span className="dot-time flex-none">{ageOf(card, now)}</span>
       </footer>
     </HoverCardContent>
   )

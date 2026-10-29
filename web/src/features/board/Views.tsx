@@ -12,9 +12,9 @@ import { load, keep } from "@/lib/store"
 import { cn } from "@/lib/utils"
 import { openSession, useOpenSession } from "@/app/open-session"
 import { repoFilter } from "@/app/view-state"
-import { Actions, Context, Meta, NewBadge, tintOf } from "@/features/session/parts"
+import { Actions, Context, Corner, Meta, NewBadge, tintOf } from "@/features/session/parts"
 import { StateIcon } from "@/features/session/StateIcon"
-import { ageOf, hueOf, repoDot, repoText, urgencyOf } from "@/features/session/state"
+import { ageOf, hueOf, repoDot, repoText, stateOf, urgencyOf } from "@/features/session/state"
 import { archiveAll, boardSteps, placeInTier } from "./act"
 import { COLUMN, type ColumnKey, type Step, TONE_DOT, byPin, columnsShown, dropAction, inboxGroups, runsOf } from "./columns"
 import { type View, dragging, drawingZone, groupBy, menu, noteAsked, selected, showDone } from "./state"
@@ -52,7 +52,7 @@ function RepoIcon({ name, size = 20 }: { name: string; size?: number }) {
 
 const RepoTag = ({ name }: { name: string }) => (
   <span className="inline-flex items-center gap-1.5 text-xs font-semibold whitespace-nowrap" style={{ color: repoText(name) }}>
-    <i className="size-[7px] rounded-[2px]" style={{ background: repoDot(name) }} />{name}
+    <i className="repo-dot size-[7px] rounded-[2px]" style={{ background: repoDot(name) }} />{name}
   </span>
 )
 
@@ -84,6 +84,7 @@ export function BoardCard({ card, inStack = false }: { card: Card; inStack?: boo
       onDragEnd={() => dragging.set(null)}
       className={cn("group/card relative flex cursor-pointer flex-col gap-2 rounded-[10px] border border-line bg-surface px-3 pt-3 pb-[11px] shadow-[0_1px_1px_rgb(0_0_0/0.02)] transition-[border-color,box-shadow] duration-100 active:cursor-grabbing",
         "hover:border-line-strong hover:shadow-card", isMenuOpen && "z-5")}>
+      <Corner state={stateOf(card)} />
       <header className="flex min-w-0 items-start gap-2.5">
         <StateIcon card={card} size={isDots ? 36 : 30} />
         <div className="flex min-w-0 flex-1 flex-col gap-[3px]">
@@ -91,7 +92,7 @@ export function BoardCard({ card, inStack = false }: { card: Card; inStack?: boo
           <div className="flex min-w-0 items-center gap-2 text-xs">
             {!inStack && <RepoTag name={card.repo} />}
             {card.branch && <span className="min-w-0 truncate font-mono text-[11.5px] text-text-muted" title={card.branch}>{card.branch}</span>}
-            <span className={cn("ml-auto text-xs whitespace-nowrap text-faint tabular-nums", urgency && URGENT_AGE[urgency])}
+            <span className={cn("dot-time ml-auto text-xs whitespace-nowrap text-faint tabular-nums", urgency && URGENT_AGE[urgency])}
               title={card.waitingSince ? "How long it has been waiting for you" : new Date(card.lastActivity ?? card.updatedAt).toLocaleString("en-GB")}>{ageOf(card, now)}</span>
           </div>
         </div>
@@ -268,7 +269,7 @@ function Row({ card }: { card: Card }) {
         <Context card={card} lines={1} />
       </div>
       <Meta card={card} now={now} className="max-w-[42cqi] flex-nowrap justify-end overflow-hidden @max-[760px]:hidden" />
-      <span className={cn("text-xs whitespace-nowrap text-faint tabular-nums", urgency && URGENT_AGE[urgency], ring && "@max-[760px]:hidden")}>{ageOf(card, now)}</span>
+      <span className={cn("dot-time text-xs whitespace-nowrap text-faint tabular-nums", urgency && URGENT_AGE[urgency], ring && "@max-[760px]:hidden")}>{ageOf(card, now)}</span>
       <Actions card={card}
         className={cn("transition-opacity duration-120",
           ring || isMenuOpen ? "opacity-100" : "opacity-0 group-focus-within/row:opacity-100 group-hover/row:opacity-100 @max-[760px]:hidden")} />

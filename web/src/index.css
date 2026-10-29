@@ -376,3 +376,17 @@ html[data-theme-switch]::view-transition-new(root) { animation: theme-curtain 60
   background-image: radial-gradient(color-mix(in srgb, var(--note) 38%, transparent) 1px, transparent 1.3px); background-size: 7px 7px;
 }
 [data-style=dots] .note-box > header { background: transparent !important; }
+/* Cards: a corner of dots in their state's colour (working, asking, approval), under the content. */
+.card-corner { display: none; }
+[data-style=dots] .card-corner {
+  display: block; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none;
+  background-image: radial-gradient(color-mix(in srgb, var(--k) 55%, transparent) 1.1px, transparent 1.5px); background-size: 7px 7px;
+  mask: radial-gradient(circle at 100% 0, #000, transparent 55%);
+}
+[data-style=dots] article:has(> .card-corner) { isolation: isolate; }
+/* A working card: a dotted frame that breathes, not a green glow. */
+[data-style=dots] .work-glow { box-shadow: none !important; border: 1.5px dotted var(--work); }
+/* Times in the dot-matrix face; the repo's mark round; unread, a 2 × 2 of dots. */
+[data-style=dots] .dot-time { font-family: "Doto Variable", var(--font-mono); font-weight: 800; text-transform: uppercase; letter-spacing: 0.03em; }
+[data-style=dots] .repo-dot { border-radius: 50% !important; }
+[data-style=dots] .unread-dot { width: 8px; height: 8px; border-radius: 0; background: radial-gradient(circle closest-side, var(--brand) 85%, transparent) 0 0 / 4px 4px !important; }

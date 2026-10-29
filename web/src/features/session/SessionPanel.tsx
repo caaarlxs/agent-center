@@ -81,7 +81,7 @@ export function StatusChip({ card }: { card: Card }) {
 export function RepoTag({ name }: { name: string }) {
   return (
     <span className="inline-flex items-center gap-1.5 text-xs font-semibold whitespace-nowrap" style={{ color: repoText(name) }}>
-      <i className="size-[7px] rounded-[2px]" style={{ background: repoDot(name) }} />{name}
+      <i className="repo-dot size-[7px] rounded-[2px]" style={{ background: repoDot(name) }} />{name}
     </span>
   )
 }

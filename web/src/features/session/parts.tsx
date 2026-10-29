@@ -20,7 +20,7 @@ import { composerFill, takeBack } from "@/features/conversation/send"
 import { boardAct, openInClaude, stopSession } from "@/features/board/act"
 import { menu, toggleMenu } from "@/features/board/state"
 import { answer, permit, sendText } from "./actions"
-import { ago } from "./state"
+import { type StateKey, ago } from "./state"
 import { Num } from "@/components/common/Num"
 import { Anim } from "@/components/icons/animated"
 
@@ -428,4 +428,14 @@ export function Actions({ card, isCompact, className }: { card: Card; isCompact?
       )}
     </div>
   )
+}
+
+// ---------- the Dots style's corner ----------
+
+// A card that works or waits for you: a corner of dots in its colour, fading
+// toward the middle (index.css: .card-corner). Shown in the Dots style only.
+const CORNER: Partial<Record<StateKey, string>> = { working: "var(--work)", asking: "var(--ask)", permission: "var(--bad)" }
+export function Corner({ state }: { state: StateKey }) {
+  const color = CORNER[state]
+  return color ? <i aria-hidden className="card-corner" style={{ "--k": color } as React.CSSProperties} /> : null
 }
