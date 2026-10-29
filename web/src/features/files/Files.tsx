@@ -15,6 +15,7 @@ import { useMonaco, useMonacoTheme } from "@/lib/monaco"
 import { useNow } from "@/lib/now"
 import { cn } from "@/lib/utils"
 import { FileIcon } from "@/components/common/FileIcon"
+import { showImage } from "@/components/common/Lightbox"
 import { Markdown, copyText } from "@/features/conversation/Markdown"
 import { ago } from "@/features/session/state"
 import { SideFlyout, useSideRoom } from "@/features/session/SideFlyout"
@@ -60,7 +61,7 @@ function Body({ id, file, info, isSource }: { id: string; file: Listed; info: In
     case "code":
       return code
     case "image":
-      return <img src={fileUrl} alt={file.name} className="mx-auto my-3.5 block max-w-full rounded-lg" />
+      return <img src={fileUrl} alt={file.name} onClick={() => showImage(fileUrl)} className="mx-auto my-3.5 block max-w-full cursor-zoom-in rounded-lg" />
     case "video":
       return <video src={fileUrl} controls className="mx-auto my-3.5 block max-w-full rounded-lg" />
     case "audio":

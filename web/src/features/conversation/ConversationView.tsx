@@ -18,6 +18,7 @@ import type { Bridge, Card, Permission, Snapshot, SuggestionState } from "@/lib/
 import { bytesText, clock, memText, MEMORY_WARN } from "@/lib/format"
 import { useLive } from "@/lib/live"
 import { Shimmer } from "@/components/ai-elements/shimmer"
+import { showImage } from "@/components/common/Lightbox"
 import { Orb } from "@yogesharc/thinking-orbs"
 import { useNow } from "@/lib/now"
 import { cn } from "@/lib/utils"
@@ -69,9 +70,9 @@ function Bubble({ text: raw, isPending }: { text: string; isPending?: boolean })
       {images.length > 0 && (
         <div className="mt-1.5 flex flex-wrap gap-1.5">
           {images.map(rel => (
-            <a key={rel} href={`/api/uploads/${rel}`} target="_blank" rel="noreferrer" title="Open the image">
+            <button key={rel} type="button" onClick={() => showImage(`/api/uploads/${rel}`)} title="See it large" className="cursor-zoom-in">
               <img src={`/api/uploads/${rel}`} alt="" loading="lazy" className="block max-h-40 max-w-[220px] rounded-lg border border-line" />
-            </a>
+            </button>
           ))}
         </div>
       )}

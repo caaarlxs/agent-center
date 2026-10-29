@@ -33,6 +33,7 @@ import { Sidebar } from "./Sidebar"
 import { VIEW_NAME, focusCard, repoFilter, sideOpen, useShownView, view, type View } from "./view-state"
 import { Num } from "@/components/common/Num"
 import { Anim } from "@/components/icons/animated"
+import { Lightbox } from "@/components/common/Lightbox"
 
 // The design system's page (/design), with every example: never in the board's download.
 const DesignSystem = lazyView(() => import("@/design/DesignSystem").then(m => m.DesignSystem))
@@ -44,6 +45,7 @@ export function App() {
       <TooltipProvider delayDuration={300}>
         <Board />
         <Toaster />
+        <Lightbox />
       </TooltipProvider>
     </MotionConfig>
   )
