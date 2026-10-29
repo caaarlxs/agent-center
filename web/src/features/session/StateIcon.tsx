@@ -13,6 +13,9 @@ import { type OrbState, ThinkingOrb } from "thinking-orbs"
 import { orbOf } from "@/features/conversation/session-events"
 
 const ORB_FROM = 26 // smaller, the orb's dots blur: the plain icon
+// The orb stands alone, no coloured face behind it: its dots read best so.
+const orbBox = "relative inline-flex flex-none items-center justify-center"
+const ORB_FILL = 0.82
 const REST_ORB: Partial<Record<StateKey, { orb: OrbState; moves: boolean }>> = {
   asking: { orb: "listening", moves: true },
   permission: { orb: "listening", moves: true },
@@ -28,7 +31,7 @@ export const TONE: Record<StateKey, string> = {
   asking: "text-ask bg-ask-soft",
   permission: "text-bad bg-bad-soft",
   review: "text-review bg-review-soft",
-  working: "text-work bg-work-soft",
+  working: "text-work",
   pending: "text-[color-mix(in_srgb,var(--review)_55%,var(--faint))] bg-hover",
   parked: "text-faint bg-hover",
   done: "text-work bg-work-soft",
@@ -41,12 +44,12 @@ export function StateIcon({ card, size = 28 }: { card: Card; size?: number }) {
   const label = labelOf(card)
   const p = card.progress
   const title = p ? `${label}: step ${Math.min(p.done + 1, p.total)} of ${p.total}${p.current ? ` · ${p.current}` : ""}` : label
-  // Working: the orb shows what it does now, on its green (the card breathes
-  // around it); the step it is on, in the title.
+  // Working: the orb shows what it does now (the card breathes green around
+  // it); the step it is on, in the title.
   if (state === "working" && size >= ORB_FROM) {
     return (
-      <span className={cn("relative inline-flex flex-none items-center justify-center rounded-full", TONE.working)} style={{ width: size, height: size }} role="img" aria-label={title} title={title}>
-        <ThinkingOrb state={orbOf(card.doing)} size={20} style={{ width: size * 0.68, height: size * 0.68 }} aria-hidden />
+      <span className={orbBox} style={{ width: size, height: size }} role="img" aria-label={title} title={title}>
+        <ThinkingOrb state={orbOf(card.doing)} size={20} style={{ width: size * ORB_FILL, height: size * ORB_FILL }} aria-hidden />
       </span>
     )
   }
@@ -63,13 +66,13 @@ export function StateIcon({ card, size = 28 }: { card: Card; size?: number }) {
       </span>
     )
   }
-  // Every other state but done: an orb on its colour. Only what asks for you
+  // Every other state but done: its orb. Only what asks for you
   // moves (a question, an approval); what rests stands still.
   const rest = REST_ORB[state]
   if (rest && size >= ORB_FROM) {
     return (
-      <span className={cn("relative inline-flex flex-none items-center justify-center rounded-full", TONE[state])} style={{ width: size, height: size }} role="img" aria-label={title} title={title}>
-        <ThinkingOrb state={rest.orb} size={20} paused={!rest.moves} style={{ width: size * 0.68, height: size * 0.68 }} aria-hidden />
+      <span className={orbBox} style={{ width: size, height: size }} role="img" aria-label={title} title={title}>
+        <ThinkingOrb state={rest.orb} size={20} paused={!rest.moves} style={{ width: size * ORB_FILL, height: size * ORB_FILL }} aria-hidden />
       </span>
     )
   }
