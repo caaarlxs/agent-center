@@ -346,7 +346,7 @@ html[data-theme-switch]::view-transition-new(root) { animation: theme-curtain 60
 @media (prefers-reduced-motion: reduce) { .travel-beam, .travel-beam-seg { animation: none; } }
 /* While you dictate the voice glow speaks: the box keeps a quiet border. */
 .composer-box.listening [data-slot=input-group], .composer-box.listening [data-slot=input-group]:focus-within { border-color: var(--line-strong); box-shadow: none; }
-.composer-box textarea { font-size: 13.5px; line-height: 1.5; padding: 11px 14px 4px; min-height: 44px; max-height: 220px; field-sizing: content; }
+.composer-box textarea { font-size: 13.5px; line-height: 1.5; padding: 11px 14px 4px; min-height: 96px; max-height: 220px; field-sizing: content; }
 .composer-box textarea::placeholder { color: var(--faint); }
 
 /* The board's spinner: a brand ring with a gap (styles.css:1141). */

@@ -15,7 +15,7 @@ import { persistedStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
 import { AttachButton, MicButton, PickedFiles, fileErrors } from "@/features/prompt/PromptExtras"
 import { micLive } from "@/features/prompt/voice"
-import { TravelBeam } from "@/features/prompt/TravelBeam"
+import { BorderBeam } from "border-beam"
 import { theme } from "@/lib/theme"
 import { VoiceBeam } from "voice-glow"
 import { modelKey, modelNow } from "@/features/prompt/Settings"
@@ -151,9 +151,9 @@ function Box({ id, card, bridge }: { id: string; card: Card | undefined; bridge:
       onDragEnter={e => e.dataTransfer.types.includes("Files") && setDrop(true)}
       onDragLeave={e => !e.currentTarget.contains(e.relatedTarget as Node) && setDrop(false)}
       onDrop={() => setDrop(false)}>
-      {/* You speak: the glow follows your voice. Whisper writes it out: a light travels round the box. */}
+      {/* You speak: the glow follows your voice. Whisper writes it out: border-beam's glow runs round the box. */}
       <VoiceBeam stream={mic.stream ?? undefined} active={mic.isOn && !mic.writingSince} theme={mode} borderRadius={14} idle={mic.stream ? undefined : 0.35}>
-      <div className="relative">
+      <BorderBeam size="md" active={!!mic.writingSince} theme={mode} borderRadius={14}>
       <PromptInput
         multiple maxFiles={MAX_FILES} maxFileSize={MAX_BYTES} onError={fileErrors}
         onSubmit={async ({ text, files }) => {
@@ -190,8 +190,7 @@ function Box({ id, card, bridge }: { id: string; card: Card | undefined; bridge:
           </button>
         </div>
       </PromptInput>
-      {mic.writingSince && <TravelBeam radius={14} />}
-      </div>
+      </BorderBeam>
       </VoiceBeam>
       <div className="flex min-w-0 items-center justify-between gap-3 px-1 pt-[7px]">
         <span className={cn("inline-flex min-w-0 items-center gap-1.5 text-[11.5px] text-text-muted", reach.tone === "bad" && "text-bad")}>
