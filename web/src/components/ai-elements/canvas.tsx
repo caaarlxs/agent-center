@@ -19,8 +19,9 @@ export const Canvas = ({ children, ...props }: CanvasProps) => (
     zoomOnDoubleClick={false}
     {...props}
   >
-    {/* Dots on the 24 px grid, as the classic canvas (styles.css:754-758). */}
-    <Background variant={BackgroundVariant.Dots} gap={24} size={1.2} offset={12} color="var(--line)" bgColor="var(--bg)" />
+    {/* Dots on the 24 px grid, as the classic canvas (styles.css:754-758); the
+        page behind it (the canvas's Backdrop) shows through. */}
+    <Background variant={BackgroundVariant.Dots} gap={24} size={1.2} offset={12} color="var(--line)" bgColor="transparent" />
     {children}
   </ReactFlow>
 );

@@ -12,6 +12,7 @@ import {
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 import { Canvas as FlowCanvas } from "@/components/ai-elements/canvas"
+import { Backdrop } from "./Backdrop"
 import type { Card, Note, Zone } from "@/lib/api-types"
 import { useLive } from "@/lib/live"
 import { useNow } from "@/lib/now"
@@ -391,6 +392,7 @@ export function Canvas() {
       if (!(e.target as HTMLElement).classList.contains("react-flow__pane") || !flow.current) return
       addNote(flow.current.screenToFlowPosition({ x: e.clientX, y: e.clientY }))
     }}>
+      <Backdrop />
       <FlowCanvas
         nodes={shown} edges={[]} onInit={rf => (flow.current = rf)} nodeTypes={nodeTypes} onNodesChange={onNodesChange}
         onNodeDragStart={onNodeDragStart} onNodeDrag={onNodeDrag} onNodeDragStop={onNodeDragStop}
