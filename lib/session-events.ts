@@ -10,7 +10,7 @@
 // the mod's and this server's) would leave a watch on the old one.
 
 import { watch, type FSWatcher } from "node:fs"
-import { mkdir, readFile } from "node:fs/promises"
+import { mkdir, readFile, stat } from "node:fs/promises"
 import { basename, dirname, join, relative, sep } from "node:path"
 import { CENTER_DIR } from "./config"
 import { transcriptPath } from "./transcript"
@@ -56,6 +56,8 @@ export async function sessionEvents(ids: string[], lead: string): Promise<Respon
         } catch {} // closed meanwhile
       }
       send(": open\n\n")
+      // Where the answer stands now, for a page that opens mid-turn.
+      void stat(join(CENTER_DIR, "stream", `${lead}.json`)).then(() => tell("stream", streamOf(lead)), () => {})
       if (transcript) {
         const name = basename(transcript)
         watchers.push(watch(dirname(transcript), (_, file) => file === name && tell("messages")))

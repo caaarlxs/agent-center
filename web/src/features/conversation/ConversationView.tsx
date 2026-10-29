@@ -27,7 +27,7 @@ import { answer, launch, permit } from "@/features/session/actions"
 import { ForkDialog } from "./ForkDialog"
 import type { EditsItem, Shown, SuggestionItem } from "./items"
 import { Markdown, SessionOf } from "./Markdown"
-import { useLiveAnswer } from "./session-events"
+import { type Live, turnLine, useLiveAnswer } from "./session-events"
 import { useTypewriter } from "./typewriter"
 import { WidgetView } from "./Widget"
 import { type Pending, deliveredOf, dropPending, stampOf, takenBack, usePending, waitingOf } from "./pending"
@@ -420,6 +420,27 @@ function RunningNow({ sessionId }: { sessionId: string }) {
   )
 }
 
+// While a turn runs (mod v12), the app's spinner line: dots that breathe,
+// "5s · 29 tokens", and what it does now.
+function TurnLine({ live }: { live: Live | null }) {
+  const [now, setNow] = useState(Date.now)
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [])
+  const line = turnLine(live, now)
+  if (!line) return null
+  return (
+    <div className="flex min-w-0 items-center gap-2 text-[12.5px] text-text-muted" aria-live="polite">
+      <span className="flex shrink-0 gap-[3px]" aria-hidden>
+        {[0, 1, 2].map(i => <i key={i} className="size-[4px] animate-breathe rounded-full bg-brand motion-reduce:animate-none" style={{ animationDelay: `${i * 0.2}s`, animationDuration: "1.2s" }} />)}
+      </span>
+      {line.doing && <span className="min-w-0 truncate text-text">{line.doing}</span>}
+      <span className="shrink-0 tabular-nums">{line.doing && "· "}{line.time} · {line.tokens}</span>
+    </div>
+  )
+}
+
 const ANSWER_RECEIPT_MS = 12_000 // an answer the session has not taken by then did not reach it
 
 type Asked = { canAnswer: (text: string) => boolean; picks: Record<string, string>; onPick: (text: string, value: string) => void }
@@ -485,7 +506,8 @@ export function ConversationView({ sessionId, card: session, bridge }: { session
   const { shown, suggestions, markDismissed, isLoaded, error, hasMore, loadEarlier, refresh } = useConversation(sessionId)
   // The answer being written now (mod v10), until the transcript has it,
   // its letters appearing one after another.
-  const writing = useTypewriter(useLiveAnswer(sessionId, shown.length))
+  const answer = useLiveAnswer(sessionId, shown.length)
+  const writing = useTypewriter(answer.text)
   const mine = usePending(sessionId)
   const gone = takenBack.use()
   const waiting = useMemo(() => waitingOf(mine, bridge?.queued ?? [], gone), [mine, bridge?.queued, gone])
@@ -612,6 +634,7 @@ export function ConversationView({ sessionId, card: session, bridge }: { session
         {waiting.map(p => <PendingMessage key={p.id} p={p} sessionId={sessionId} bridge={bridge} isWorking={session?.column === "working"} />)}
         {live.map(q => <Question key={q.key} item={q} sessionId={sessionId} canAnswer picked={picks[q.text]} onPick={asked.onPick} />)}
         {permission && <PermissionCard key={permission.id} sessionId={sessionId} permission={permission} />}
+        {session?.column === "working" && <TurnLine live={answer.live} />}
         <RunningNow sessionId={sessionId} />
         {hasNew && (
           <button onClick={toBottom} className="sticky bottom-1 inline-flex h-7 shrink-0 items-center gap-1.5 self-center rounded-[14px] bg-text px-3 text-xs font-semibold text-bg shadow-pop">

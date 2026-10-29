@@ -19,8 +19,10 @@
 //   permissions/<session>.json   { id, tool, input, at }   this mod: the tool approval the
 //                                client asks for now; id null once settled
 //   permits/<session>.json       { id, decision }          the server: the board's allow/deny
-//   stream/<session>.json        { turnId, step, text, done, at }  this mod (v10): the
-//                                answer as the model writes it, for the board to show live
+//   stream/<session>.json        { turnId, step, text, done, at, since, tokens, doing }
+//                                this mod (v10): the answer as the model writes it, for
+//                                the board to show live; v12: when the turn began, the
+//                                tokens written so far and what it does now
 //   overrides/<session>.json     { effort, at }            the server: the effort picked on
 //                                the board, put on every request to the model (v11)
 //
@@ -28,7 +30,7 @@
 // and its `notBefore` has passed: until then the server can still take it
 // back ("Undo").
 
-import type { EngineInterface, Register } from 'claude-code'
+import type { EngineInterface, Register, TurnStepChunk } from 'claude-code'
 
 const POLL_MS = 2000
 const STREAM_MS = 120 // how often the answer being written is passed on
@@ -46,7 +48,7 @@ async function pickedEffort($: EngineInterface, b: Bridge) {
   }
 }
 const KEEP_ACKS = 100
-const VERSION = 11
+const VERSION = 12
 const ANSWER_POLL_MS = 1000
 
 type Message = { id: string; text: string; notBefore?: number }
@@ -63,6 +65,55 @@ type Bridge = {
 
 let bridge: Bridge | null = null
 let turnId: string | null = null // the main loop's running turn
+// The running turn as the app's spinner shows it: since when, the tokens the
+// model wrote (the finished responses' exact count, the one streaming
+// guessed at 4 characters a token), and what it does now.
+type Doing = { kind: 'thinking' | 'writing' | 'tool'; tool?: string; label?: string }
+let turnSince = 0
+let turnTokens = 0
+let doing: Doing | null = null
+
+// What a tool call does, from the arguments written so far: its own
+// description (Bash, Agent), else the file, pattern, command or address.
+const ARG = (key: string) => new RegExp(`"${key}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)`)
+function labelOf(json: string) {
+  for (const key of ['description', 'file_path', 'notebook_path', 'pattern', 'command', 'url', 'query', 'path']) {
+    const m = json.match(ARG(key))?.[1]
+    if (!m) continue
+    let text = m
+    try {
+      text = JSON.parse(`"${m.replace(/\\$/, '')}"`)
+    } catch {}
+    return key.endsWith('path') ? text.split('/').pop() || text : text.slice(0, 120)
+  }
+  return undefined
+}
+// One chunk of a response, into the turn's line: the answer's text by
+// block, a tool call's arguments by block, what it does now, and the tokens
+// (exact once the response stops). Answers the characters streamed since.
+function track(chunk: TurnStepChunk, blocks: string[], inputs: string[], streamed: number) {
+  switch (chunk.kind) {
+    case 'text':
+      blocks[chunk.index] = (blocks[chunk.index] ?? '') + chunk.text
+      doing = { kind: 'writing' }
+      return streamed + chunk.text.length
+    case 'thinking':
+      doing = { kind: 'thinking' }
+      return streamed + chunk.text.length
+    case 'tool':
+      doing = { kind: 'tool', tool: chunk.name }
+      return streamed
+    case 'input':
+      inputs[chunk.index] = (inputs[chunk.index] ?? '') + chunk.json
+      if (doing?.kind === 'tool') doing = { ...doing, label: labelOf(inputs[chunk.index]!) ?? doing.label }
+      return streamed + chunk.json.length
+    case 'stop':
+      turnTokens += chunk.usage?.output_tokens ?? Math.round(streamed / 4)
+      return 0
+    default:
+      return streamed
+  }
+}
 // Tool approvals the client asks for now (classic.PermissionRequest), by the
 // call they belong to (tool + its input), and those the board allowed, which
 // the next ask for the same call answers at once.
@@ -280,7 +331,10 @@ export const register: Register = on => {
   })
 
   on('turn.start', async ($, e, next) => {
-    if (e.agentId === undefined) turnId = e.turnId
+    if (e.agentId === undefined) (turnId = e.turnId), (turnSince = Date.now()), (turnTokens = 0), (doing = null)
+    // The turn's line starts now, not at its first word.
+    if (bridge && e.agentId === undefined)
+      void $.fs.write(`${bridge.base}/stream/${bridge.id}.json`, JSON.stringify({ turnId: e.turnId, step: -1, text: '', done: false, at: turnSince, since: turnSince, tokens: 0, doing: null })).catch(() => {})
     if (bridge) void beat($, bridge)
     return next(e)
   })
@@ -294,9 +348,10 @@ export const register: Register = on => {
   })
 
   // The answer as the model writes it, for the board to show live: its text
-  // so far, every STREAM_MS, then once more marked done when the step ends
-  // (the transcript then holds it whole). Every chunk passes on unchanged,
-  // as it came; the writes do not hold it.
+  // so far, with the turn's time, tokens and what it does now, every
+  // STREAM_MS, then once more marked done when the step ends (the transcript
+  // then holds it whole). Every chunk passes on unchanged, as it came; the
+  // writes do not hold it.
   on('turn.step', async function* ($, e, next) {
     const b = bridge
     // A model without effort has none to change.
@@ -305,11 +360,14 @@ export const register: Register = on => {
     if (!b || e.agentId !== undefined) return yield* next(e)
     const path = `${b.base}/stream/${b.id}.json`
     const blocks: string[] = []
+    const inputs: string[] = []
+    let streamed = 0 // characters of this response, until its exact count
     let wroteAt = 0
     const write = (done: boolean) => {
       const at = Date.now()
       wroteAt = at
-      return $.fs.write(path, JSON.stringify({ turnId: e.turnId, step: e.index, text: blocks.filter(Boolean).join('\n\n'), done, at })).catch(() => {})
+      const tokens = turnTokens + Math.round(streamed / 4)
+      return $.fs.write(path, JSON.stringify({ turnId: e.turnId, step: e.index, text: blocks.filter(Boolean).join('\n\n'), done, at, since: turnSince, tokens, doing })).catch(() => {})
     }
     const stream = next(e)
     try {
@@ -317,14 +375,12 @@ export const register: Register = on => {
         const piece = await stream.next()
         if (piece.done) return piece.value
         const chunk = piece.value
-        if (chunk.kind === 'text') {
-          blocks[chunk.index] = (blocks[chunk.index] ?? '') + chunk.text
-          if (Date.now() - wroteAt >= STREAM_MS) void write(false)
-        }
+        streamed = track(chunk, blocks, inputs, streamed)
+        if (Date.now() - wroteAt >= STREAM_MS) void write(false)
         yield chunk
       }
     } finally {
-      if (blocks.length) await write(true)
+      await write(true)
     }
   })
 

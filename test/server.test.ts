@@ -419,6 +419,23 @@ describe("session events", () => {
     await reader.cancel()
     expect(JSON.parse(text.match(/event: stream\ndata: (\{.*\})/)![1]!)).toEqual(live)
   })
+  test("opened in the middle of a turn, tells where it stands at once", async () => {
+    const live = { turnId: "t2", step: 1, text: "", done: false, at: Date.now(), since: Date.now() - 5000, tokens: 29, doing: { kind: "tool", tool: "Bash", label: "Reading the diff" } }
+    await mkdir(join(home, ".claude", "agent-center", "stream"), { recursive: true })
+    await writeFile(join(home, ".claude", "agent-center", "stream", `${ID}.json`), JSON.stringify(live))
+    const reader = (await fetch(`${base()}/api/sessions/${ID}/events`)).body!.getReader()
+    let text = ""
+    const listen = (async () => {
+      while (!/event: stream\ndata: (\{.*\})/.test(text)) {
+        const { value, done } = await reader.read()
+        if (done) return
+        text += new TextDecoder().decode(value)
+      }
+    })()
+    await Promise.race([listen, Bun.sleep(3000)])
+    await reader.cancel()
+    expect(JSON.parse(text.match(/event: stream\ndata: (\{.*\})/)![1]!)).toEqual(live)
+  })
 })
 
 describe("diagnosis", () => {

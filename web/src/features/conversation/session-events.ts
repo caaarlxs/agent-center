@@ -52,7 +52,9 @@ export function useSessionEvents(id: string, kind: Kind, read: () => void, every
 // its text so far. Once the step ends it stays until the transcript has it
 // (`itemCount` grows) or for a moment; a stream that stopped long ago (its
 // session closed mid-answer) is not shown.
-export type Live = { turnId: string; step: number; text: string; done: boolean; at: number }
+export type Doing = { kind: "thinking" | "writing" | "tool"; tool?: string; label?: string }
+// v12 adds the turn's start, the tokens written so far and what it does now.
+export type Live = { turnId: string; step: number; text: string; done: boolean; at: number; since?: number; tokens?: number; doing?: Doing | null }
 const KEEP_DONE_MS = 2500
 const STALE_MS = 60_000
 
@@ -87,8 +89,32 @@ export function useLiveAnswer(id: string, itemCount: number) {
   }, [id])
   useEffect(() => {
     if (!live?.done) return
-    const timer = setTimeout(() => setLive(null), KEEP_DONE_MS)
+    // The text goes; where the turn stands (v12) stays for its line.
+    const timer = setTimeout(() => setLive(l => (l && l.text ? { ...l, text: "" } : l)), KEEP_DONE_MS)
     return () => clearTimeout(timer)
   }, [live])
-  return shownLive(live, itemCount, countAtDone.current, Date.now())
+  return { text: shownLive(live, itemCount, countAtDone.current, Date.now()), live }
+}
+
+// The line the app shows while a turn runs: "5s · 29 tokens" and what it
+// does now. A tool that says what it does (Bash's description, an agent's)
+// says only that; another, its name and its file or pattern.
+const SAYS_ITSELF = new Set(["Bash", "Agent", "Task"])
+const toolName = (name: string) => (name.startsWith("mcp__") ? name.split("__").slice(2).join("__") : name)
+function doingText(d: Doing | null | undefined) {
+  if (!d) return null
+  if (d.kind !== "tool") return d.kind === "thinking" ? "Thinking" : "Writing"
+  const name = toolName(d.tool ?? "tool")
+  if (!d.label) return name
+  return SAYS_ITSELF.has(name) ? d.label : `${name} · ${d.label}`
+}
+const timeText = (ms: number) => {
+  const s = Math.max(0, Math.floor(ms / 1000))
+  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`
+}
+const tokensText = (n: number) => `${n < 1000 ? n : `${(n / 1000).toFixed(1).replace(/\.0$/, "")}k`} tokens`
+
+export function turnLine(live: Live | null, now: number) {
+  if (!live?.since) return null
+  return { time: timeText(now - live.since), tokens: tokensText(live.tokens ?? 0), doing: doingText(live.doing) }
 }
