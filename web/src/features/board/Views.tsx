@@ -92,12 +92,12 @@ export function BoardCard({ card, inStack = false }: { card: Card; inStack?: boo
           <div className="flex min-w-0 items-center gap-2 text-xs">
             {!inStack && <RepoTag name={card.repo} />}
             {card.branch && <span className="min-w-0 truncate font-mono text-[11.5px] text-text-muted" title={card.branch}>{card.branch}</span>}
-            <span className="ml-auto inline-flex"><SleepMark card={card} /></span>
-            <span className={cn("dot-time text-xs whitespace-nowrap text-faint tabular-nums", urgency && URGENT_AGE[urgency])}
+            <span className={cn("dot-time ml-auto text-xs whitespace-nowrap text-faint tabular-nums", urgency && URGENT_AGE[urgency])}
               title={card.waitingSince ? "How long it has been waiting for you" : new Date(card.lastActivity ?? card.updatedAt).toLocaleString("en-GB")}>{ageOf(card, now)}</span>
           </div>
         </div>
         <NewBadge card={card} className="self-start" />
+        <span className="mt-0.5 inline-flex self-start"><SleepMark card={card} /></span>
         {card.pinned && <span className="inline-flex text-ask" title="Pinned: it shows first in its column"><Star className="size-[13px]" /></span>}
       </header>
       <Context card={card} className="text-[12.5px]" />

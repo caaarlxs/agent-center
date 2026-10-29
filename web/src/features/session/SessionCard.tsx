@@ -96,6 +96,7 @@ function SessionCardView({ card, now, level = "near", unscale = 1, isSelected = 
             <span className={cn(!isDots && "-mt-px")}><StateIcon card={card} size={Math.round(big(isDots ? 34 : 22, 1.8))} /></span>
             <span title={card.title} className={cn("line-clamp-2 min-w-0 flex-1 text-sm leading-[1.3] [overflow-wrap:anywhere]", isDone ? "font-[550]" : "font-semibold")}
               style={far ? { fontSize: big(14, 2), lineHeight: 1.2 } : undefined}>{card.title}</span>
+            <SleepMark card={card} />
             {card.pinned && <span className="ml-auto flex-none text-ask" title="Pinned"><Star className="size-3" /></span>}
             {card.isUnread && <i className="unread-dot mt-1.5 size-[7px] flex-none rounded-full bg-brand" title="New since you last looked" />}
           </div>
@@ -108,7 +109,6 @@ function SessionCardView({ card, now, level = "near", unscale = 1, isSelected = 
               <i className="repo-dot size-[7px] flex-none rounded-[2px]" style={{ background: repoDot(card.repo) }} />{card.repo}
             </span>
             {!far && <span className="dot-time flex-none whitespace-nowrap">{ageOf(card, now)}</span>}
-            {!far && <SleepMark card={card} />}
             {!isDone && !far && <Signals card={card} now={now} isMid={level === "mid"} />}
           </footer>
           {!far && (
