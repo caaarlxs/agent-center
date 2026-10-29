@@ -1,7 +1,9 @@
 // What a right-click offers, by what is under it: a link (open it, copy it),
-// an email (write to it, copy the address), an image (see it large, copy
+// an email (write to it, copy the address), the same for an email or an
+// address only written as text (or as code), an image (see it large, copy
 // it, copy its address), a field (cut, copy, paste, select all), and the
-// text you selected (copy). Nothing of these: no menu of ours.
+// text you selected (copy). Else the message's text to copy, and a reload:
+// the menu always shows, as some windows have none of their own.
 
 export type Action =
   | { kind: "copy"; text: string }
@@ -9,6 +11,7 @@ export type Action =
   | { kind: "image"; src: string }
   | { kind: "copyImage"; src: string }
   | { kind: "cut" | "paste" | "selectAll"; field: HTMLElement }
+  | { kind: "reload" }
 export type Item = { label: string; action: Action; hint?: string; group: number }
 
 const FIELD = "input:not([type=checkbox]):not([type=radio]):not([type=range]), textarea, [contenteditable=''], [contenteditable=true]"
@@ -39,14 +42,37 @@ function imageItems(src: string): Item[] {
   ]
 }
 
-export function itemsFor(target: Element, selection: string): Item[] {
+const EMAIL = /^[\w.+-]+@[\w-]+(\.[\w-]+)+$/
+const URL_TEXT = /^(https?:\/\/|www\.)\S+$/
+
+// An email or an address in the word under the cursor, its quotes, code
+// marks and closing punctuation left out.
+export function addressIn(word: string): string | null {
+  const bare = word.replace(/^[`'"(<[{¡¿]+/, "").replace(/[`'")>\]},.;:!?]+$/, "")
+  if (EMAIL.test(bare)) return `mailto:${bare}`
+  if (URL_TEXT.test(bare)) return bare.startsWith("www.") ? `https://${bare}` : bare
+  return null
+}
+
+// Where nothing else applies: the message's text, and a reload.
+function fallbackItems(target: Element): Item[] {
+  const message = target.closest<HTMLElement>(".md")
+  return [
+    ...(message?.innerText.trim() ? [{ label: "Copy text", action: { kind: "copy", text: message.innerText.trim() } as Action, group: 0 }] : []),
+    { label: "Reload page", action: { kind: "reload" }, hint: "⌘R", group: 1 },
+  ]
+}
+
+export function itemsFor(target: Element, selection: string, word = ""): Item[] {
   const field = target.closest<HTMLElement>(FIELD)
   if (field) return fieldItems(field, selection)
-  const link = target.closest("a[href]")?.getAttribute("href")
+  const href = target.closest("a[href]")?.getAttribute("href")
+  const link = href && !href.startsWith("#") ? href : addressIn(word)
   const image = target.closest("img")
-  return [
+  const items = [
     ...(selection ? [{ label: "Copy", action: { kind: "copy", text: selection } as Action, hint: "⌘C", group: 0 }] : []),
-    ...(link && !link.startsWith("#") ? linkItems(link) : []),
+    ...(link ? linkItems(link) : []),
     ...(image?.getAttribute("src") ? imageItems(new URL(image.getAttribute("src")!, location.href).href) : []),
   ]
+  return items.length ? items : fallbackItems(target)
 }

@@ -6,7 +6,7 @@ const el = (html: string, pick: string) => {
   document.body.innerHTML = html
   return document.querySelector(pick)!
 }
-const labels = (target: Element, selection = "") => itemsFor(target, selection).map(i => i.label)
+const labels = (target: Element, selection = "", word = "") => itemsFor(target, selection, word).map(i => i.label)
 
 describe("what a right-click offers, by what is under it", () => {
   it("a link: open it, copy it", () => {
@@ -28,5 +28,16 @@ describe("what a right-click offers, by what is under it", () => {
     expect(labels(el("<textarea>hola</textarea>", "textarea"), "ho")).toEqual(["Cut", "Copy", "Paste", "Select all"])
     expect(labels(el("<textarea></textarea>", "textarea"))).toEqual(["Paste"])
   })
-  it("nothing to offer: no menu", () => expect(labels(el("<div>x</div>", "div"))).toEqual([]))
+  it("an email or an address written as text (or as code), not a link: the same as a link", () => {
+    const items = itemsFor(el("<p>Escribe a <code>ana@deale.es</code>.</p>", "code"), "", "`ana@deale.es`.")
+    expect(items.map(i => i.label)).toEqual(["Write an email", "Copy email address"])
+    expect(items[1]!.action).toEqual({ kind: "copy", text: "ana@deale.es" })
+    expect(itemsFor(el("<p>mira https://deale.es/x, luego</p>", "p"), "", "https://deale.es/x,").map(i => i.action)).toEqual([
+      { kind: "open", url: "https://deale.es/x" }, { kind: "copy", text: "https://deale.es/x" },
+    ])
+  })
+  it("in a message: copy its text; and always a way to reload", () => {
+    expect(labels(el('<div class="md"><p>hola</p></div>', "p"))).toEqual(["Copy text", "Reload page"])
+    expect(labels(el("<div>x</div>", "div"))).toEqual(["Reload page"])
+  })
 })

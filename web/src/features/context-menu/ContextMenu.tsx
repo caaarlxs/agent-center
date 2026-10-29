@@ -1,9 +1,9 @@
 // The right-click menu of the whole page (items.ts says what it offers):
 // it opens where you click, in the board's own menu look, and closes on a
 // click elsewhere, Esc, a scroll or leaving the window. Arrows move through
-// it, Enter picks. Where it has nothing to offer, the browser's own shows.
+// it, Enter picks. It always shows: some windows (an app's) have no menu of their own.
 import { AnimatePresence, motion } from "motion/react"
-import { ClipboardPaste, Copy, ExternalLink, ImageIcon, Link, Mail, Maximize2, Scissors, TextSelect, type LucideIcon } from "lucide-react"
+import { ClipboardPaste, Copy, ExternalLink, ImageIcon, Link, Mail, Maximize2, RotateCw, Scissors, TextSelect, type LucideIcon } from "lucide-react"
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { toast } from "sonner"
@@ -14,7 +14,20 @@ import { type Action, type Item, itemsFor } from "./items"
 const ICON: Record<string, LucideIcon> = {
   "Open link in a new tab": ExternalLink, "Copy link": Link, "Write an email": Mail, "Copy email address": Copy,
   "See it large": Maximize2, "Copy image": ImageIcon, "Copy image address": Link, "Open image in a new tab": ExternalLink,
-  Cut: Scissors, Copy, Paste: ClipboardPaste, "Select all": TextSelect,
+  Cut: Scissors, Copy, Paste: ClipboardPaste, "Select all": TextSelect, "Copy text": Copy, "Reload page": RotateCw,
+}
+
+// The word under the cursor: the text between spaces around the point clicked.
+function wordAt(x: number, y: number) {
+  const range = document.caretRangeFromPoint?.(x, y)
+  const node = range?.startContainer
+  if (!range || node?.nodeType !== Node.TEXT_NODE) return ""
+  const text = node.textContent ?? ""
+  let from = range.startOffset
+  let to = range.startOffset
+  while (from > 0 && !/\s/.test(text[from - 1]!)) from--
+  while (to < text.length && !/\s/.test(text[to]!)) to++
+  return text.slice(from, to)
 }
 
 // An image on the clipboard: the clipboard takes PNG, so any other is drawn into one.
@@ -48,6 +61,7 @@ async function run(action: Action, selection: string) {
       case "copy": return void (await copyText(action.text), toast("Copied"))
       case "open": return void window.open(action.url, "_blank", "noopener,noreferrer")
       case "image": return showImage(action.src)
+      case "reload": return location.reload()
       case "copyImage": return void (await copyImage(action.src), toast("Image copied"))
       case "cut": return void (await copyText(selection), typeInto(action.field, ""))
       case "paste": return typeInto(action.field, await navigator.clipboard.readText())
@@ -113,7 +127,7 @@ export function ContextMenu() {
     const onMenu = (e: MouseEvent) => {
       if (!(e.target instanceof Element) || box.current?.contains(e.target)) return
       const selection = window.getSelection()?.toString() ?? ""
-      const items = itemsFor(e.target, selection)
+      const items = itemsFor(e.target, selection, wordAt(e.clientX, e.clientY))
       if (!items.length) return setOpen(null)
       e.preventDefault()
       setOpen({ x: e.clientX, y: e.clientY, items, selection })
