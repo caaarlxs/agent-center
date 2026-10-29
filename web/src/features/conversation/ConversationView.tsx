@@ -506,8 +506,8 @@ export function ConversationView({ sessionId, card: session, bridge }: { session
   const { shown, suggestions, markDismissed, isLoaded, error, hasMore, loadEarlier, refresh } = useConversation(sessionId)
   // The answer being written now (mod v10), until the transcript has it,
   // its letters appearing one after another.
-  const answer = useLiveAnswer(sessionId, shown.length)
-  const writing = useTypewriter(answer.text)
+  const stream = useLiveAnswer(sessionId, shown.length)
+  const writing = useTypewriter(stream.text)
   const mine = usePending(sessionId)
   const gone = takenBack.use()
   const waiting = useMemo(() => waitingOf(mine, bridge?.queued ?? [], gone), [mine, bridge?.queued, gone])
@@ -634,7 +634,7 @@ export function ConversationView({ sessionId, card: session, bridge }: { session
         {waiting.map(p => <PendingMessage key={p.id} p={p} sessionId={sessionId} bridge={bridge} isWorking={session?.column === "working"} />)}
         {live.map(q => <Question key={q.key} item={q} sessionId={sessionId} canAnswer picked={picks[q.text]} onPick={asked.onPick} />)}
         {permission && <PermissionCard key={permission.id} sessionId={sessionId} permission={permission} />}
-        {session?.column === "working" && <TurnLine live={answer.live} />}
+        {session?.column === "working" && <TurnLine live={stream.live} />}
         <RunningNow sessionId={sessionId} />
         {hasNew && (
           <button onClick={toBottom} className="sticky bottom-1 inline-flex h-7 shrink-0 items-center gap-1.5 self-center rounded-[14px] bg-text px-3 text-xs font-semibold text-bg shadow-pop">
