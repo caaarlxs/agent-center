@@ -7,7 +7,7 @@ import { createStore } from "@/lib/store"
 // The microphone while you dictate, for the composer's voice glow: its
 // stream while Whisper records (the glow follows your voice), on without one
 // while the browser dictates (it breathes), and since when Whisper writes
-// what you said (border-beam round the box, the glow sweeping along it).
+// what you said (the glow, gathered, sweeps along the box).
 export type MicLive = { isOn: boolean; stream: MediaStream | null; writingSince: number | null }
 export const micLive = createStore<MicLive>({ isOn: false, stream: null, writingSince: null })
 
