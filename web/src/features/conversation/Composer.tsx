@@ -153,7 +153,7 @@ function Box({ id, card, bridge }: { id: string; card: Card | undefined; bridge:
       onDrop={() => setDrop(false)}>
       {/* You speak: the glow follows your voice. Whisper writes it out: a beam runs round the box. */}
       <VoiceBeam stream={mic.stream ?? undefined} active={mic.isOn && !mic.writingSince} theme={mode} borderRadius={14} idle={mic.stream ? undefined : 0.35}>
-      <BorderBeam size="line" active={!!mic.writingSince} theme={mode} borderRadius={14} strength={0.8}>
+      <BorderBeam size="md" duration={1.1} active={!!mic.writingSince} theme={mode} borderRadius={14} strength={1}>
       <PromptInput
         multiple maxFiles={MAX_FILES} maxFileSize={MAX_BYTES} onError={fileErrors}
         onSubmit={async ({ text, files }) => {
