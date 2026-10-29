@@ -26,7 +26,7 @@ import { openDialog } from "@/app/open-dialog"
 import { openSession, showChange, showFile, showTab } from "@/app/open-session"
 import { fileName, sentFiles } from "@/features/prompt/files"
 import { ago } from "@/features/session/state"
-import { answer, launch, permit } from "@/features/session/actions"
+import { answer, launch, permit, stop } from "@/features/session/actions"
 import { ForkDialog } from "./ForkDialog"
 import type { EditsItem, Shown, SuggestionItem } from "./items"
 import { Markdown, SessionOf } from "./Markdown"
@@ -360,6 +360,8 @@ function PendingMessage({ p, sessionId, bridge, isWorking }: { p: Pending; sessi
       <span className={cn("text-[11px]", stamp.isBad ? "text-bad" : "text-faint")}>
         {stamp.text} ·{" "}
         {stamp.isBad && !stamp.text.startsWith("Could not") && <><button className={linkBtn} onClick={() => launch(sessionId)} title="Opens the session in Claude desktop; when you write in it, it starts and gets the message">Open in Claude</button> · </>}
+        {/* As in Claude desktop: the running turn stops, and the bridge mod hands over what waits at once. */}
+        {isWorking && !stamp.isBad && <><button className={linkBtn} onClick={() => stop(sessionId).catch((err: Error) => toast(err.message || "Could not send it now"))} title="Stops the running turn and sends this message now">Send now</button> · </>}
         <button className={linkBtn} onClick={() => takeBack(sessionId, p)} title="Remove the message before it arrives and put it back in the field">Undo</button>
       </span>
     </div>
