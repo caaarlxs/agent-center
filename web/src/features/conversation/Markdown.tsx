@@ -150,7 +150,7 @@ const components: Components = {
   code: props => <InlineCode {...props} />,
   inlineCode: props => <InlineCode {...props} />,
   // An image in an answer: large on a click.
-  img: ({ src, alt }) => typeof src === "string" ? <img src={src} alt={alt ?? ""} onClick={() => showImage(src)} className="cursor-zoom-in" /> : null,
+  img: ({ src, alt }) => typeof src === "string" ? <img src={src} alt={alt ?? ""} onClick={() => showImage(src)} className="cursor-pointer" /> : null,
   a: ({ href, children }) => {
     const path = pathInLink(href)
     return path ? <FileLink path={path}>{children}</FileLink> : <a href={href} target="_blank" rel="noreferrer">{children}</a>

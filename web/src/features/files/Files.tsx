@@ -61,9 +61,9 @@ function Body({ id, file, info, isSource }: { id: string; file: Listed; info: In
     case "code":
       return code
     case "image":
-      return <img src={fileUrl} alt={file.name} onClick={() => showImage(fileUrl)} className="mx-auto my-3.5 block max-w-full cursor-zoom-in rounded-lg" />
+      return <img src={fileUrl} alt={file.name} onClick={() => showImage(fileUrl)} className="mx-auto my-3.5 block max-w-full cursor-pointer rounded-lg" />
     case "video":
-      return <video src={fileUrl} controls className="mx-auto my-3.5 block max-w-full rounded-lg" />
+      return <video src={fileUrl} controls className="mx-auto my-3.5 block max-w-full cursor-pointer rounded-lg" />
     case "audio":
       return <div className="p-4"><audio src={fileUrl} controls /></div>
     case "pdf":

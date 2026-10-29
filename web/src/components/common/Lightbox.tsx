@@ -25,7 +25,7 @@ export function Lightbox() {
     <AnimatePresence>
       {src && (
         <motion.div key="lightbox" role="dialog" aria-modal="true" aria-label="Image" onClick={close}
-          className="fixed inset-0 z-[200] grid cursor-zoom-out place-items-center bg-black/75 p-6 backdrop-blur-sm"
+          className="fixed inset-0 z-[200] grid place-items-center bg-black/75 p-6 backdrop-blur-sm"
           initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, transition: { duration: 0.14 } }} transition={{ duration: 0.18 }}>
           <motion.img src={src} alt="" onClick={e => e.stopPropagation()}
             className="block max-h-[90vh] max-w-[92vw] cursor-default rounded-xl object-contain shadow-pop"

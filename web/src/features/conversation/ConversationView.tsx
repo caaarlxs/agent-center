@@ -70,7 +70,7 @@ function Bubble({ text: raw, isPending }: { text: string; isPending?: boolean })
       {images.length > 0 && (
         <div className="mt-1.5 flex flex-wrap gap-1.5">
           {images.map(rel => (
-            <button key={rel} type="button" onClick={() => showImage(`/api/uploads/${rel}`)} title="See it large" className="cursor-zoom-in">
+            <button key={rel} type="button" onClick={() => showImage(`/api/uploads/${rel}`)} title="See it large" className="cursor-pointer">
               <img src={`/api/uploads/${rel}`} alt="" loading="lazy" className="block max-h-40 max-w-[220px] rounded-lg border border-line" />
             </button>
           ))}

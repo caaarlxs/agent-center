@@ -24,7 +24,7 @@ export function PickedFiles() {
     <div className="flex w-full flex-wrap gap-2 px-3 pt-2.5">
       {files.map(f => f.mediaType?.startsWith("image/") ? (
         <span key={f.id} className="relative">
-          <button type="button" onClick={() => f.url && showImage(f.url)} title="See it large" className="block cursor-zoom-in">
+          <button type="button" onClick={() => f.url && showImage(f.url)} title="See it large" className="block cursor-pointer">
             <img src={f.url} alt="" className="block size-16 rounded-lg border border-line object-cover" />
           </button>
           <button type="button" className={remover} onClick={() => remove(f.id)} title="Remove the image"><Anim.X size={11} /></button>
