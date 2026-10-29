@@ -5,6 +5,7 @@
 // whoever listens. A reader asks again on its own only now and then
 // (`every`), or often while the connection is down.
 import { useEffect, useRef, useState } from "react"
+import type { OrbState, OrbVariant } from "@yogesharc/thinking-orbs"
 import type { Doing } from "@/lib/api-types"
 export type { Doing }
 
@@ -120,18 +121,26 @@ export function turnLine(live: Live | null, now: number) {
   return { time: timeText(now - live.since), tokens: tokensText(live.tokens ?? 0), doing: doingText(live.doing) }
 }
 
-// The orb (thinking-orbs) the turn line shows, by what the turn does:
-// thinking solves, writing composes, a tool that reads or looks something up
-// searches, an agent weaves, another connector's tool connects, the rest works.
-export type Orb = "breathing" | "solving" | "composing" | "searching" | "weaving" | "connecting" | "working"
-const LOOKS = /^(Read|Grep|Glob|WebSearch|WebFetch|LS|NotebookRead)$/
+// The orb (@yogesharc/thinking-orbs) a turn shows, by what it does:
+// thinking reasons, a tool that reads or looks something up searches (the
+// web, with a lighthouse), a command works (a gyro), an agent runs in the
+// background, the browser is used by what it does there; the rest works.
+export type Orb = { [S in OrbState]: { state: S; variant: OrbVariant<S> } }[OrbState]
+const LOOKS = /^(Read|Grep|Glob|LS|NotebookRead)$/
 const LOOKS_UP = /search|get|list|read|fetch|find|query/i
+const COMMANDS = /^(Bash|Edit|Write|MultiEdit|NotebookEdit)$/
+const BROWSER = /^mcp__(Claude_Browser|claude-in-chrome|computer-use)__/
+const IN_BROWSER: [RegExp, OrbVariant<"using">][] = [[/computer|click/, "tap"], [/form_input|type/, "type"], [/scroll/, "scroll"], [/zoom/, "zoom"], [/screenshot|read_page|get_page_text|find/, "snap"], [/gif|record/, "record"]]
+const orb = <S extends OrbState>(state: S, variant: OrbVariant<S> = "default" as OrbVariant<S>) => ({ state, variant }) as Orb
 export function orbOf(d: Doing | null | undefined): Orb {
-  if (!d) return "breathing"
-  if (d.kind !== "tool") return d.kind === "thinking" ? "solving" : "composing"
+  if (!d || d.kind === "writing") return orb("working")
+  if (d.kind === "thinking") return orb("reasoning")
   const tool = d.tool ?? ""
-  if (LOOKS.test(tool)) return "searching"
-  if (tool === "Agent" || tool === "Task") return "weaving"
-  if (tool.startsWith("mcp__")) return LOOKS_UP.test(toolName(tool)) ? "searching" : "connecting"
-  return "working"
+  if (BROWSER.test(tool)) return orb("using", IN_BROWSER.find(([re]) => re.test(toolName(tool)))?.[1])
+  if (LOOKS.test(tool)) return orb("searching")
+  if (tool === "WebSearch" || tool === "WebFetch") return orb("searching", "lighthouse")
+  if (COMMANDS.test(tool)) return orb("working", "gyro")
+  if (tool === "Agent" || tool === "Task") return orb("background")
+  if (tool.startsWith("mcp__") && LOOKS_UP.test(toolName(tool))) return orb("searching")
+  return orb("working")
 }

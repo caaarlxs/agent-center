@@ -34,14 +34,22 @@ describe("the turn line (mod v12), as the app's spinner", () => {
 })
 
 describe("the orb's state, from what the turn does", () => {
-  it("thinks, writes, or acts on a tool by its kind", () => {
-    expect(orbOf(null)).toBe("breathing")
-    expect(orbOf({ kind: "thinking" })).toBe("solving")
-    expect(orbOf({ kind: "writing" })).toBe("composing")
-    for (const tool of ["Read", "Grep", "Glob", "WebSearch", "WebFetch", "mcp__x__searchJiraIssuesUsingJql", "mcp__github__get_me"])
-      expect(orbOf({ kind: "tool", tool })).toBe("searching")
-    expect(orbOf({ kind: "tool", tool: "Agent" })).toBe("weaving")
-    expect(orbOf({ kind: "tool", tool: "mcp__slack__send_message" })).toBe("connecting")
-    expect(orbOf({ kind: "tool", tool: "Bash" })).toBe("working")
+  const orb = (d: Parameters<typeof orbOf>[0]) => orbOf(d)
+  it("reasons, writes, searches, works, runs in the background", () => {
+    expect(orb(null)).toEqual({ state: "working", variant: "default" })
+    expect(orb({ kind: "thinking" })).toEqual({ state: "reasoning", variant: "default" })
+    expect(orb({ kind: "writing" })).toEqual({ state: "working", variant: "default" })
+    for (const tool of ["Read", "Grep", "Glob", "mcp__x__searchJiraIssuesUsingJql", "mcp__github__get_me"])
+      expect(orb({ kind: "tool", tool })).toEqual({ state: "searching", variant: "default" })
+    expect(orb({ kind: "tool", tool: "WebSearch" })).toEqual({ state: "searching", variant: "lighthouse" })
+    expect(orb({ kind: "tool", tool: "Bash" })).toEqual({ state: "working", variant: "gyro" })
+    expect(orb({ kind: "tool", tool: "Agent" })).toEqual({ state: "background", variant: "default" })
+    expect(orb({ kind: "tool", tool: "mcp__slack__send_message" })).toEqual({ state: "working", variant: "default" })
+  })
+  it("uses a browser by what it does there", () => {
+    expect(orb({ kind: "tool", tool: "mcp__Claude_Browser__computer" })).toEqual({ state: "using", variant: "tap" })
+    expect(orb({ kind: "tool", tool: "mcp__claude-in-chrome__form_input" })).toEqual({ state: "using", variant: "type" })
+    expect(orb({ kind: "tool", tool: "mcp__Claude_Browser__navigate" })).toEqual({ state: "using", variant: "default" })
+    expect(orb({ kind: "tool", tool: "mcp__claude-in-chrome__gif_creator" })).toEqual({ state: "using", variant: "record" })
   })
 })

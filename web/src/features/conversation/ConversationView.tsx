@@ -18,7 +18,7 @@ import type { Bridge, Card, Permission, Snapshot, SuggestionState } from "@/lib/
 import { bytesText, clock, memText, MEMORY_WARN } from "@/lib/format"
 import { useLive } from "@/lib/live"
 import { Shimmer } from "@/components/ai-elements/shimmer"
-import { ThinkingOrb } from "thinking-orbs"
+import { Orb } from "@yogesharc/thinking-orbs"
 import { useNow } from "@/lib/now"
 import { cn } from "@/lib/utils"
 import { openDialog } from "@/app/open-dialog"
@@ -447,7 +447,7 @@ function RunningNow({ sessionId }: { sessionId: string }) {
 }
 
 // While a turn runs (mod v12): an orb that shows what kind of work it does
-// (thinking-orbs), what it does now with a shine across it, the turn's time
+// (@yogesharc/thinking-orbs), what it does now with a shine across it, the turn's time
 // and tokens.
 function TurnLine({ live }: { live: Live | null }) {
   const [now, setNow] = useState(Date.now)
@@ -459,7 +459,7 @@ function TurnLine({ live }: { live: Live | null }) {
   if (!line) return null
   return (
     <div className="flex min-w-0 items-center gap-2 text-[12.5px] text-text-muted" aria-live="polite">
-      <ThinkingOrb state={orbOf(live?.doing)} size={20} className="size-5 shrink-0" />
+      <span className="shrink-0 text-text"><Orb {...orbOf(live?.doing)} size={18} /></span>
       {line.doing && <Shimmer as="span" duration={2.2} className="min-w-0 truncate [--color-background:var(--text)] [--color-muted-foreground:var(--text-muted)]">{line.doing}</Shimmer>}
       <span className="shrink-0 tabular-nums">{line.doing && "· "}{line.time} · {line.tokens}</span>
     </div>

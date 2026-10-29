@@ -22,6 +22,7 @@
     "@streamdown/mermaid": "^1.0.3",
     "@tailwindcss/vite": "^4.3.3",
     "@xyflow/react": "^12.12.0",
+    "@yogesharc/thinking-orbs": "0.1.2",
     "ai": "^7.0.153",
     "border-beam": "1.4.1",
     "class-variance-authority": "^0.7.1",

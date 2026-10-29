@@ -15,6 +15,7 @@
         "@streamdown/mermaid": "^1.0.3",
         "@tailwindcss/vite": "^4.3.3",
         "@xyflow/react": "^12.12.0",
+        "@yogesharc/thinking-orbs": "0.1.2",
         "ai": "^7.0.153",
         "border-beam": "1.4.1",
         "class-variance-authority": "^0.7.1",
@@ -574,6 +575,8 @@
     "@xyflow/react": ["@xyflow/react@12.12.0", "", { "dependencies": { "@xyflow/system": "0.0.83", "classcat": "^5.0.3", "zustand": "^4.4.0" }, "peerDependencies": { "@types/react": ">=17", "@types/react-dom": ">=17", "react": ">=17", "react-dom": ">=17" }, "optionalPeers": ["@types/react", "@types/react-dom"] }, "sha512-74oXI0Rgm1Eu33cHQAd74J6oVgCH9mbFyTVQbsGgp2kmWwh0HdtBr2VP04z8mbPD+M/xO69nqG5dDEt7/EN2rQ=="],
 
     "@xyflow/system": ["@xyflow/system@0.0.83", "", { "dependencies": { "@types/d3-drag": "^3.0.7", "@types/d3-interpolate": "^3.0.4", "@types/d3-selection": "^3.0.10", "@types/d3-transition": "^3.0.8", "@types/d3-zoom": "^3.0.8", "d3-drag": "^3.0.0", "d3-interpolate": "^3.0.1", "d3-selection": "^3.0.0", "d3-zoom": "^3.0.0" } }, "sha512-a//eDjez3WZF47aaPTfVUDD0OINOq+WVwBZCRTqG+m0a5euX8EwlJ4jMY1Wxz0Ocj4xOeekJ70V22Pq0ll8RJw=="],
+
+    "@yogesharc/thinking-orbs": ["@yogesharc/thinking-orbs@0.1.2", "", { "peerDependencies": { "react": ">=18" }, "optionalPeers": ["react"] }, "sha512-RBUdEBdcIQEx+qO5vxT4OuvCG4zcKetXmSdL8uSKiOWqQx499td7N+LVEGMeYZI59VXxNVI88PzoMcIFzmhWTw=="],
 
     "accepts": ["accepts@2.0.0", "", { "dependencies": { "mime-types": "^3.0.0", "negotiator": "^1.0.0" } }, "sha512-5cvg6CtKwfgdmVqY1WIiXKc3Q1bkRqGLi+2W/6ao+6Y7gu/RCwRuAhGEzh5B4KlszSuTLgZYuqFqo5bImjNKng=="],
 
