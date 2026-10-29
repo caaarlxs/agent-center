@@ -13,6 +13,7 @@ import { useLive } from "@/lib/live"
 import { createStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
 import { Guard } from "@/components/common/Guard"
+import { SessionBot } from "./bot"
 import { type Tab, WORKSPACES, openSession, showTab } from "@/app/open-session"
 import { openDialog } from "@/app/open-dialog"
 import { toggleWatch, watched } from "@/features/alerts/prefs"
@@ -246,7 +247,10 @@ export function SessionPanel({ id, tab: asked, file }: { id: string; tab: Tab; f
             <button className={cn(iconBtn(), "size-7 [&_svg]:size-4")} onClick={() => openSession(null)} title="Close (Esc)"><Anim.X /></button>
           </span>
         </div>
-        <Title card={card} fallback={fromSearch?.title ?? "Conversation"} />
+        <div className="flex min-w-0 items-center gap-2.5">
+          {card && <SessionBot card={card} size={34} />}
+          <div className="min-w-0 flex-1"><Title card={card} fallback={fromSearch?.title ?? "Conversation"} /></div>
+        </div>
       </header>
       <PanelTabs id={id} tab={tab} onPick={showTab} tabs={tabs.map(t => ({
         ...t, onHover: PRELOAD[t.key],
