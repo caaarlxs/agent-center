@@ -33,7 +33,7 @@ function dialogOf(name: string, input: any): { label: string; detail: string | n
 export type Item = { key: string } & (
   | { kind: "user"; text: string; at: string | null; isMidTurn?: boolean }
   | { kind: "assistant"; text: string; at: string | null }
-  | { kind: "tools"; lines: string[] }
+  | { kind: "tools"; actions: Action[] }
   | { kind: "next"; recap: string | null; ask: string | null; actions: { label: string; message: string }[] }
   | { kind: "chapter"; title: string }
   | { kind: "question"; text: string; options: { label: string; description?: string }[]; isMulti: boolean; answer: string | null }
@@ -80,17 +80,17 @@ export async function transcriptPath(id: string): Promise<string | null> {
   return null
 }
 
-const oneLine = (s: unknown, max = 140) => {
-  const text = String(s).replace(/\s+/g, " ").trim()
-  return text.length > max ? `${text.slice(0, max - 1)}…` : text
-}
-
-function toolLine(name: string, input: Record<string, unknown> = {}) {
-  const short = name.startsWith("mcp__") ? name.split("__").slice(2).join("__") || name : name
-  const arg = input.file_path ?? input.notebook_path ?? input.command ?? input.pattern ?? input.url ?? input.query ??
-    input.description ?? input.skill ?? input.prompt
-  const shown = typeof arg === "string" ? arg.replace(HOME, "~") : null
-  return shown ? `${short}: ${oneLine(shown)}` : short
+// One action: the tool, the title Claude gave it (a command's or an agent's
+// description), and what it acted on, whole (the command, the file, the query).
+export type Action = { tool: string; title: string | null; detail: string }
+const MAX_DETAIL = 8000
+export function actionOf(name: string, input: Record<string, unknown> = {}): Action {
+  const tool = name.startsWith("mcp__") ? name.split("__").slice(2).join("__") || name : name
+  const arg = input.command ?? input.file_path ?? input.notebook_path ?? input.pattern ?? input.url ?? input.query ??
+    input.skill ?? input.prompt
+  const title = typeof input.description === "string" && input.description.trim() ? input.description.trim() : null
+  const detail = typeof arg === "string" ? arg.replace(HOME, "~").trim().slice(0, MAX_DETAIL) : ""
+  return { tool, title, detail }
 }
 
 // Notes the client adds to the person's prompt (e.g. "This conversation is
@@ -181,10 +181,10 @@ function toItems(rows: any[]): Item[] {
               ? b.content
               : Array.isArray(b.content) ? b.content.map((c: any) => c?.text ?? "").join("\n") : "",
           )
-  const pushTool = (key: string, line: string) => {
+  const pushTool = (key: string, action: Action) => {
     const last = items.at(-1)
-    if (last?.kind === "tools") last.lines.push(line)
-    else items.push({ key, kind: "tools", lines: [line] })
+    if (last?.kind === "tools") last.actions.push(action)
+    else items.push({ key, kind: "tools", actions: [action] })
   }
   for (const row of rows) {
     const content = row.message?.content
@@ -261,7 +261,7 @@ function toItems(rows: any[]): Item[] {
             const result = results.get(block.id)
             const answer = result === undefined ? null : (result.split("\n").find(l => l.trim()) ?? "Answered").slice(0, 300)
             items.push({ key, kind: "dialog", ...dialogOf(name, block.input)!, answer })
-          } else if (!HIDDEN_TOOLS.test(name)) pushTool(key, toolLine(name, block.input))
+          } else if (!HIDDEN_TOOLS.test(name)) pushTool(key, actionOf(name, block.input))
           // The wrap-up box checks off the task list.
           if (name.endsWith("ccd_turn__wrap_up")) items.push({ key: `${key}:finish`, kind: "planStep", op: { finish: true } })
         }

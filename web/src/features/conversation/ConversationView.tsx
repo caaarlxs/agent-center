@@ -156,19 +156,43 @@ function YourMessage({ item, onFork }: { item: Extract<Shown, { kind: "user" }>;
   )
 }
 
-function Tools({ lines }: { lines: string[] }) {
+type Action = Extract<Shown, { kind: "tools" }>["actions"][number]
+// An action as one line: the title Claude gave it, else the tool and what it acted on.
+const actionText = (a: Action) => a.title ?? (a.detail ? `${a.tool} · ${a.detail}` : a.tool)
+
+// One action: its title; a click shows what it ran or read, whole.
+function ActionRow({ action: a }: { action: Action }) {
   const [isOpen, setOpen] = useState(false)
+  const canOpen = !!a.detail && (!!a.title || a.detail.length > 60)
+  return (
+    <li className="min-w-0">
+      <button disabled={!canOpen} onClick={() => setOpen(o => !o)} aria-expanded={canOpen ? isOpen : undefined}
+        className="-ml-1.5 flex w-full min-w-0 items-center gap-2 rounded-md px-1.5 py-[3px] text-left enabled:hover:bg-hover">
+        <span className={cn("min-w-0 flex-1 truncate", a.title ? "text-[12.5px] text-text" : "font-mono text-[11.5px] text-text-muted")}>{actionText(a)}</span>
+        {a.title && <span className="shrink-0 font-mono text-[10.5px] text-faint">{a.tool}</span>}
+        {canOpen && <ChevronRight className={cn("size-3 shrink-0 text-faint transition-transform duration-150 ease-(--ease-out)", isOpen && "rotate-90")} />}
+      </button>
+      {isOpen && (
+        <pre className="mt-1 mb-1.5 max-h-72 overflow-auto rounded-lg border border-line bg-side px-2.5 py-2 font-mono text-[11.5px] leading-relaxed whitespace-pre-wrap break-words text-text">{a.detail}</pre>
+      )}
+    </li>
+  )
+}
+
+function Tools({ actions }: { actions: Action[] }) {
+  const [isOpen, setOpen] = useState(false)
+  const last = actions.at(-1)
   return (
     <div className="text-xs text-text-muted">
       <button className="-ml-1.5 flex max-w-full items-center gap-1.5 rounded-md px-1.5 py-[3px] text-text-muted hover:bg-hover hover:text-text" onClick={() => setOpen(o => !o)} aria-expanded={isOpen}>
         {isOpen ? <ChevronDown className="size-3 shrink-0" /> : <ChevronRight className="size-3 shrink-0" />}
         <Wrench className="size-3 shrink-0" />
-        <span className="shrink-0 font-[550]">{lines.length === 1 ? "1 action" : `${lines.length} actions`}</span>
-        {!isOpen && <span className="min-w-0 truncate font-mono text-[11.5px] text-faint">{lines.at(-1)}</span>}
+        <span className="shrink-0 font-[550]">{actions.length === 1 ? "1 action" : `${actions.length} actions`}</span>
+        {!isOpen && last && <span className={cn("min-w-0 truncate text-faint", !last.title && "font-mono text-[11.5px]")}>{actionText(last)}</span>}
       </button>
       {isOpen && (
-        <ul className="mt-1 flex flex-col gap-0.5 border-l-2 border-line pl-[18px]">
-          {lines.map((l, i) => <li key={i} title={l} className="truncate font-mono text-[11.5px] text-text-muted">{l}</li>)}
+        <ul className="mt-1 flex flex-col gap-px border-l-2 border-line pl-[18px]">
+          {actions.map((a, i) => <ActionRow key={i} action={a} />)}
         </ul>
       )}
     </div>
@@ -453,7 +477,7 @@ function ShownItem({ item, sessionId, asked, suggested, onFork }: { item: Shown;
     case "assistant":
       return <Markdown>{item.text}</Markdown>
     case "tools":
-      return <Tools lines={item.lines} />
+      return <Tools actions={item.actions} />
     case "plan":
       return <Plan steps={item.steps} />
     case "next":

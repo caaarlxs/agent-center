@@ -3,11 +3,12 @@ import type { Item } from "@/lib/api-types"
 import { append, normalize } from "./items"
 
 const user = (key: string, text: string, isMidTurn = false): Item => ({ key, kind: "user", text, at: null, isMidTurn })
-const tools = (key: string, ...lines: string[]): Item => ({ key, kind: "tools", lines })
+const act = (detail: string) => ({ tool: "Bash", title: null, detail })
+const tools = (key: string, ...lines: string[]): Item => ({ key, kind: "tools", actions: lines.map(act) })
 const next = (key: string, ...labels: string[]): Item => ({ key, kind: "next", recap: "r", ask: "a", actions: labels.map(l => ({ label: l, message: l })) })
 
 test("tool runs read later join the run before them", () => {
-  expect(append([tools("a", "Read x")], [tools("b", "Edit y")])).toEqual([{ key: "a", kind: "tools", lines: ["Read x", "Edit y"] }])
+  expect(append([tools("a", "Read x")], [tools("b", "Edit y")])).toEqual([{ key: "a", kind: "tools", actions: [act("Read x"), act("Edit y")] }])
 })
 
 test("a task list's step moves the list it belongs to", () => {

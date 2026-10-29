@@ -20,7 +20,7 @@ export function append(items: Item[], more: Item[]): Item[] {
     if (item.kind === "planStep") {
       const at = out.findLastIndex(i => i.kind === "plan")
       if (at >= 0) out = out.map((i, k) => (k === at && i.kind === "plan" ? { ...i, steps: applyPlanOp(i.steps, item.op) } : i))
-    } else if (last?.kind === "tools" && item.kind === "tools") out = [...out.slice(0, -1), { ...last, lines: [...last.lines, ...item.lines] }]
+    } else if (last?.kind === "tools" && item.kind === "tools") out = [...out.slice(0, -1), { ...last, actions: [...last.actions, ...item.actions] }]
     else out = [...out, item]
   }
   return out
@@ -70,7 +70,7 @@ export function normalize(items: Item[]): Shown[] {
       if (planAt >= 0) out.splice(planAt, 1)
       planAt = out.length
       out.push(item)
-    } else if (item.kind === "tools" && last?.kind === "tools") out[out.length - 1] = { ...last, lines: [...last.lines, ...item.lines] }
+    } else if (item.kind === "tools" && last?.kind === "tools") out[out.length - 1] = { ...last, actions: [...last.actions, ...item.actions] }
     else out.push(item)
   }
   close(null)
