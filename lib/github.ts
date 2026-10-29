@@ -34,12 +34,21 @@ export type PrDetail = Pr & {
   updatedAt: string
   failing: string[]
   pending: string[]
+  checkList: Check[]
+  reviewers: Reviewer[]
+  createdAt: string
+  commits: number
+  // Why the session lists it: its branch's PR, or one named in the chat.
+  origin?: "branch" | "chat"
 }
 
-type Rollup = { name?: string; context?: string; conclusion?: string; state?: string; status?: string }[]
+export type Check = { name: string; state: "pass" | "fail" | "pending" | "skip"; url: string | null; seconds: number | null }
+export type Reviewer = { login: string; state: "APPROVED" | "CHANGES_REQUESTED" | "COMMENTED" | "PENDING" }
+
+type Rollup = { name?: string; context?: string; conclusion?: string; state?: string; status?: string; detailsUrl?: string; targetUrl?: string; startedAt?: string; completedAt?: string }[]
 
 const SUMMARY_FIELDS = "number,title,url,state,isDraft,reviewDecision,statusCheckRollup"
-const DETAIL_FIELDS = `${SUMMARY_FIELDS},baseRefName,headRefName,additions,deletions,changedFiles,mergeable,mergeStateStatus,author,updatedAt`
+const DETAIL_FIELDS = `${SUMMARY_FIELDS},baseRefName,headRefName,additions,deletions,changedFiles,mergeable,mergeStateStatus,author,updatedAt,createdAt,commits,latestReviews,reviewRequests`
 
 async function gh(args: string[], cwd = HOME, timeoutMs = 20_000) {
   const { code, stdout, stderr } = await exec(["gh", ...args], { cwd, timeoutMs })
@@ -56,6 +65,26 @@ function checksOf(rollup: Rollup = []): Checks {
   if (states.some(s => FAILED.includes(s))) return "fail"
   if (states.every(s => PASSED.includes(s))) return "pass"
   return "pending"
+}
+
+const SKIPPED = ["SKIPPED", "NEUTRAL"]
+
+export function checkOf(c: Rollup[number]): Check {
+  const s = stateOf(c)
+  const state = FAILED.includes(s) ? "fail" : SKIPPED.includes(s) ? "skip" : PASSED.includes(s) ? "pass" : "pending"
+  const took = c.startedAt && c.completedAt ? (Date.parse(c.completedAt) - Date.parse(c.startedAt)) / 1000 : NaN
+  return { name: c.name || c.context || "check", state, url: c.detailsUrl || c.targetUrl || null, seconds: took >= 0 ? Math.round(took) : null }
+}
+
+// Who reviewed (their last word) and who is still asked; a team counts by its name.
+export function reviewersOf(latest: any[] = [], requested: any[] = []): Reviewer[] {
+  const out = new Map<string, Reviewer["state"]>()
+  for (const r of latest) if (r.author?.login && r.state !== "DISMISSED") out.set(r.author.login, r.state === "PENDING" ? "COMMENTED" : r.state)
+  for (const r of requested) {
+    const login = r.login || r.slug || r.name
+    if (login) out.set(login, "PENDING")
+  }
+  return [...out].map(([login, state]) => ({ login, state }))
 }
 
 function summary(raw: any): Pr {
@@ -116,6 +145,10 @@ export async function detail(url: string): Promise<PrDetail | null> {
       updatedAt: raw.updatedAt,
       failing: rollup.filter(c => FAILED.includes(stateOf(c))).map(c => c.name || c.context || "check"),
       pending: rollup.filter(c => !FAILED.includes(stateOf(c)) && !PASSED.includes(stateOf(c))).map(c => c.name || c.context || "check"),
+      checkList: rollup.map(checkOf),
+      reviewers: reviewersOf(raw.latestReviews, raw.reviewRequests),
+      createdAt: raw.createdAt,
+      commits: raw.commits?.length ?? 0,
     }
   }
   details.set(url, { pr, at: Date.now() })

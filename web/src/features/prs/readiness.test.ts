@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import type { PrDetail } from "@/lib/api-types"
-import { mergeState, readinessRows } from "./readiness"
+import { mergeState, readinessRows, reviewText, verdict } from "./readiness"
 
 const pr = (o: Partial<PrDetail> = {}) =>
   ({ number: 7, url: "https://github.com/o/r/pull/7", isDraft: false, mergeable: "MERGEABLE", mergeStateStatus: "CLEAN", checks: "pass", failing: [], pending: [], reviewDecision: null, baseRefName: "main", ...o }) as unknown as PrDetail
@@ -32,5 +32,29 @@ describe("readinessRows", () => {
   it("quotes unresolved comments", () => {
     const rows = readinessRows(pr(), { threads: [{ path: "a.ts", line: 3, isOutdated: false, author: "bo", body: "fix\nthis" }] })
     expect(rows[2].ask?.text).toContain("1. `a.ts:3` — @bo:\n   fix\n   this")
+  })
+})
+
+describe("verdict", () => {
+  it("says the first blocker and how many more", () => {
+    const p = pr({ checks: "fail", failing: ["lint"], mergeable: "CONFLICTING" })
+    expect(verdict(p, readinessRows(p, null))).toEqual({ text: "1 failing check: lint · 1 more", tone: "bad" })
+  })
+  it("names what is worth a look when GitHub would merge", () => {
+    const p = pr({ reviewDecision: "REVIEW_REQUIRED", reviewers: [{ login: "ana", state: "PENDING" }] })
+    expect(verdict(p, readinessRows(p, null))).toEqual({ text: "Review required: waiting on ana", tone: "ask" })
+  })
+  it("keeps the session's tasks short on top", () => {
+    expect(verdict(pr(), readinessRows(pr(), { tasks: ["a long task"] }))).toEqual({ text: "Ready to merge · 1 open task", tone: "ask" })
+  })
+  it("is ready when nothing is left", () => {
+    expect(verdict(pr(), readinessRows(pr(), null))).toMatchObject({ text: "Ready to merge", tone: "work" })
+  })
+})
+
+describe("reviewText", () => {
+  it("groups reviewers by what they said", () => {
+    expect(reviewText([{ login: "ana", state: "APPROVED" }, { login: "bo", state: "PENDING" }, { login: "cy", state: "PENDING" }])).toBe("Approved by ana · waiting on bo, cy")
+    expect(reviewText([])).toBeNull()
   })
 })

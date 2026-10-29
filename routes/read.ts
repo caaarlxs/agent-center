@@ -182,7 +182,9 @@ async function sessionRead(id: string, what: string, url: URL) {
       const refs = group ? await prRefs(group.ids, group.root, group.branch) : await prRefs([id], HOME, null)
       // The branch's PR resolves to a URL through the summary cache.
       const urls = [...new Set(refs.map(r => (r.ref.startsWith("https://") ? r.ref : prLookup(r.key, r.ref, r.cwd)?.url)).filter(Boolean) as string[])]
-      return json({ prs: (await Promise.all(urls.slice(0, 12).map(prDetail))).filter(Boolean) })
+      const prs = (await Promise.all(urls.slice(0, 12).map(prDetail))).filter(pr => pr !== null)
+      const ofBranch = new Set(refs.filter(r => !r.ref.startsWith("https://")).map(r => prLookup(r.key, r.ref, r.cwd)?.url))
+      return json({ prs: prs.map(pr => ({ ...pr, origin: ofBranch.has(pr.url) ? "branch" : "chat" })) })
     }
     // "Ready to merge?": what the PR card does not say on its own. The
     // review comments still open, the session's folder (anything uncommitted

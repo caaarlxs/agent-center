@@ -1,9 +1,10 @@
 // The "PRs" tab (prs.js): the pull requests of the session's branch and those
-// named in the conversation. For an open one, whether it is ready to merge,
-// with a button to ask the session to fix what is not; GitHub's merge state in
-// words; and the actions: merge (method and delete branch kept, a confirm
-// first), close (confirmed), reopen, draft or ready. Merged and closed ones
-// fold away. Read again every 30 s and after each action.
+// named in the conversation, each marked with where it came from. For an open
+// one, one line on where it stands, the reasons below it (each check, each
+// reviewer) with a button to ask the session to fix what is not; and the
+// actions: merge (method and delete branch kept, a confirm first), close
+// (confirmed), reopen, draft or ready. Merged and closed ones fold away. Read
+// again every 30 s and after each action.
 import { ChevronDown, ChevronRight } from "lucide-react"
 import { useEffect, useState } from "react"
 import { toast } from "sonner"
@@ -16,7 +17,7 @@ import { cn } from "@/lib/utils"
 import { showTab } from "@/app/open-session"
 import { sendMessage } from "@/features/conversation/send"
 import { ago } from "@/features/session/state"
-import { mergeState, readinessRows, type Readiness, type Row } from "./readiness"
+import { mergeState, readinessRows, verdict, type Readiness, type Row } from "./readiness"
 import { Anim } from "@/components/icons/animated"
 import { doneIcon } from "@/components/icona/marks"
 import { MergeButton } from "./MergeButton"
@@ -39,22 +40,58 @@ const BUSY: Record<string, string> = { merge: "Merging…", ready: "Marking…",
 // The review comments or a fix go as one message, then the conversation shows.
 const toSession = (id: string, text: string) => sendMessage(id, text).then(() => showTab("chat"), (err: Error) => toast(err.message || "Could not send"))
 
+const CHECK_MARK = { pass: ["✓", "text-work"], fail: ["✗", "text-bad"], pending: ["•", "text-ask"], skip: ["–", "text-faint"] } as const
+const took = (s: number | null) => (s === null ? "" : s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`)
+
+// Each check, the failing first, with how long it took and a link to its log.
+function CheckList({ checks }: { checks: PrDetail["checkList"] }) {
+  const order = { fail: 0, pending: 1, pass: 2, skip: 3 }
+  return (
+    <div className="ml-[22px] flex flex-col">
+      {[...checks].sort((a, b) => order[a.state] - order[b.state]).map((c, i) => (
+        <div key={`${c.name}-${i}`} className="flex min-h-[22px] items-center gap-2 text-[12px]">
+          <span className={cn("w-3 shrink-0 text-center font-extrabold", CHECK_MARK[c.state][1])}>{CHECK_MARK[c.state][0]}</span>
+          {c.url ? <a className="min-w-0 flex-1 truncate text-text-muted no-underline hover:text-text" href={c.url} target="_blank" rel="noreferrer">{c.name}</a>
+            : <span className="min-w-0 flex-1 truncate text-text-muted">{c.name}</span>}
+          <span className="num shrink-0 text-faint">{took(c.seconds)}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// One line on top says where the PR stands; the rows below give each reason,
+// folded away when nothing is left to do.
 function ReadyToMerge({ pr, sessionId, onBlockers }: { pr: PrDetail; sessionId: string; onBlockers: (b: string[]) => void }) {
   const [data, setData] = useState<Readiness | null>(null)
+  const [isOpen, setIsOpen] = useState<boolean | null>(null)
+  const [isShowingChecks, setIsShowingChecks] = useState(false)
   useEffect(() => void get<Readiness>(`/api/sessions/${encodeURIComponent(sessionId)}/readiness?url=${encodeURIComponent(pr.url)}`).then(setData, () => {}), [pr.url, pr.updatedAt])
   const rows: Row[] = readinessRows(pr, data)
   const blockers = rows.filter(r => r.tone === "bad").map(r => r.text)
   useEffect(() => onBlockers(blockers), [blockers.join("|")])
+  const top = verdict(pr, rows)
+  const isShown = isOpen ?? top.tone !== "work"
   return (
     <div className="flex flex-col gap-1 rounded-[9px] bg-hover px-[11px] py-[9px]">
-      <div className="mb-0.5 flex items-center gap-2 text-[11.5px] font-bold tracking-[0.05em] text-text-muted uppercase">
-        Ready to merge?{!data && <span className="spinner size-3" />}
-      </div>
-      {rows.map(r => (
-        <div key={r.text} className="flex min-h-[26px] items-center gap-2 text-[12.5px]">
-          <span className={cn("w-3.5 shrink-0 text-center font-extrabold", TONE[r.tone])}>{MARK[r.tone]}</span>
-          <span className={cn("min-w-0 flex-1", r.tone === "muted" ? "text-faint" : "text-text")}>{r.text}</span>
-          {r.ask && <Button variant="ghost" className="h-6 shrink-0 text-xs" onClick={() => toSession(sessionId, r.ask!.text)}>{r.ask.label}</Button>}
+      <button className={cn("flex min-h-[26px] items-center gap-2 text-left text-[13px] font-semibold", TONE[top.tone])} onClick={() => setIsOpen(!isShown)} aria-expanded={isShown}>
+        <i className="size-[7px] shrink-0 rounded-full bg-current" />
+        <span className="min-w-0 flex-1">{top.text}</span>
+        {!data && <span className="spinner size-3" />}
+        {isShown ? <ChevronDown className="size-3.5 text-faint" /> : <ChevronRight className="size-3.5 text-faint" />}
+      </button>
+      {isShown && rows.map((r, i) => (
+        <div key={r.text}>
+          <div className="flex min-h-[26px] items-center gap-2 text-[12.5px]">
+            <span className={cn("w-3.5 shrink-0 text-center font-extrabold", TONE[r.tone])}>{MARK[r.tone]}</span>
+            {i === 0 && pr.checkList?.length ? (
+              <button className={cn("flex min-w-0 flex-1 items-center gap-1 text-left", r.tone === "muted" ? "text-faint" : "text-text")} onClick={() => setIsShowingChecks(v => !v)} aria-expanded={isShowingChecks}>
+                {r.text}{isShowingChecks ? <ChevronDown className="size-3 text-faint" /> : <ChevronRight className="size-3 text-faint" />}
+              </button>
+            ) : <span className={cn("min-w-0 flex-1", r.tone === "muted" ? "text-faint" : "text-text")}>{r.text}</span>}
+            {r.ask && <Button variant="ghost" className="h-6 shrink-0 text-xs" onClick={() => toSession(sessionId, r.ask!.text)}>{r.ask.label}</Button>}
+          </div>
+          {i === 0 && isShowingChecks && <CheckList checks={pr.checkList} />}
         </div>
       ))}
     </div>
@@ -92,19 +129,16 @@ function PrItem({ pr, sessionId, onDone }: { pr: PrDetail; sessionId?: string; o
         <a className="inline-flex items-center gap-1 text-[12.5px] font-semibold text-text-muted no-underline hover:text-text" href={pr.url} target="_blank" rel="noreferrer" title="Open on GitHub">
           {pr.repo}#{pr.number}<Anim.ArrowUpRight size={12} />
         </a>
-        <span className="ml-auto text-xs text-faint">{ago(Date.parse(pr.updatedAt), now)}</span>
+        {pr.origin && <span className="text-[11.5px] text-faint">{pr.origin === "branch" ? "this branch" : "from chat"}</span>}
+        <span className="ml-auto text-xs text-faint" title={`Opened ${ago(Date.parse(pr.createdAt), now)} ago`}>{ago(Date.parse(pr.updatedAt), now)}</span>
       </header>
       <h3 className="m-0 text-sm leading-[1.35] font-semibold [overflow-wrap:anywhere]">{pr.title}</h3>
       <div className="flex flex-wrap gap-x-3.5 gap-y-1.5 text-[12.5px] text-text-muted">
         <span className="font-mono text-[11.5px]">{pr.baseRefName} ← {pr.headRefName}</span>
-        <span><b className="font-semibold text-work">+{pr.additions}</b> <b className="font-semibold text-bad">−{pr.deletions}</b> · {pr.changedFiles} {pr.changedFiles === 1 ? "file" : "files"}</span>
+        <span><b className="font-semibold text-work">+{pr.additions}</b> <b className="font-semibold text-bad">−{pr.deletions}</b> · {pr.changedFiles} {pr.changedFiles === 1 ? "file" : "files"} · {pr.commits} {pr.commits === 1 ? "commit" : "commits"}</span>
+        {pr.author && <span>by {pr.author}</span>}
       </div>
       {isOpen && sessionId && <ReadyToMerge pr={pr} sessionId={sessionId} onBlockers={setBlockers} />}
-      {isOpen && (
-        <p className={cn("m-0 flex items-center gap-[7px] text-[12.5px] font-[550]", TONE[merge.tone])}>
-          <i className="size-[7px] rounded-full bg-current" />{merge.text}
-        </p>
-      )}
       {confirm ? (
         <div className="-mx-3.5 mt-0.5 -mb-3 flex flex-wrap items-center gap-2 rounded-b-xl border-t border-line bg-side px-3.5 py-2.5">
           <span className="min-w-[200px] flex-1 text-[13px]">
@@ -159,7 +193,6 @@ export function Prs({ id }: { id: string }) {
   const old = prs.filter(p => p.state !== "OPEN")
   return (
     <div className={pane}>
-      <p className="m-0 text-xs text-text-muted">PRs from this session's branch and PRs named in the conversation.</p>
       {!open.length && <p className="m-0 py-3 text-center text-text-muted">No open PRs.</p>}
       {open.map(pr => <PrItem key={pr.url} pr={pr} sessionId={id} onDone={load} />)}
       {old.length > 0 && (
