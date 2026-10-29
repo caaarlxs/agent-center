@@ -11,7 +11,7 @@ import type { Card } from "@/lib/api-types"
 import { cn } from "@/lib/utils"
 import { menu, shake } from "@/features/board/state"
 import { useIsDots } from "@/lib/board-style"
-import { Actions, Context, Corner, Replies, Signals, edgeOf, tintOf } from "./parts"
+import { Actions, Context, Corner, Replies, Signals, SleepMark, edgeOf, tintOf } from "./parts"
 import { StateIcon } from "./StateIcon"
 import { ageOf, repoDot, stateOf, urgencyOf } from "./state"
 
@@ -108,6 +108,7 @@ function SessionCardView({ card, now, level = "near", unscale = 1, isSelected = 
               <i className="repo-dot size-[7px] flex-none rounded-[2px]" style={{ background: repoDot(card.repo) }} />{card.repo}
             </span>
             {!far && <span className="dot-time flex-none whitespace-nowrap">{ageOf(card, now)}</span>}
+            {!far && <SleepMark card={card} />}
             {!isDone && !far && <Signals card={card} now={now} isMid={level === "mid"} />}
           </footer>
           {!far && (

@@ -12,7 +12,7 @@ import { load, keep } from "@/lib/store"
 import { cn } from "@/lib/utils"
 import { openSession, useOpenSession } from "@/app/open-session"
 import { repoFilter } from "@/app/view-state"
-import { Actions, Context, Corner, Meta, NewBadge, edgeOf, tintOf } from "@/features/session/parts"
+import { Actions, Context, Corner, Meta, NewBadge, SleepMark, edgeOf, tintOf } from "@/features/session/parts"
 import { StateIcon } from "@/features/session/StateIcon"
 import { ageOf, hueOf, repoDot, repoText, stateOf, urgencyOf } from "@/features/session/state"
 import { archiveAll, boardSteps, placeInTier } from "./act"
@@ -92,7 +92,8 @@ export function BoardCard({ card, inStack = false }: { card: Card; inStack?: boo
           <div className="flex min-w-0 items-center gap-2 text-xs">
             {!inStack && <RepoTag name={card.repo} />}
             {card.branch && <span className="min-w-0 truncate font-mono text-[11.5px] text-text-muted" title={card.branch}>{card.branch}</span>}
-            <span className={cn("dot-time ml-auto text-xs whitespace-nowrap text-faint tabular-nums", urgency && URGENT_AGE[urgency])}
+            <span className="ml-auto inline-flex"><SleepMark card={card} /></span>
+            <span className={cn("dot-time text-xs whitespace-nowrap text-faint tabular-nums", urgency && URGENT_AGE[urgency])}
               title={card.waitingSince ? "How long it has been waiting for you" : new Date(card.lastActivity ?? card.updatedAt).toLocaleString("en-GB")}>{ageOf(card, now)}</span>
           </div>
         </div>
@@ -269,6 +270,7 @@ function Row({ card }: { card: Card }) {
         <Context card={card} lines={1} />
       </div>
       <Meta card={card} now={now} className="max-w-[42cqi] flex-nowrap justify-end overflow-hidden @max-[760px]:hidden" />
+      <SleepMark card={card} />
       <span className={cn("dot-time text-xs whitespace-nowrap text-faint tabular-nums", urgency && URGENT_AGE[urgency], ring && "@max-[760px]:hidden")}>{ageOf(card, now)}</span>
       <Actions card={card}
         className={cn("transition-opacity duration-120",

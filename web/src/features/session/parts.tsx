@@ -4,7 +4,7 @@
 // context used) and its action buttons with the Later and Colour menus.
 // The canvas card, the board card and the inbox row all build on these.
 import {
-  ListChecks, Mail, Palette, Play, Square, Star, TriangleAlert,
+  ListChecks, Mail, Moon, Palette, Play, Square, Star, TriangleAlert,
 } from "lucide-react"
 import { motion } from "motion/react"
 import { type ReactNode, useEffect, useRef } from "react"
@@ -13,6 +13,7 @@ import { Kbd } from "@/components/ui/kbd"
 import type { Card } from "@/lib/api-types"
 import { undoable } from "@/lib/toast"
 import { cn } from "@/lib/utils"
+import { useIsDots } from "@/lib/board-style"
 import { openDialog } from "@/app/open-dialog"
 import { type Tab, openSession } from "@/app/open-session"
 import { toggleWatch, watched } from "@/features/alerts/prefs"
@@ -447,4 +448,30 @@ export type Edge = "selected" | "lit" | undefined
 export function edgeOf(card: Card, o: { isSelected: boolean; isWaiting: boolean }): Edge {
   if (o.isSelected) return "selected"
   return o.isWaiting || card.column === "asking" || card.isUnread ? "lit" : undefined
+}
+
+// Asleep: the session has no process (closed in Claude, put to sleep, or
+// left idle); a message or Wake starts it. A moon beside the time, of dots in
+// the Dots style. Not on a card that works or is done.
+const MOON_DOTS = (() => {
+  const out: [number, number][] = []
+  for (let y = 0.75; y < 12; y += 1.5)
+    for (let x = 0.75; x < 12; x += 1.5) {
+      const inDisc = (x - 6) ** 2 + (y - 6) ** 2 <= 5.4 ** 2
+      const inBite = (x - 8.2) ** 2 + (y - 4.4) ** 2 <= 4.6 ** 2
+      if (inDisc && !inBite) out.push([x, y])
+    }
+  return out
+})()
+
+export function SleepMark({ card }: { card: Card }) {
+  const isDots = useIsDots()
+  if (card.bridge?.isOpen || card.column === "working" || card.column === "done") return null
+  return (
+    <span className="inline-flex flex-none text-faint" title="Asleep: a message or Wake starts it" aria-label="Asleep">
+      {isDots ? (
+        <svg viewBox="0 0 12 12" className="size-3" aria-hidden>{MOON_DOTS.map(([x, y]) => <circle key={`${x}-${y}`} cx={x} cy={y} r={0.6} fill="currentColor" />)}</svg>
+      ) : <Moon className="size-3" aria-hidden />}
+    </span>
+  )
 }
