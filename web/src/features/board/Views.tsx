@@ -83,7 +83,7 @@ export function BoardCard({ card, inStack = false }: { card: Card; inStack?: boo
       className={cn("group/card relative flex cursor-pointer flex-col gap-2 rounded-[10px] border border-line bg-surface px-3 pt-3 pb-[11px] shadow-[0_1px_1px_rgb(0_0_0/0.02)] transition-[border-color,box-shadow] duration-100 active:cursor-grabbing",
         "hover:border-line-strong hover:shadow-card", isMenuOpen && "z-5")}>
       <header className="flex min-w-0 items-start gap-2.5">
-        <StateIcon card={card} size={30} />
+        <StateIcon card={card} size={36} />
         <div className="flex min-w-0 flex-1 flex-col gap-[3px]">
           <h3 className={cn("m-0 line-clamp-2 text-sm leading-[1.35] [overflow-wrap:anywhere]", card.isUnread ? "font-[750]" : "font-[550]")}>{card.title}</h3>
           <div className="flex min-w-0 items-center gap-2 text-xs">
