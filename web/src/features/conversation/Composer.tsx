@@ -8,13 +8,14 @@ import { Square } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import type { FileUIPart } from "ai"
 import { toast } from "sonner"
-import { PromptInput, PromptInputBody, PromptInputProvider, PromptInputTextarea, usePromptInputController } from "@/components/ai-elements/prompt-input"
+import { PromptInput, PromptInputBody, PromptInputProvider, PromptInputTextarea, usePromptInputAttachments, usePromptInputController } from "@/components/ai-elements/prompt-input"
 import { post } from "@/lib/api"
 import type { Bridge, Card } from "@/lib/api-types"
 import { persistedStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
 import { AttachButton, MicButton, PickedFiles, fileErrors } from "@/features/prompt/PromptExtras"
 import { micLive } from "@/features/prompt/voice"
+import { keepDraftFiles, keptDraftFiles } from "@/features/prompt/draft-files"
 import { ComposerGlow } from "@/features/prompt/ComposerGlow"
 import { modelKey, modelNow } from "@/features/prompt/Settings"
 import { ModePicker } from "@/features/prompt/ModePicker"
@@ -37,8 +38,19 @@ function keepDraft(id: string, text: string) {
   const all = Object.fromEntries(Object.entries(drafts.get()).filter(([key, d]) => key !== id && Date.now() - d.at < DRAFT_MS))
   drafts.set(text.trim() ? { ...all, [id]: { text, at: Date.now() } } : all)
 }
-// The files picked, per session, while the page stays open.
+// The files picked, per session, while the page stays open; kept in the
+// browser too (draft-files.ts), so they come back after a reload.
 const draftFiles = new Map<string, (FileUIPart & { id: string })[]>()
+
+// The files kept from before a reload, back in the box when it opens with none.
+function useKeptFiles(id: string) {
+  const { files, add } = usePromptInputAttachments()
+  useEffect(() => {
+    if (files.length || draftFiles.has(id)) return
+    void keptDraftFiles(id, DRAFT_MS).then(kept => kept.length && add(kept))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id])
+}
 
 const DOT = { on: "bg-work shadow-[0_0_0_3px_var(--work-soft)]", busy: "bg-ask shadow-[0_0_0_3px_var(--ask-soft)]", bad: "bg-bad", off: "bg-faint" }
 const subtle = "inline-flex h-[30px] shrink-0 items-center gap-[5px] rounded-md px-2.5 text-[13px] font-medium text-text-muted transition-[background-color,color,transform] duration-[120ms] hover:bg-hover active:scale-[0.97] [&_svg]:size-3"
@@ -123,6 +135,7 @@ function Box({ id, card, bridge }: { id: string; card: Card | undefined; bridge:
     return () => clearTimeout(timer)
   }, [id, textInput.value])
   useEffect(() => () => keepDraft(id, latest.current), [id])
+  useKeptFiles(id)
   const alive = useRef(true)
   useEffect(() => () => void (alive.current = false), [])
 
@@ -202,7 +215,7 @@ function Box({ id, card, bridge }: { id: string; card: Card | undefined; bridge:
 export function Composer({ id, card, bridge }: { id: string; card: Card | undefined; bridge: Bridge | null }) {
   return (
     <PromptInputProvider key={id} initialInput={draftOf(id)} initialFiles={draftFiles.get(id)}
-      onFilesChange={files => void (files.length ? draftFiles.set(id, files) : draftFiles.delete(id))}>
+      onFilesChange={files => (void (files.length ? draftFiles.set(id, files) : draftFiles.delete(id)), void keepDraftFiles(id, files))}>
       <Box id={id} card={card} bridge={bridge} />
     </PromptInputProvider>
   )
