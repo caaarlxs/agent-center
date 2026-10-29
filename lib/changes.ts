@@ -22,8 +22,9 @@ export type FileDiff = {
   binary: boolean
   collapsed: boolean // a lockfile or generated file: counted, not shown
   hunks: Hunk[]
+  source?: "session" // outside the repository: from the session's own edits (lib/session-changes.ts)
 }
-export type Changes = { root: string; branch: string | null; base: string | null; files: FileDiff[]; truncated: boolean }
+export type Changes = { root: string; branch: string | null; base: string | null; files: FileDiff[]; truncated: boolean } // base null: no repository, only the session's own edits
 
 const git = (cwd: string, args: string[], timeoutMs = 10_000) => run(["git", "-C", cwd, ...args], cwd, { timeoutMs })
 
@@ -39,7 +40,7 @@ export async function baseOf(cwd: string) {
   return { sha: "HEAD", name: "HEAD" }
 }
 
-function parse(text: string): FileDiff[] {
+export function parse(text: string): FileDiff[] {
   const files: FileDiff[] = []
   let file: FileDiff | null = null
   let hunk: Hunk | null = null

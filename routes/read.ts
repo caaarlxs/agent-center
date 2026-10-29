@@ -5,6 +5,7 @@
 import { basename } from "node:path"
 import { status as bridgeStatus } from "../lib/bridge"
 import { changesOf } from "../lib/changes"
+import { sessionChanges, sessionVersions } from "../lib/session-changes"
 import { isContextPath, listContext, readContext } from "../lib/context"
 import { editorThemes } from "../lib/editor-theme"
 import { codeTree, marksOf, readCode, searchCode, versionsOf } from "../lib/code"
@@ -155,12 +156,22 @@ async function sessionRead(id: string, what: string, url: URL) {
     // A changed file before and after, for the side-by-side view of "Changes".
     case "codeversions": {
       if (!group) return json({ error: "unknown session" }, 404)
+      // A file outside the repository: its texts from the session's own edits.
+      if (url.searchParams.has("session")) {
+        const own = await sessionVersions(group.ids, url.searchParams.get("path") ?? "", group.lead.cwd)
+        return own ? json(own) : json({ error: "This session did not change that file" }, 404)
+      }
       const { status = 200, ...res } = await versionsOf(group.lead.cwd, url.searchParams.get("path") ?? "", url.searchParams.get("old"))
       return json(res, status)
     }
+    // The repository's diff (its folder's), and what the session changed outside it.
     case "changes": {
-      const result = group ? await changesOf(group.lead.cwd) : null
-      return result ? json(result) : json({ error: "This session's folder is not a git repository" }, 404)
+      if (!group) return json({ error: "unknown session" }, 404)
+      const repo = await changesOf(group.lead.cwd)
+      const own = await sessionChanges(group.ids, group.lead.cwd, repo?.root ?? null)
+      if (repo) return json({ ...repo, files: [...repo.files, ...own] })
+      if (own.length) return json({ root: group.lead.cwd, branch: null, base: null, files: own, truncated: false })
+      return json({ error: "Nothing changed: this session's folder is not a git repository, and the session edited no file" }, 404)
     }
     // What changes in it, as it happens, for its open conversation (lib/session-events.ts).
     case "events":

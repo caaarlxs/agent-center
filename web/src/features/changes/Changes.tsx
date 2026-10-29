@@ -162,7 +162,7 @@ function SideBySide({ id, files }: { id: string; files: FileDiff[] }) {
   useEffect(() => void (chosen && !isPlain && ensureMonacoLang(chosen.path)), [chosen, isPlain])
   useEffect(() => {
     if (!chosen) return
-    const q = new URLSearchParams({ path: chosen.path, ...(chosen.oldPath ? { old: chosen.oldPath } : {}) })
+    const q = new URLSearchParams({ path: chosen.path, ...(chosen.oldPath ? { old: chosen.oldPath } : {}), ...(chosen.source ? { session: "1" } : {}) })
     get<{ original: string; modified: string }>(`/api/sessions/${encodeURIComponent(id)}/codeversions?${q}`).then(v => (setVersions(v), setError(null)), (err: Error) => setError(err.message || "Could not read it"))
   }, [id, chosen?.path, files])
   const wait = !monaco.ready ? (monaco.error ? `The editor could not load: ${monaco.error}` : monaco.progress != null ? `Downloading the editor (VS Code's Monaco, once)… ${Math.round(monaco.progress * 100)}%` : "Loading the editor…")
@@ -229,7 +229,7 @@ export function Changes({ id }: { id: string }) {
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-line px-4 py-2.5 text-[12.5px]">
         <span><b>{n}</b> {n === 1 ? "file" : "files"} · <b className="font-[650] text-work">+{add}</b> <b className="font-[650] text-bad">−{del}</b></span>
-        <span className="min-w-0 flex-1 truncate text-xs text-text-muted" title={data.root}>{data.branch ? `${data.branch} against ${data.base}` : `against ${data.base}`}, with uncommitted changes</span>
+        <span className="min-w-0 flex-1 truncate text-xs text-text-muted" title={data.root}>{!data.base ? "What this session edited (no git repository)" : `${data.branch ? `${data.branch} against ${data.base}` : `against ${data.base}`}, with uncommitted changes${data.files.some(f => f.source) ? ", and what the session edited outside it" : ""}`}</span>
         {view === "lines" && (
           <button className={cn("inline-grid size-7 place-items-center rounded-[7px] text-text-muted hover:bg-press hover:text-text active:scale-[0.92]", hasTree && "text-brand hover:text-brand")}
             onClick={() => changesTree.set(!hasTree)} title={hasTree ? "Hide the tree" : "Show the tree of changed files"}><PanelLeft className="size-3.5" /></button>
@@ -242,7 +242,7 @@ export function Changes({ id }: { id: string }) {
       </div>
       {view === "side" && n > 0 && <SideBySide key={data.files.map(f => f.path).join("|")} id={id} files={data.files} />}
       {data.truncated && <p className="m-0 px-3 py-2.5 text-xs text-text-muted">The diff is very large: only the start is shown.</p>}
-      {n === 0 && <p className="grid flex-1 place-items-center p-8 text-text-muted">No changes against {data.base}.</p>}
+      {n === 0 && <p className="grid flex-1 place-items-center p-8 text-text-muted">No changes against {data.base ?? "where the session started"}.</p>}
       {view === "lines" && n > 0 && (
         <div className={cn("flex min-h-0 flex-1", hasTree && !hasSideRoom && "grid grid-cols-[minmax(200px,30%)_minmax(0,1fr)]")}>
           {hasTree && (hasSideRoom

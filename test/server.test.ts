@@ -718,6 +718,21 @@ describe("memory", () => {
   }, 20_000)
 })
 
+describe("changes of a session outside a git repository", () => {
+  test("lists what the session edited, rebuilt from its own edits, and both texts of it", async () => {
+    await appendFile(join(home, ".claude", "projects", "demo", `${SERVER}.jsonl`), JSON.stringify({
+      type: "user", uuid: "e1", cwd: home, timestamp: new Date().toISOString(),
+      message: { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_e1", content: "edited" }] },
+      toolUseResult: { filePath: join(home, "notes.ts"), oldString: "notes = 0", newString: "notes = 1", replaceAll: false, originalFile: null, structuredPatch: [] },
+    }) + "\n")
+    const changes = await jsonOf(fetch(`${base()}/api/sessions/${SERVER}/changes`))
+    expect(changes.base).toBeNull()
+    expect(changes.files.map((f: any) => [f.path, f.status, f.additions, f.deletions, f.source])).toEqual([["notes.ts", "modified", 1, 1, "session"]])
+    const both = await jsonOf(fetch(`${base()}/api/sessions/${SERVER}/codeversions?path=notes.ts&session=1`))
+    expect([both.original, both.modified]).toEqual(["export const notes = 0\n", "export const notes = 1\n"])
+  })
+})
+
 describe("errors in the page", () => {
   test("a view that breaks is written to the client errors log", async () => {
     const res = await post("/api/clienterror", { where: "code", message: "Cannot read properties of undefined (reading 'model')", stack: "at open (CodeWorkspace.tsx:1)" })
