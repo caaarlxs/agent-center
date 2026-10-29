@@ -2,7 +2,7 @@
 // it opens where you click, in the board's own menu look, and closes on a
 // click elsewhere, Esc, a scroll or leaving the window. Arrows move through
 // it, Enter picks. It always shows: some windows (an app's) have no menu of their own.
-import { AnimatePresence, motion } from "motion/react"
+import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { ClipboardPaste, Copy, ExternalLink, ImageIcon, Link, Mail, Maximize2, RotateCw, Scissors, TextSelect, type LucideIcon } from "lucide-react"
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
@@ -76,6 +76,8 @@ async function run(action: Action, selection: string) {
 }
 
 type Open = { x: number; y: number; items: Item[]; selection: string }
+// Quick to start, long to settle: the menu grows out of the corner you clicked.
+const EASE_OUT = [0.23, 1, 0.32, 1] as const
 const row = "relative z-[1] flex h-8 w-full items-center gap-2.5 rounded-md px-2 text-left text-[13px] text-text outline-none [&_svg]:size-[15px] [&_svg]:shrink-0 [&_svg]:text-text-muted"
 
 // The row lit under the pointer or the keyboard: one highlight that glides
@@ -150,6 +152,7 @@ export function ContextMenu() {
 
   const at = usePlacement(open, box)
   const { lit, light } = useLit(open)
+  const isStill = useReducedMotion() ?? false
 
   return createPortal(
     <AnimatePresence>
@@ -157,7 +160,8 @@ export function ContextMenu() {
         <motion.div ref={box} key={`${open.x},${open.y}`} role="menu" aria-label="Actions"
           className="fixed z-[210] min-w-52 rounded-[10px] border border-line bg-raised p-[5px] shadow-pop"
           style={{ left: at.x, top: at.y, transformOrigin: `${at.x < open.x ? "right" : "left"} ${at.y < open.y ? "bottom" : "top"}` }}
-          initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, transition: { duration: 0.08 } }} transition={{ duration: 0.12, ease: [0.23, 1, 0.32, 1] }}
+          initial={isStill ? { opacity: 0 } : { opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: isStill ? 1 : 0.97, transition: { duration: 0.1 } }} transition={{ duration: 0.2, ease: EASE_OUT }}
           onContextMenu={e => e.preventDefault()}>
           {lit && <i aria-hidden className={cn("absolute inset-x-[5px] top-0 rounded-md bg-hover", !lit.isFirst && "transition-[transform,height] duration-150 ease-(--ease-out) motion-reduce:transition-none")}
             style={{ transform: `translateY(${lit.top}px)`, height: lit.height }} />}
@@ -166,10 +170,11 @@ export function ContextMenu() {
             return (
               <Fragment key={item.label}>
                 {i > 0 && open.items[i - 1]!.group !== item.group && <div role="separator" className="mx-1 my-[5px] h-px bg-line" />}
-                <button type="button" role="menuitem" className={row} onFocus={e => light(e.currentTarget)} onMouseEnter={e => (light(e.currentTarget), e.currentTarget.focus({ preventScroll: true }))}
+                <motion.button type="button" role="menuitem" className={row}
+                  initial={isStill ? false : { opacity: 0, y: -2 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: EASE_OUT, delay: 0.04 + i * 0.025 }} onFocus={e => light(e.currentTarget)} onMouseEnter={e => (light(e.currentTarget), e.currentTarget.focus({ preventScroll: true }))}
                   onClick={() => (setOpen(null), void run(item.action, open.selection))}>
                   <Icon /><span className="flex-1">{item.label}</span>{item.hint && <kbd className="font-sans text-[11.5px] text-faint">{item.hint}</kbd>}
-                </button>
+                </motion.button>
               </Fragment>
             )
           })}
