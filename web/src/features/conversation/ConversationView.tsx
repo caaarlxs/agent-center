@@ -18,6 +18,7 @@ import type { Bridge, Card, Permission, Snapshot, SuggestionState } from "@/lib/
 import { bytesText, clock, memText, MEMORY_WARN } from "@/lib/format"
 import { useLive } from "@/lib/live"
 import { Shimmer } from "@/components/ai-elements/shimmer"
+import { ThinkingOrb } from "thinking-orbs"
 import { useNow } from "@/lib/now"
 import { cn } from "@/lib/utils"
 import { openDialog } from "@/app/open-dialog"
@@ -28,7 +29,7 @@ import { answer, launch, permit } from "@/features/session/actions"
 import { ForkDialog } from "./ForkDialog"
 import type { EditsItem, Shown, SuggestionItem } from "./items"
 import { Markdown, SessionOf } from "./Markdown"
-import { type Live, turnLine, useLiveAnswer } from "./session-events"
+import { type Live, orbOf, turnLine, useLiveAnswer } from "./session-events"
 import { useTypewriter } from "./typewriter"
 import { WidgetView } from "./Widget"
 import { type Pending, deliveredOf, dropPending, stampOf, takenBack, usePending, waitingOf } from "./pending"
@@ -445,22 +446,9 @@ function RunningNow({ sessionId }: { sessionId: string }) {
   )
 }
 
-// Claude Code's spinner: a star that grows and shrinks, in the brand colour;
-// still (its fullest) when you ask for less motion.
-const STAR = ["·", "✢", "✳", "✶", "✻", "✽", "✻", "✶", "✳", "✢"]
-const STAR_MS = 120
-function Star() {
-  const [frame, setFrame] = useState(4)
-  useEffect(() => {
-    if (matchMedia("(prefers-reduced-motion: reduce)").matches) return
-    const timer = setInterval(() => setFrame(f => (f + 1) % STAR.length), STAR_MS)
-    return () => clearInterval(timer)
-  }, [])
-  return <span aria-hidden className="inline-grid w-3.5 shrink-0 place-items-center text-[14px] leading-none text-brand">{STAR[frame]}</span>
-}
-
-// While a turn runs (mod v12), the line Claude Code shows: its star, what it
-// does now with a shine across it, the turn's time and tokens.
+// While a turn runs (mod v12): an orb that shows what kind of work it does
+// (thinking-orbs), what it does now with a shine across it, the turn's time
+// and tokens.
 function TurnLine({ live }: { live: Live | null }) {
   const [now, setNow] = useState(Date.now)
   useEffect(() => {
@@ -471,7 +459,7 @@ function TurnLine({ live }: { live: Live | null }) {
   if (!line) return null
   return (
     <div className="flex min-w-0 items-center gap-2 text-[12.5px] text-text-muted" aria-live="polite">
-      <Star />
+      <ThinkingOrb state={orbOf(live?.doing)} size={20} className="size-5 shrink-0" />
       {line.doing && <Shimmer as="span" duration={2.2} className="min-w-0 truncate [--color-background:var(--text)] [--color-muted-foreground:var(--text-muted)]">{line.doing}</Shimmer>}
       <span className="shrink-0 tabular-nums">{line.doing && "· "}{line.time} · {line.tokens}</span>
     </div>

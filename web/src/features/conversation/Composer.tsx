@@ -14,6 +14,9 @@ import type { Bridge, Card } from "@/lib/api-types"
 import { persistedStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
 import { AttachButton, MicButton, PickedFiles, fileErrors } from "@/features/prompt/PromptExtras"
+import { micLive } from "@/features/prompt/voice"
+import { theme } from "@/lib/theme"
+import { VoiceBeam } from "voice-glow"
 import { modelKey, modelNow } from "@/features/prompt/Settings"
 import { ModePicker } from "@/features/prompt/ModePicker"
 import { ModelEffort } from "@/features/prompt/ModelEffort"
@@ -125,6 +128,8 @@ function Box({ id, card, bridge }: { id: string; card: Card | undefined; bridge:
   useEffect(() => () => void (alive.current = false), [])
 
   const isWorking = card?.column === "working"
+  const mic = micLive.use()
+  const mode = theme.use()
   const reach = reachOf(bridge, isWorking, isWaking)
   const isStuck = isStuckNow(bridge)
   const isBusy = isBusyNow(bridge, isWorking)
@@ -145,6 +150,7 @@ function Box({ id, card, bridge }: { id: string; card: Card | undefined; bridge:
       onDragEnter={e => e.dataTransfer.types.includes("Files") && setDrop(true)}
       onDragLeave={e => !e.currentTarget.contains(e.relatedTarget as Node) && setDrop(false)}
       onDrop={() => setDrop(false)}>
+      <VoiceBeam stream={mic.stream ?? undefined} active={mic.isOn} theme={mode} borderRadius={14} idle={mic.stream ? undefined : 0.35}>
       <PromptInput
         multiple maxFiles={MAX_FILES} maxFileSize={MAX_BYTES} onError={fileErrors}
         onSubmit={async ({ text, files }) => {
@@ -181,6 +187,7 @@ function Box({ id, card, bridge }: { id: string; card: Card | undefined; bridge:
           </button>
         </div>
       </PromptInput>
+      </VoiceBeam>
       <div className="flex min-w-0 items-center justify-between gap-3 px-1 pt-[7px]">
         <span className={cn("inline-flex min-w-0 items-center gap-1.5 text-[11.5px] text-text-muted", reach.tone === "bad" && "text-bad")}>
           <i className={cn("size-[7px] shrink-0 rounded-full", DOT[reach.tone])} /><span className="truncate">{reach.text}</span>

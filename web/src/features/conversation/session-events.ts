@@ -118,3 +118,19 @@ export function turnLine(live: Live | null, now: number) {
   if (!live?.since) return null
   return { time: timeText(now - live.since), tokens: tokensText(live.tokens ?? 0), doing: doingText(live.doing) }
 }
+
+// The orb (thinking-orbs) the turn line shows, by what the turn does:
+// thinking solves, writing composes, a tool that reads or looks something up
+// searches, an agent weaves, another connector's tool connects, the rest works.
+export type Orb = "breathing" | "solving" | "composing" | "searching" | "weaving" | "connecting" | "working"
+const LOOKS = /^(Read|Grep|Glob|WebSearch|WebFetch|LS|NotebookRead)$/
+const LOOKS_UP = /search|get|list|read|fetch|find|query/i
+export function orbOf(d: Doing | null | undefined): Orb {
+  if (!d) return "breathing"
+  if (d.kind !== "tool") return d.kind === "thinking" ? "solving" : "composing"
+  const tool = d.tool ?? ""
+  if (LOOKS.test(tool)) return "searching"
+  if (tool === "Agent" || tool === "Task") return "weaving"
+  if (tool.startsWith("mcp__")) return LOOKS_UP.test(toolName(tool)) ? "searching" : "connecting"
+  return "working"
+}

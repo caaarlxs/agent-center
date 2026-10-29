@@ -2,6 +2,13 @@
 // the local server, which writes the text. Without it, the browser's own
 // speech recognition, which may send the audio to Google.
 
+import { createStore } from "@/lib/store"
+
+// The microphone while you dictate, for the composer's voice glow: its
+// stream while Whisper records (the glow follows your voice), on without one
+// while the browser dictates (it breathes).
+export const micLive = createStore<{ isOn: boolean; stream: MediaStream | null }>({ isOn: false, stream: null })
+
 let whisperReady: Promise<boolean> | null = null
 export const hasWhisper = () =>
   (whisperReady ??= fetch("/api/transcribe").then(r => r.json()).then(r => !!r.ready, () => false))

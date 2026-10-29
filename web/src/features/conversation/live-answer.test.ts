@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { type Live, shownLive, turnLine } from "./session-events"
+import { type Live, orbOf, shownLive, turnLine } from "./session-events"
 
 const now = 1_000_000
 const live = (over: Partial<Live> = {}): Live => ({ turnId: "t", step: 0, text: "Writing…", done: false, at: now - 100, ...over })
@@ -31,4 +31,17 @@ describe("the turn line (mod v12), as the app's spinner", () => {
     expect(turnLine(at({ doing: { kind: "tool", tool: "mcp__github__search_issues" } }), now)?.doing).toBe("search_issues")
   })
   it("nothing from an older mod, without the turn's start", () => expect(turnLine(live(), now)).toBeNull())
+})
+
+describe("the orb's state, from what the turn does", () => {
+  it("thinks, writes, or acts on a tool by its kind", () => {
+    expect(orbOf(null)).toBe("breathing")
+    expect(orbOf({ kind: "thinking" })).toBe("solving")
+    expect(orbOf({ kind: "writing" })).toBe("composing")
+    for (const tool of ["Read", "Grep", "Glob", "WebSearch", "WebFetch", "mcp__x__searchJiraIssuesUsingJql", "mcp__github__get_me"])
+      expect(orbOf({ kind: "tool", tool })).toBe("searching")
+    expect(orbOf({ kind: "tool", tool: "Agent" })).toBe("weaving")
+    expect(orbOf({ kind: "tool", tool: "mcp__slack__send_message" })).toBe("connecting")
+    expect(orbOf({ kind: "tool", tool: "Bash" })).toBe("working")
+  })
 })

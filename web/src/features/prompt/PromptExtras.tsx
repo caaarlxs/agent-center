@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils"
 import { useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 import { usePromptInputAttachments, usePromptInputController } from "@/components/ai-elements/prompt-input"
-import { canDictate, canRecord, dictate, hasWhisper, recordVoice, type Recording } from "./voice"
+import { canDictate, canRecord, dictate, hasWhisper, micLive, recordVoice, type Recording } from "./voice"
 import { Anim } from "@/components/icons/animated"
 import { Elapsed, LiveWave, ScrubWave } from "./VoiceWave"
 import { MicVoiceRippleIcon } from "@/components/icona/mic-voice-ripple"
@@ -95,6 +95,11 @@ export function MicButton() {
   }
 
   const rec = mic.kind === "recording" ? mic.rec : null
+  // The composer's glow: on while you speak, off once it writes.
+  useEffect(() => {
+    micLive.set({ isOn: mic.kind === "recording" || mic.kind === "dictating", stream: rec?.stream ?? null })
+    return () => micLive.set({ isOn: false, stream: null })
+  }, [mic.kind, rec])
   // The level, sampled into bars that scroll left.
   useEffect(() => {
     if (!rec) return
