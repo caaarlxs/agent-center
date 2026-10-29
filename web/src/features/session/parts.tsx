@@ -439,3 +439,12 @@ export function Corner({ state }: { state: StateKey }) {
   const color = CORNER[state]
   return color ? <i aria-hidden className="card-corner" style={{ "--k": color } as React.CSSProperties} /> : null
 }
+
+// Which edge a card shows, for the Dots style's dotted frames (index.css:
+// article[data-edge]): selected (or open, or a note's target), lit (it waits
+// for you, or has something new), or none, at rest.
+export type Edge = "selected" | "lit" | undefined
+export function edgeOf(card: Card, o: { isSelected: boolean; isWaiting: boolean }): Edge {
+  if (o.isSelected) return "selected"
+  return o.isWaiting || card.column === "asking" || card.isUnread ? "lit" : undefined
+}

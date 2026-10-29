@@ -390,3 +390,6 @@ html[data-theme-switch]::view-transition-new(root) { animation: theme-curtain 60
 [data-style=dots] .dot-time { font-family: "Doto Variable", var(--font-mono); font-weight: 800; text-transform: uppercase; letter-spacing: 0.03em; }
 [data-style=dots] .repo-dot { border-radius: 50% !important; }
 [data-style=dots] .unread-dot { width: 8px; height: 8px; border-radius: 0; background: radial-gradient(circle closest-side, var(--brand) 85%, transparent) 0 0 / 4px 4px !important; }
+/* Cards: the edge that stands out (selected, waiting, new) is dotted; at rest, the plain hairline. */
+[data-style=dots] article[data-edge] { border-style: dotted; border-width: 1.5px; box-shadow: none !important; }
+[data-style=dots] article[data-edge=selected] { outline: 1.5px dotted color-mix(in srgb, var(--brand) 55%, transparent); outline-offset: 2px; }

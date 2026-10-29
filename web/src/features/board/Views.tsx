@@ -12,7 +12,7 @@ import { load, keep } from "@/lib/store"
 import { cn } from "@/lib/utils"
 import { openSession, useOpenSession } from "@/app/open-session"
 import { repoFilter } from "@/app/view-state"
-import { Actions, Context, Corner, Meta, NewBadge, tintOf } from "@/features/session/parts"
+import { Actions, Context, Corner, Meta, NewBadge, edgeOf, tintOf } from "@/features/session/parts"
 import { StateIcon } from "@/features/session/StateIcon"
 import { ageOf, hueOf, repoDot, repoText, stateOf, urgencyOf } from "@/features/session/state"
 import { archiveAll, boardSteps, placeInTier } from "./act"
@@ -78,7 +78,7 @@ export function BoardCard({ card, inStack = false }: { card: Card; inStack?: boo
       : {}),
   }
   return (
-    <article data-id={card.id} tabIndex={0} draggable style={style}
+    <article data-id={card.id} tabIndex={0} draggable style={style} data-edge={edgeOf(card, { isSelected: ring, isWaiting: !!urgency })}
       onClick={() => open(card.id)} onKeyDown={onOpenKey(card.id)}
       onDragStart={e => (e.dataTransfer.setData("text/plain", card.id), (e.dataTransfer.effectAllowed = "move"), dragging.set(card))}
       onDragEnd={() => dragging.set(null)}

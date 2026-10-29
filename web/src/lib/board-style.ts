@@ -8,7 +8,8 @@ import { persistedStore } from "./store"
 export type BoardStyle = "classic" | "dots"
 export const boardStyle = persistedStore<BoardStyle>("boardStyle", "classic")
 
-const mark = (style: BoardStyle) => void (document.documentElement.dataset.style = style)
+// Tests load this without a page: there is nothing to mark.
+const mark = (style: BoardStyle) => void (typeof document !== "undefined" && (document.documentElement.dataset.style = style))
 mark(boardStyle.get())
 
 export function chooseStyle(style: BoardStyle) {

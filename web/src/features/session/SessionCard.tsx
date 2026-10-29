@@ -11,7 +11,7 @@ import type { Card } from "@/lib/api-types"
 import { cn } from "@/lib/utils"
 import { menu, shake } from "@/features/board/state"
 import { useIsDots } from "@/lib/board-style"
-import { Actions, Context, Corner, Replies, Signals, tintOf } from "./parts"
+import { Actions, Context, Corner, Replies, Signals, edgeOf, tintOf } from "./parts"
 import { StateIcon } from "./StateIcon"
 import { ageOf, repoDot, stateOf, urgencyOf } from "./state"
 
@@ -77,7 +77,7 @@ function SessionCardView({ card, now, level = "near", unscale = 1, isSelected = 
   return (
     <HoverCard openDelay={450} closeDelay={60} open={isDragging || isReading ? false : undefined}>
       <HoverCardTrigger asChild>
-        <article data-id={card.id} tabIndex={0} style={style}
+        <article data-id={card.id} tabIndex={0} style={style} data-edge={edgeOf(card, { isSelected: ring || isNoteTarget, isWaiting: !!urgency })}
           className={cn(
             "group/card relative flex w-72 origin-top cursor-grab flex-col gap-2 rounded-[12px] border border-line bg-surface px-3 pt-[11px] pb-2.5 shadow-[0_1px_2px_rgb(0_0_0/0.06)] select-none dark:border-line-strong",
             "transition-[border-color,box-shadow,opacity] duration-120 hover:[animation-play-state:paused] focus-visible:outline-offset-2",
