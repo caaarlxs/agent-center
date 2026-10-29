@@ -1,6 +1,7 @@
 // A number whose digits roll when it changes (NumberFlow, MIT): counts,
 // percentages, memory. One place for how the board formats them; the first
 // render shows the number as is, and reduced motion turns the roll off.
+import { cn } from "@/lib/utils"
 import NumberFlow from "@number-flow/react"
 import { memParts } from "@/lib/format"
 
@@ -9,7 +10,7 @@ type NumProps = { value: number; suffix?: string; prefix?: string; digits?: numb
 export function Num({ value, suffix, prefix, digits = 0, minDigits = 1, className, title }: NumProps) {
   return (
     <NumberFlow value={value} suffix={suffix} prefix={prefix} locales="en-GB" title={title}
-      format={{ maximumFractionDigits: digits, minimumIntegerDigits: minDigits, useGrouping: false }} className={className} willChange={false} />
+      format={{ maximumFractionDigits: digits, minimumIntegerDigits: minDigits, useGrouping: false }} className={cn("num", className)} willChange={false} />
   )
 }
 

@@ -29,7 +29,7 @@ export function Limits() {
             <b className="font-semibold">{r.label}</b>
             <span className={cn("font-[650] tabular-nums", PCT_TEXT[r.tone])}><Num value={r.pct} suffix="%" /></span>
           </div>
-          <div className="relative h-2 rounded bg-hover" title={r.elapsed !== null ? `${r.elapsed}% of the time has passed` : undefined}>
+          <div className="meter meter-lg relative h-2 rounded bg-hover" title={r.elapsed !== null ? `${r.elapsed}% of the time has passed` : undefined}>
             <i className={cn("block h-full rounded", FILL[r.tone])} style={{ width: `${Math.min(100, r.pct)}%` }} />
             {r.elapsed !== null && <s className="absolute -top-[3px] -bottom-[3px] -ml-px w-0.5 rounded-[1px] bg-text opacity-55" style={{ left: `${r.elapsed}%` }} />}
           </div>

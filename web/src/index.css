@@ -349,3 +349,30 @@ html[data-theme-switch]::view-transition-new(root) { animation: theme-curtain 60
 
 /* Settings › Look: the Dots style's preview, its dot field. */
 .style-preview-dots { background-color: var(--side); background-image: radial-gradient(color-mix(in srgb, var(--text) 22%, transparent) 1px, transparent 1.4px); background-size: 7px 7px; }
+
+/* ---------- The Dots style (lib/board-style.ts): everything speaks in dots. ---------- */
+/* Meters: the bar, track and fill, seen through a row of dots. */
+[data-style=dots] .meter { border-radius: 0; background-color: color-mix(in srgb, var(--text) 14%, transparent); mask: radial-gradient(circle closest-side, #000 92%, transparent) 0 50% / 6px 4px repeat-x; }
+[data-style=dots] .meter > i { border-radius: 0; }
+[data-style=dots] .meter-lg { mask-size: 10px 8px; }
+/* Numbers and zone names in a dot-matrix face. */
+[data-style=dots] .num { font-family: "Doto Variable", var(--font-mono); font-weight: 800; }
+[data-style=dots] .zone-name { font-family: "Doto Variable", var(--font-mono); font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; }
+/* Chips: no solid fill, a dot of their colour and the word. */
+[data-style=dots] .state-chip { background: none !important; color: var(--chip) !important; padding-left: 0; gap: 5px; }
+[data-style=dots] .state-chip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+/* Zones: a dotted frame and a field of dots in their colour. */
+[data-style=dots] .zone-area, [data-style=dots] .zone-folder {
+  background-color: color-mix(in srgb, var(--zone) 3%, transparent) !important;
+  background-image: radial-gradient(color-mix(in srgb, var(--zone) 34%, transparent) 1.1px, transparent 1.5px); background-size: 12px 12px;
+  box-shadow: none !important; outline: 1.5px dotted color-mix(in srgb, var(--zone) 65%, transparent); outline-offset: -1.5px;
+}
+[data-style=dots] .zone-folder { background-color: color-mix(in srgb, var(--zone) 8%, var(--surface)) !important; }
+/* The resize corner of a zone or a note: its triangle made of dots. */
+[data-style=dots] .corner-grip { background: radial-gradient(var(--grip) 1px, transparent 1.4px) 0 0 / 4px 4px !important; mask: linear-gradient(135deg, transparent 50%, #000 50%); }
+/* Notes: paper with a field of dots in their colour and a band of it down the side; no tinted block. */
+[data-style=dots] .note-box {
+  background-color: var(--surface) !important; border-color: var(--line) !important; border-left: 3px solid var(--note) !important; border-radius: 4px 10px 10px 4px;
+  background-image: radial-gradient(color-mix(in srgb, var(--note) 26%, transparent) 1px, transparent 1.3px); background-size: 7px 7px;
+}
+[data-style=dots] .note-box > header { background: transparent !important; }

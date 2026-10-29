@@ -126,7 +126,8 @@ export function NewBadge({ card, className }: { card: Card; className?: string }
   const waits = card.column === "asking" ? (card.state === "permission" ? "permission" : "ask") : null
   return (
     <span title={waits ? "New since you last looked: it waits for you" : "Updated since you last looked at it"}
-      className={cn("inline-flex h-[17px] flex-none items-center rounded-[5px] px-1.5 text-[10px] font-[750] tracking-[0.05em] text-surface uppercase",
+      style={{ "--chip": `var(--${waits === "ask" ? "ask" : waits === "permission" ? "bad" : "review"})` } as React.CSSProperties}
+      className={cn("state-chip inline-flex h-[17px] flex-none items-center rounded-[5px] px-1.5 text-[10px] font-[750] tracking-[0.05em] text-surface uppercase",
         waits === "ask" ? "bg-ask" : waits === "permission" ? "bg-bad" : "bg-review", className)}>
       {waits === "ask" ? "Asks you" : waits === "permission" ? "Approval" : "New"}
     </span>
@@ -251,7 +252,7 @@ export function UsageMeter({ usage, barW = 28 }: { usage: Card["usage"]; barW?: 
   return (
     <span className={cn("inline-flex flex-none items-center gap-[5px] text-[11px] font-semibold tabular-nums", tone)}
       title={`Context used: ${tokens} of ${usage.window / 1000}k tokens (${pct}%)${pct >= 85 ? " — consider starting a new session" : ""}`}>
-      <span className="h-1 overflow-hidden rounded-[2px] bg-hover" style={{ width: barW }}><i className={cn("block h-full rounded-[2px]", fill)} style={{ width: `${pct}%` }} /></span><Num value={pct} suffix="%" />
+      <span className="meter h-1 overflow-hidden rounded-[2px] bg-hover" style={{ width: barW }}><i className={cn("block h-full rounded-[2px]", fill)} style={{ width: `${pct}%` }} /></span><Num value={pct} suffix="%" />
     </span>
   )
 }

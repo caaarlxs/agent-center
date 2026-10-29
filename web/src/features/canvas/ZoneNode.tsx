@@ -5,7 +5,7 @@
 // you; a click unfolds it, a card dropped on it goes in.
 import { type Node, type NodeProps, NodeResizeControl, useStore } from "@xyflow/react"
 import { Expand, Folder, Minimize2 } from "lucide-react"
-import { useLayoutEffect, useRef, useState } from "react"
+import { type CSSProperties, useLayoutEffect, useRef, useState } from "react"
 import type { Card, Zone } from "@/lib/api-types"
 import { cn } from "@/lib/utils"
 import { openSession } from "@/app/open-session"
@@ -69,6 +69,8 @@ export function ZoneNode({ data, dragging }: NodeProps<Node<ZoneNodeData>>) {
   const down = useRef<Point | null>(null) // where a press began: a click unfolds, a drag does not
   useFocusWhenShown(nameField, isNaming)
   const hue = hueOf(zone.name)
+  // The zone's colour, for the Dots style's dotted frame and fill (index.css).
+  const zoneVar = { "--zone": `hsl(${hue} 55% 50%)` } as CSSProperties
   const tone = (a: number) => `hsl(${hue} 55% 50% / ${a})`
   // Enter keeps the name and Esc drops it; both end in a blur, which must
   // neither save twice nor save what Esc dropped.
@@ -127,14 +129,15 @@ export function ZoneNode({ data, dragging }: NodeProps<Node<ZoneNodeData>>) {
           const d = down.current
           if (d && Math.hypot(e.clientX - d.x, e.clientY - d.y) < 4) unfold()
         }}
-        className={cn("flex min-h-24 w-72 origin-top-left flex-col gap-1.5 rounded-[14px] pb-2.5", dragging ? "cursor-grabbing" : "cursor-grab")}
+        className={cn("zone-folder flex min-h-24 w-72 origin-top-left flex-col gap-1.5 rounded-[14px] pb-2.5", dragging ? "cursor-grabbing" : "cursor-grab")}
         style={{
+          ...zoneVar,
           background: `color-mix(in srgb, hsl(${hue} 55% 50%) 12%, var(--surface))`,
           boxShadow: data.isDropTarget ? "inset 0 0 0 2px var(--brand), 0 0 0 4px var(--brand-soft)" : `inset 0 0 0 1.5px ${tone(0.5)}, 0 1px 2px rgb(0 0 0 / 0.08)`,
         }}>
         <header className="group/zone flex h-[34px] items-center gap-1.5 pr-1.5 pl-3.5 font-bold" style={{ color: `hsl(${hue} 55% var(--repo-l))`, fontSize: nameSize }}>
           <Folder className="size-[15px] flex-none" />
-          <span className="min-w-0 flex-1 truncate">{zone.name}</span>
+          <span className="zone-name min-w-0 flex-1 truncate">{zone.name}</span>
           <span className="inline-flex h-[18px] min-w-5 flex-none items-center justify-center rounded-[9px] px-1.5 text-[11px] tabular-nums" style={{ background: tone(0.18) }}>{members.length}</span>
           <button title="Unfold" onClick={e => (e.stopPropagation(), unfold())}
             className="nodrag inline-flex size-[22px] items-center justify-center rounded-md text-text-muted hover:bg-press hover:text-text"><Expand className="size-[13px]" /></button>
@@ -156,9 +159,9 @@ export function ZoneNode({ data, dragging }: NodeProps<Node<ZoneNodeData>>) {
       </section>
     )
   return (
-    <section ref={box} className={cn("group/zone relative size-full rounded-[14px]", dragging ? "cursor-grabbing" : "cursor-grab")}
+    <section ref={box} className={cn("zone-area group/zone relative size-full rounded-[14px]", dragging ? "cursor-grabbing" : "cursor-grab")}
       title="Drag to move the zone with its cards and notes"
-      style={{ background: `hsl(${hue} 55% 50% / 0.035)`, boxShadow: dragging ? `inset 0 0 0 2px ${tone(0.6)}, var(--shadow-pop)` : `inset 0 0 0 1px ${tone(0.28)}` }}>
+      style={{ ...zoneVar, background: `hsl(${hue} 55% 50% / 0.035)`, boxShadow: dragging ? `inset 0 0 0 2px ${tone(0.6)}, var(--shadow-pop)` : `inset 0 0 0 1px ${tone(0.28)}` }}>
       <header className="flex h-[34px] items-center gap-1 pr-1.5 pl-3.5 font-bold" onDoubleClick={startNaming} title="Drag to move the zone · double-click to rename"
         style={{ color: `hsl(${hue} 55% var(--repo-l))`, fontSize: nameSize }}>
         {isNaming ? (
@@ -168,7 +171,7 @@ export function ZoneNode({ data, dragging }: NodeProps<Node<ZoneNodeData>>) {
               if (e.key === "Enter") finish(true)
               if (e.key === "Escape") (e.stopPropagation(), finish(false))
             }} />
-        ) : <span className="min-w-0 flex-1 truncate">{zone.name}</span>}
+        ) : <span className="zone-name min-w-0 flex-1 truncate">{zone.name}</span>}
         <ZoneButton title="Fold into a folder (its cards stay where they are)" onClick={fold}><Minimize2 /></ZoneButton>
         <ZoneButton title="Remove the zone (the cards stay)" onClick={() => data.onRemove(zone)}><Anim.X /></ZoneButton>
       </header>
@@ -177,8 +180,8 @@ export function ZoneNode({ data, dragging }: NodeProps<Node<ZoneNodeData>>) {
         onResizeEnd={(_, p) => data.onChange({ ...zone, w: Math.max(160, Math.floor(p.width / GRID) * GRID), h: Math.max(120, Math.floor(p.height / GRID) * GRID) })}
         style={{
           left: "auto", top: "auto", right: 2, bottom: 2, transform: "none", width: 20 * unscale, height: 20 * unscale, border: 0, borderRadius: "0 0 12px 0",
-          background: `linear-gradient(135deg, transparent 50%, ${tone(0.5)} 50%)`, cursor: "nwse-resize",
-        }}>
+          background: `linear-gradient(135deg, transparent 50%, ${tone(0.5)} 50%)`, cursor: "nwse-resize", "--grip": tone(0.5),
+        } as CSSProperties} className="corner-grip">
         <span title="Resize" className="block size-full" />
       </NodeResizeControl>
     </section>

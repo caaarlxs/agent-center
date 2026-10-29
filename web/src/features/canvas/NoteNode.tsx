@@ -54,7 +54,7 @@ export function NoteNode({ data, selected, dragging }: NodeProps<Node<NoteNodeDa
   }
   return (
     <div style={style}
-      className="group/note flex size-full flex-col rounded-[10px] border transition-shadow duration-120 focus-within:shadow-[0_0_0_2px_color-mix(in_srgb,var(--note)_55%,transparent)]">
+      className="note-box group/note flex size-full flex-col rounded-[10px] border transition-shadow duration-120 focus-within:shadow-[0_0_0_2px_color-mix(in_srgb,var(--note)_55%,transparent)]">
       <header className={cn("note-drag flex h-[22px] flex-none items-center gap-1.5 rounded-t-[9px] pr-1 pl-2", dragging ? "cursor-grabbing" : "cursor-grab")}
         style={{ background: mix(data.cardTitle ? 40 : 28) }}
         title={data.cardTitle ? `Attached to “${data.cardTitle}”: it moves with the card. Drag it away to detach it` : "Drag to move the note; drop it next to a card to attach it"}>
@@ -87,8 +87,8 @@ export function NoteNode({ data, selected, dragging }: NodeProps<Node<NoteNodeDa
         onResizeEnd={(_, p) => data.onChange({ ...note, w: Math.max(144, Math.floor(p.width / GRID) * GRID), h: Math.max(96, Math.floor(p.height / GRID) * GRID) })}
         style={{
           left: "auto", top: "auto", right: 2, bottom: 2, transform: "none", width: 16 * unscale, height: 16 * unscale, border: 0, borderRadius: "0 0 8px 0",
-          background: `linear-gradient(135deg, transparent 50%, ${mix(60)} 50%)`, cursor: "nwse-resize",
-        }}>
+          background: `linear-gradient(135deg, transparent 50%, ${mix(60)} 50%)`, cursor: "nwse-resize", "--grip": mix(60),
+        } as CSSProperties} className="corner-grip">
         <span title="Resize" className="block size-full" />
       </NodeResizeControl>
     </div>
