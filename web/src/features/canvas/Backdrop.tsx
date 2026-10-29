@@ -1,11 +1,11 @@
 // Behind the canvas: a field of dots that drifts very slowly (Paper Shaders'
 // dithering), a shade off the page so it never competes with the cards. Its
-// colours follow the theme; it stands still with less motion. Off until you
-// turn it on (Settings › Look).
+// colours follow the theme; it stands still with less motion. In the Dots
+// style only (Settings › Look).
 import { Dithering } from "@paper-design/shaders-react"
 import { useMemo } from "react"
 import { theme } from "@/lib/theme"
-import { animatedBackdrop } from "./backdrop-pref"
+import { useIsDots } from "@/lib/board-style"
 
 // "#rrggbb" (or "#rgb") at `alpha`, as the shader reads a colour.
 export function withAlpha(hex: string, alpha: number) {
@@ -16,7 +16,7 @@ export function withAlpha(hex: string, alpha: number) {
 }
 
 export function Backdrop() {
-  return animatedBackdrop.use() === "on" ? <Dots /> : null
+  return useIsDots() ? <Dots /> : null
 }
 
 function Dots() {

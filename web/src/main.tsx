@@ -1,6 +1,7 @@
 import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 import "./index.css"
+import "./lib/board-style" // marks the page with its style before the first paint
 import { App } from "./app/App"
 import { Guard } from "./components/common/Guard"
 

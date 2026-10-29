@@ -1,5 +1,6 @@
 // A session's state at a glance: a shape and a colour, the same on every view.
-// Every state but done is an orb (@yogesharc/thinking-orbs) drawn in its
+// In the Classic style, an icon on its colour (a ring that fills with the
+// turn's task list while it works). In the Dots style every state but done is an orb (@yogesharc/thinking-orbs) drawn in its
 // colour: while Claude works it shows what it does now, while it asks for
 // you it waits, at rest it idles still (an unread one blinks), a stuck one
 // holds on retrying. Done is a check. Where it is too small for an orb, the
@@ -11,6 +12,7 @@ import { AskMark, useAskMoment } from "@/components/icona/marks"
 import type { Card } from "@/lib/api-types"
 import { cn } from "@/lib/utils"
 import { type StateKey, labelOf, stateOf } from "./state"
+import { useIsDots } from "@/lib/board-style"
 import { type Orb, orbOf } from "@/features/conversation/session-events"
 
 const ORB_FROM = 18 // smaller, its dots run together: the plain icon
@@ -38,6 +40,7 @@ export const TONE: Record<StateKey, string> = {
 
 export function StateIcon({ card, size = 28 }: { card: Card; size?: number }) {
   const state = stateOf(card)
+  const hasOrb = useIsDots() && size >= ORB_FROM
   const rang = useStartsAsking(card.id, state)
   const label = labelOf(card)
   const p = card.progress
@@ -50,7 +53,7 @@ export function StateIcon({ card, size = 28 }: { card: Card; size?: number }) {
   )
   // Working: what it does now (the card breathes green around it); the step
   // it is on, in the title.
-  if (state === "working" && size >= ORB_FROM) return orbIn(orbOf(card.doing))
+  if (state === "working" && hasOrb) return orbIn(orbOf(card.doing))
   if (state === "working") {
     const pct = p ? p.done / p.total : 0.28
     return (
@@ -60,13 +63,13 @@ export function StateIcon({ card, size = 28 }: { card: Card; size?: number }) {
           <circle cx="18" cy="18" r="15.5" strokeWidth="3.5" pathLength={100} strokeLinecap="round" className="stroke-work transition-[stroke-dasharray] duration-500 ease-(--ease-out)"
             strokeDasharray={`${Math.max(4, pct * 100)} 100`} />
         </svg>
-        <i className="size-[7px] rounded-full bg-work" />
+        {p && size >= 26 ? <b className="text-[9.5px] font-[750] tracking-[-0.02em] tabular-nums">{p.done}/{p.total}</b> : <i className="size-[7px] rounded-full bg-work" />}
       </span>
     )
   }
   // Every other state but done. Only what asks for you (or is new) moves.
   const rest = restOrb(state, card.isUnread)
-  if (rest && size >= ORB_FROM) return orbIn(rest.look, !rest.moves)
+  if (rest && hasOrb) return orbIn(rest.look, !rest.moves)
   const Icon = ICON[state]
   return (
     <span className={cn("relative inline-flex flex-none items-center justify-center rounded-full", TONE[state])} style={{ width: size, height: size }} role="img" aria-label={title} title={title}>

@@ -23,6 +23,7 @@ import { isWide, toggleWide } from "./panel-width"
 import { STATE_LABEL, repoDot, repoText, stateOf, type StateKey } from "./state"
 import { Num } from "@/components/common/Num"
 import { Anim } from "@/components/icons/animated"
+import { useIsDots } from "@/lib/board-style"
 import { PanelTabs } from "./PanelTabs"
 import { EditActions } from "./EditActions"
 
@@ -202,6 +203,7 @@ function Title({ card, fallback }: { card: Card | undefined; fallback: string })
 }
 
 export function SessionPanel({ id, tab: asked, file }: { id: string; tab: Tab; file?: string }) {
+  const isDots = useIsDots()
   const card = useLive(l => l.snapshot?.cards.find(c => c.id === id))
   const hasTasks = useLive(l => l.snapshot?.features?.organizer !== false)
   const result = openedResult.use()
@@ -248,7 +250,7 @@ export function SessionPanel({ id, tab: asked, file }: { id: string; tab: Tab; f
           </span>
         </div>
         <div className="flex min-w-0 items-center gap-2.5">
-          {card && <SessionBot card={card} size={34} />}
+          {card && isDots && <SessionBot card={card} size={34} />}
           <div className="min-w-0 flex-1"><Title card={card} fallback={fromSearch?.title ?? "Conversation"} /></div>
         </div>
       </header>

@@ -346,3 +346,6 @@ html[data-theme-switch]::view-transition-new(root) { animation: theme-curtain 60
 .md.file-md h3 { font-size: 16px; margin: 18px 0 8px; }
 .md.file-md table { font-size: 13px; }
 .md.file-md th, .md.file-md td { padding: 5px 8px; }
+
+/* Settings › Look: the Dots style's preview, its dot field. */
+.style-preview-dots { background-color: var(--side); background-image: radial-gradient(color-mix(in srgb, var(--text) 22%, transparent) 1px, transparent 1.4px); background-size: 7px 7px; }

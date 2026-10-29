@@ -38,6 +38,7 @@ import { reply, takeBack } from "./send"
 import { dialogAnswer, linesText, nameOf, partsOf } from "./text"
 import { type Suggestions, useConversation } from "./useConversation"
 import { Anim } from "@/components/icons/animated"
+import { useIsDots } from "@/lib/board-style"
 
 const linkBtn = "text-brand underline underline-offset-2"
 // The "?" disc before a question (.next-ask span).
@@ -447,8 +448,22 @@ function RunningNow({ sessionId }: { sessionId: string }) {
   )
 }
 
-// While a turn runs (mod v12): an orb that shows what kind of work it does
-// (@yogesharc/thinking-orbs), what it does now with a shine across it, the turn's time
+// Claude Code's spinner: a star that grows and shrinks, in the brand colour;
+// still (its fullest) when you ask for less motion.
+const STAR = ["·", "✢", "✳", "✶", "✻", "✽", "✻", "✶", "✳", "✢"]
+const STAR_MS = 120
+function Star() {
+  const [frame, setFrame] = useState(4)
+  useEffect(() => {
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) return
+    const timer = setInterval(() => setFrame(f => (f + 1) % STAR.length), STAR_MS)
+    return () => clearInterval(timer)
+  }, [])
+  return <span aria-hidden className="inline-grid w-3.5 shrink-0 place-items-center text-[14px] leading-none text-brand">{STAR[frame]}</span>
+}
+
+// While a turn runs (mod v12): Claude Code's star (Classic), or an orb that
+// shows what kind of work it does (Dots, @yogesharc/thinking-orbs), what it does now with a shine across it, the turn's time
 // and tokens.
 function TurnLine({ live }: { live: Live | null }) {
   const [now, setNow] = useState(Date.now)
@@ -457,10 +472,11 @@ function TurnLine({ live }: { live: Live | null }) {
     return () => clearInterval(timer)
   }, [])
   const line = turnLine(live, now)
+  const isDots = useIsDots()
   if (!line) return null
   return (
     <div className="flex min-w-0 items-center gap-2 text-[12.5px] text-text-muted" aria-live="polite">
-      <span className="shrink-0 text-text"><Orb {...orbOf(live?.doing)} size={18} /></span>
+      {isDots ? <span className="shrink-0 text-text"><Orb {...orbOf(live?.doing)} size={18} /></span> : <Star />}
       {line.doing && <Shimmer as="span" duration={2.2} className="min-w-0 truncate [--color-background:var(--text)] [--color-muted-foreground:var(--text-muted)]">{line.doing}</Shimmer>}
       <span className="shrink-0 tabular-nums">{line.doing && "· "}{line.time} · {line.tokens}</span>
     </div>

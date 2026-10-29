@@ -21,7 +21,7 @@ import { CopyMark, useCopyMoment } from "@/components/icona/marks"
 import { SwapText } from "@/components/watermelon/SwapText"
 import { Checklist } from "./Checklist"
 import { progressOf } from "./progress"
-import { animatedBackdrop } from "@/features/canvas/backdrop-pref"
+import { type BoardStyle, boardStyle, chooseStyle } from "@/lib/board-style"
 
 type Need = "Required" | "Recommended" | "Optional" | "Preference"
 type Meta = { title: string; need: Need; text: ReactNode; unavailable?: ReactNode; action?: string; outdated?: string; canTurnOff?: boolean }
@@ -307,13 +307,25 @@ const SECTION: Record<Section, { label: string; Icon: typeof Bell }> = {
 }
 const GROUPS: [string, Section[]][] = [["This Mac", ["setup"]], ["Preferences", ["alerts", "look"]], ["Support", ["help"]]]
 
-// The canvas's slow field of dots: off until you turn it on.
-function AnimatedBackground() {
-  const isOn = animatedBackdrop.use() === "on"
+// The board's style: Classic, or Dots (orbs, the drifting field, bots, dot meters and numbers, dotted zones and notes).
+const STYLES: { value: BoardStyle; label: string; text: string }[] = [
+  { value: "classic", label: "Classic", text: "Coloured icons, solid chips and bars." },
+  { value: "dots", label: "Dots", text: "Orbs, a drifting field of dots, bots, dot meters, dotted zones and notes." },
+]
+function StyleChoice() {
+  const chosen = boardStyle.use()
   return (
-    <Row title="Animated background" need="Preference" isDone={isOn} state={isOn ? <Done label="On" /> : <Todo label="Off" />}
-      actions={<Button variant={isOn ? "outline" : "default"} onClick={() => animatedBackdrop.set(isOn ? "off" : "on")}>{isOn ? "Turn off" : "Turn on"}</Button>}>
-      <p className={text}>A field of dots that drifts very slowly behind the canvas, in the theme's colours. It stands still if you ask macOS for less motion.</p>
+    <Row title="Style" need="Preference" isDone state={<Done label={STYLES.find(s => s.value === chosen)?.label} />}>
+      <div role="radiogroup" aria-label="Style" className="mt-2.5 grid grid-cols-2 gap-2.5">
+        {STYLES.map(s => (
+          <button key={s.value} type="button" role="radio" aria-checked={chosen === s.value} onClick={() => chooseStyle(s.value)}
+            className={cn("flex flex-col gap-1.5 rounded-[10px] border p-2.5 text-left transition-colors", chosen === s.value ? "border-brand bg-surface" : "border-line hover:border-line-strong")}>
+            <span aria-hidden className={cn("h-14 rounded-md border border-line", s.value === "dots" ? "style-preview-dots" : "bg-side")} />
+            <b className="text-[13px] font-semibold">{s.label}</b>
+            <span className="text-[12px] text-text-muted">{s.text}</span>
+          </button>
+        ))}
+      </div>
     </Row>
   )
 }
@@ -385,7 +397,7 @@ export function SetupDialog({ onClose }: { onClose: () => void }) {
               {section === "look" && (
                 <>
                   <Appearance />
-                  <AnimatedBackground />
+                  <StyleChoice />
                   <CodeColours />
                 </>
               )}

@@ -10,6 +10,7 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/h
 import type { Card } from "@/lib/api-types"
 import { cn } from "@/lib/utils"
 import { menu, shake } from "@/features/board/state"
+import { useIsDots } from "@/lib/board-style"
 import { Actions, Context, Replies, Signals, tintOf } from "./parts"
 import { StateIcon } from "./StateIcon"
 import { ageOf, repoDot, stateOf, urgencyOf } from "./state"
@@ -72,6 +73,7 @@ function SessionCardView({ card, now, level = "near", unscale = 1, isSelected = 
     ...(far ? { gap: 6, padding: "12px 14px" } : {}),
   }
   const big = (px: number, cap: number) => (far ? px * Math.min(unscale, cap) : px)
+  const isDots = useIsDots()
   return (
     <HoverCard openDelay={450} closeDelay={60} open={isDragging || isReading ? false : undefined}>
       <HoverCardTrigger asChild>
@@ -89,8 +91,8 @@ function SessionCardView({ card, now, level = "near", unscale = 1, isSelected = 
             isDragging && "cursor-grabbing",
           )}>
           {state === "working" && <i aria-hidden className="pointer-events-none absolute -inset-[3px] animate-breathe rounded-[14px] shadow-[0_0_0_2px_color-mix(in_srgb,var(--work)_55%,transparent),0_0_22px_color-mix(in_srgb,var(--work)_35%,transparent)]" />}
-          <div className="flex min-w-0 items-center gap-[9px]">
-            <StateIcon card={card} size={Math.round(big(34, 1.8))} />
+          <div className={cn("flex min-w-0 gap-[9px]", isDots ? "items-center" : "items-start")}>
+            <span className={cn(!isDots && "-mt-px")}><StateIcon card={card} size={Math.round(big(isDots ? 34 : 22, 1.8))} /></span>
             <span title={card.title} className={cn("line-clamp-2 min-w-0 flex-1 text-sm leading-[1.3] [overflow-wrap:anywhere]", isDone ? "font-[550]" : "font-semibold")}
               style={far ? { fontSize: big(14, 2), lineHeight: 1.2 } : undefined}>{card.title}</span>
             {card.pinned && <span className="ml-auto flex-none text-ask" title="Pinned"><Star className="size-3" /></span>}
