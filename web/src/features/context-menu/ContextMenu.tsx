@@ -8,6 +8,7 @@ import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { toast } from "sonner"
 import { showImage } from "@/components/common/Lightbox"
+import { cn } from "@/lib/utils"
 import { copyText } from "@/features/conversation/Markdown"
 import { type Action, type Item, itemsFor } from "./items"
 
@@ -75,7 +76,16 @@ async function run(action: Action, selection: string) {
 }
 
 type Open = { x: number; y: number; items: Item[]; selection: string }
-const row = "flex h-8 w-full items-center gap-2.5 rounded-md px-2 text-left text-[13px] text-text outline-none focus:bg-hover [&_svg]:size-[15px] [&_svg]:shrink-0 [&_svg]:text-text-muted"
+const row = "relative z-[1] flex h-8 w-full items-center gap-2.5 rounded-md px-2 text-left text-[13px] text-text outline-none [&_svg]:size-[15px] [&_svg]:shrink-0 [&_svg]:text-text-muted"
+
+// The row lit under the pointer or the keyboard: one highlight that glides
+// from row to row (it appears in place the first time, then slides).
+type Lit = { top: number; height: number; isFirst: boolean; of: unknown }
+function useLit(menu: unknown) {
+  const [lit, setLit] = useState<Lit | null>(null)
+  const light = (el: HTMLElement) => setLit(l => ({ top: el.offsetTop, height: el.offsetHeight, isFirst: l?.of !== menu, of: menu }))
+  return { lit: lit?.of === menu ? lit : null, light }
+}
 
 // Closes on a press elsewhere, Esc, a scroll, leaving the window or resizing it; arrows move between its rows.
 function useDismiss(isOpen: boolean, box: React.RefObject<HTMLDivElement | null>, close: () => void) {
@@ -139,6 +149,7 @@ export function ContextMenu() {
   useDismiss(open !== null, box, () => setOpen(null))
 
   const at = usePlacement(open, box)
+  const { lit, light } = useLit(open)
 
   return createPortal(
     <AnimatePresence>
@@ -148,12 +159,15 @@ export function ContextMenu() {
           style={{ left: at.x, top: at.y, transformOrigin: `${at.x < open.x ? "right" : "left"} ${at.y < open.y ? "bottom" : "top"}` }}
           initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, transition: { duration: 0.08 } }} transition={{ duration: 0.12, ease: [0.23, 1, 0.32, 1] }}
           onContextMenu={e => e.preventDefault()}>
+          {lit && <i aria-hidden className={cn("absolute inset-x-[5px] top-0 rounded-md bg-hover", !lit.isFirst && "transition-[transform,height] duration-150 ease-(--ease-out) motion-reduce:transition-none")}
+            style={{ transform: `translateY(${lit.top}px)`, height: lit.height }} />}
           {open.items.map((item, i) => {
             const Icon = ICON[item.label] ?? Copy
             return (
               <Fragment key={item.label}>
                 {i > 0 && open.items[i - 1]!.group !== item.group && <div role="separator" className="mx-1 my-[5px] h-px bg-line" />}
-                <button type="button" role="menuitem" className={row} onClick={() => (setOpen(null), void run(item.action, open.selection))}>
+                <button type="button" role="menuitem" className={row} onFocus={e => light(e.currentTarget)} onMouseEnter={e => (light(e.currentTarget), e.currentTarget.focus({ preventScroll: true }))}
+                  onClick={() => (setOpen(null), void run(item.action, open.selection))}>
                   <Icon /><span className="flex-1">{item.label}</span>{item.hint && <kbd className="font-sans text-[11.5px] text-faint">{item.hint}</kbd>}
                 </button>
               </Fragment>
