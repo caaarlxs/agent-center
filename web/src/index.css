@@ -393,3 +393,24 @@ html[data-theme-switch]::view-transition-new(root) { animation: theme-curtain 60
 /* Cards: the edge that stands out (selected, waiting, new) is dotted; at rest, the plain hairline. */
 [data-style=dots] article[data-edge] { border-style: dotted; border-width: 1.5px; box-shadow: none !important; }
 [data-style=dots] article[data-edge=selected] { outline: 1.5px dotted color-mix(in srgb, var(--brand) 55%, transparent); outline-offset: 2px; }
+/* Controls. The main action keeps its fill, seen through a fine dot screen; the others lose it for a dotted edge. */
+[data-style=dots] [data-slot=button][data-variant=default], [data-style=dots] .dots-fill {
+  background-image: radial-gradient(color-mix(in srgb, var(--brand-text) 30%, transparent) 1px, transparent 1.4px); background-size: 4px 4px;
+}
+[data-style=dots] [data-slot=button][data-variant=outline], [data-style=dots] .dots-line { border-style: dotted; border-width: 1.5px; }
+[data-style=dots] [data-slot=button][data-variant=outline] { border-color: color-mix(in srgb, var(--text) 30%, transparent); background-color: transparent; }
+[data-style=dots] .dots-line { background: transparent; color: var(--brand); }
+/* Icons and quiet buttons: on hover, a field of dots instead of a grey square. */
+[data-style=dots] [class*="hover:bg-press"]:hover { background: radial-gradient(color-mix(in srgb, var(--text) 26%, transparent) 1px, transparent 1.4px) 0 0 / 4px 4px; }
+/* The open tab: a row of dots under it. */
+[data-style=dots] .tab-line { height: 4px; bottom: -2px; border-radius: 0; background: radial-gradient(circle closest-side, var(--brand) 85%, transparent) 0 0 / 5px 4px repeat-x; }
+/* Shortcut keys in the dot-matrix face. */
+[data-style=dots] [data-slot=kbd] { font-family: "Doto Variable", var(--font-mono); font-weight: 800; font-size: 12px; }
+/* Checkboxes: a dotted square that fills with dots. */
+[data-style=dots] input[type=checkbox] {
+  appearance: none; width: 14px; height: 14px; margin: 0; flex: none; cursor: pointer; border-radius: 3px;
+  border: 1.5px dotted color-mix(in srgb, var(--text) 45%, transparent);
+}
+[data-style=dots] input[type=checkbox]:checked { border-color: var(--brand); background: radial-gradient(circle closest-side, var(--brand) 85%, transparent) 1px 1px / 3px 3px; }
+/* The composer, when it has the focus: a dotted edge, no glow. */
+[data-style=dots] .composer-box [data-slot=input-group]:focus-within, [data-style=dots] .composer-box.drop [data-slot=input-group] { border-style: dotted; border-width: 1.5px; box-shadow: none; }

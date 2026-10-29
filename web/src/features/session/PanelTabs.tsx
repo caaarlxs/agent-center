@@ -25,7 +25,7 @@ export function PanelTabs({ id, tabs, tab, onPick }: { id: string; tabs: PanelTa
             className={cn("relative flex items-center gap-1.5 px-2.5 py-[9px] text-[13px] font-[550] whitespace-nowrap text-text-muted transition-colors duration-[120ms] hover:text-text [&_svg]:size-3.5 [&_svg]:opacity-70",
               tab === t.key && "text-text")}>
             {t.icon}{t.label}{t.count}
-            {tab === t.key && <motion.i layoutId="underline" transition={transition} className="absolute inset-x-2.5 -bottom-px h-0.5 rounded-sm bg-text" />}
+            {tab === t.key && <motion.i layoutId="underline" transition={transition} className="tab-line absolute inset-x-2.5 -bottom-px h-0.5 rounded-sm bg-text" />}
           </button>
         ))}
       </nav>

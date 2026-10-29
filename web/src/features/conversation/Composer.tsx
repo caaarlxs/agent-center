@@ -193,7 +193,7 @@ function Box({ id, card, bridge }: { id: string; card: Card | undefined; bridge:
             : canSleep && <button type="button" className={subtle} onClick={startSleep} title="Stops the session's process to free memory; Wake or a message starts it again">Sleep</button>}
           <button type="submit" disabled={!!bridge?.isArchived}
             title={bridge?.isArchived ? "Archived in Claude: unarchive it there to write" : "Send (↵) · new line (⇧↵)"}
-            className="ml-1 inline-grid size-8 shrink-0 place-items-center rounded-[10px] border border-brand bg-brand text-brand-text transition-[filter,transform] duration-[120ms] hover:brightness-106 active:scale-[0.97] disabled:opacity-45">
+            className="dots-fill ml-1 inline-grid size-8 shrink-0 place-items-center rounded-[10px] border border-brand bg-brand text-brand-text transition-[filter,transform] duration-[120ms] hover:brightness-106 active:scale-[0.97] disabled:opacity-45">
             <SendMark moment={sent} size={14} idle={<Anim.ArrowUp size={14} />} />
           </button>
         </div>

@@ -237,7 +237,7 @@ export function SessionPanel({ id, tab: asked, file }: { id: string; tab: Tab; f
           {card?.branch && <span className="inline-flex min-w-0 items-center gap-1 truncate font-mono text-[11.5px] text-text-muted"><GitBranch className="size-3 shrink-0" /><span className="truncate">{card.branch}</span></span>}
           <span className="ml-auto flex shrink-0 items-center gap-1 max-[860px]:order-first max-[860px]:w-full max-[860px]:justify-end">
             {card && <Actions card={card} />}
-            <button className="inline-flex h-7 items-center gap-1.5 rounded-md border border-brand bg-brand px-2.5 text-[12.5px] font-medium whitespace-nowrap text-brand-text transition-[filter,transform] duration-[120ms] hover:brightness-106 active:scale-[0.97]"
+            <button className="dots-line inline-flex h-7 items-center gap-1.5 rounded-md border border-brand bg-brand px-2.5 text-[12.5px] font-medium whitespace-nowrap text-brand-text transition-[filter,transform] duration-[120ms] hover:brightness-106 active:scale-[0.97]"
               onClick={() => launch(id)} title="Open in Claude (O)">
               <span className="max-[860px]:hidden">Open in Claude</span><Anim.ArrowUpRight size={12} />
             </button>
