@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils"
 import { FileIcon } from "@/components/common/FileIcon"
 import { Markdown, copyText } from "@/features/conversation/Markdown"
 import { ago } from "@/features/session/state"
+import { SideFlyout, useSideRoom } from "@/features/session/SideFlyout"
 import { kindOf, parseDelimited } from "./kinds"
 import { OfficeDoc } from "./OfficeDoc"
 import { Anim } from "@/components/icons/animated"
@@ -134,6 +135,7 @@ function Viewer({ id, file }: { id: string; file: Listed }) {
 // every 10 s while it shows, as the session may write more.
 export function Files({ id, file }: { id: string; file?: string }) {
   const now = useNow()
+  const hasSideRoom = useSideRoom()
   const [files, setFiles] = useState<Listed[] | null>(null)
   const [chosen, setChosen] = useState<Listed | null>(null)
   useEffect(() => {
@@ -154,22 +156,26 @@ export function Files({ id, file }: { id: string; file?: string }) {
     const name = file.split("/").pop() ?? file
     setChosen(c => (c?.path === file ? c : files?.find(f => f.path === file) ?? { path: file, name, size: 0, modifiedAt: Date.now(), source: "written" }))
   }, [file, files === null])
+  const list = (
+    <ul className={cn("m-0 min-h-0 list-none overflow-auto p-1.5", !hasSideRoom && "border-r border-line bg-side")}>
+      {files === null && <li className="px-2.5 py-2 text-[12.5px] text-text-muted">Looking…</li>}
+      {files?.length === 0 && !file && <li className="px-2.5 py-2 text-[12.5px] text-text-muted">No files shared yet</li>}
+      {files?.map(f => (
+        <li key={f.path}>
+          <button onClick={() => setChosen(f)} title={f.path}
+            className={cn("flex h-[30px] w-full items-center gap-2 rounded-[7px] px-2 text-left text-[12.5px] text-text", chosen?.path === f.path ? "bg-select" : "hover:bg-hover")}>
+            <FileIcon path={f.path} />
+            <span className="min-w-0 flex-1 truncate">{f.name}</span>
+            <small className="shrink-0 text-[11px] text-faint">{SOURCE[f.source] ?? f.source} · {ago(f.modifiedAt, now)}</small>
+          </button>
+        </li>
+      ))}
+    </ul>
+  )
+  // The list opens beside the panel, as Code's tree does; inside it where there is no room.
   return (
-    <div className="grid min-h-0 flex-1 grid-cols-[minmax(240px,24%)_minmax(0,1fr)]">
-      <ul className="m-0 min-h-0 list-none overflow-auto border-r border-line bg-side p-1.5">
-        {files === null && <li className="px-2.5 py-2 text-[12.5px] text-text-muted">Looking…</li>}
-        {files?.length === 0 && !file && <li className="px-2.5 py-2 text-[12.5px] text-text-muted">No files shared yet</li>}
-        {files?.map(f => (
-          <li key={f.path}>
-            <button onClick={() => setChosen(f)} title={f.path}
-              className={cn("flex h-[30px] w-full items-center gap-2 rounded-[7px] px-2 text-left text-[12.5px] text-text", chosen?.path === f.path ? "bg-select" : "hover:bg-hover")}>
-              <FileIcon path={f.path} />
-              <span className="min-w-0 flex-1 truncate">{f.name}</span>
-              <small className="shrink-0 text-[11px] text-faint">{SOURCE[f.source] ?? f.source} · {ago(f.modifiedAt, now)}</small>
-            </button>
-          </li>
-        ))}
-      </ul>
+    <div className={cn("min-h-0 flex-1", hasSideRoom ? "flex" : "grid grid-cols-[minmax(240px,24%)_minmax(0,1fr)]")}>
+      {hasSideRoom ? <SideFlyout label="Files">{list}</SideFlyout> : list}
       {chosen && <Viewer key={chosen.path} id={id} file={chosen} />}
     </div>
   )
