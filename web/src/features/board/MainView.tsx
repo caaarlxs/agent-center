@@ -2,11 +2,12 @@
 // Tiers; keys 1 2 3 4), its own tools at the top, and a skeleton until the
 // first snapshot. The canvas needs room: in a window under 860 px the inbox
 // stands in for it (main.js:111-135).
-import { useRef, useSyncExternalStore } from "react"
+import { lazy, Suspense, useRef, useSyncExternalStore } from "react"
 import { useLive } from "@/lib/live"
 import { repoFilter } from "@/app/view-state"
 import { cn } from "@/lib/utils"
 import { lazyView } from "@/lib/lazy-view"
+import { useIsDots } from "@/lib/board-style"
 import type { View } from "./order"
 import { useFlip } from "./flip"
 import { dragging, groupBy, showDone, useBoardCards, view as viewStore, whereTo } from "./state"
@@ -33,6 +34,10 @@ export function useShownView(): View {
 // React Flow and the canvas load the first time the canvas shows.
 const Canvas = lazyView(() => import("@/features/canvas/Canvas").then(m => m.Canvas))
 
+// The canvas's field of dots, behind the board and the tiers too (Dots style);
+// its shader loads only then, and nothing stands in for it meanwhile.
+const DotField = lazy(() => import("@/features/canvas/Backdrop").then(m => ({ default: m.Backdrop })))
+
 export const VIEW_TITLE: Record<View, string> = { inbox: "Inbox", board: "Board", canvas: "Canvas", tiers: "Tiers" }
 
 export function MainView() {
@@ -41,13 +46,15 @@ export function MainView() {
   const cards = useViewCards(useBoardCards())
   const isDragging = !!dragging.use()
   const root = useRef<HTMLDivElement>(null)
+  const hasField = useIsDots() && (view === "board" || view === "tiers")
   const scope = `${view}|${groupBy.use()}|${repoFilter.use()}|${showDone.use()}|${hasData}`
   // The canvas runs its own (Canvas.tsx), once React Flow has drawn.
   useFlip(root, scope, whereTo, view !== "canvas")
   if (view === "canvas" && hasData) return <Canvas />
   return (
     <div ref={root} className={cn("absolute inset-0 flex flex-col", isDragging && "is-dragging")}>
-      <div className="min-h-0 flex-1 overflow-auto">
+      {hasField && <Suspense fallback={null}><DotField /></Suspense>}
+      <div className="relative min-h-0 flex-1 overflow-auto">
         {!hasData ? (
           <div className="flex max-w-[900px] flex-col gap-2.5 p-5">
             {[1, 2, 3, 4, 5].map(i => <i key={i} className="block h-[52px] animate-shimmer rounded-[9px] bg-[linear-gradient(90deg,var(--hover),var(--press),var(--hover))] bg-[length:200%_100%]" />)}

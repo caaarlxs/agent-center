@@ -414,3 +414,5 @@ html[data-theme-switch]::view-transition-new(root) { animation: theme-curtain 60
 [data-style=dots] input[type=checkbox]:checked { border-color: var(--brand); background: radial-gradient(circle closest-side, var(--brand) 85%, transparent) 1px 1px / 3px 3px; }
 /* The composer, when it has the focus: a dotted edge, no glow. */
 [data-style=dots] .composer-box [data-slot=input-group]:focus-within, [data-style=dots] .composer-box.drop [data-slot=input-group] { border-style: dotted; border-width: 1.5px; box-shadow: none; }
+/* Board columns and tier rows: see-through, so the field of dots shows behind them as on the canvas. */
+[data-style=dots] .dots-veil:not(.bg-brand-soft) { background-color: color-mix(in srgb, var(--side) 55%, transparent); }

@@ -158,7 +158,7 @@ function Cell({ col, list, head, isStacked = false, isLane = false }: { col: Col
   return (
     <section {...drop.handlers} data-group={`col-${col}`}
       className={cn("flex min-h-0 flex-col rounded-[12px] px-2 pt-2.5 pb-2 transition-[background-color,box-shadow,opacity] duration-120",
-        isLane ? "min-h-14 border border-dashed border-transparent bg-[color-mix(in_srgb,var(--side)_45%,transparent)] pt-2" : "bg-side",
+        isLane ? "min-h-14 border border-dashed border-transparent bg-[color-mix(in_srgb,var(--side)_45%,transparent)] pt-2" : "dots-veil bg-side",
         drop.isOver && (isLane ? "border-brand bg-brand-soft" : "bg-brand-soft shadow-[inset_0_0_0_2px_var(--brand)]"),
         drop.card && !drop.steps && drop.card.column !== col && "opacity-55")}>
       {head}
@@ -336,7 +336,7 @@ function TierRow({ tier, i, list }: { tier: (typeof TIERS)[number]; i: number; l
       onDragLeave={e => (drop.handlers.onDragLeave(e), !e.currentTarget.contains(e.relatedTarget as Node) && setAt(null))}
       onDrop={e => (drop.handlers.onDrop(e), setAt(null))}
       style={{ ["--tier" as string]: tier.color }}
-      className={cn("grid min-h-24 flex-[1_1_0] grid-cols-[132px_minmax(0,1fr)] overflow-hidden rounded-[12px] bg-side transition-[background-color,box-shadow,opacity] duration-120 max-[860px]:flex-none max-[860px]:grid-cols-1",
+      className={cn("dots-veil grid min-h-24 flex-[1_1_0] grid-cols-[132px_minmax(0,1fr)] overflow-hidden rounded-[12px] bg-side transition-[background-color,box-shadow,opacity] duration-120 max-[860px]:flex-none max-[860px]:grid-cols-1",
         tier.key === "paused" && "flex-grow-[0.8]",
         drop.isOver && "bg-brand-soft shadow-[inset_0_0_0_2px_var(--brand)]",
         drop.card && !drop.steps && tierOf(drop.card) !== tier.key && "opacity-55")}
