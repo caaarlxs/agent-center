@@ -331,6 +331,16 @@ html[data-theme-switch]::view-transition-new(root) { animation: theme-curtain 60
 /* The reply box (styles.css:604-615): AI Elements' input group in the board's look. */
 .composer-box [data-slot=input-group] { border-radius: 14px; border-color: var(--line-strong); background: var(--raised); box-shadow: none; transition: border-color 120ms ease, box-shadow 120ms ease; }
 .composer-box [data-slot=input-group]:focus-within, .composer-box.drop [data-slot=input-group] { border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-soft); }
+/* While Whisper writes (features/prompt/TravelBeam.tsx): a light round the box at an even pace. */
+.travel-beam-dash {
+  x: 0.75px; y: 0.75px; width: calc(100% - 1.5px); height: calc(100% - 1.5px);
+  fill: none; stroke: var(--brand); stroke-width: 1.5px; stroke-linecap: round;
+  stroke-dasharray: calc(var(--len) * 1px) calc((100 - var(--len)) * 1px);
+  filter: drop-shadow(0 0 4px var(--brand));
+  animation: travel-beam 5s linear infinite;
+}
+@keyframes travel-beam { from { stroke-dashoffset: calc(var(--len) * 1px); } to { stroke-dashoffset: calc((var(--len) - 100) * 1px); } }
+@media (prefers-reduced-motion: reduce) { .travel-beam-dash { animation: none; stroke-dasharray: none; } }
 /* While you dictate the voice glow speaks: the box keeps a quiet border. */
 .composer-box.listening [data-slot=input-group], .composer-box.listening [data-slot=input-group]:focus-within { border-color: var(--line-strong); box-shadow: none; }
 .composer-box textarea { font-size: 13.5px; line-height: 1.5; padding: 11px 14px 4px; min-height: 44px; max-height: 220px; field-sizing: content; }
