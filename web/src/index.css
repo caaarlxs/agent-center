@@ -370,9 +370,9 @@ html[data-theme-switch]::view-transition-new(root) { animation: theme-curtain 60
 [data-style=dots] .zone-folder { background-color: color-mix(in srgb, var(--zone) 8%, var(--surface)) !important; }
 /* The resize corner of a zone or a note: its triangle made of dots. */
 [data-style=dots] .corner-grip { background: radial-gradient(var(--grip) 1px, transparent 1.4px) 0 0 / 4px 4px !important; mask: linear-gradient(135deg, transparent 50%, #000 50%); }
-/* Notes: paper with a field of dots in their colour and a band of it down the side; no tinted block. */
+/* Notes: their colour all over, as ever, with a field of dots in it and a band of it down the side. */
 [data-style=dots] .note-box {
-  background-color: var(--surface) !important; border-color: var(--line) !important; border-left: 3px solid var(--note) !important; border-radius: 4px 10px 10px 4px;
-  background-image: radial-gradient(color-mix(in srgb, var(--note) 26%, transparent) 1px, transparent 1.3px); background-size: 7px 7px;
+  background-color: color-mix(in srgb, var(--note) 20%, var(--surface)) !important; border-left: 3px solid var(--note) !important; border-radius: 4px 10px 10px 4px;
+  background-image: radial-gradient(color-mix(in srgb, var(--note) 38%, transparent) 1px, transparent 1.3px); background-size: 7px 7px;
 }
 [data-style=dots] .note-box > header { background: transparent !important; }
