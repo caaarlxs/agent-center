@@ -4,9 +4,10 @@
 // is no room beside it: `useSideRoom` says so, and the workspace shows its
 // side inside instead.
 //
-// It comes out from behind the panel's edge like a drawer: its left side is
-// uncovered from the edge outward while it slides a little the same way, and
-// it folds back the same way, faster, when `isOpen` turns false.
+// It comes out from behind the panel's edge like a drawer: a still frame
+// beside the panel cuts it at that edge, and the side slides out of it to the
+// left, so no part of it ever crosses the panel. It folds back the same way,
+// faster, when `isOpen` turns false.
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { useEffect, useState, type ReactNode } from "react"
 import { createPortal } from "react-dom"
@@ -16,8 +17,8 @@ import { MEDIUM_MAX, useViewportWidth } from "./panel-width"
 export const useSideRoom = () => useViewportWidth() > MEDIUM_MAX
 
 const DRAWER = [0.32, 0.72, 0, 1] as const // iOS's drawer curve: quick to start, long to settle
-const SHUT = "inset(0 0 0 100%)" // all of it behind the panel's edge
-const OPEN = "inset(0 0 0 0%)"
+// The frame lets the side's shadow out to the left, above and below, never onto the panel.
+const FRAME = "inset(-48px 0 -48px -48px)"
 
 export function SideFlyout({ label, isOpen = true, className, children }: { label: string; isOpen?: boolean; className?: string; children: ReactNode }) {
   // The panel itself: positioned, so the side hangs off its left edge.
@@ -28,14 +29,16 @@ export function SideFlyout({ label, isOpen = true, className, children }: { labe
   return createPortal(
     <AnimatePresence>
       {isOpen && (
-        <motion.aside key="side" aria-label={label}
-          className={cn("absolute inset-y-0 right-full flex w-[264px] flex-col border-r border-line bg-side shadow-pop will-change-[clip-path,transform]", className)}
-          initial={isStill ? { opacity: 0 } : { clipPath: SHUT, x: 24 }}
-          animate={isStill ? { opacity: 1 } : { clipPath: OPEN, x: 0 }}
-          exit={isStill ? { opacity: 0 } : { clipPath: SHUT, x: 24, transition: { duration: 0.2, ease: [0.4, 0, 1, 1] } }}
-          transition={{ duration: 0.36, ease: DRAWER }}>
-          {children}
-        </motion.aside>
+        <motion.div key="side" className="absolute inset-y-0 right-full w-[264px]" style={{ clipPath: FRAME }} exit={{ opacity: 1 }}>
+          <motion.aside aria-label={label}
+            className={cn("flex h-full w-full flex-col border-r border-line bg-side shadow-pop will-change-transform", className)}
+            initial={isStill ? { opacity: 0 } : { x: "100%" }}
+            animate={isStill ? { opacity: 1 } : { x: 0 }}
+            exit={isStill ? { opacity: 0 } : { x: "100%", transition: { duration: 0.2, ease: [0.4, 0, 1, 1] } }}
+            transition={{ duration: 0.36, ease: DRAWER }}>
+            {children}
+          </motion.aside>
+        </motion.div>
       )}
     </AnimatePresence>,
     host,
