@@ -15,6 +15,7 @@
 // A message waits UNDO_MS before the mod may take it, and the mod (v2) holds
 // it while a turn runs: until delivered, `unsend` takes it back.
 
+import { hasProcessSince } from "./memory"
 import { readdir, unlink } from "node:fs/promises"
 import { join } from "node:path"
 import { CENTER_DIR } from "./config"
@@ -63,6 +64,12 @@ const isId = (id: string) => /^[\w-]+$/.test(id)
 // A turn ran at the last heartbeat, recently: the session works (a long tool
 // run pauses the mod's timer, so no beat comes meanwhile), it is not asleep.
 const BUSY_GRACE_MS = 15 * 60_000
+// A session closed in the client (or put to sleep): its last heartbeat still
+// says open, or busy when it was mid-turn, but its process is gone.
+export const busyNow = (busy: boolean | null, hasProcess: boolean | null) => (busy === true && hasProcess === false ? false : busy)
+export const openNow = (lastSeen: number | null, hasProcess: boolean | null, now = Date.now()) =>
+  lastSeen !== null && now - lastSeen < ALIVE_MS && hasProcess !== false
+
 export function isBusy(bridge: { busy: boolean | null; lastSeen: number | null }) {
   return bridge.busy === true && bridge.lastSeen !== null && Date.now() - bridge.lastSeen < BUSY_GRACE_MS
 }
@@ -200,14 +207,16 @@ export async function status(sessionId: string): Promise<BridgeStatus> {
   let busy: boolean | null = null
   let version = 0
   let limits: Limits | null = null
+  let hasProcess: boolean | null = null
   try {
     const alive = await readJson(join(BASE, "alive", `${sessionId}.json`))
     lastSeen = alive.at ?? null
-    busy = typeof alive.busy === "boolean" ? alive.busy : null
+    hasProcess = lastSeen === null ? null : hasProcessSince(sessionId, lastSeen)
+    busy = busyNow(typeof alive.busy === "boolean" ? alive.busy : null, hasProcess)
     version = alive.v ?? 1
     limits = alive.limits?.windows?.length ? alive.limits : null
   } catch {}
-  const isOpen = lastSeen !== null && Date.now() - lastSeen < ALIVE_MS
+  const isOpen = openNow(lastSeen, hasProcess)
   let delivered = new Set<string>()
   let refused = new Map<string, string>()
   let settings: BridgeStatus["settings"] = null

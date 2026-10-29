@@ -227,6 +227,13 @@ export function memoryOf(ids: string[]): SessionMemory | null {
   return { total: items.reduce((sum, i) => sum + i.bytes, 0), items }
 }
 
+// Whether a session's own process ran at the last reading, when that reading
+// came after `since`; null when none did (nothing to tell yet).
+export function hasProcessSince(id: string, since: number): boolean | null {
+  if (latest.at <= since) return null
+  return !!latest.bySession.get(id)?.items.some(i => i.kind === "session")
+}
+
 // The last reading; a new one starts in the background when it is old.
 export function memoryNow(sessionIds: Set<string>) {
   if (Date.now() - latest.at > EVERY_MS && !running) running = scan(sessionIds).catch(() => {}).finally(() => (running = null))

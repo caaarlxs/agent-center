@@ -27,6 +27,15 @@ const LOOP_MS = 5000
 const LOG = DESKTOP_LOG
 const LOG_TAIL = 512 * 1024
 
+// Sessions woken from the board ("Wake"): tried again like those with messages
+// waiting, as a link opened while the client still tidies up does nothing.
+const asked = new Set<string>()
+
+// Whether to keep starting a session: something waits for it (messages, or a
+// Wake asked), and it is neither open nor in a turn.
+export const wantsWake = (b: { pending: number; isOpen: boolean }, isAsked: boolean, isBusyNow: boolean) =>
+  (b.pending > 0 || isAsked) && !b.isOpen && !isBusyNow
+
 // tries: links opened since the session went quiet; untrusted: the client
 // refused to start it for its folder; atCap: it did not start it because it
 // runs as many sessions as it allows (the last try).
@@ -72,10 +81,11 @@ type Activate = (id: string) => Promise<{ ok: boolean }>
 type Deliver = (id: string) => Promise<boolean>
 
 async function tick(activate: Activate, deliver: Deliver) {
-  for (const id of await waitingSessions()) {
+  for (const id of new Set([...(await waitingSessions()), ...asked])) {
     const bridge = await status(id)
-    if (!bridge.pending || bridge.isOpen || isBusy(bridge)) {
+    if (!wantsWake(bridge, asked.has(id), isBusy(bridge))) {
       wakes.delete(id)
+      asked.delete(id)
       continue
     }
     const w = wakes.get(id) ?? { tries: 0, at: 0, untrusted: false, atCap: false, isOver: false }
@@ -85,13 +95,14 @@ async function tick(activate: Activate, deliver: Deliver) {
       const found = await refusal([`local_${id}`, ...(hostId ? [hostId] : [])], w.at)
       w.untrusted = found.untrusted
       if (found.atCap) w.atCap = true
-      if (w.atCap && !w.untrusted && (await deliver(id))) {
+      if (w.atCap && !w.untrusted && bridge.pending && (await deliver(id))) {
         wakes.delete(id)
         continue
       }
     }
     if (w.untrusted || w.tries >= WAKE_TRIES) {
       w.isOver = true
+      asked.delete(id)
       continue
     }
     if (Date.now() - w.at < WAKE_EVERY_MS) continue
@@ -105,6 +116,7 @@ async function tick(activate: Activate, deliver: Deliver) {
 // try and starts the count again.
 export function wokeNow(id: string) {
   wakes.set(id, { tries: 1, at: Date.now(), untrusted: false, atCap: false, isOver: false })
+  asked.add(id)
 }
 
 export function startWaking(activate: Activate, deliver: Deliver) {
