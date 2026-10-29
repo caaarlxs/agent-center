@@ -331,16 +331,19 @@ html[data-theme-switch]::view-transition-new(root) { animation: theme-curtain 60
 /* The reply box (styles.css:604-615): AI Elements' input group in the board's look. */
 .composer-box [data-slot=input-group] { border-radius: 14px; border-color: var(--line-strong); background: var(--raised); box-shadow: none; transition: border-color 120ms ease, box-shadow 120ms ease; }
 .composer-box [data-slot=input-group]:focus-within, .composer-box.drop [data-slot=input-group] { border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-soft); }
-/* While Whisper writes (features/prompt/TravelBeam.tsx): a light round the box at an even pace. */
-.travel-beam-dash {
-  x: 0.75px; y: 0.75px; width: calc(100% - 1.5px); height: calc(100% - 1.5px);
-  fill: none; stroke: var(--brand); stroke-width: 1.5px; stroke-linecap: round;
-  stroke-dasharray: calc(var(--len) * 1px) calc((100 - var(--len)) * 1px);
-  filter: drop-shadow(0 0 4px var(--brand));
+/* While Whisper writes (features/prompt/TravelBeam.tsx): border-beam's glow round the box at an even pace. */
+.travel-beam { animation: travel-beam-hue 12s ease-in-out infinite; }
+.travel-beam-seg {
+  x: 0.75px; y: 0.75px; width: calc(100% - 1.5px); height: calc(100% - 1.5px); rx: var(--r); ry: var(--r);
+  fill: none; stroke-width: 1.25px;
+  stroke-dasharray: 4.5px 95.5px;
   animation: travel-beam 5s linear infinite;
 }
-@keyframes travel-beam { from { stroke-dashoffset: calc(var(--len) * 1px); } to { stroke-dashoffset: calc((var(--len) - 100) * 1px); } }
-@media (prefers-reduced-motion: reduce) { .travel-beam-dash { animation: none; stroke-dasharray: none; } }
+.travel-beam-wide { stroke-width: 7px; }
+.travel-beam-bloom { filter: blur(7px); opacity: 0.7; }
+@keyframes travel-beam { from { stroke-dashoffset: calc(var(--from) * -1px); } to { stroke-dashoffset: calc((var(--from) + 100) * -1px); } }
+@keyframes travel-beam-hue { 0%, 100% { filter: hue-rotate(-15deg); } 50% { filter: hue-rotate(15deg); } }
+@media (prefers-reduced-motion: reduce) { .travel-beam, .travel-beam-seg { animation: none; } }
 /* While you dictate the voice glow speaks: the box keeps a quiet border. */
 .composer-box.listening [data-slot=input-group], .composer-box.listening [data-slot=input-group]:focus-within { border-color: var(--line-strong); box-shadow: none; }
 .composer-box textarea { font-size: 13.5px; line-height: 1.5; padding: 11px 14px 4px; min-height: 44px; max-height: 220px; field-sizing: content; }
