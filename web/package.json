@@ -23,6 +23,7 @@
     "@tailwindcss/vite": "^4.3.3",
     "@xyflow/react": "^12.12.0",
     "ai": "^7.0.153",
+    "border-beam": "1.4.1",
     "class-variance-authority": "^0.7.1",
     "cmdk": "^1.1.1",
     "cn": "^0.5.0",
