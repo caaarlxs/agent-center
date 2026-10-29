@@ -34,6 +34,7 @@ import { VIEW_NAME, focusCard, repoFilter, sideOpen, useShownView, view, type Vi
 import { Num } from "@/components/common/Num"
 import { Anim } from "@/components/icons/animated"
 import { Lightbox } from "@/components/common/Lightbox"
+import { ContextMenu } from "@/features/context-menu/ContextMenu"
 
 // The design system's page (/design), with every example: never in the board's download.
 const DesignSystem = lazyView(() => import("@/design/DesignSystem").then(m => m.DesignSystem))
@@ -46,6 +47,7 @@ export function App() {
         <Board />
         <Toaster />
         <Lightbox />
+        <ContextMenu />
       </TooltipProvider>
     </MotionConfig>
   )
