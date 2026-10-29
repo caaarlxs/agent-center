@@ -27,8 +27,11 @@ export const openNow = () => open
 export const showTab = (tab: Tab) => open && set({ id: open.id, tab })
 // One of the open session's files, in its Files tab.
 export const showFile = (file: string) => open && set({ id: open.id, tab: "files", file })
+// Claude's own notes (memory, task lists) and temporary files: Changes leaves
+// them out (lib/session-changes.ts NOT_WORK), so they open in Files.
+export const isNotes = (path: string) => /^(?:\/private)?\/tmp\/|\/\.claude\//.test(path)
 // One of its changed files, in Changes; that tab sends it on to Files when the diff lacks it.
-export const showChange = (file: string) => open && set({ id: open.id, tab: "changes", file })
+export const showChange = (file: string) => (isNotes(file) ? showFile(file) : open && set({ id: open.id, tab: "changes", file }))
 // The file was shown: the next click on the same one shows it again.
 export const doneWithFile = () => open?.file && set({ id: open.id, tab: open.tab })
 

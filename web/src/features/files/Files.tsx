@@ -157,11 +157,13 @@ export function Files({ id, file }: { id: string; file?: string }) {
     const name = file.split("/").pop() ?? file
     setChosen(c => (c?.path === file ? c : files?.find(f => f.path === file) ?? { path: file, name, size: 0, modifiedAt: Date.now(), source: "written" }))
   }, [file, files === null])
+  // The file asked for, on top of the list when the list does not have it.
+  const rows = file && chosen?.path === file && files && !files.some(f => f.path === file) ? [chosen, ...files] : files
   const list = (
     <ul className={cn("m-0 min-h-0 list-none overflow-auto p-1.5", !hasSideRoom && "border-r border-line bg-side")}>
       {files === null && <li className="px-2.5 py-2 text-[12.5px] text-text-muted">Looking…</li>}
       {files?.length === 0 && !file && <li className="px-2.5 py-2 text-[12.5px] text-text-muted">No files shared yet</li>}
-      {files?.map(f => (
+      {rows?.map(f => (
         <li key={f.path}>
           <button onClick={() => setChosen(f)} title={f.path}
             className={cn("flex h-[30px] w-full items-center gap-2 rounded-[7px] px-2 text-left text-[12.5px] text-text", chosen?.path === f.path ? "bg-select" : "hover:bg-hover")}>
