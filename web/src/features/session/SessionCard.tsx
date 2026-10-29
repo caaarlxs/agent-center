@@ -88,9 +88,9 @@ function SessionCardView({ card, now, level = "near", unscale = 1, isSelected = 
             isDone && !ring && !isDragging && "shadow-none [&>*:not(.card-bar)]:opacity-62",
             isDragging && "cursor-grabbing",
           )}>
-          {state === "working" && <i aria-hidden className="pointer-events-none absolute -inset-[3px] animate-breathe rounded-[14px] shadow-[0_0_0_2px_var(--work-soft),0_0_14px_var(--work-soft)]" />}
-          <div className="flex min-w-0 items-start gap-[9px]">
-            <span className="-my-1.5"><StateIcon card={card} size={Math.round(big(34, 1.8))} /></span>
+          {state === "working" && <i aria-hidden className="pointer-events-none absolute -inset-[3px] animate-breathe rounded-[14px] shadow-[0_0_0_2px_color-mix(in_srgb,var(--work)_55%,transparent),0_0_22px_color-mix(in_srgb,var(--work)_35%,transparent)]" />}
+          <div className="flex min-w-0 items-center gap-[9px]">
+            <StateIcon card={card} size={Math.round(big(34, 1.8))} />
             <span title={card.title} className={cn("line-clamp-2 min-w-0 flex-1 text-sm leading-[1.3] [overflow-wrap:anywhere]", isDone ? "font-[550]" : "font-semibold")}
               style={far ? { fontSize: big(14, 2), lineHeight: 1.2 } : undefined}>{card.title}</span>
             {card.pinned && <span className="ml-auto flex-none text-ask" title="Pinned"><Star className="size-3" /></span>}
