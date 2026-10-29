@@ -5,7 +5,7 @@
 // reading the recap aloud, waiting cards that shake). Look: light or dark,
 // the canvas's animated background, the code colours. Help: the diagnostics
 // report. It opens by itself, on Setup, while a required step is missing.
-import { Check, ChevronLeft, ChevronRight } from "lucide-react"
+import { Bell, Check, ChevronLeft, ChevronRight, LifeBuoy, Palette, Wrench, X } from "lucide-react"
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -297,8 +297,15 @@ function Alerts() {
   )
 }
 
-const SECTIONS = [["setup", "Setup"], ["alerts", "Alerts"], ["look", "Look"], ["help", "Help"]] as const
-type Section = (typeof SECTIONS)[number][0]
+// The sections, in groups down the left side, as Claude's own settings.
+type Section = "setup" | "alerts" | "look" | "help"
+const SECTION: Record<Section, { label: string; Icon: typeof Bell }> = {
+  setup: { label: "Setup", Icon: Wrench },
+  alerts: { label: "Alerts", Icon: Bell },
+  look: { label: "Look", Icon: Palette },
+  help: { label: "Help", Icon: LifeBuoy },
+}
+const GROUPS: [string, Section[]][] = [["This Mac", ["setup"]], ["Preferences", ["alerts", "look"]], ["Support", ["help"]]]
 
 // The canvas's slow field of dots: off until you turn it on.
 function AnimatedBackground() {
@@ -341,36 +348,50 @@ export function SetupDialog({ onClose }: { onClose: () => void }) {
 
   return (
     <Dialog open onOpenChange={o => !o && onClose()}>
-      <DialogContent showCloseButton={false} className="w-[min(640px,calc(100vw-32px))] gap-0">
-        <div className="mb-3 flex items-center justify-between gap-3">
+      {/* One size for every section, so it never jumps as you move between them. */}
+      <DialogContent showCloseButton={false} className="flex h-[min(680px,calc(100vh-48px))] w-[min(920px,calc(100vw-32px))] max-w-none flex-col gap-0 overflow-hidden p-0">
+        <header className="flex h-[52px] shrink-0 items-center justify-between border-b border-line pr-3 pl-5">
           <DialogTitle>Settings</DialogTitle>
-          {status && section === "setup" && <Checklist {...progressOf(status.steps.filter(st => STEPS[st.id]).map(st => ({ need: STEPS[st.id].need, isDone: st.state === "done" })))} />}
-        </div>
-        <div role="tablist" aria-label="Sections" className="mb-3.5 inline-flex w-fit rounded-lg border border-line-strong bg-surface p-0.5">
-          {SECTIONS.map(([key, label]) => (
-            <button key={key} type="button" role="tab" aria-selected={section === key} onClick={() => setSection(key)}
-              className={cn("h-7 rounded-md px-3 text-[12.5px] font-[550] transition-colors", section === key ? "bg-text text-bg" : "text-text-muted hover:text-text")}>
-              {label}
-            </button>
-          ))}
-        </div>
-        {section === "setup" && <p className="-mt-1 mb-3.5 text-[13px] text-text-muted">Each step changes something on this Mac and runs only when you press it. Sessions that were already open load the mod when they restart.</p>}
-        {!status && <p className="text-text-muted">Checking…</p>}
-        <ol className="m-0 mb-3.5 flex max-h-[min(62vh,640px)] list-none flex-col gap-2 overflow-y-auto p-0">
-          {section === "setup" && status?.steps.map(step => <SetupStep key={step.id} step={step} status={status} busy={busy} language={language} setLanguage={setLanguage} run={run} />)}
-          {status && section === "alerts" && <Alerts />}
-          {section === "look" && (
-            <>
-              <Appearance />
-              <AnimatedBackground />
-              <CodeColours />
-            </>
-          )}
-          {section === "help" && <Diagnostics />}
-        </ol>
-        <div className="mt-1 flex items-center gap-2">
-          <span className="flex-1 text-xs text-text-muted">{status && !status.isReady ? "Required steps are missing: without them the board cannot see or answer the sessions." : ""}</span>
-          <Button onClick={onClose}>Done</Button>
+          <button type="button" onClick={onClose} aria-label="Close" className="grid size-8 place-items-center rounded-md text-text-muted hover:bg-hover hover:text-text"><X className="size-4" /></button>
+        </header>
+        <div className="flex min-h-0 flex-1">
+          <nav aria-label="Sections" className="flex w-[210px] shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-line p-3 max-[640px]:w-[150px]">
+            {GROUPS.map(([group, keys]) => (
+              <div key={group} className="flex flex-col gap-0.5">
+                <p className="m-0 px-2.5 pt-3 pb-1.5 text-[11.5px] text-faint">{group}</p>
+                {keys.map(key => {
+                  const { label, Icon } = SECTION[key]
+                  return (
+                    <button key={key} type="button" aria-current={section === key ? "page" : undefined} onClick={() => setSection(key)}
+                      className={cn("flex h-9 items-center gap-2.5 rounded-lg px-2.5 text-left text-[13.5px] transition-colors", section === key ? "bg-press text-text" : "text-text-muted hover:bg-hover hover:text-text")}>
+                      <Icon className="size-4 shrink-0" />{label}
+                    </button>
+                  )
+                })}
+              </div>
+            ))}
+          </nav>
+          <section className="flex min-w-0 flex-1 flex-col overflow-y-auto px-6 py-5">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h3 className="m-0 text-[15px] font-[650]">{SECTION[section].label}</h3>
+              {status && section === "setup" && <Checklist {...progressOf(status.steps.filter(st => STEPS[st.id]).map(st => ({ need: STEPS[st.id].need, isDone: st.state === "done" })))} />}
+            </div>
+            {section === "setup" && <p className="mt-0 mb-3.5 text-[13px] text-text-muted">Each step changes something on this Mac and runs only when you press it. Sessions that were already open load the mod when they restart.</p>}
+            {section === "setup" && status && !status.isReady && <p className="mt-0 mb-3.5 text-[13px] text-bad">Required steps are missing: without them the board cannot see or answer the sessions.</p>}
+            {!status && <p className="text-text-muted">Checking…</p>}
+            <ol className="m-0 flex list-none flex-col gap-2 p-0">
+              {section === "setup" && status?.steps.map(step => <SetupStep key={step.id} step={step} status={status} busy={busy} language={language} setLanguage={setLanguage} run={run} />)}
+              {status && section === "alerts" && <Alerts />}
+              {section === "look" && (
+                <>
+                  <Appearance />
+                  <AnimatedBackground />
+                  <CodeColours />
+                </>
+              )}
+              {section === "help" && <Diagnostics />}
+            </ol>
+          </section>
         </div>
       </DialogContent>
     </Dialog>
