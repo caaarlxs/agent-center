@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils"
 import { AttachButton, MicButton, PickedFiles, fileErrors } from "@/features/prompt/PromptExtras"
 import { micLive } from "@/features/prompt/voice"
 import { BorderBeam } from "border-beam"
+import { sweepAt } from "@/features/prompt/sweep"
 import { theme } from "@/lib/theme"
 import { VoiceBeam } from "voice-glow"
 import { modelKey, modelNow } from "@/features/prompt/Settings"
@@ -151,8 +152,9 @@ function Box({ id, card, bridge }: { id: string; card: Card | undefined; bridge:
       onDragEnter={e => e.dataTransfer.types.includes("Files") && setDrop(true)}
       onDragLeave={e => !e.currentTarget.contains(e.relatedTarget as Node) && setDrop(false)}
       onDrop={() => setDrop(false)}>
-      {/* You speak: the glow follows your voice. Whisper writes it out: border-beam's glow runs round the box. */}
-      <VoiceBeam stream={mic.stream ?? undefined} active={mic.isOn && !mic.writingSince} theme={mode} borderRadius={14} idle={mic.stream ? undefined : 0.35}>
+      {/* You speak: the glow follows your voice. Whisper writes it out: border-beam's glow runs round the box, and the voice glow, gathered into one beam, sweeps along the bottom. */}
+      <VoiceBeam stream={mic.stream ?? undefined} active={mic.isOn} theme={mode} borderRadius={14} idle={mic.stream ? undefined : 0.35}
+        motion={mic.writingSince ? () => sweepAt(Date.now() - mic.writingSince!) : null}>
       <BorderBeam size="md" active={!!mic.writingSince} theme={mode} borderRadius={14}>
       <PromptInput
         multiple maxFiles={MAX_FILES} maxFileSize={MAX_BYTES} onError={fileErrors}
