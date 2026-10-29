@@ -1,17 +1,26 @@
 // A session's state at a glance: a shape and a colour, the same on every view.
 // While Claude works, a ring fills with the turn's task list (4 of 6 steps:
 // two thirds), or turns with no list; inside, an orb shows what it does now
-// (thinking-orbs). At rest, the orb stands still.
+// (thinking-orbs). Every other state but done has its orb too, on its colour:
+// moving while it asks for you, still at rest.
 import { AlertTriangle, Check, Clock, Eye, List, Lock, MessageCircleQuestion } from "lucide-react"
 import { useEffect, useRef } from "react"
 import { AskMark, useAskMoment } from "@/components/icona/marks"
 import type { Card } from "@/lib/api-types"
 import { cn } from "@/lib/utils"
 import { type StateKey, labelOf, stateOf } from "./state"
-import { ThinkingOrb } from "thinking-orbs"
+import { type OrbState, ThinkingOrb } from "thinking-orbs"
 import { orbOf } from "@/features/conversation/session-events"
 
 const ORB_FROM = 26 // smaller, the orb's dots blur: the plain icon
+const REST_ORB: Partial<Record<StateKey, { orb: OrbState; moves: boolean }>> = {
+  asking: { orb: "listening", moves: true },
+  permission: { orb: "listening", moves: true },
+  review: { orb: "searching", moves: false },
+  pending: { orb: "breathing", moves: false },
+  parked: { orb: "shaping", moves: false },
+  stale: { orb: "solving", moves: false },
+}
 
 const ICON = { asking: MessageCircleQuestion, permission: Lock, review: Eye, pending: List, parked: Clock, done: Check, stale: AlertTriangle }
 // Its colour first (the panel reads it), then its soft face.
@@ -45,11 +54,13 @@ export function StateIcon({ card, size = 28 }: { card: Card; size?: number }) {
       </span>
     )
   }
-  // At rest (to review, or read and waiting): the orb, still.
-  if ((state === "review" || state === "pending") && size >= ORB_FROM) {
+  // Every other state but done: an orb on its colour. Only what asks for you
+  // moves (a question, an approval); what rests stands still.
+  const rest = REST_ORB[state]
+  if (rest && size >= ORB_FROM) {
     return (
       <span className={cn("relative inline-flex flex-none items-center justify-center rounded-full", TONE[state])} style={{ width: size, height: size }} role="img" aria-label={title} title={title}>
-        <ThinkingOrb state={state === "review" ? "searching" : "breathing"} size={20} paused style={{ width: size * 0.68, height: size * 0.68 }} aria-hidden />
+        <ThinkingOrb state={rest.orb} size={20} paused={!rest.moves} style={{ width: size * 0.68, height: size * 0.68 }} aria-hidden />
       </span>
     )
   }

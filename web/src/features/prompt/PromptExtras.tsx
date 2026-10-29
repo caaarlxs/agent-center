@@ -8,8 +8,7 @@ import { usePromptInputAttachments, usePromptInputController } from "@/component
 import { canDictate, canRecord, dictate, hasWhisper, micLive, recordVoice, type Recording } from "./voice"
 import { Anim } from "@/components/icons/animated"
 import { Elapsed } from "./VoiceWave"
-import { MicVoiceRippleIcon } from "@/components/icona/mic-voice-ripple"
-import { Once } from "@/components/icona/moment"
+import { ThinkingOrb } from "thinking-orbs"
 
 export const fileErrors = (err: { code: string }) =>
   toast(err.code === "max_files" ? "Up to 10 files per message" : "Each file can be up to 500 MB (and cannot be empty)")
@@ -116,19 +115,21 @@ export function MicButton() {
 
   if (!isWhisper && !canDictate) return null
   const pill = "pill-open inline-flex h-[30px] shrink-0 items-center gap-2 rounded-[15px] pr-2.5 pl-[9px] text-xs font-semibold tabular-nums"
-  if (mic.kind === "transcribing") return <span ref={button} className={cn(pill, "bg-brand-soft text-brand")}>Transcribing…</span>
+  const quiet = "border border-line bg-hover text-text-muted"
+  const orb = (state: "listening" | "composing") => <ThinkingOrb state={state} size={20} className="size-4 shrink-0" aria-hidden />
+  if (mic.kind === "transcribing") return <span ref={button} className={cn(pill, quiet)}>{orb("composing")}Transcribing…</span>
   if (mic.kind === "recording") {
     const s = Math.floor((Date.now() - mic.rec.startedAt) / 1000)
     return (
       <button ref={button as React.RefObject<HTMLButtonElement>} type="button" onClick={() => finish(mic.rec)} title="Stop and write (↵) · discard (Esc)"
-        className={cn(pill, "cursor-pointer border border-[color-mix(in_srgb,var(--bad)_35%,transparent)] bg-bad-soft text-bad hover:bg-[color-mix(in_srgb,var(--bad)_22%,transparent)]")}>
-        <Once icon={MicVoiceRippleIcon} size={14} isLoop />
+        className={cn(pill, quiet, "cursor-pointer hover:bg-press hover:text-text")}>
+        {orb("listening")}
         <Elapsed seconds={s} />
         <Square className="size-[11px] fill-current" />
       </button>
     )
   }
-  if (mic.kind === "dictating") return <button ref={button as React.RefObject<HTMLButtonElement>} type="button" className={cn(toolIcon, "text-bad hover:text-bad")} onClick={() => (mic.stop(), backToField())} title="Stop dictation (Chrome uses Google's servers)"><Once icon={MicVoiceRippleIcon} size={15} isLoop /></button>
+  if (mic.kind === "dictating") return <button ref={button as React.RefObject<HTMLButtonElement>} type="button" className={toolIcon} onClick={() => (mic.stop(), backToField())} title="Stop dictation (Chrome uses Google's servers)">{orb("listening")}</button>
 
   const start = async () => {
     if (!isWhisper) {
