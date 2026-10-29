@@ -219,6 +219,27 @@ describe("board", () => {
     expect(helper.background.map((t: any) => t.id)).toEqual(["b1"])
   })
 
+  test("a working card says what its turn does now (the mod's stream); another says nothing", async () => {
+    const doing = { kind: "tool", tool: "Grep", label: "zebra" }
+    await mkdir(join(home, ".claude", "agent-center", "stream"), { recursive: true })
+    for (const sid of [HELPER, SERVER])
+      await writeFile(join(home, ".claude", "agent-center", "stream", `${sid}.json`), JSON.stringify({ turnId: "t", step: 0, text: "", done: false, at: Date.now(), since: Date.now(), tokens: 5, doing }))
+    // An open page keeps the board reading (a snapshot a second).
+    const page = (await fetch(`${base()}/api/stream`)).body!.getReader()
+    void (async () => { while (!(await page.read().catch(() => ({ done: true }))).done); })()
+    let cards: any[] = []
+    try {
+      for (let i = 0; i < 40 && cards.find(c => c.id === HELPER)?.doing == null; i++) {
+        await Bun.sleep(300)
+        cards = (await jsonOf(fetch(`${base()}/api/state`))).cards
+      }
+    } finally {
+      await page.cancel()
+    }
+    expect(cards.find(c => c.id === HELPER).doing).toEqual(doing)
+    expect(cards.find(c => c.id === SERVER).doing).toBeNull()
+  }, 20_000)
+
   test("tells two open sessions that edit the same file, not one every session edits nor a copied edit", async () => {
     const state = await jsonOf(fetch(`${base()}/api/state`))
     const helper = state.cards.find((c: any) => c.id === HELPER)

@@ -7,7 +7,7 @@ import { toast } from "sonner"
 import { usePromptInputAttachments, usePromptInputController } from "@/components/ai-elements/prompt-input"
 import { canDictate, canRecord, dictate, hasWhisper, micLive, recordVoice, type Recording } from "./voice"
 import { Anim } from "@/components/icons/animated"
-import { Elapsed, LiveWave, ScrubWave } from "./VoiceWave"
+import { Elapsed } from "./VoiceWave"
 import { MicVoiceRippleIcon } from "@/components/icona/mic-voice-ripple"
 import { Once } from "@/components/icona/moment"
 
@@ -45,8 +45,6 @@ export function AttachButton() {
 // A toolbar icon of the reply box (.composer-tools .icon-btn): 30px, muted.
 export const toolIcon = "inline-grid size-[30px] shrink-0 place-items-center rounded-md text-text-muted transition-[background-color,color,transform] duration-[120ms] ease-(--ease-out) hover:bg-hover hover:text-text active:scale-[0.92] [&_svg]:size-[15px]"
 
-const BARS = 34
-
 type MicState =
   | { kind: "idle" }
   | { kind: "recording"; rec: Recording }
@@ -61,7 +59,6 @@ export function MicButton() {
   const { textInput } = usePromptInputController()
   const [isWhisper, setWhisper] = useState(false)
   const [mic, setMic] = useState<MicState>({ kind: "idle" })
-  const [levels, setLevels] = useState<number[]>(() => Array(BARS).fill(0))
   const [, tick] = useState(0)
   const micNow = useRef(mic)
   micNow.current = mic
@@ -97,25 +94,14 @@ export function MicButton() {
   const rec = mic.kind === "recording" ? mic.rec : null
   // The composer's glow: on while you speak, off once it writes.
   useEffect(() => {
-    micLive.set({ isOn: mic.kind === "recording" || mic.kind === "dictating", stream: rec?.stream ?? null })
-    return () => micLive.set({ isOn: false, stream: null })
+    micLive.set({ isOn: mic.kind !== "idle", stream: rec?.stream ?? null, writingSince: mic.kind === "transcribing" ? Date.now() : null })
+    return () => micLive.set({ isOn: false, stream: null, writingSince: null })
   }, [mic.kind, rec])
-  // The level, sampled into bars that scroll left.
+  // The clock in the pill, each second while it records.
   useEffect(() => {
     if (!rec) return
-    const audio = new AudioContext()
-    const analyser = audio.createAnalyser()
-    analyser.fftSize = 512
-    audio.createMediaStreamSource(rec.stream).connect(analyser)
-    const samples = new Uint8Array(analyser.fftSize)
-    const timer = setInterval(() => {
-      analyser.getByteTimeDomainData(samples)
-      let sum = 0
-      for (const v of samples) sum += ((v - 128) / 128) ** 2
-      setLevels(l => [...l.slice(1), Math.min(1, Math.sqrt(sum / samples.length) * 4.5)])
-      tick(n => n + 1)
-    }, 60)
-    return () => (clearInterval(timer), void audio.close())
+    const timer = setInterval(() => tick(n => n + 1), 1000)
+    return () => clearInterval(timer)
   }, [rec])
   // Enter writes, Esc drops: caught before the field, so Enter does not send.
   useEffect(() => {
@@ -130,14 +116,13 @@ export function MicButton() {
 
   if (!isWhisper && !canDictate) return null
   const pill = "pill-open inline-flex h-[30px] shrink-0 items-center gap-2 rounded-[15px] pr-2.5 pl-[9px] text-xs font-semibold tabular-nums"
-  if (mic.kind === "transcribing") return <span ref={button} className={cn(pill, "bg-brand-soft text-brand")}><ScrubWave levels={levels} />Transcribing…</span>
+  if (mic.kind === "transcribing") return <span ref={button} className={cn(pill, "bg-brand-soft text-brand")}>Transcribing…</span>
   if (mic.kind === "recording") {
     const s = Math.floor((Date.now() - mic.rec.startedAt) / 1000)
     return (
       <button ref={button as React.RefObject<HTMLButtonElement>} type="button" onClick={() => finish(mic.rec)} title="Stop and write (↵) · discard (Esc)"
         className={cn(pill, "cursor-pointer border border-[color-mix(in_srgb,var(--bad)_35%,transparent)] bg-bad-soft text-bad hover:bg-[color-mix(in_srgb,var(--bad)_22%,transparent)]")}>
         <Once icon={MicVoiceRippleIcon} size={14} isLoop />
-        <LiveWave levels={levels} />
         <Elapsed seconds={s} />
         <Square className="size-[11px] fill-current" />
       </button>

@@ -6,8 +6,10 @@ import { createStore } from "@/lib/store"
 
 // The microphone while you dictate, for the composer's voice glow: its
 // stream while Whisper records (the glow follows your voice), on without one
-// while the browser dictates (it breathes).
-export const micLive = createStore<{ isOn: boolean; stream: MediaStream | null }>({ isOn: false, stream: null })
+// while the browser dictates (it breathes), and since when Whisper writes
+// what you said (it sweeps).
+export type MicLive = { isOn: boolean; stream: MediaStream | null; writingSince: number | null }
+export const micLive = createStore<MicLive>({ isOn: false, stream: null, writingSince: null })
 
 let whisperReady: Promise<boolean> | null = null
 export const hasWhisper = () =>

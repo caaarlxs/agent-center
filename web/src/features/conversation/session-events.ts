@@ -5,6 +5,8 @@
 // whoever listens. A reader asks again on its own only now and then
 // (`every`), or often while the connection is down.
 import { useEffect, useRef, useState } from "react"
+import type { Doing } from "@/lib/api-types"
+export type { Doing }
 
 type Kind = "messages" | "bridge" | "stream"
 type Entry = { source: EventSource; listeners: Set<(kind: Kind, data: string) => void>; isUp: boolean }
@@ -52,7 +54,6 @@ export function useSessionEvents(id: string, kind: Kind, read: () => void, every
 // its text so far. Once the step ends it stays until the transcript has it
 // (`itemCount` grows) or for a moment; a stream that stopped long ago (its
 // session closed mid-answer) is not shown.
-export type Doing = { kind: "thinking" | "writing" | "tool"; tool?: string; label?: string }
 // v12 adds the turn's start, the tokens written so far and what it does now.
 export type Live = { turnId: string; step: number; text: string; done: boolean; at: number; since?: number; tokens?: number; doing?: Doing | null }
 const KEEP_DONE_MS = 2500

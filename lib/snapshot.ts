@@ -6,7 +6,7 @@ import { stat } from "node:fs/promises"
 import { HOME } from "./config"
 import { backgroundOf } from "./background"
 import { board, itemOf, keepAcrossAccounts, type BoardItem } from "./board"
-import { status as bridgeStatus, type Limits, type Permission } from "./bridge"
+import { doingOf, status as bridgeStatus, type Limits, type Permission } from "./bridge"
 import { canRunCommands } from "./commands"
 import { freshness } from "./freshness"
 import { memoryNow, memoryOf } from "./memory"
@@ -220,6 +220,8 @@ async function cardOf(
     usage: await usageOf(id, ids).catch(() => null),
     // The current turn's task list, while Claude works through it.
     progress: column === "working" ? await progressOf(id).catch(() => null) : null,
+    // What that turn does now (the card's orb).
+    doing: column === "working" ? await doingOf(id) : null,
     // Since when the session waits for the person (the moment it asked).
     waitingSince: column === "asking" ? s.updated_at : null,
     updatedAt: Math.max(s.updated_at, app?.lastActivityAt ?? 0),

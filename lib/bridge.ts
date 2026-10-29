@@ -180,6 +180,20 @@ export async function stop(sessionId: string) {
 
 // Whether the session's mod is running, and how many messages still wait.
 // Also deletes the messages the mod has acknowledged.
+// What the running turn does now, as the mod (v12) writes it in its stream:
+// thinking, writing, or a tool with what it acts on. Null without it.
+export type Doing = { kind: "thinking" | "writing" | "tool"; tool?: string; label?: string }
+export async function doingOf(sessionId: string): Promise<Doing | null> {
+  if (!isId(sessionId)) return null
+  try {
+    const live = await readJson(join(BASE, "stream", `${sessionId}.json`))
+    const d = live.since ? live.doing : null
+    return d && ["thinking", "writing", "tool"].includes(d.kind) ? { kind: d.kind, ...(d.tool ? { tool: String(d.tool) } : {}), ...(d.label ? { label: String(d.label) } : {}) } : null
+  } catch {
+    return null
+  }
+}
+
 export async function status(sessionId: string): Promise<BridgeStatus> {
   if (!isId(sessionId)) return { isOpen: false, pending: 0, lastSeen: null, busy: null, version: 0, limits: null, settings: null, stuck: [], failed: [], queued: [], question: null, permission: null, effort: null, model: null }
   let lastSeen: number | null = null

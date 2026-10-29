@@ -15,6 +15,7 @@ import { persistedStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
 import { AttachButton, MicButton, PickedFiles, fileErrors } from "@/features/prompt/PromptExtras"
 import { micLive } from "@/features/prompt/voice"
+import { sweepAt } from "@/features/prompt/sweep"
 import { theme } from "@/lib/theme"
 import { VoiceBeam } from "voice-glow"
 import { modelKey, modelNow } from "@/features/prompt/Settings"
@@ -146,11 +147,12 @@ function Box({ id, card, bridge }: { id: string; card: Card | undefined; bridge:
     setTimeout(() => alive.current && setWaking(false), 8000)
   }
   return (
-    <div ref={box} className={cn("composer-box shrink-0 border-t border-line bg-surface px-3.5 py-2.5 max-[860px]:px-3 max-[860px]:pt-2 max-[860px]:pb-3", isDrop && "drop")}
+    <div ref={box} className={cn("composer-box shrink-0 border-t border-line bg-surface px-3.5 py-2.5 max-[860px]:px-3 max-[860px]:pt-2 max-[860px]:pb-3", isDrop && "drop", mic.isOn && "listening")}
       onDragEnter={e => e.dataTransfer.types.includes("Files") && setDrop(true)}
       onDragLeave={e => !e.currentTarget.contains(e.relatedTarget as Node) && setDrop(false)}
       onDrop={() => setDrop(false)}>
-      <VoiceBeam stream={mic.stream ?? undefined} active={mic.isOn} theme={mode} borderRadius={14} idle={mic.stream ? undefined : 0.35}>
+      <VoiceBeam stream={mic.stream ?? undefined} active={mic.isOn} theme={mode} borderRadius={14} idle={mic.stream ? undefined : 0.35}
+        motion={mic.writingSince ? () => sweepAt(Date.now() - mic.writingSince!) : null}>
       <PromptInput
         multiple maxFiles={MAX_FILES} maxFileSize={MAX_BYTES} onError={fileErrors}
         onSubmit={async ({ text, files }) => {

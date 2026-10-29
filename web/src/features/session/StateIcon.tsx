@@ -1,12 +1,17 @@
 // A session's state at a glance: a shape and a colour, the same on every view.
 // While Claude works, a ring fills with the turn's task list (4 of 6 steps:
-// two thirds); with no list, the ring turns (components.js StateIcon).
+// two thirds), or turns with no list; inside, an orb shows what it does now
+// (thinking-orbs). At rest, the orb stands still.
 import { AlertTriangle, Check, Clock, Eye, List, Lock, MessageCircleQuestion } from "lucide-react"
 import { useEffect, useRef } from "react"
 import { AskMark, useAskMoment } from "@/components/icona/marks"
 import type { Card } from "@/lib/api-types"
 import { cn } from "@/lib/utils"
 import { type StateKey, labelOf, stateOf } from "./state"
+import { ThinkingOrb } from "thinking-orbs"
+import { orbOf } from "@/features/conversation/session-events"
+
+const ORB_FROM = 26 // smaller, the orb's dots blur: the plain icon
 
 const ICON = { asking: MessageCircleQuestion, permission: Lock, review: Eye, pending: List, parked: Clock, done: Check, stale: AlertTriangle }
 // Its colour first (the panel reads it), then its soft face.
@@ -36,7 +41,15 @@ export function StateIcon({ card, size = 28 }: { card: Card; size?: number }) {
           <circle cx="18" cy="18" r="15.5" strokeWidth="3.5" pathLength={100} strokeLinecap="round" className="stroke-work transition-[stroke-dasharray] duration-500 ease-(--ease-out)"
             strokeDasharray={`${Math.max(4, pct * 100)} 100`} />
         </svg>
-        {p && size >= 26 ? <b className="text-[9.5px] font-[750] tracking-[-0.02em] tabular-nums">{p.done}/{p.total}</b> : <i className="size-[7px] rounded-full bg-work" />}
+        {size >= ORB_FROM ? <ThinkingOrb state={orbOf(card.doing)} size={20} style={{ width: size * 0.62, height: size * 0.62 }} aria-hidden /> : <i className="size-[7px] rounded-full bg-work" />}
+      </span>
+    )
+  }
+  // At rest (to review, or read and waiting): the orb, still.
+  if ((state === "review" || state === "pending") && size >= ORB_FROM) {
+    return (
+      <span className={cn("relative inline-flex flex-none items-center justify-center rounded-full", TONE[state])} style={{ width: size, height: size }} role="img" aria-label={title} title={title}>
+        <ThinkingOrb state={state === "review" ? "searching" : "breathing"} size={20} paused style={{ width: size * 0.68, height: size * 0.68 }} aria-hidden />
       </span>
     )
   }
