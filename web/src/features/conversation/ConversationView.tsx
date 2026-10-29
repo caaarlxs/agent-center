@@ -17,6 +17,7 @@ import { get, post } from "@/lib/api"
 import type { Bridge, Card, Permission, Snapshot, SuggestionState } from "@/lib/api-types"
 import { bytesText, clock, memText, MEMORY_WARN } from "@/lib/format"
 import { useLive } from "@/lib/live"
+import { Shimmer } from "@/components/ai-elements/shimmer"
 import { useNow } from "@/lib/now"
 import { cn } from "@/lib/utils"
 import { openDialog } from "@/app/open-dialog"
@@ -444,8 +445,22 @@ function RunningNow({ sessionId }: { sessionId: string }) {
   )
 }
 
-// While a turn runs (mod v12), the app's spinner line: dots that breathe,
-// "5s · 29 tokens", and what it does now.
+// Claude Code's spinner: a star that grows and shrinks, in the brand colour;
+// still (its fullest) when you ask for less motion.
+const STAR = ["·", "✢", "✳", "✶", "✻", "✽", "✻", "✶", "✳", "✢"]
+const STAR_MS = 120
+function Star() {
+  const [frame, setFrame] = useState(4)
+  useEffect(() => {
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) return
+    const timer = setInterval(() => setFrame(f => (f + 1) % STAR.length), STAR_MS)
+    return () => clearInterval(timer)
+  }, [])
+  return <span aria-hidden className="inline-grid w-3.5 shrink-0 place-items-center text-[14px] leading-none text-brand">{STAR[frame]}</span>
+}
+
+// While a turn runs (mod v12), the line Claude Code shows: its star, what it
+// does now with a shine across it, the turn's time and tokens.
 function TurnLine({ live }: { live: Live | null }) {
   const [now, setNow] = useState(Date.now)
   useEffect(() => {
@@ -456,10 +471,8 @@ function TurnLine({ live }: { live: Live | null }) {
   if (!line) return null
   return (
     <div className="flex min-w-0 items-center gap-2 text-[12.5px] text-text-muted" aria-live="polite">
-      <span className="flex shrink-0 gap-[3px]" aria-hidden>
-        {[0, 1, 2].map(i => <i key={i} className="size-[4px] animate-breathe rounded-full bg-brand motion-reduce:animate-none" style={{ animationDelay: `${i * 0.2}s`, animationDuration: "1.2s" }} />)}
-      </span>
-      {line.doing && <span className="min-w-0 truncate text-text">{line.doing}</span>}
+      <Star />
+      {line.doing && <Shimmer as="span" duration={2.2} className="min-w-0 truncate [--color-background:var(--text)] [--color-muted-foreground:var(--text-muted)]">{line.doing}</Shimmer>}
       <span className="shrink-0 tabular-nums">{line.doing && "· "}{line.time} · {line.tokens}</span>
     </div>
   )
