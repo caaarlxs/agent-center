@@ -8,8 +8,10 @@ import { createStore } from "@/lib/store"
 // stream while Whisper records (the glow follows your voice), on without one
 // while the browser dictates (it breathes), and since when Whisper writes
 // what you said (the glow, gathered, sweeps along the box).
-export type MicLive = { isOn: boolean; stream: MediaStream | null; writingSince: number | null }
-export const micLive = createStore<MicLive>({ isOn: false, stream: null, writingSince: null })
+// form: the one the microphone writes into, so only its own field glows (the
+// New session dialog has one too, over a conversation's).
+export type MicLive = { isOn: boolean; stream: MediaStream | null; writingSince: number | null; form: HTMLFormElement | null }
+export const micLive = createStore<MicLive>({ isOn: false, stream: null, writingSince: null, form: null })
 
 let whisperReady: Promise<boolean> | null = null
 export const hasWhisper = () =>

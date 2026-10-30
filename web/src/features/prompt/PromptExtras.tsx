@@ -96,8 +96,9 @@ export function MicButton() {
   const rec = mic.kind === "recording" ? mic.rec : null
   // The composer's glow: on while you speak, off once it writes.
   useEffect(() => {
-    micLive.set({ isOn: mic.kind !== "idle", stream: rec?.stream ?? null, writingSince: mic.kind === "transcribing" ? Date.now() : null })
-    return () => micLive.set({ isOn: false, stream: null, writingSince: null })
+    const form = button.current?.closest("form") ?? null
+    micLive.set({ isOn: mic.kind !== "idle", stream: rec?.stream ?? null, writingSince: mic.kind === "transcribing" ? Date.now() : null, form })
+    return () => micLive.set({ isOn: false, stream: null, writingSince: null, form: null })
   }, [mic.kind, rec])
   // The clock in the pill, each second while it records.
   useEffect(() => {

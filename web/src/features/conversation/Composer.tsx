@@ -140,7 +140,9 @@ function Box({ id, card, bridge }: { id: string; card: Card | undefined; bridge:
   useEffect(() => () => void (alive.current = false), [])
 
   const isWorking = card?.column === "working"
-  const mic = micLive.use()
+  const live = micLive.use()
+  // The microphone's glow, only when it writes into this field.
+  const mic = live.isOn && !!live.form && !!box.current?.contains(live.form) ? live : { ...live, isOn: false }
   const reach = reachOf(bridge, isWorking, isWaking)
   const isStuck = isStuckNow(bridge)
   const isBusy = isBusyNow(bridge, isWorking)
