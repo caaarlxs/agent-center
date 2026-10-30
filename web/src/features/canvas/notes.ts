@@ -80,3 +80,53 @@ export const withItem = (text: string) => {
   const t = text.replace(/\s*$/, "")
   return `${t}${t ? "\n" : ""}- [ ] `
 }
+
+// ---------- the text's size and marks ----------
+
+// The sizes a note's text steps through (px): never below what reads.
+export const TEXT_SIZES = [11, 13, 16, 20, 26, 32] as const
+export const TEXT_SIZE = 13
+export function nextSize(size: number | undefined, step: 1 | -1): number {
+  const at = TEXT_SIZES.indexOf((size ?? TEXT_SIZE) as (typeof TEXT_SIZES)[number])
+  return TEXT_SIZES[Math.max(0, Math.min(TEXT_SIZES.length - 1, (at === -1 ? 1 : at) + step))]!
+}
+
+// Bold, underline, struck: plain marks in the text, shown once you leave it.
+export type Mark = "**" | "__" | "~~"
+const MARKS: Mark[] = ["**", "__", "~~"]
+
+// The mark on the selection, or off when it has it already (around it or
+// inside its ends); with nothing selected, the marks with the caret between.
+export function toggleMark(text: string, start: number, end: number, mark: Mark): { text: string; start: number; end: number } {
+  const n = mark.length
+  if (text.slice(start - n, start) === mark && text.slice(end, end + n) === mark)
+    return { text: text.slice(0, start - n) + text.slice(start, end) + text.slice(end + n), start: start - n, end: end - n }
+  const picked = text.slice(start, end)
+  if (picked.length >= 2 * n && picked.startsWith(mark) && picked.endsWith(mark))
+    return { text: text.slice(0, start) + picked.slice(n, -n) + text.slice(end), start, end: end - 2 * n }
+  return { text: text.slice(0, start) + mark + picked + mark + text.slice(end), start: start + n, end: end + n }
+}
+
+// A line in pieces with their look; a mark with no partner stays as typed.
+export type Piece = { text: string; bold: boolean; underline: boolean; strike: boolean }
+export function piecesOf(line: string): Piece[] {
+  const parts = line.split(/(\*\*|__|~~)/)
+  const left: Record<Mark, number> = { "**": 0, "__": 0, "~~": 0 }
+  for (const p of parts) if (MARKS.includes(p as Mark)) left[p as Mark]++
+  const on: Record<Mark, boolean> = { "**": false, "__": false, "~~": false }
+  const out: Piece[] = []
+  const add = (text: string) => {
+    if (!text) return
+    const look = { bold: on["**"], underline: on["__"], strike: on["~~"] }
+    const last = out[out.length - 1]
+    if (last && last.bold === look.bold && last.underline === look.underline && last.strike === look.strike) last.text += text
+    else out.push({ text, ...look })
+  }
+  for (const p of parts) {
+    const mark = MARKS.includes(p as Mark) ? (p as Mark) : null
+    if (!mark) add(p)
+    else if (on[mark] || left[mark] >= 2) (on[mark] = !on[mark]), left[mark]--
+    else (add(p), left[mark]--) // no partner left: as typed
+  }
+  return out
+}

@@ -28,8 +28,10 @@ export type BoardItem = {
 export type Zone = { id: string; name: string; x: number; y: number; w: number; h: number; collapsed?: boolean }
 // A note attached to a card (cardId: the card's desktop id, or its session id)
 // keeps x, y relative to that card, and moves with it.
-export type Note = { id: string; text: string; x: number; y: number; w: number; h: number; color: string; cardId: string | null }
+// size: its text, in px (one of NOTE_TEXT_SIZES; 13 when missing).
+export type Note = { id: string; text: string; x: number; y: number; w: number; h: number; color: string; cardId: string | null; size?: number }
 const NOTE_COLORS = ["yellow", "pink", "blue", "green"]
+const NOTE_TEXT_SIZES = [11, 13, 16, 20, 26, 32] // web/src/features/canvas/notes.ts TEXT_SIZES
 // The colours a card can wear (public/js/components.js draws them).
 export const CARD_COLORS = ["lilac", "blue", "teal", "green", "yellow", "orange", "pink"]
 // The rows of the tier list, most important first (public/js/tiers.js names
@@ -237,6 +239,7 @@ export async function setNotes(raw: unknown[]) {
         w: Math.min(800, Math.max(144, Math.round(Number(n?.w) || 216))),
         h: Math.min(800, Math.max(96, Math.round(Number(n?.h) || 144))),
         color: NOTE_COLORS.includes(n?.color) ? n.color : "yellow",
+        size: NOTE_TEXT_SIZES.includes(Number(n?.size)) ? Number(n.size) : 13,
       }
     })
     .slice(0, 100)

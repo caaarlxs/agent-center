@@ -2,14 +2,16 @@
 // strip (next to a card it attaches and moves with it), size it from its
 // corner, change its colour with the dot, add a box, delete it with ×.
 // Click its text to write; "- [ ] …" lines show as boxes to tick, and Enter
-// on one starts the next.
+// on one starts the next. While you write, a bar on top sets the text's size
+// (A− A+, from 11 to 32 px) and puts bold, underline or a strike on what is
+// selected (plain marks, **…** __…__ ~~…~~, shown as such once you leave).
 import { type Node, type NodeProps, NodeResizeControl, useStore } from "@xyflow/react"
-import { Link, ListChecks } from "lucide-react"
+import { Bold, Link, ListChecks, Strikethrough, Underline } from "lucide-react"
 import { type CSSProperties, useRef, useState } from "react"
 import type { Note } from "@/lib/api-types"
 import { cn } from "@/lib/utils"
 import { GRID } from "./geometry"
-import { NOTE_COLORS, continueList, linesOf, tally, toggleItem, withItem } from "./notes"
+import { type Mark, NOTE_COLORS, TEXT_SIZE, TEXT_SIZES, continueList, linesOf, nextSize, piecesOf, tally, toggleItem, toggleMark, withItem } from "./notes"
 import { useFocusWhenShown } from "./useFocusWhenShown"
 import { Anim } from "@/components/icons/animated"
 
@@ -26,6 +28,15 @@ const HUE: Record<string, string> = { yellow: "#eab308", pink: "#ec4899", blue: 
 const mix = (pct: number, base = "transparent") => `color-mix(in srgb, var(--note) ${pct}%, ${base})`
 const noteBtn = "nodrag inline-flex size-[18px] flex-none items-center justify-center rounded-[5px] text-text-muted opacity-0 transition-[opacity,background-color] duration-120 group-hover/note:opacity-100 group-focus-within/note:opacity-100 hover:bg-press hover:text-text [&_svg]:size-3"
 
+const barBtn = "nodrag inline-grid h-[20px] min-w-[20px] place-items-center rounded-[5px] px-1 text-[11px] font-semibold text-text-muted hover:bg-press hover:text-text disabled:opacity-35 disabled:hover:bg-transparent [&_svg]:size-3"
+
+// A line's text with its marks as looks.
+function Marked({ text }: { text: string }) {
+  return piecesOf(text).map((p, i) => (
+    <span key={i} className={cn(p.bold && "font-bold", p.underline && "underline underline-offset-2", p.strike && "line-through")}>{p.text}</span>
+  ))
+}
+
 export function NoteNode({ data, selected, dragging }: NodeProps<Node<NoteNodeData>>) {
   const { note } = data
   const unscale = useStore(s => 1 / s.transform[2])
@@ -34,6 +45,18 @@ export function NoteNode({ data, selected, dragging }: NodeProps<Node<NoteNodeDa
   useFocusWhenShown(area, isEditing)
   const nextColor = NOTE_COLORS[(NOTE_COLORS.indexOf(note.color as (typeof NOTE_COLORS)[number]) + 1) % NOTE_COLORS.length]
   const count = tally(note.text)
+  const size = note.size ?? TEXT_SIZE
+  // The bar's buttons keep the field's focus and selection (mousedown would take them).
+  const keep = (e: React.MouseEvent) => e.preventDefault()
+  const mark = (m: Mark) => {
+    const ta = area.current
+    if (!ta) return
+    const next = toggleMark(ta.value, ta.selectionStart, ta.selectionEnd, m)
+    ta.value = next.text
+    ta.setSelectionRange(next.start, next.end)
+    data.onText(note, next.text)
+  }
+  const resize = (step: 1 | -1) => data.onChange({ ...note, size: nextSize(size, step) })
   const style = {
     "--note": HUE[note.color] ?? HUE.yellow,
     background: mix(16, "var(--surface)"),
@@ -65,20 +88,30 @@ export function NoteNode({ data, selected, dragging }: NodeProps<Node<NoteNodeDa
         <button className={noteBtn} title="Add a checkbox" onClick={() => (data.onText(note, withItem(note.text)), setEditing(true))}><ListChecks /></button>
         <button className={noteBtn} title="Delete the note" onClick={() => data.onRemove(note)}><Anim.X size={12} /></button>
       </header>
+      {isEditing && (
+        <div className="nodrag flex flex-none items-center gap-0.5 border-b px-1.5 py-0.5" style={{ borderColor: mix(30, "var(--line)") }}>
+          <button className={barBtn} onMouseDown={keep} onClick={() => resize(-1)} disabled={size <= TEXT_SIZES[0]} title="Smaller text">A−</button>
+          <button className={barBtn} onMouseDown={keep} onClick={() => resize(1)} disabled={size >= TEXT_SIZES[TEXT_SIZES.length - 1]} title="Bigger text">A+</button>
+          <span className="mx-1 h-3 w-px" style={{ background: mix(40, "var(--line)") }} />
+          <button className={barBtn} onMouseDown={keep} onClick={() => mark("**")} title="Bold (**…**)"><Bold /></button>
+          <button className={barBtn} onMouseDown={keep} onClick={() => mark("__")} title="Underline (__…__)"><Underline /></button>
+          <button className={barBtn} onMouseDown={keep} onClick={() => mark("~~")} title="Strike (~~…~~)"><Strikethrough /></button>
+        </div>
+      )}
       {isEditing ? (
         <textarea ref={area} defaultValue={note.text} placeholder="Write a note… (- [ ] for a checkbox)" spellCheck={false}
-          className="nodrag nowheel min-h-0 flex-1 resize-none border-0 bg-transparent px-2.5 pt-[7px] pb-3 text-[13px] leading-[1.45] text-text outline-none placeholder:text-faint"
+          className="nodrag nowheel min-h-0 flex-1 resize-none border-0 bg-transparent px-2.5 pt-[7px] pb-3 leading-[1.45] text-text outline-none placeholder:text-faint" style={{ fontSize: size }}
           onChange={e => data.onText(note, e.target.value)} onBlur={() => setEditing(false)} onKeyDown={onKeyDown} />
       ) : (
-        <div className="nodrag nowheel min-h-0 flex-1 cursor-text overflow-auto px-2.5 pt-[7px] pb-3 text-[13px] leading-[1.45] [overflow-wrap:anywhere]" onClick={() => setEditing(true)}>
+        <div className="nodrag nowheel min-h-0 flex-1 cursor-text overflow-auto px-2.5 pt-[7px] pb-3 leading-[1.45] [overflow-wrap:anywhere]" style={{ fontSize: size }} onClick={() => setEditing(true)}>
           {!note.text.trim() ? <span className="text-faint">Write a note… (- [ ] for a checkbox)</span> : linesOf(note.text).map((l, i) =>
             l.kind === "item" ? (
               <label key={i} className="flex items-start gap-[7px] py-px" onClick={e => e.stopPropagation()}>
-                <input type="checkbox" checked={l.done} className="mt-[3px] flex-none cursor-pointer" style={{ accentColor: mix(80, "var(--text)") }}
+                <input type="checkbox" checked={l.done} className="mt-[0.2em] flex-none cursor-pointer" style={{ accentColor: mix(80, "var(--text)"), width: "1em", height: "1em" }}
                   onChange={() => data.onText(note, toggleItem(note.text, i))} />
-                <span className={cn(l.done && "text-faint line-through")}>{l.text}</span>
+                <span className={cn(l.done && "text-faint line-through")}><Marked text={l.text} /></span>
               </label>
-            ) : <div key={i} className="whitespace-pre-wrap">{l.text || " "}</div>,
+            ) : <div key={i} className="whitespace-pre-wrap">{l.text ? <Marked text={l.text} /> : " "}</div>,
           )}
         </div>
       )}

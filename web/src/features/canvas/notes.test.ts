@@ -1,7 +1,7 @@
 import { expect, test } from "vitest"
 import type { Note } from "@/lib/api-types"
 import { CARD_W } from "./geometry"
-import { attachTo, continueList, linesOf, noteAt, placeNote, tally, toggleItem, withItem } from "./notes"
+import { attachTo, continueList, linesOf, nextSize, noteAt, piecesOf, placeNote, tally, toggleItem, toggleMark, withItem } from "./notes"
 
 const note = (extra: Partial<Note> = {}): Note => ({ id: "n", text: "", x: 10, y: 20, w: 200, h: 100, color: "yellow", cardId: null, ...extra })
 const cardAt = (key: string) => (key === "c" ? { x: 480, y: 240 } : null)
@@ -40,4 +40,29 @@ test("a note counts its ticked boxes, and adds one at the end", () => {
   expect(tally("a")).toBeNull()
   expect(withItem("a\n")).toBe("a\n- [ ] ")
   expect(withItem("")).toBe("- [ ] ")
+})
+
+test("the text's size steps between what reads and what fits", () => {
+  expect(nextSize(undefined, 1)).toBe(16)
+  expect(nextSize(13, -1)).toBe(11)
+  expect(nextSize(11, -1)).toBe(11)
+  expect(nextSize(32, 1)).toBe(32)
+})
+
+test("a mark goes on a selection, off again, and around the caret", () => {
+  expect(toggleMark("say hi now", 4, 6, "**")).toEqual({ text: "say **hi** now", start: 6, end: 8 })
+  expect(toggleMark("say **hi** now", 6, 8, "**")).toEqual({ text: "say hi now", start: 4, end: 6 })
+  expect(toggleMark("say **hi** now", 4, 10, "**")).toEqual({ text: "say hi now", start: 4, end: 6 })
+  expect(toggleMark("ab", 1, 1, "__")).toEqual({ text: "a____b", start: 3, end: 3 })
+})
+
+test("a line shows its marks as looks; a lone mark stays as typed", () => {
+  expect(piecesOf("a **b __c__** ~~d~~")).toEqual([
+    { text: "a ", bold: false, underline: false, strike: false },
+    { text: "b ", bold: true, underline: false, strike: false },
+    { text: "c", bold: true, underline: true, strike: false },
+    { text: " ", bold: false, underline: false, strike: false },
+    { text: "d", bold: false, underline: false, strike: true },
+  ])
+  expect(piecesOf("2 ** 3")).toEqual([{ text: "2 ** 3", bold: false, underline: false, strike: false }])
 })
