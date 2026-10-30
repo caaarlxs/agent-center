@@ -2,7 +2,7 @@
 // PRs, tasks, runs, files sent and search. GET only; none changes anything
 // the person decided.
 
-import { sessionCommits, sessionRepos } from "../lib/session-commits"
+import { namedBy, repoPage, sessionCommits, sessionRepos } from "../lib/session-commits"
 import { ICONS, chosenIcon } from "../lib/app-icon"
 import { basename } from "node:path"
 import { status as bridgeStatus } from "../lib/bridge"
@@ -175,10 +175,15 @@ async function sessionRead(id: string, what: string, url: URL) {
       if (own.length) return json({ root: group.lead.cwd, branch: null, base: null, files: own, truncated: false })
       return json({ error: "Nothing changed: this session's folder is not a git repository, and the session edited no file" }, 404)
     }
-    // The history of every repository it touched (lib/session-commits.ts).
-    case "commits":
+    // The history of every repository it touched (lib/session-commits.ts): the
+    // first page of each; with root and skip, the next page of one.
+    case "commits": {
       if (!group) return json({ error: "unknown session" }, 404)
-      return json({ repos: await sessionCommits(group.ids, group.lead.cwd) })
+      const root = url.searchParams.get("root")
+      if (!root) return json({ repos: await sessionCommits(group.ids, group.lead.cwd) })
+      if (!(await sessionRepos(group.ids, group.lead.cwd)).includes(root)) return json({ error: "Not one of this session's repositories" }, 404)
+      return json(await repoPage(root, Math.max(0, Number(url.searchParams.get("skip")) || 0), await namedBy(group.ids)))
+    }
     // One of those commits' own changes: only in a repository the session touched.
     case "commit": {
       if (!group) return json({ error: "unknown session" }, 404)
