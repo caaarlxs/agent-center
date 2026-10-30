@@ -1,6 +1,6 @@
 // The commits a session made, and where they show on GitHub (lib/session-commits.ts).
 import { describe, expect, it } from "bun:test"
-import { hashesIn, isNamed, refsOf, webOf } from "../lib/session-commits"
+import { foldersIn, hashesIn, isNamed, refsOf, webOf } from "../lib/session-commits"
 
 describe("isNamed", () => {
   const text = '"[main 1ef7fe1] Dots cards" then "a14e694..f174b83  main -> main" and id a34cbfbf-a9c4'
@@ -37,5 +37,15 @@ describe("refsOf", () => {
   it("reads a detached HEAD and nothing", () => {
     expect(refsOf("HEAD")).toEqual([{ name: "HEAD", kind: "head" }])
     expect(refsOf("")).toEqual([])
+  })
+})
+
+describe("foldersIn", () => {
+  it("finds where a command works: cd and git -C", () => {
+    expect(foldersIn('cd /Users/x/deale/company-service && git status')).toEqual(["/Users/x/deale/company-service"])
+    expect(foldersIn('git -C "/Users/x/a b" log; (cd /tmp/y/ && ls)')).toEqual(["/Users/x/a b", "/tmp/y"])
+  })
+  it("leaves relative folders and other words alone", () => {
+    expect(foldersIn("cd web && bun test; echo cd")).toEqual([])
   })
 })

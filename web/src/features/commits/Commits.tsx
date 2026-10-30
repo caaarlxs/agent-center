@@ -3,7 +3,8 @@
 // coloured lane per line of work, branches forking and merging, and beside
 // each commit its refs (the branch you are on, other branches, remote ones,
 // tags). The session's own commits stand out (a brand node, the message in
-// bold). A page at a time ("Load more"); each commit opens into its own diff
+// bold); a repository it only looked into comes folded. A page at a time
+// ("Load more"); each commit opens into its own diff
 // (the Changes viewer, to read), says if it is only local, and links to GitHub.
 import { ChevronRight, Cloud, GitBranch, Tag } from "lucide-react"
 import { useEffect, useMemo, useState } from "react"
@@ -109,7 +110,8 @@ function CommitRow({ id, root, commit, row, width }: { id: string; root: string;
   )
 }
 
-function RepoGraph({ id, repo }: { id: string; repo: RepoLog }) {
+function RepoGraph({ id, repo, isQuiet }: { id: string; repo: RepoLog; isQuiet: boolean }) {
+  const [isFolded, setFolded] = useState(isQuiet)
   const [commits, setCommits] = useState(repo.commits)
   const [hasMore, setMore] = useState(repo.hasMore)
   const [isLoading, setLoading] = useState(false)
@@ -134,15 +136,18 @@ function RepoGraph({ id, repo }: { id: string; repo: RepoLog }) {
   return (
     <section className="flex flex-col gap-1">
       <header className="flex items-center gap-2.5 px-2 pb-1">
+        <button className="inline-grid size-5 place-items-center rounded-md text-faint hover:bg-press hover:text-text" onClick={() => setFolded(!isFolded)} aria-expanded={!isFolded}
+          title={isFolded ? "Show its commits" : "Fold it"}><ChevronRight className={cn("size-3.5 transition-transform duration-150 ease-(--ease-out)", !isFolded && "rotate-90")} /></button>
         <RepoTag name={repo.name} />
         {repo.branch && <span className="inline-flex min-w-0 items-center gap-1 truncate font-mono text-[11.5px] text-text-muted"><GitBranch className="size-3 shrink-0" />{repo.branch}</span>}
-        {mine > 0 && <span className="inline-flex items-center gap-1.5 text-xs text-text-muted"><i className="size-2 rounded-full bg-brand" />{mine} by this session</span>}
+        {mine > 0 ? <span className="inline-flex items-center gap-1.5 text-xs text-text-muted"><i className="size-2 rounded-full bg-brand" />{mine} by this session</span>
+          : <span className="text-xs text-faint">none by this session</span>}
         <span className="flex-1" />
         {repo.url && <a href={repo.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-text-muted no-underline hover:text-text">GitHub<Anim.ArrowUpRight size={12} /></a>}
       </header>
-      {commits.length ? <ul className="m-0 flex list-none flex-col p-0">{commits.map((c, i) => <CommitRow key={c.hash} id={id} root={repo.root} commit={c} row={rows[i]!} width={width} />)}</ul>
+      {isFolded ? null : commits.length ? <ul className="m-0 flex list-none flex-col p-0">{commits.map((c, i) => <CommitRow key={c.hash} id={id} root={repo.root} commit={c} row={rows[i]!} width={width} />)}</ul>
         : <p className="m-0 px-2 text-xs text-text-muted">No commits yet.</p>}
-      {hasMore && <Button variant="ghost" className="mt-1 self-start" disabled={isLoading} onClick={more}>{isLoading ? "Loading…" : "Load 40 more"}</Button>}
+      {!isFolded && hasMore && <Button variant="ghost" className="mt-1 self-start" disabled={isLoading} onClick={more}>{isLoading ? "Loading…" : "Load 40 more"}</Button>}
     </section>
   )
 }
@@ -159,9 +164,10 @@ export function Commits({ id }: { id: string }) {
   if (error && !repos) return <p className="grid flex-1 place-items-center p-8 text-text-muted">{error}</p>
   if (!repos) return <p className="grid flex-1 place-items-center p-8"><span className="spinner" /></p>
   if (!repos.length) return <p className="grid flex-1 place-items-center p-8 text-text-muted">This session touched no git repository.</p>
+  const hasMine = repos.some(r => r.commits.some(c => c.isMine))
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-auto px-3 pt-3 pb-5">
-      {repos.map(repo => <RepoGraph key={repo.root} id={id} repo={repo} />)}
+      {repos.map(repo => <RepoGraph key={repo.root} id={id} repo={repo} isQuiet={hasMine && !repo.commits.some(c => c.isMine)} />)}
     </div>
   )
 }

@@ -1,13 +1,14 @@
 // The "Commits" tab: the git history of every repository a session touched,
 // as a graph of its branches (local and remote), tags and merges, a page at a
-// time, newest first. The repositories are its
-// folder's and those of the files it edited (lib/session-changes.ts); one it
-// only ran commands in (a commit after a `cd`) is not known. The commits the
-// session made are marked: their hash shows in its transcript, wherever git
+// time, newest first. The repositories are its folder's, those of the files
+// it edited (lib/session-changes.ts) and those it ran commands in (`cd <path>`,
+// `git -C <path>`); a repository's worktrees count once, as the repository
+// they share. The commits the session made are marked: their hash shows in its transcript, wherever git
 // printed it ("[main abc1234] message", a log, a push's "abc1234..def5678").
 
 import { stat } from "node:fs/promises"
 import { basename, dirname } from "node:path"
+import { HOME } from "./config"
 import { readAppended } from "./files"
 import { run } from "./proc"
 import { touchedPaths } from "./session-changes"
@@ -49,33 +50,50 @@ export function webOf(remote: string | null): string | null {
   return m ? `https://github.com/${m[1]}/${m[2]}` : null
 }
 
-// Per transcript: what was read of it, and the hashes it printed.
-const scans = new Map<string, { offset: number; hashes: Set<string> }>()
+// The folders a shell command works in: `cd <path>`, `git -C <path>`.
+const WORKS_IN = /(?:^|[\s;&|(])(?:cd|git\s+-C)\s+(?:"(~?\/[^"]+)"|'(~?\/[^']+)'|(~?\/[^\s"'&;|)]+))/g
+export const foldersIn = (command: string) =>
+  [...command.matchAll(WORKS_IN)].map(m => (m[1] ?? m[2] ?? m[3]!).replace(/^~(?=\/)/, HOME).replace(/\/+$/, ""))
+
+// Per transcript: what was read of it, the hashes it printed, the folders its commands worked in.
+const scans = new Map<string, { offset: number; hashes: Set<string>; folders: Set<string> }>()
 async function scanned(id: string) {
   const path = await transcriptPath(id)
   if (!path) return null
   const { size } = await stat(path)
   let scan = scans.get(id)
-  if (!scan || size < scan.offset) scans.set(id, (scan = { offset: 0, hashes: new Set() }))
+  if (!scan || size < scan.offset) scans.set(id, (scan = { offset: 0, hashes: new Set(), folders: new Set() }))
   const s = scan
   s.offset = await readAppended(path, s.offset, size, text => {
     for (const hash of hashesIn(text)) s.hashes.add(hash)
+    for (const line of text.split("\n")) {
+      if (!line.includes('"name":"Bash"')) continue
+      try {
+        for (const block of JSON.parse(line).message?.content ?? [])
+          if (block?.name === "Bash" && typeof block.input?.command === "string") for (const f of foldersIn(block.input.command)) s.folders.add(f)
+      } catch {} // a line cut short
+    }
   })
   return s
 }
 
+// A folder's repository, as the folder of the repository its worktrees share
+// (a worktree's own .git is a file that points to it).
 const roots = new Map<string, string | null>()
 async function rootOf(dir: string) {
-  if (!roots.has(dir)) roots.set(dir, await git(dir, ["rev-parse", "--show-toplevel"]).catch(() => null))
+  if (!roots.has(dir)) {
+    const common = await git(dir, ["rev-parse", "--path-format=absolute", "--git-common-dir"])
+    const top = common ? await git(dir, ["rev-parse", "--show-toplevel"]) : null
+    roots.set(dir, common?.endsWith("/.git") ? dirname(common) : top)
+  }
   return roots.get(dir) ?? null
 }
 
-// Every repository the session touched: its folder's first.
 export async function sessionRepos(ids: string[], cwd: string): Promise<string[]> {
   const found = new Set<string>()
-  const own = await rootOf(cwd)
-  if (own) found.add(own)
-  for (const dir of new Set((await touchedPaths(ids)).map(p => dirname(p)))) {
+  const scans = (await Promise.all(ids.map(scanned))).filter(s => s !== null)
+  const dirs = new Set([cwd, ...(await touchedPaths(ids)).map(p => dirname(p)), ...scans.flatMap(s => [...s.folders])])
+  for (const dir of dirs) {
     const root = await stat(dir).then(() => rootOf(dir), () => null)
     if (root) found.add(root)
   }
@@ -111,10 +129,11 @@ export async function namedBy(ids: string[]) {
 
 export async function sessionCommits(ids: string[], cwd: string): Promise<RepoLog[]> {
   const named = await namedBy(ids)
-  const out: RepoLog[] = []
-  for (const root of await sessionRepos(ids, cwd)) {
+  const logs = await Promise.all((await sessionRepos(ids, cwd)).map(async root => {
     const [page, branch] = await Promise.all([repoPage(root, 0, named), git(root, ["rev-parse", "--abbrev-ref", "HEAD"])])
-    out.push({ root, name: basename(root), branch: branch ?? null, url: page.url, commits: page.commits, hasMore: page.hasMore })
-  }
-  return out
+    return { root, name: basename(root), branch: branch ?? null, url: page.url, commits: page.commits, hasMore: page.hasMore }
+  }))
+  // Those with the session's own commits first, the most first; the folder's own first among equals.
+  const mine = (log: RepoLog) => log.commits.filter(c => c.isMine).length
+  return logs.sort((a, b) => mine(b) - mine(a))
 }
