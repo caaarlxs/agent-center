@@ -1,12 +1,13 @@
 // The "Commits" tab (lib/session-commits.ts): the git history of every
 // repository the session touched, drawn as a graph, as GitLens does: a
-// coloured lane per line of work, branches forking and merging, and beside
-// each commit its refs (the branch you are on, other branches, remote ones,
-// tags). The session's own commits stand out (a brand node, the message in
+// coloured lane per line of work, branches forking and merging (a merge
+// shows its symbol and what it brought, in words), and beside each commit
+// its branches, each once, saying where it is (this Mac, GitHub or both),
+// and its version tags. A legend on top says what each mark means. The session's own commits stand out (a brand node, the message in
 // bold); a repository it only looked into comes folded. A page at a time
 // ("Load more"); each commit opens into its own diff
 // (the Changes viewer, to read), says if it is only local, and links to GitHub.
-import { ChevronRight, Cloud, GitBranch, Tag } from "lucide-react"
+import { ChevronRight, Cloud, GitBranch, GitMerge, Laptop, Tag } from "lucide-react"
 import { useEffect, useMemo, useState } from "react"
 import { get } from "@/lib/api"
 import type { Commit, FileDiff, RepoLog } from "@/lib/api-types"
@@ -18,6 +19,7 @@ import { RepoTag } from "@/features/session/SessionPanel"
 import { ago } from "@/features/session/state"
 import { Anim } from "@/components/icons/animated"
 import { type Row, lanesOf, widthOf } from "./graph"
+import { type Place, mergeOf, placesOf } from "./refs"
 
 const LANE = 14 // px between lanes
 const ROW = 32 // px a commit's line takes
@@ -58,20 +60,38 @@ function GraphRun({ row, width }: { row: Row; width: number }) {
   )
 }
 
-const REF_LOOK = {
-  head: "bg-brand text-brand-text",
-  branch: "border border-line-strong text-text",
-  remote: "border border-dashed border-line-strong text-text-muted",
-  tag: "bg-ask-soft text-ask",
-} as const
-const REF_TITLE = { head: "The branch checked out", branch: "A branch", remote: "A branch on the remote", tag: "A tag" } as const
-
-function RefChip({ name, kind }: Commit["refs"][number]) {
-  const Icon = kind === "tag" ? Tag : kind === "remote" ? Cloud : GitBranch
+// A branch once: where it is (this Mac, GitHub), filled when it is the one you are on.
+function BranchChip({ place }: { place: Place }) {
+  const where = place.isHere && place.isOnline ? "on this Mac and on GitHub" : place.isHere ? "only on this Mac: not pushed" : "only on GitHub"
   return (
-    <span className={cn("inline-flex max-w-[180px] shrink-0 items-center gap-1 rounded-md px-1.5 py-px font-mono text-[11px] leading-[1.5]", REF_LOOK[kind])} title={REF_TITLE[kind]}>
-      <Icon className="size-3 shrink-0" /><span className="truncate">{name}</span>
+    <span className={cn("inline-flex max-w-[200px] shrink-0 items-center gap-1 rounded-md px-1.5 py-px font-mono text-[11px] leading-[1.5]",
+      place.isCurrent ? "bg-brand text-brand-text" : "border border-line-strong text-text")}
+      title={`${place.isCurrent ? "You are here: " : ""}${place.name}, ${where}`}>
+      <GitBranch className="size-3 shrink-0" /><span className="truncate">{place.name}</span>
+      <span className={cn("ml-0.5 inline-flex shrink-0 items-center gap-0.5", !place.isCurrent && "text-text-muted")}>
+        {place.isHere && <Laptop className="size-3" />}{place.isOnline && <Cloud className="size-3" />}
+      </span>
     </span>
+  )
+}
+
+function TagChip({ name }: { name: string }) {
+  return <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-ask-soft px-1.5 py-px font-mono text-[11px] leading-[1.5] text-ask" title={`Version ${name}`}><Tag className="size-3" />{name}</span>
+}
+
+// What each mark means, once on top.
+function Legend() {
+  const item = "inline-flex items-center gap-1.5 whitespace-nowrap"
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-2 text-[11.5px] text-text-muted">
+      <span className={item}><svg width={14} height={14} aria-hidden><circle cx={7} cy={7} r={4.5} fill="var(--brand)" /><circle cx={7} cy={7} r={6.5} fill="none" stroke="var(--brand)" strokeOpacity={0.35} strokeWidth={1.2} /></svg>By this session</span>
+      <span className={item}><GitMerge className="size-3.5" />Merge</span>
+      <span className={item}><GitBranch className="size-3.5" />Branch</span>
+      <span className={item}><Laptop className="size-3.5" />On this Mac</span>
+      <span className={item}><Cloud className="size-3.5" />On GitHub</span>
+      <span className={item}><span className="rounded-sm bg-brand px-1 text-[10px] text-brand-text">⎇</span>You are here</span>
+      <span className={item}><Tag className="size-3.5 text-ask" />Version</span>
+    </div>
   )
 }
 
@@ -80,6 +100,8 @@ function CommitRow({ id, root, commit, row, width }: { id: string; root: string;
   const [isOpen, setOpen] = useState(false)
   const [files, setFiles] = useState<FileDiff[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const shown = useMemo(() => placesOf(commit.refs), [commit.refs])
+  const merge = commit.parents.length > 1 ? mergeOf(commit.subject) : null
   const toggle = () => {
     setOpen(!isOpen)
     if (files || isOpen) return
@@ -92,8 +114,15 @@ function CommitRow({ id, root, commit, row, width }: { id: string; root: string;
         <GraphCell row={row} width={width} commit={commit} />
         <button className="flex h-full min-w-0 flex-1 items-center gap-2 text-left" onClick={toggle} aria-expanded={isOpen}>
           <ChevronRight className={cn("size-3 shrink-0 text-faint transition-transform duration-150 ease-(--ease-out)", isOpen && "rotate-90")} />
-          {commit.refs.map(r => <RefChip key={`${r.kind}-${r.name}`} {...r} />)}
-          <span className={cn("min-w-0 flex-1 truncate text-[13px]", commit.isMine ? "font-semibold text-text" : "text-text-muted")} title={commit.subject}>{commit.subject}</span>
+          {shown.branches.map(p => <BranchChip key={p.name} place={p} />)}
+          {shown.tags.map(t => <TagChip key={t} name={t} />)}
+          {merge ? (
+            <span className="flex min-w-0 flex-1 items-center gap-1.5 text-[13px] text-text-muted" title={commit.subject}>
+              <GitMerge className="size-3.5 shrink-0 text-review" />
+              <span className="truncate">{merge.pr ? <><b className="font-semibold text-text">PR #{merge.pr}</b> merged · <span className="font-mono text-xs">{merge.from}</span></>
+                : <><span className="font-mono text-xs">{merge.from}</span> → <span className="font-mono text-xs">{merge.into ?? "this branch"}</span></>}</span>
+            </span>
+          ) : <span className={cn("min-w-0 flex-1 truncate text-[13px]", commit.isMine ? "font-semibold text-text" : "text-text-muted")} title={commit.subject}>{commit.subject}</span>}
         </button>
         {!commit.isPushed && <span className="shrink-0 rounded-md bg-ask-soft px-1.5 py-px text-[11px] font-medium text-ask" title="Only on this Mac: not pushed">local</span>}
         <span className="shrink-0 text-xs whitespace-nowrap text-faint" title={new Date(commit.at).toLocaleString("en-GB")}>{commit.author} · {ago(commit.at, now)}</span>
@@ -167,6 +196,7 @@ export function Commits({ id }: { id: string }) {
   const hasMine = repos.some(r => r.commits.some(c => c.isMine))
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-auto px-3 pt-3 pb-5">
+      <Legend />
       {repos.map(repo => <RepoGraph key={repo.root} id={id} repo={repo} isQuiet={hasMine && !repo.commits.some(c => c.isMine)} />)}
     </div>
   )
