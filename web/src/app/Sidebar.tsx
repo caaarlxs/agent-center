@@ -169,11 +169,7 @@ export function Sidebar() {
         )}
         ref={el => void el?.ownerDocument.documentElement.style.setProperty("--side-w", isSlim ? "60px" : "256px")}>
         <div className={cn("flex items-center gap-[9px] px-2 pt-0.5 pb-4 text-sm font-[650] tracking-[-0.01em]", isSlim && "flex-col gap-3 px-0 pb-3.5")}>
-          <span className="inline-flex h-4 items-end gap-0.5" aria-hidden>
-            <i className="h-4 w-1 rounded-sm bg-brand" />
-            <i className="h-[11px] w-1 rounded-sm bg-brand opacity-70" />
-            <i className="h-[7px] w-1 rounded-sm bg-brand opacity-45" />
-          </span>
+          <BrandMark />
           {!isSlim && <span>Agent Center</span>}
           <button className={cn(footBtn(), !isSlim && "ml-auto", "max-[860px]:hidden")} onClick={toggleFolded} title={isSlim ? "Show the sidebar" : "Fold the sidebar to icons"}>
             <PanelLeft className="size-[15px]" />
@@ -267,5 +263,26 @@ export function Sidebar() {
         </footer>
       </aside>
     </>
+  )
+}
+
+// The app's mark (public/icon.svg) at the sidebar's size: the same halftone
+// sphere on a coarser grid, in the brand colour, with no tile behind it.
+const MARK = (() => {
+  const out: { x: number; y: number; r: number; o: number }[] = []
+  for (let j = -3; j <= 3; j++)
+    for (let i = -3; i <= 3; i++) {
+      const d = Math.hypot(i, j) / 3.4
+      if (d > 1) continue
+      const light = Math.max(0, 1 - Math.hypot((i + 1.4) / 3.4, (j + 1.6) / 3.4) * 0.75)
+      out.push({ x: 10 + i * 2.6, y: 10 + j * 2.6, r: Math.max(0.35, 1.25 * Math.sqrt(1 - d * d) * (0.4 + 0.6 * light)), o: 0.45 + 0.55 * light })
+    }
+  return out
+})()
+function BrandMark() {
+  return (
+    <svg viewBox="0 0 20 20" className="size-5 flex-none text-brand" aria-hidden>
+      {MARK.map(m => <circle key={`${m.x}-${m.y}`} cx={m.x} cy={m.y} r={m.r} fill="currentColor" opacity={m.o} />)}
+    </svg>
   )
 }
