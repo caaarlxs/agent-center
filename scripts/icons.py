@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # The app icons (Settings › Look › App icon): each one as an SVG, 192 and 512
-# px PNGs (the manifest) and an .icns (the Dock, lib/app-icon.ts), into
-# web/public/icons/. Run it after changing a drawing; it needs ImageMagick
+# px PNGs (the manifest), an .icns (the Dock, lib/app-icon.ts) and a mark (the
+# drawing alone, without its tile: the sidebar), into web/public/icons/. Run it after changing a drawing; it needs ImageMagick
 # (`magick`) and macOS's `iconutil`.
 #   python3 scripts/icons.py
 import math
@@ -23,6 +23,11 @@ def mix(a, b, t):
 def tile(name, shapes):
     return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">\n  <!-- Agent Center: {name} -->\n'
             f'  <rect width="512" height="512" rx="114" fill="{BG}"/>\n' + "\n".join(f"  {s}" for s in shapes) + "\n</svg>\n")
+
+
+def mark(name, shapes):
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="56 56 400 400">\n  <!-- Agent Center: {name}, without its tile -->\n'
+            + "\n".join(f"  {s}" for s in shapes) + "\n</svg>\n")
 
 
 def dot(x, y, r, fill, opacity=None):
@@ -89,7 +94,7 @@ ICONS = {"halftone": ("a halftone sphere", halftone), "sphere": ("a sphere of do
 
 
 def render(svg, png, size):
-    subprocess.run(["magick", "-background", "none", "-density", "96", svg, "-resize", f"{size}x{size}", "-depth", "8", f"PNG32:{png}"], check=True)
+    subprocess.run(["magick", "-background", "none", "-density", "96", svg, "-resize", f"{size}x{size}", "-depth", "8", "-strip", f"PNG32:{png}"], check=True)
 
 
 def main():
@@ -98,6 +103,8 @@ def main():
         svg = os.path.join(OUT, f"{key}.svg")
         with open(svg, "w") as f:
             f.write(tile(name, draw()))
+        with open(os.path.join(OUT, f"{key}-mark.svg"), "w") as f:
+            f.write(mark(name, draw()))
         render(svg, os.path.join(OUT, f"{key}-192.png"), 192)
         render(svg, os.path.join(OUT, f"{key}-512.png"), 512)
         with tempfile.TemporaryDirectory() as tmp:

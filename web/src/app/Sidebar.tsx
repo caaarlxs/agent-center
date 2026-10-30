@@ -3,6 +3,7 @@
 // the folder of sent files, and the live connection, alerts, Setup and the
 // keyboard help at the foot. It folds to icons (slim), and in a narrow window
 // it is a drawer over the page.
+import { appIcon } from "@/lib/app-icon"
 import { BellOff, BookText, Columns3, Inbox, List, PanelLeft, Paperclip, Volume2, VolumeX } from "lucide-react"
 import { useState, type ReactNode } from "react"
 import { toast } from "sonner"
@@ -266,8 +267,9 @@ export function Sidebar() {
   )
 }
 
-// The app's mark (public/icon.svg) at the sidebar's size: the same halftone
-// sphere on a coarser grid, in the brand colour, with no tile behind it.
+// The app's mark: the icon chosen in Settings (lib/app-icon.ts) without its
+// tile; the halftone one drawn again on a coarser grid, in the brand colour,
+// so it reads at the sidebar's size.
 const MARK = (() => {
   const out: { x: number; y: number; r: number; o: number }[] = []
   for (let j = -3; j <= 3; j++)
@@ -280,6 +282,8 @@ const MARK = (() => {
   return out
 })()
 function BrandMark() {
+  const icon = appIcon.use() ?? "halftone"
+  if (icon !== "halftone") return <img src={`/icons/${icon}-mark.svg`} alt="" className="size-5 flex-none" />
   return (
     <svg viewBox="0 0 20 20" className="size-5 flex-none text-brand" aria-hidden>
       {MARK.map(m => <circle key={`${m.x}-${m.y}`} cx={m.x} cy={m.y} r={m.r} fill="currentColor" opacity={m.o} />)}
