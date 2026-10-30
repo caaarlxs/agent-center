@@ -75,12 +75,6 @@ export function tally(text: string): string | null {
   return items.length ? `${items.filter(l => l.kind === "item" && l.done).length}/${items.length}` : null
 }
 
-// "Add a checkbox": a new box at the end.
-export const withItem = (text: string) => {
-  const t = text.replace(/\s*$/, "")
-  return `${t}${t ? "\n" : ""}- [ ] `
-}
-
 // ---------- the text's size and marks ----------
 
 // The sizes a note's text steps through (px): never below what reads.
@@ -129,4 +123,15 @@ export function piecesOf(line: string): Piece[] {
     else (add(p), left[mark]--) // no partner left: as typed
   }
   return out
+}
+
+// The line the caret is on as a box to tick, or back to plain text when it is one.
+export function toggleBox(text: string, caret: number): { text: string; caret: number } {
+  const start = text.lastIndexOf("\n", caret - 1) + 1
+  const endAt = text.indexOf("\n", caret)
+  const end = endAt === -1 ? text.length : endAt
+  const line = text.slice(start, end)
+  const m = line.match(ITEM)
+  const next = m ? m[4] : `- [ ] ${line}`
+  return { text: text.slice(0, start) + next + text.slice(end), caret: Math.max(start, caret + next.length - line.length) }
 }

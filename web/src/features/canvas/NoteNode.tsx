@@ -1,17 +1,18 @@
 // A sticky note on the canvas (canvas-notes.js Note): drag it by its top
 // strip (next to a card it attaches and moves with it), size it from its
-// corner, change its colour with the dot, add a box, delete it with ×.
+// corner, change its colour with the dot, delete it with ×.
 // Click its text to write; "- [ ] …" lines show as boxes to tick, and Enter
 // on one starts the next. While you write, a bar on top sets the text's size
-// (A− A+, from 11 to 32 px) and puts bold, underline or a strike on what is
-// selected (plain marks, **…** __…__ ~~…~~, shown as such once you leave).
+// (A− A+, from 11 to 32 px), puts bold, underline or a strike on what is
+// selected (plain marks, **…** __…__ ~~…~~, shown as such once you leave),
+// and turns the caret's line into a box to tick, or back.
 import { type Node, type NodeProps, NodeResizeControl, useStore } from "@xyflow/react"
 import { Bold, Link, ListChecks, Strikethrough, Underline } from "lucide-react"
 import { type CSSProperties, useRef, useState } from "react"
 import type { Note } from "@/lib/api-types"
 import { cn } from "@/lib/utils"
 import { GRID } from "./geometry"
-import { type Mark, NOTE_COLORS, TEXT_SIZE, TEXT_SIZES, continueList, linesOf, nextSize, piecesOf, tally, toggleItem, toggleMark, withItem } from "./notes"
+import { type Mark, NOTE_COLORS, TEXT_SIZE, TEXT_SIZES, continueList, linesOf, nextSize, piecesOf, tally, toggleBox, toggleItem, toggleMark } from "./notes"
 import { useFocusWhenShown } from "./useFocusWhenShown"
 import { Anim } from "@/components/icons/animated"
 
@@ -56,6 +57,14 @@ export function NoteNode({ data, selected, dragging }: NodeProps<Node<NoteNodeDa
     ta.setSelectionRange(next.start, next.end)
     data.onText(note, next.text)
   }
+  const box = () => {
+    const ta = area.current
+    if (!ta) return
+    const next = toggleBox(ta.value, ta.selectionStart)
+    ta.value = next.text
+    ta.setSelectionRange(next.caret, next.caret)
+    data.onText(note, next.text)
+  }
   const resize = (step: 1 | -1) => data.onChange({ ...note, size: nextSize(size, step) })
   const style = {
     "--note": HUE[note.color] ?? HUE.yellow,
@@ -85,7 +94,6 @@ export function NoteNode({ data, selected, dragging }: NodeProps<Node<NoteNodeDa
         {data.cardTitle && <span className="inline-flex" style={{ color: mix(70, "var(--text)") }}><Link className="size-[11px]" /></span>}
         {count && <span className="text-[11px] font-[650] text-text-muted tabular-nums">{count}</span>}
         <span className="flex-1" />
-        <button className={noteBtn} title="Add a checkbox" onClick={() => (data.onText(note, withItem(note.text)), setEditing(true))}><ListChecks /></button>
         <button className={noteBtn} title="Delete the note" onClick={() => data.onRemove(note)}><Anim.X size={12} /></button>
       </header>
       {isEditing && (
@@ -96,6 +104,8 @@ export function NoteNode({ data, selected, dragging }: NodeProps<Node<NoteNodeDa
           <button className={barBtn} onMouseDown={keep} onClick={() => mark("**")} title="Bold (**…**)"><Bold /></button>
           <button className={barBtn} onMouseDown={keep} onClick={() => mark("__")} title="Underline (__…__)"><Underline /></button>
           <button className={barBtn} onMouseDown={keep} onClick={() => mark("~~")} title="Strike (~~…~~)"><Strikethrough /></button>
+          <span className="mx-1 h-3 w-px" style={{ background: mix(40, "var(--line)") }} />
+          <button className={barBtn} onMouseDown={keep} onClick={box} title="A box to tick on this line (- [ ])"><ListChecks /></button>
         </div>
       )}
       {isEditing ? (

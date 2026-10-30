@@ -1,7 +1,7 @@
 import { expect, test } from "vitest"
 import type { Note } from "@/lib/api-types"
 import { CARD_W } from "./geometry"
-import { attachTo, continueList, linesOf, nextSize, noteAt, piecesOf, placeNote, tally, toggleItem, toggleMark, withItem } from "./notes"
+import { attachTo, continueList, linesOf, nextSize, noteAt, piecesOf, placeNote, tally, toggleBox, toggleItem, toggleMark } from "./notes"
 
 const note = (extra: Partial<Note> = {}): Note => ({ id: "n", text: "", x: 10, y: 20, w: 200, h: 100, color: "yellow", cardId: null, ...extra })
 const cardAt = (key: string) => (key === "c" ? { x: 480, y: 240 } : null)
@@ -35,11 +35,10 @@ test("Enter on a list line starts the next box; on an empty box it ends the list
   expect(continueList("plain", 5)).toBeNull()
 })
 
-test("a note counts its ticked boxes, and adds one at the end", () => {
+
+test("a note counts its ticked boxes", () => {
   expect(tally("a\n- [x] b\n- [ ] c")).toBe("1/2")
   expect(tally("a")).toBeNull()
-  expect(withItem("a\n")).toBe("a\n- [ ] ")
-  expect(withItem("")).toBe("- [ ] ")
 })
 
 test("the text's size steps between what reads and what fits", () => {
@@ -65,4 +64,10 @@ test("a line shows its marks as looks; a lone mark stays as typed", () => {
     { text: "d", bold: false, underline: false, strike: true },
   ])
   expect(piecesOf("2 ** 3")).toEqual([{ text: "2 ** 3", bold: false, underline: false, strike: false }])
+})
+
+test("the box button turns the caret's line into a box, and back", () => {
+  expect(toggleBox("buy milk\ncall Ana", 12)).toEqual({ text: "buy milk\n- [ ] call Ana", caret: 18 })
+  expect(toggleBox("buy milk\n- [ ] call Ana", 18)).toEqual({ text: "buy milk\ncall Ana", caret: 12 })
+  expect(toggleBox("", 0)).toEqual({ text: "- [ ] ", caret: 6 })
 })
