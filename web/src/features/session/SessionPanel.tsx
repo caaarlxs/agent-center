@@ -4,7 +4,7 @@
 // Files are workspaces: the panel takes the whole width. Code stays alive once
 // opened, so its open files and unsaved text survive a look at another tab.
 import { boardAct as actOn } from "@/features/board/act"
-import { Check, Clock, Code2, FileDiff, FileText, GitBranch, GitPullRequest, ListChecks, Lock, MessageSquare, Minimize2, Palette, Pencil, Square, Star } from "lucide-react"
+import { Check, Clock, Code2, FileDiff, FileText, GitBranch, GitCommitHorizontal, GitPullRequest, ListChecks, Lock, MessageSquare, Minimize2, Palette, Pencil, Square, Star } from "lucide-react"
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Kbd } from "@/components/ui/kbd"
@@ -39,11 +39,13 @@ const CodeWorkspace = lazyView(() => import("@/features/code/CodeWorkspace").the
 const Files = lazyView(() => import("@/features/files/Files").then(m => m.Files))
 const Prs = lazyView(() => import("@/features/prs/Prs").then(m => m.Prs))
 const Tasks = lazyView(() => import("@/features/tasks/Tasks").then(m => m.Tasks))
-const PRELOAD: Partial<Record<string, () => void>> = { changes: Changes.preload, code: CodeWorkspace.preload, files: Files.preload, prs: Prs.preload, tasks: Tasks.preload }
+const Commits = lazyView(() => import("@/features/commits/Commits").then(m => m.Commits))
+const PRELOAD: Partial<Record<string, () => void>> = { changes: Changes.preload, code: CodeWorkspace.preload, files: Files.preload, prs: Prs.preload, tasks: Tasks.preload, commits: Commits.preload }
 
 const TABS: { key: Tab; label: string; icon: ReactNode }[] = [
   { key: "chat", label: "Conversation", icon: <MessageSquare /> },
   { key: "changes", label: "Changes", icon: <FileDiff /> },
+  { key: "commits", label: "Commits", icon: <GitCommitHorizontal /> },
   { key: "code", label: "Code", icon: <Code2 /> },
   { key: "prs", label: "PRs", icon: <GitPullRequest /> },
   { key: "files", label: "Files", icon: <FileText /> },
@@ -261,6 +263,7 @@ export function SessionPanel({ id, tab: asked, file }: { id: string; tab: Tab; f
       <div role="tabpanel" className="flex min-h-0 flex-1 flex-col">
         {tab === "chat" && <Guard key={id} where="chat"><Chat id={id} card={card} /></Guard>}
         {tab === "changes" && <Guard key={id} where="changes"><Changes id={id} file={file} /></Guard>}
+        {tab === "commits" && <Guard key={id} where="commits"><Commits id={id} /></Guard>}
         {tab === "prs" && <Guard key={id} where="prs"><Prs id={id} /></Guard>}
         {tab === "tasks" && <Guard key={id} where="tasks"><Tasks id={id} /></Guard>}
         {tab === "files" && <Guard key={id} where="files"><Files id={id} file={file} /></Guard>}

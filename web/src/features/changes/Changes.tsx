@@ -89,9 +89,10 @@ function Hunk({ path, text, children }: { path: string; text: string; children: 
   )
 }
 
-function FileBlock({ file, comments, editing, setEditing, save, remove }: {
+// isReadOnly: a diff to read, with no comments on its lines (a commit's, in Commits).
+function FileBlock({ file, comments, editing, setEditing, save, remove, isReadOnly = false }: {
   file: FileDiff; comments: Record<string, LineComment>; editing: string | null; setEditing: (key: string | null) => void
-  save: (c: LineComment) => void; remove: (key: string) => void
+  save: (c: LineComment) => void; remove: (key: string) => void; isReadOnly?: boolean
 }) {
   const total = file.hunks.reduce((n, h) => n + h.lines.length, 0)
   const [isOpen, setOpen] = useState(!file.collapsed && total <= MAX_LINES)
@@ -119,8 +120,8 @@ function FileBlock({ file, comments, editing, setEditing, save, remove }: {
               const comment = comments[key]
               return (
                 <div key={j}>
-                  <div onClick={() => setEditing(key)} title="Click to comment on this line"
-                    className={cn("grid min-w-full cursor-pointer grid-cols-[40px_40px_16px_max-content] font-mono text-xs/[1.55] hover:shadow-[inset_3px_0_0_var(--brand)]",
+                  <div onClick={isReadOnly ? undefined : () => setEditing(key)} title={isReadOnly ? undefined : "Click to comment on this line"}
+                    className={cn("grid min-w-full grid-cols-[40px_40px_16px_max-content] font-mono text-xs/[1.55]", !isReadOnly && "cursor-pointer hover:shadow-[inset_3px_0_0_var(--brand)]",
                       l.kind === "add" && "bg-[color-mix(in_srgb,var(--work)_11%,transparent)]", l.kind === "del" && "bg-[color-mix(in_srgb,var(--bad)_11%,transparent)]",
                       comment && "shadow-[inset_3px_0_0_var(--ask)]")}>
                     <span className="pr-2 text-right text-faint select-none">{l.old ?? ""}</span>
@@ -192,6 +193,12 @@ function SideBySide({ id, files, want }: { id: string; files: FileDiff[]; want: 
 }
 
 const seg = (isOn: boolean) => cn("h-6 rounded-md px-2.5 text-xs text-text-muted", isOn && "bg-surface text-text shadow-card")
+
+// A diff to read, file by file, as Changes shows one (Commits: a commit's own).
+const NO_COMMENTS = {}
+export function DiffView({ files }: { files: FileDiff[] }) {
+  return files.map(f => <FileBlock key={f.path} file={f} comments={NO_COMMENTS} editing={null} setEditing={() => {}} save={() => {}} remove={() => {}} isReadOnly />)
+}
 
 export function Changes({ id, file }: { id: string; file?: string }) {
   const hasSideRoom = useSideRoom()

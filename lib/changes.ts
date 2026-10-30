@@ -111,3 +111,12 @@ export async function changesOf(cwd: string): Promise<Changes | null> {
   for (const f of files) if (NOISY.test(f.path)) (f.collapsed = true), (f.hunks = [])
   return { root, branch, base: base.name, files, truncated }
 }
+
+// One commit's own changes, as the Changes tab shows a diff; a merge's, against
+// the branch it was merged into.
+export async function commitDiff(root: string, hash: string): Promise<FileDiff[]> {
+  const raw = (await git(root, ["show", "--format=", "--diff-merges=first-parent", "--no-color", "--no-ext-diff", "-M", hash], 20_000)) ?? ""
+  const files = parse(raw.length > MAX_DIFF ? raw.slice(0, raw.lastIndexOf("\ndiff --git ", MAX_DIFF)) : raw)
+  for (const f of files) if (NOISY.test(f.path)) (f.collapsed = true), (f.hunks = [])
+  return files
+}

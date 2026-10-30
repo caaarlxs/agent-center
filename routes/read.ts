@@ -2,10 +2,11 @@
 // PRs, tasks, runs, files sent and search. GET only; none changes anything
 // the person decided.
 
+import { sessionCommits, sessionRepos } from "../lib/session-commits"
 import { ICONS, chosenIcon } from "../lib/app-icon"
 import { basename } from "node:path"
 import { status as bridgeStatus } from "../lib/bridge"
-import { changesOf } from "../lib/changes"
+import { changesOf, commitDiff } from "../lib/changes"
 import { sessionChanges, sessionVersions } from "../lib/session-changes"
 import { isContextPath, listContext, readContext } from "../lib/context"
 import { editorThemes } from "../lib/editor-theme"
@@ -173,6 +174,18 @@ async function sessionRead(id: string, what: string, url: URL) {
       if (repo) return json({ ...repo, files: [...repo.files, ...own] })
       if (own.length) return json({ root: group.lead.cwd, branch: null, base: null, files: own, truncated: false })
       return json({ error: "Nothing changed: this session's folder is not a git repository, and the session edited no file" }, 404)
+    }
+    // The history of every repository it touched (lib/session-commits.ts).
+    case "commits":
+      if (!group) return json({ error: "unknown session" }, 404)
+      return json({ repos: await sessionCommits(group.ids, group.lead.cwd) })
+    // One of those commits' own changes: only in a repository the session touched.
+    case "commit": {
+      if (!group) return json({ error: "unknown session" }, 404)
+      const root = url.searchParams.get("root") ?? ""
+      const hash = url.searchParams.get("hash") ?? ""
+      if (!/^[0-9a-f]{7,40}$/.test(hash) || !(await sessionRepos(group.ids, group.lead.cwd)).includes(root)) return json({ error: "Not one of this session's commits" }, 404)
+      return json({ files: await commitDiff(root, hash) })
     }
     // What changes in it, as it happens, for its open conversation (lib/session-events.ts).
     case "events":

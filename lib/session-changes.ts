@@ -69,6 +69,12 @@ async function touchesOf(ids: string[]) {
   return files
 }
 
+// The files the session edited or wrote, Claude's own notes left out (the
+// repositories it touched, lib/session-commits.ts).
+export async function touchedPaths(ids: string[]): Promise<string[]> {
+  return [...(await touchesOf(ids)).keys()].filter(path => !NOT_WORK.test(path))
+}
+
 // How a file shows: from the session's folder when inside it, else from home.
 const shownAs = (path: string, cwd: string) => {
   const rel = relative(cwd, path)

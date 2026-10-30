@@ -7,6 +7,7 @@ import type { Snapshot } from "@server/snapshot"
 export type Card = Snapshot["cards"][number]
 export type { Zone, Note } from "@server/board"
 export type { Changes, FileDiff } from "@server/changes"
+export type { Commit, RepoLog } from "@server/session-commits"
 export type { ContextFile, ContextList, MemoryGroup } from "@server/context"
 export type { EditorTheme } from "@server/editor-theme"
 export type { CodeTree, Match, Mark } from "@server/code"
