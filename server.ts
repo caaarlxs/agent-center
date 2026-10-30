@@ -14,6 +14,7 @@
 // The routes are in routes/; this file guards them, serves the page and starts
 // the background work. Run: bun run server.ts (./install.sh puts it under launchd).
 
+import { manifest } from "./lib/app-icon"
 import { watch } from "node:fs"
 import { mkdir } from "node:fs/promises"
 import { resolve, sep } from "node:path"
@@ -71,6 +72,12 @@ async function route(req: Request): Promise<Response> {
   if (path.startsWith("/vendor/monaco/")) {
     const asset = await monacoFile(path.slice("/vendor/monaco".length))
     return asset ? new Response(asset, { headers: { "cache-control": "max-age=86400" } }) : new Response("Not found", { status: 404 })
+  }
+
+  // The manifest names the icon chosen in Settings (lib/app-icon.ts).
+  if (path === "/manifest.webmanifest") {
+    const body = await manifest()
+    if (body) return new Response(JSON.stringify(body), { headers: { "content-type": "application/manifest+json", "cache-control": "no-cache" } })
   }
 
   // The page: the web app (web/, built into web/dist). Its files have hashed

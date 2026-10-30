@@ -1,6 +1,7 @@
 // Board-wide actions (POST): new sessions, the digest, canvas zones and
 // notes, PR actions, tasks, files sent and dictation.
 
+import { chooseIcon, isIcon } from "../lib/app-icon"
 import { stat } from "node:fs/promises"
 import { isTaskId, setNotes, setSuggestion, setZones } from "../lib/board"
 import { requestSettings } from "../lib/bridge"
@@ -145,6 +146,11 @@ export async function handleWrite(path: string, body: Record<string, unknown>): 
     }
   }
   switch (path) {
+    // The app's icon: kept, named by the manifest, and put on the installed app in the Dock.
+    case "/api/app-icon": {
+      if (!isIcon(body.icon)) return json({ error: "No such icon" }, 400)
+      return json(await chooseIcon(body.icon))
+    }
     // The commands sessions left running and nobody uses, all stopped.
     case "/api/memory/stopforgotten": {
       const stopped = await stopForgotten()

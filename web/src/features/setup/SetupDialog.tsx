@@ -22,6 +22,7 @@ import { SwapText } from "@/components/watermelon/SwapText"
 import { Checklist } from "./Checklist"
 import { progressOf } from "./progress"
 import { type BoardStyle, boardStyle, chooseStyle } from "@/lib/board-style"
+import { type AppIcon, ICONS, appIcon, chooseAppIcon, iconSrc, loadAppIcon } from "@/lib/app-icon"
 
 type Need = "Required" | "Recommended" | "Optional" | "Preference"
 type Meta = { title: string; need: Need; text: ReactNode; unavailable?: ReactNode; action?: string; outdated?: string; canTurnOff?: boolean }
@@ -330,6 +331,37 @@ function StyleChoice() {
   )
 }
 
+// The app's icon: the tab at once; the Dock too when the board can change the
+// installed app safely (lib/app-icon.ts says why when it cannot).
+function IconChoice() {
+  const chosen = appIcon.use()
+  const [busy, setBusy] = useState<AppIcon | null>(null)
+  useEffect(loadAppIcon, [])
+  const pick = async (icon: AppIcon) => {
+    setBusy(icon)
+    try {
+      const dock = await chooseAppIcon(icon)
+      toast(dock.changed ? "Icon changed, in the Dock too" : dock.problem ? `Icon changed; the Dock keeps the old one: ${dock.problem}` : "Icon changed")
+    } catch (err) {
+      toast((err as Error).message || "Could not change the icon")
+    }
+    setBusy(null)
+  }
+  return (
+    <Row title="App icon" need="Preference" isDone state={<Done label={ICONS.find(i => i.value === chosen)?.label} />}>
+      <div role="radiogroup" aria-label="App icon" className="mt-2.5 grid grid-cols-4 gap-2.5">
+        {ICONS.map(i => (
+          <button key={i.value} type="button" role="radio" aria-checked={chosen === i.value} disabled={!!busy} onClick={() => pick(i.value)}
+            className={cn("flex flex-col items-center gap-1.5 rounded-[10px] border p-2.5 transition-colors", chosen === i.value ? "border-brand bg-surface" : "border-line hover:border-line-strong")}>
+            <img src={iconSrc(i.value)} alt="" className={cn("size-12", busy === i.value && "animate-pulse")} />
+            <b className="text-[12.5px] font-semibold">{i.label}</b>
+          </button>
+        ))}
+      </div>
+    </Row>
+  )
+}
+
 export function SetupDialog({ onClose }: { onClose: () => void }) {
   // The last answer at once (kept since the board started), then a fresh one.
   const status = setupStatus.use()
@@ -398,6 +430,7 @@ export function SetupDialog({ onClose }: { onClose: () => void }) {
                 <>
                   <Appearance />
                   <StyleChoice />
+                  <IconChoice />
                   <CodeColours />
                 </>
               )}

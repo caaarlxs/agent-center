@@ -2,6 +2,7 @@
 // PRs, tasks, runs, files sent and search. GET only; none changes anything
 // the person decided.
 
+import { ICONS, chosenIcon } from "../lib/app-icon"
 import { basename } from "node:path"
 import { status as bridgeStatus } from "../lib/bridge"
 import { changesOf } from "../lib/changes"
@@ -253,6 +254,7 @@ export async function handleRead(url: URL): Promise<Response | null> {
   if (path === "/api/search") return json({ results: await searchResults(url.searchParams.get("q") ?? "") })
   if (path === "/api/transcribe") return json({ ready: await voiceReady() })
   if (path === "/api/setup") return json(await setupStatus())
+  if (path === "/api/app-icon") return json({ icon: chosenIcon(), icons: ICONS })
   if (path === "/api/context") return json(await listContext())
   if (path === "/api/editor-themes") return json({ themes: await editorThemes() })
   if (path === "/api/context/file") {

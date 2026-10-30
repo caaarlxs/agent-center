@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Agent Center: three columns -->
+  <rect width="512" height="512" rx="114" fill="#16161a"/>
+  <rect x="84" y="120" width="96" height="272" rx="20" fill="#f97316"/>
+  <rect x="208" y="120" width="96" height="190" rx="20" fill="#fbbf24"/>
+  <rect x="332" y="120" width="96" height="120" rx="20" fill="#4ade80"/>
+</svg>
