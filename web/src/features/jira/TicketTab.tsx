@@ -1,12 +1,13 @@
 // A Jira ticket whole (lib/jira.ts), read live when it opens and every
 // minute: what it is and where it sits (its parent, what sits in it, its
 // links to others), the description and the comments; beside them its
-// details, the sessions linked to it and a new one about it. On a ticket
+// details, the sessions linked to it (link another, or unlink one) and a
+// new one about it. On a ticket
 // assigned to you: move its status (confirmed first) and comment.
 // The "Tickets" tab of a session: the tickets linked to it and why (started
 // from it, linked by you, its branch or title, you named it), one open whole;
 // link another by its key, or unlink one that is not its own.
-import { ChevronDown, Plus, X } from "lucide-react"
+import { ChevronDown, Link2, Plus, X } from "lucide-react"
 import { type ReactNode, useEffect, useState } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -188,16 +189,55 @@ export function TicketView({ ticketKey }: { ticketKey: string }) {
           </dl>
           <Section title="Sessions">
             {sessions.map(s => (
-              <button key={s.id} className="-mx-1.5 flex min-w-0 items-center gap-2 rounded-md px-1.5 py-1 text-left text-[13px] hover:bg-hover" onClick={() => (dialog.set(null), openSession(s.id))}
-                title={WHY[s.tickets.find(t => t.key === ticket.key)?.why ?? "named"]}>
-                <StateIcon card={s} size={14} /><span className="truncate">{s.title}</span>
-              </button>
+              <div key={s.id} className="group -mx-1.5 flex min-w-0 items-center gap-1 rounded-md pr-1 hover:bg-hover">
+                <button className="flex min-w-0 flex-1 items-center gap-2 px-1.5 py-1 text-left text-[13px]" onClick={() => (dialog.set(null), openSession(s.id))}
+                  title={WHY[s.tickets.find(t => t.key === ticket.key)?.why ?? "named"]}>
+                  <StateIcon card={s} size={14} /><span className="truncate">{s.title}</span>
+                </button>
+                <button className="grid size-5 shrink-0 place-items-center rounded text-faint opacity-0 group-hover:opacity-100 hover:bg-press hover:text-text focus-visible:opacity-100" title={`Unlink from ${s.title}`}
+                  onClick={() => void linkTo(s, { unlink: ticket.key })}>
+                  <X size={13} />
+                </button>
+              </div>
             ))}
-            <Button variant="outline" className="h-7 gap-1 text-xs" onClick={() => void startFrom([ticket], cards)}><Plus size={13} />{sessions.length ? "New session" : "Start session"}</Button>
+            <div className="flex gap-1.5">
+              <Button variant="outline" className="h-7 flex-1 gap-1 text-xs" onClick={() => void startFrom([ticket], cards)}><Plus size={13} />{sessions.length ? "New" : "Start session"}</Button>
+              <LinkSession ticketKey={ticket.key} cards={cards.filter(c => !sessions.includes(c))} />
+            </div>
           </Section>
         </aside>
       </div>
     </article>
+  )
+}
+
+// Links a ticket to a session, or unlinks it, as the person says.
+const linkTo = (card: Card, change: { link: string } | { unlink: string }) =>
+  sendOrSay(`/api/sessions/${encodeURIComponent(card.id)}/tickets`, change, "link" in change ? `${change.link} linked to ${card.title}` : `${change.unlink} unlinked from ${card.title}`)
+
+// Links the ticket to a session you pick: the latest first, narrowed by words.
+function LinkSession({ ticketKey, cards }: { ticketKey: string; cards: Card[] }) {
+  const [words, setWords] = useState("")
+  const wanted = words.trim().toLowerCase()
+  const shown = cards.filter(c => !wanted || `${c.title} ${c.repo}`.toLowerCase().includes(wanted)).sort((a, b) => b.lastActivity - a.lastActivity).slice(0, 30)
+  return (
+    <DropdownMenu onOpenChange={() => setWords("")}>
+      <DropdownMenuTrigger asChild>
+        <Button variant="outline" className="h-7 flex-1 gap-1 text-xs"><Link2 size={13} />Link</Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-[300px]">
+        <Input autoFocus value={words} onChange={e => setWords(e.target.value)} onKeyDown={e => e.key !== "Escape" && e.key !== "ArrowDown" && e.stopPropagation()}
+          placeholder="Find a session…" className="mb-1 h-7 text-xs" />
+        <div className="max-h-[280px] overflow-auto">
+          {shown.map(c => (
+            <DropdownMenuItem key={c.id} onSelect={() => void linkTo(c, { link: ticketKey })} className="gap-2">
+              <StateIcon card={c} size={14} /><span className="min-w-0 flex-1 truncate">{c.title}</span><span className="shrink-0 text-xs text-faint">{c.repo}</span>
+            </DropdownMenuItem>
+          ))}
+          {!shown.length && <div className="px-2 py-1.5 text-xs text-text-muted">No session</div>}
+        </div>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 
@@ -207,7 +247,7 @@ function LinkTicket({ card }: { card: Card }) {
   const link = async () => {
     const k = key.trim().toUpperCase()
     if (!/^[A-Z][A-Z0-9]{1,9}-\d{1,6}$/.test(k)) return toast("A key looks like PP-123")
-    if (await sendOrSay(`/api/sessions/${encodeURIComponent(card.id)}/tickets`, { link: k }, `${k} linked`)) setKey("")
+    if (await linkTo(card, { link: k })) setKey("")
   }
   return (
     <form className="flex gap-1.5" onSubmit={e => (e.preventDefault(), void link())}>
@@ -221,7 +261,7 @@ export function TicketTab({ card }: { card: Card }) {
   const tickets = card.tickets ?? []
   const [open, setOpen] = useState<string | null>(tickets[0]?.key ?? null)
   const shown = tickets.some(t => t.key === open) ? open : (tickets[0]?.key ?? null)
-  const unlink = (key: string) => void sendOrSay(`/api/sessions/${encodeURIComponent(card.id)}/tickets`, { unlink: key }, `${key} unlinked`)
+  const unlink = (key: string) => void linkTo(card, { unlink: key })
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto px-5 py-4">
       <div className="flex flex-col gap-1">
