@@ -100,8 +100,9 @@ function ReadyToMerge({ pr, sessionId, onBlockers }: { pr: PrDetail; sessionId: 
   )
 }
 
-// What the PR changes, file by file as Changes shows it: asked of GitHub when
-// it unfolds, again when the PR moves on.
+// What the PR changes, at the foot of its card: a row with its size that
+// unfolds the code, file by file as Changes shows it (asked of GitHub when it
+// unfolds, again when the PR moves on).
 function PrCode({ pr }: { pr: PrDetail }) {
   const [isOpen, setOpen] = useState(false)
   const [files, setFiles] = useState<FileDiff[] | null>(null)
@@ -111,14 +112,17 @@ function PrCode({ pr }: { pr: PrDetail }) {
     get<{ files: FileDiff[] }>(`/api/prs/diff?${new URLSearchParams({ url: pr.url })}`).then(r => (setFiles(r.files), setError(null)), (err: Error) => setError(err.message))
   }, [isOpen, pr.url, pr.updatedAt])
   return (
-    <div className="flex flex-col gap-2">
-      <button className="flex items-center gap-1.5 self-start rounded-md px-1 py-0.5 text-[12.5px] font-semibold text-text-muted hover:text-text" onClick={() => setOpen(v => !v)} aria-expanded={isOpen}>
-        {isOpen ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}{isOpen ? "Hide the code" : "Show the code"}
+    <div className="-mx-3.5 -mb-3 border-t border-line">
+      <button className="flex w-full items-center gap-2 px-3.5 py-2.5 text-left text-[12.5px] hover:bg-hover" onClick={() => setOpen(v => !v)} aria-expanded={isOpen}>
+        {isOpen ? <ChevronDown className="size-3.5 text-faint" /> : <ChevronRight className="size-3.5 text-faint" />}
+        <span className="font-semibold">Files changed</span>
+        <span className="text-text-muted">{pr.changedFiles} {pr.changedFiles === 1 ? "file" : "files"} · {pr.commits} {pr.commits === 1 ? "commit" : "commits"}</span>
+        <span className="ml-auto font-mono text-[11.5px]"><b className="font-semibold text-work">+{pr.additions}</b> <b className="font-semibold text-bad">−{pr.deletions}</b></span>
       </button>
-      {isOpen && (error ? <p className="m-0 text-[12.5px] text-bad">{error}</p>
-        : !files ? <i className="skeleton block h-[120px] rounded-[9px]" />
-        : !files.length ? <p className="m-0 text-[12.5px] text-text-muted">No changes.</p>
-        : <div className="-mx-3.5 flex flex-col border-y border-line"><DiffView files={files} /></div>)}
+      {isOpen && (error ? <p className="m-0 px-3.5 pb-3 text-[12.5px] text-bad">{error}</p>
+        : !files ? <div className="px-3.5 pb-3"><i className="skeleton block h-[120px] rounded-[9px]" /></div>
+        : !files.length ? <p className="m-0 px-3.5 pb-3 text-[12.5px] text-text-muted">No changes.</p>
+        : <div className="flex flex-col border-t border-line">{<DiffView files={files} />}</div>)}
     </div>
   )
 }
@@ -148,25 +152,29 @@ function PrItem({ pr, sessionId, onDone }: { pr: PrDetail; sessionId?: string; o
   }
 
   return (
-    <article className={cn("flex flex-col gap-2 rounded-xl border border-line bg-surface px-3.5 py-3", !isOpen && "opacity-75")}>
-      <header className="flex items-center gap-2.5">
-        <span className={cn("inline-flex h-[22px] items-center rounded-md px-2 text-[11.5px] font-semibold", chip)}>{label}</span>
-        <a className="inline-flex items-center gap-1 text-[12.5px] font-semibold text-text-muted no-underline hover:text-text" href={pr.url} target="_blank" rel="noreferrer" title="Open on GitHub">
-          {pr.repo}#{pr.number}<Anim.ArrowUpRight size={12} />
-        </a>
-        {pr.origin && <span className="text-[11.5px] text-faint">{pr.origin === "branch" ? "this branch" : "from chat"}</span>}
-        <span className="ml-auto text-xs text-faint" title={`Opened ${ago(Date.parse(pr.createdAt), now)} ago`}>{ago(Date.parse(pr.updatedAt), now)}</span>
+    <article className={cn("flex shrink-0 flex-col gap-3 overflow-hidden rounded-xl border border-line bg-surface px-3.5 pt-3 pb-3", !isOpen && "opacity-75")}>
+      <header className="flex flex-col gap-1.5">
+        <div className="flex items-start gap-2.5">
+          <span className={cn("mt-px inline-flex h-[22px] shrink-0 items-center rounded-md px-2 text-[11.5px] font-semibold", chip)}>{label}</span>
+          <h3 className="m-0 min-w-0 flex-1 text-[15px] leading-[1.35] font-semibold [overflow-wrap:anywhere]">{pr.title}</h3>
+          <span className="mt-0.5 shrink-0 text-xs text-faint" title={`Opened ${ago(Date.parse(pr.createdAt), now)} ago`}>{ago(Date.parse(pr.updatedAt), now)}</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-text-muted">
+          <a className="inline-flex items-center gap-1 font-semibold text-text-muted no-underline hover:text-text" href={pr.url} target="_blank" rel="noreferrer" title="Open on GitHub">
+            {pr.repo}#{pr.number}<Anim.ArrowUpRight size={12} />
+          </a>
+          {pr.author && <><span className="text-faint">·</span><span>by {pr.author}</span></>}
+          {pr.origin && <><span className="text-faint">·</span><span className="text-faint">{pr.origin === "branch" ? "this branch" : "from chat"}</span></>}
+        </div>
+        <div className="flex min-w-0 items-center gap-1.5 font-mono text-[11.5px] text-text-muted">
+          <span className="truncate rounded bg-hover px-1.5 py-px">{pr.baseRefName}</span>
+          <span className="text-faint">←</span>
+          <span className="min-w-0 truncate rounded bg-hover px-1.5 py-px" title={pr.headRefName}>{pr.headRefName}</span>
+        </div>
       </header>
-      <h3 className="m-0 text-sm leading-[1.35] font-semibold [overflow-wrap:anywhere]">{pr.title}</h3>
-      <div className="flex flex-wrap gap-x-3.5 gap-y-1.5 text-[12.5px] text-text-muted">
-        <span className="font-mono text-[11.5px]">{pr.baseRefName} ← {pr.headRefName}</span>
-        <span><b className="font-semibold text-work">+{pr.additions}</b> <b className="font-semibold text-bad">−{pr.deletions}</b> · {pr.changedFiles} {pr.changedFiles === 1 ? "file" : "files"} · {pr.commits} {pr.commits === 1 ? "commit" : "commits"}</span>
-        {pr.author && <span>by {pr.author}</span>}
-      </div>
-      <PrCode pr={pr} />
       {isOpen && sessionId && <ReadyToMerge pr={pr} sessionId={sessionId} onBlockers={setBlockers} />}
       {confirm ? (
-        <div className="-mx-3.5 mt-0.5 -mb-3 flex flex-wrap items-center gap-2 rounded-b-xl border-t border-line bg-side px-3.5 py-2.5">
+        <div className="flex flex-wrap items-center gap-2 rounded-[9px] border border-line bg-side px-3 py-2.5">
           <span className="min-w-[200px] flex-1 text-[13px]">
             {confirm === "merge" ? (
               <>
@@ -180,8 +188,8 @@ function PrItem({ pr, sessionId, onDone }: { pr: PrDetail; sessionId?: string; o
             {confirm === "merge" ? (blockers.length ? "Merge anyway" : "Merge") : "Close PR"}
           </Button>
         </div>
-      ) : (
-        <div className="mt-0.5 flex flex-wrap items-center gap-2 border-t border-line pt-2.5">
+      ) : (isOpen || pr.state === "CLOSED") && (
+        <div className="flex flex-wrap items-center gap-2">
           {isOpen && !pr.isDraft && (
             <>
               <MergeButton label={busy === "merge" ? BUSY.merge : "Merge"} method={method} methods={METHODS} isDisabled={!merge.canMerge || !!busy}
@@ -198,6 +206,7 @@ function PrItem({ pr, sessionId, onDone }: { pr: PrDetail; sessionId?: string; o
           {pr.state === "CLOSED" && <Button variant="outline" disabled={!!busy} onClick={() => run("reopen")}>{busy === "reopen" ? BUSY.reopen : "Reopen"}</Button>}
         </div>
       )}
+      <PrCode pr={pr} />
     </article>
   )
 }
