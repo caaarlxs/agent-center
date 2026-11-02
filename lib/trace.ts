@@ -2,7 +2,8 @@
 // Claude's last word, each model call (from what it waited on to its last
 // block), each tool call (from the call to its result), each subagent, and
 // each wait for you (a question, a plan to approve), with the tokens and the
-// errors. Read from the transcript's tail; the turns it holds can be picked.
+// errors. A subagent sent to the background runs until its notice comes back;
+// a notice (or a message from another session) is what Claude answers next. Read from the transcript's tail; the turns it holds can be picked.
 
 import { open, stat } from "node:fs/promises"
 import { actionOf, isPersonPrompt, transcriptPath, withoutReminders } from "./transcript"
@@ -18,6 +19,7 @@ export type Span = {
   isFailed: boolean
   isRunning: boolean
   tokensOut: number | null
+  model: string | null // the model that answered (a model call)
 }
 export type Turn = {
   at: number
@@ -60,7 +62,7 @@ function callsIn(row: any, t: number, start: number): Span[] {
     const action = actionOf(name, block.input)
     const kind: SpanKind = AGENTS.has(name) ? "agent" : WAITS.has(name) ? "wait" : "tool"
     const label = kind === "wait" ? (name === "ExitPlanMode" ? "Waiting for you: the plan" : "Waiting for you: a question") : action.title ?? action.tool
-    return { id: String(block.id), kind, name: label, detail: action.detail || null, startMs: t - start, durationMs: 0, isFailed: false, isRunning: true, tokensOut: null }
+    return { id: String(block.id), kind, name: label, detail: action.detail || null, startMs: t - start, durationMs: 0, isFailed: false, isRunning: true, tokensOut: null, model: null }
   })
 }
 
@@ -94,7 +96,7 @@ class Timeline {
     const id = String(row.message?.id ?? row.uuid)
     let model = this.models.get(id)
     if (!model) {
-      model = { id, kind: "model", name: "Claude", detail: row.message?.model ?? null, startMs: this.cursor - this.start, durationMs: 0, isFailed: false, isRunning: false, tokensOut: null }
+      model = { id, kind: "model", name: "Claude", detail: null, startMs: this.cursor - this.start, durationMs: 0, isFailed: false, isRunning: false, tokensOut: null, model: row.message?.model ?? null }
       this.models.set(id, model)
       this.spans.push(model)
     }
@@ -104,8 +106,20 @@ class Timeline {
     if (row.isApiErrorMessage) model.isFailed = true
     for (const span of callsIn(row, t, this.start)) (this.tools.set(span.id, span), this.spans.push(span))
   }
+  // What Claude gets: tool results, each ending its call; or a notice (a
+  // background subagent done, a message from another session), which
+  // ends that subagent and is what Claude answers next.
   results(row: any, t: number) {
-    for (const block of Array.isArray(row.message?.content) ? row.message.content : []) {
+    const content = row.message?.content
+    if (!Array.isArray(content) || !content.some((b: any) => b?.type === "tool_result")) {
+      const text = typeof content === "string" ? content : Array.isArray(content) ? content.map((b: any) => b?.text ?? "").join("") : ""
+      const done = text.match(/<task-notification>[\s\S]*?<tool-use-id>([^<]+)<\/tool-use-id>/)?.[1]
+      const agent = done ? this.tools.get(done) : undefined
+      if (agent) agent.durationMs = Math.max(agent.durationMs, t - this.start - agent.startMs)
+      this.cursor = Math.max(this.cursor, t)
+      return
+    }
+    for (const block of content) {
       const span = block?.type === "tool_result" ? this.tools.get(String(block.tool_use_id)) : undefined
       if (!span) continue
       span.durationMs = Math.max(0, t - this.start - span.startMs)

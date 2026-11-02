@@ -34,6 +34,12 @@ export const tickLabel = (ms: number) => {
 }
 const tokens = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1000 ? `${Math.round(n / 1000)}k` : String(n))
 
+// A model as people say it: "claude-opus-5-5" → "Opus 5.5".
+export const modelName = (id: string) => {
+  const [family, ...version] = id.replace(/^claude-/, "").replace(/\[.*\]$/, "").replace(/-\d{8}$/, "").split("-")
+  return `${family!.charAt(0).toUpperCase()}${family!.slice(1)}${version.length ? ` ${version.join(".")}` : ""}`
+}
+
 // Ticks for the axis: a round step that gives four to six of them.
 export function ticksOf(totalMs: number): number[] {
   const steps = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600].map(s => s * 1000)
@@ -74,7 +80,7 @@ function Row({ span, totalMs, isSlowest }: { span: Span; totalMs: number; isSlow
       </button>
       {isOpen && (
         <div className="mx-1.5 mt-0.5 mb-1.5 flex flex-col gap-1 rounded-lg border border-line bg-side px-2.5 py-2 text-xs text-text-muted">
-          <span>{kind.label}{span.isFailed ? " · failed" : ""}{span.isRunning ? " · running" : ""} · starts at {duration(span.startMs)} · takes {duration(span.durationMs)}{span.tokensOut ? ` · ${tokens(span.tokensOut)} tokens written` : ""}</span>
+          <span>{kind.label}{span.model ? ` · ${modelName(span.model)}` : ""}{span.isFailed ? " · failed" : ""}{span.isRunning ? " · running" : ""} · starts at {duration(span.startMs)} · takes {duration(span.durationMs)}{span.tokensOut ? ` · ${tokens(span.tokensOut)} tokens written` : ""}</span>
           {span.detail && <pre className="m-0 max-h-48 overflow-auto font-mono text-[11.5px] whitespace-pre-wrap text-text">{span.detail}</pre>}
         </div>
       )}

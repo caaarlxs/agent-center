@@ -45,3 +45,24 @@ describe("turnOf", () => {
     expect([live.isRunning, live.durationMs / 1000, live.spans[1]!.isRunning, live.spans[1]!.durationMs / 1000]).toEqual([true, 20, true, 17])
   })
 })
+
+describe("a subagent in the background", () => {
+  const notice = (s: number, id: string) => ({ type: "user", timestamp: at(s), message: { content: `<task-notification>\n<task-id>x</task-id>\n<tool-use-id>${id}</tool-use-id>\n<status>completed</status>` } })
+  const rows = [
+    you(0, "Do it in the background"),
+    claude(2, "m1", [call("a1", "Agent", { description: "Migrate", prompt: "x", run_in_background: true })]),
+    result(3, "a1"),
+    claude(4, "m2", [{ type: "text", text: "Launched" }]),
+    notice(300, "a1"),
+    claude(305, "m3", [{ type: "text", text: "It is done" }]),
+  ]
+  const turn = turnOf(rows)
+  it("runs until its notice, and Claude's answer to the notice starts then", () => {
+    expect(turn.spans.map(s => [s.kind, s.startMs / 1000, s.durationMs / 1000])).toEqual([
+      ["model", 0, 2], ["agent", 2, 298], ["model", 3, 1], ["model", 300, 5],
+    ])
+  })
+  it("names the model that answered", () => {
+    expect([turn.spans[0]!.model, turn.spans[0]!.detail]).toEqual(["claude-opus-5-5", null])
+  })
+})
