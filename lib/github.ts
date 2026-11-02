@@ -107,20 +107,59 @@ function summary(raw: any): Pr {
 // ---------- summaries for the cards ----------
 
 const summaries = new Map<string, { pr: Pr | null; at: number }>()
-const inFlight = new Set<string>()
+// What waits to be asked for, in order, each once (key → its ref and folder).
+const queue = new Map<string, { ref: string; cwd: string }>()
+let running = 0
+const BATCH = 20
 
-// Never blocks: answers what the cache holds and refreshes behind. `ref` is
-// a branch (looked up in `cwd`'s repository) or a PR URL.
+// Never blocks: answers what the cache holds; one missing or old waits in
+// line and is asked for behind. `ref` is a branch (looked up in `cwd`'s
+// repository) or a PR URL.
 export function lookup(key: string, ref: string, cwd: string): Pr | null {
   const hit = summaries.get(key)
-  if ((!hit || Date.now() - hit.at > SUMMARY_TTL_MS) && !inFlight.has(key) && inFlight.size < MAX_IN_FLIGHT) {
-    inFlight.add(key)
-    gh(["pr", "view", ref, "--json", SUMMARY_FIELDS], cwd, 15_000)
-      .then(res => summaries.set(key, { pr: res.ok ? summary(JSON.parse(res.out)) : null, at: Date.now() }))
-      .catch(() => summaries.set(key, { pr: null, at: Date.now() }))
-      .finally(() => inFlight.delete(key))
+  if (!hit || Date.now() - hit.at > SUMMARY_TTL_MS) {
+    queue.set(key, { ref, cwd })
+    drain()
   }
   return hit?.pr ?? null
+}
+
+// PR addresses go to GitHub twenty at a time, in one query; a branch, alone.
+function drain() {
+  while (running < MAX_IN_FLIGHT && queue.size) {
+    const urls = [...queue].filter(([, q]) => PR_URL.test(q.ref)).slice(0, BATCH)
+    const job = urls.length ? urls : [[...queue][0]!]
+    for (const [key] of job) queue.delete(key)
+    running++
+    const ask = urls.length ? summariesOf(urls.map(([, q]) => q.ref)) : one(job[0]![1])
+    void ask
+      .then(found => job.forEach(([key, q], i) => summaries.set(key, { pr: (urls.length ? found[i] : found[0]) ?? null, at: Date.now() })))
+      .catch(() => job.forEach(([key]) => summaries.set(key, { pr: summaries.get(key)?.pr ?? null, at: Date.now() })))
+      .finally(() => (running--, drain()))
+  }
+}
+
+const one = (q: { ref: string; cwd: string }) =>
+  gh(["pr", "view", q.ref, "--json", SUMMARY_FIELDS], q.cwd, 15_000).then(res => [res.ok ? summary(JSON.parse(res.out)) : null])
+
+// The overall state of a PR's checks, as GitHub's rollup says it.
+const ROLLUP: Record<string, Checks> = { SUCCESS: "pass", FAILURE: "fail", ERROR: "fail", PENDING: "pending", EXPECTED: "pending" }
+
+// Several PRs by their addresses, in one GraphQL query: each a summary, or null.
+export async function summariesOf(urls: string[]): Promise<(Pr | null)[]> {
+  const parts = urls.map((url, i) => {
+    const [, owner, name, number] = url.match(/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/(\d+)$/)!
+    return `p${i}: repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(name)}) { pullRequest(number: ${number}) { number title url state isDraft reviewDecision commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } } }`
+  })
+  const res = await gh(["api", "graphql", "-f", `query={ ${parts.join(" ")} }`], HOME, 30_000)
+  if (!res.out) throw new Error(res.err || "gh could not read the PRs")
+  const data = JSON.parse(res.out).data ?? {}
+  return urls.map((_, i) => {
+    const raw = data[`p${i}`]?.pullRequest
+    if (!raw) return null
+    const rollup = raw.commits?.nodes?.[0]?.commit?.statusCheckRollup?.state
+    return { number: raw.number, title: raw.title, url: raw.url, state: raw.state, isDraft: !!raw.isDraft, reviewDecision: raw.reviewDecision || null, checks: ROLLUP[rollup] ?? null }
+  })
 }
 
 // ---------- detail for the reader ----------
