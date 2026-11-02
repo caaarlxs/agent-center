@@ -1,7 +1,7 @@
 // Board-wide actions (POST): new sessions, the digest, canvas zones and
 // notes, PR actions, tasks, files sent and dictation.
 
-import { connect, disconnect } from "../lib/jira"
+import { commentOn, connect, disconnect, moveTicket } from "../lib/jira"
 import { chooseIcon, isIcon } from "../lib/app-icon"
 import { stat } from "node:fs/promises"
 import { isTaskId, setNotes, setSuggestion, setZones } from "../lib/board"
@@ -150,6 +150,11 @@ export async function handleWrite(path: string, body: Record<string, unknown>): 
     // Jira: the details checked with Jira, then kept (the token in the keychain).
     case "/api/jira/connect":
       return await connect(body).then(r => json(r), (err: Error) => json({ error: err.message }, 400))
+    // On a ticket assigned to you only (lib/jira.ts checks): a new status, a comment.
+    case "/api/jira/move":
+      return await moveTicket(String(body.key ?? ""), String(body.transition ?? "")).then(() => json({ ok: true }), (err: Error) => json({ error: err.message }, 400))
+    case "/api/jira/comment":
+      return await commentOn(String(body.key ?? ""), String(body.text ?? "")).then(() => json({ ok: true }), (err: Error) => json({ error: err.message }, 400))
     case "/api/jira/disconnect":
       await disconnect()
       return json({ ok: true })

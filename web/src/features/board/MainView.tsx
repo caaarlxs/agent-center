@@ -31,6 +31,9 @@ export function useShownView(): View {
   return isNarrow && chosen === "canvas" ? "inbox" : chosen
 }
 
+// The Tickets view (Jira) loads the first time it shows.
+const Tickets = lazyView(() => import("@/features/jira/Tickets").then(m => m.Tickets))
+
 // React Flow and the canvas load the first time the canvas shows.
 const Canvas = lazyView(() => import("@/features/canvas/Canvas").then(m => m.Canvas))
 
@@ -38,12 +41,13 @@ const Canvas = lazyView(() => import("@/features/canvas/Canvas").then(m => m.Can
 // its shader loads only then, and nothing stands in for it meanwhile.
 const DotField = lazy(() => import("@/features/canvas/Backdrop").then(m => ({ default: m.Backdrop })))
 
-export const VIEW_TITLE: Record<View, string> = { inbox: "Inbox", board: "Board", canvas: "Canvas", tiers: "Tiers" }
+export const VIEW_TITLE: Record<View, string> = { inbox: "Inbox", board: "Board", canvas: "Canvas", tiers: "Tiers", tickets: "Tickets" }
 
 export function MainView() {
   const view = useShownView()
   const hasData = useLive(l => !!l.snapshot)
-  const cards = useViewCards(useBoardCards())
+  const allCards = useBoardCards()
+  const cards = useViewCards(allCards)
   const isDragging = !!dragging.use()
   const root = useRef<HTMLDivElement>(null)
   const hasField = useIsDots() && (view === "board" || view === "tiers")
@@ -59,7 +63,7 @@ export function MainView() {
           <div className="flex max-w-[900px] flex-col gap-2.5 p-5">
             {[1, 2, 3, 4, 5].map(i => <i key={i} className="block h-[52px] animate-shimmer rounded-[9px] bg-[linear-gradient(90deg,var(--hover),var(--press),var(--hover))] bg-[length:200%_100%]" />)}
           </div>
-        ) : view === "canvas" ? null : view === "board" ? <Board cards={cards} /> : view === "tiers" ? <Tiers cards={cards} /> : <Inbox cards={cards} />}
+        ) : view === "canvas" ? null : view === "board" ? <Board cards={cards} /> : view === "tiers" ? <Tiers cards={cards} /> : view === "tickets" ? <Tickets cards={allCards} /> : <Inbox cards={cards} />}
       </div>
     </div>
   )

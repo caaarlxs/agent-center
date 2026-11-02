@@ -5,7 +5,7 @@ import { createStore, persistedStore } from "@/lib/store"
 // The board's views (features/board); the sidebar chooses one.
 import { type View, view } from "@/features/board/state"
 export { type View, view }
-export const VIEW_NAME: Record<View, string> = { inbox: "Inbox", board: "Board", canvas: "Canvas", tiers: "Tiers" }
+export const VIEW_NAME: Record<View, string> = { inbox: "Inbox", board: "Board", canvas: "Canvas", tiers: "Tiers", tickets: "Tickets" }
 
 // The repo the canvas shows (its root), or every repo (null). Kept, so a
 // reload shows the same; the shell lets it go when that repo leaves.

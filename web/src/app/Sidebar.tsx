@@ -54,6 +54,7 @@ const VIEWS: { key: View; label: string; title: string; icon: ReactNode }[] = [
   { key: "board", label: "Board", title: "Board (2)", icon: <Columns3 className="size-4 shrink-0" /> },
   { key: "canvas", label: "Canvas", title: "Canvas (3)", icon: <Anim.LayoutGrid size={16} /> },
   { key: "tiers", label: "Tiers", title: "Tiers: sessions by importance (4)", icon: <List className="size-4 shrink-0" /> },
+  { key: "tickets", label: "Tickets", title: "Your Jira tickets (5)", icon: <Ticket className="size-4 shrink-0" /> },
 ]
 
 // A row under the limits (.side-uploads): icon, words, a number on the right.
@@ -191,15 +192,9 @@ export function Sidebar() {
             title="General context: ~/.claude/CLAUDE.md, what Claude reads in every session. See it and edit it">
             <BookText className="size-3.5" />{!isSlim && "General context"}
           </Button>
-          {hasJira && (
-            <Button variant="outline" className={cn("h-[34px] w-full justify-start gap-2", isSlim && "justify-center gap-0 px-0")} onClick={() => openDialog({ kind: "tickets" })}
-              title="Your open Jira tickets: open one, or start a session about it">
-              <Ticket className="size-3.5" />{!isSlim && "My tickets"}
-            </Button>
-          )}
         </div>
         <nav className="flex flex-col gap-px">
-          {VIEWS.map(v => (
+          {VIEWS.filter(v => v.key !== "tickets" || hasJira).map(v => (
             <button key={v.key} className={navRow(shown === v.key, isSlim)} onClick={() => chooseView(v.key)} title={v.title}>
               {v.icon}{!isSlim && v.label}
               {v.key === "inbox" && (unread > 0 || asking > 0) && (

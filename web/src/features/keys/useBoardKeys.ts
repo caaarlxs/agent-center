@@ -21,7 +21,7 @@ import { startRename } from "@/features/session/SessionPanel"
 // Enter keeps its own job on these (press, pick, tick, unfold): it opens the
 // selected conversation only from elsewhere.
 const ENTER_KEEPS = "button, a[href], summary, [role=button], [role=option], [role=radio], [role=checkbox], [role=tab], [role=menuitem], [role=menuitemradio]"
-const VIEWS = { "1": "inbox", "2": "board", "3": "canvas", "4": "tiers" } as const
+const VIEWS = { "1": "inbox", "2": "board", "3": "canvas", "4": "tiers", "5": "tickets" } as const
 
 // A card on screen: brought into view, and focused when the focus was on a card.
 function reveal(id: string) {

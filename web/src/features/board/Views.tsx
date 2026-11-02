@@ -389,6 +389,7 @@ export function ViewTools({ view }: { view: View }) {
   const by = groupBy.use()
   const isDone = showDone.use()
   const isDrawing = drawingZone.use()
+  if (view === "tickets") return null // its own tools are in the view
   if (view === "canvas")
     return (
       <>

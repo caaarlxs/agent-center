@@ -13,7 +13,7 @@ const ContextDialog = lazyView(() => import("@/features/context/ContextDialog").
 const DigestDialog = lazyView(() => import("@/features/digest/DigestDialog").then(m => m.DigestDialog))
 const NewSessionDialog = lazyView(() => import("@/features/new-session/NewSessionDialog").then(m => m.NewSessionDialog))
 const RunDialog = lazyView(() => import("@/features/run/RunDialog").then(m => m.RunDialog))
-const MyTicketsDialog = lazyView(() => import("@/features/jira/MyTicketsDialog").then(m => m.MyTicketsDialog))
+const TicketDialog = lazyView(() => import("@/features/jira/TicketDialog").then(m => m.TicketDialog))
 const SetupDialog = lazyView(() => import("@/features/setup/SetupDialog").then(m => m.SetupDialog))
 
 const setupSeen = persistedStore("setupSeen", false)
@@ -47,6 +47,6 @@ export function Dialogs() {
   if (open.kind === "digest") return <DigestDialog onClose={closeDialog} />
   if (open.kind === "context") return <ContextDialog onClose={closeDialog} />
   if (open.kind === "run") return <RunDialog card={open.card} onClose={closeDialog} />
-  if (open.kind === "tickets") return <MyTicketsDialog onClose={closeDialog} />
+  if (open.kind === "ticket") return <TicketDialog ticketKey={open.key} onClose={closeDialog} />
   return null // help: the keyboard help dialog draws itself
 }

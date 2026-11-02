@@ -1,19 +1,31 @@
 // Jira: the tickets your sessions work on, read live from your Jira Cloud site.
-// A session names its tickets in its branch and title ("fix/PP-3130-…"); the
+// A session names its tickets in its branch and title ("fix/PP-3130-…") or
+// again and again in its conversation; the
 // board reads their summary and status for its cards (all at once, every two
 // minutes) and a ticket's whole detail when you open it. Your own open tickets
-// are a search away. You set it up in Settings › Jira: the site, your email
+// are a search away (yours, the ones you reported, the open sprint, or by
+// text), with their status, type, priority and sprint; and on a ticket
+// assigned to you, the board moves its status or adds a comment, never on
+// anyone else's. You set it up in Settings › Jira: the site, your email
 // and an API token (kept in the macOS keychain, never in a file), and the
 // keys of the projects to look for, so a word like "UTF-8" is never a ticket.
 
+import { stat } from "node:fs/promises"
 import { settings } from "./config"
+import { readAppended } from "./files"
 import { exec } from "./proc"
 import { saveSettings } from "./setup"
+import { transcriptPath } from "./transcript"
 
 export type JiraSetup = { site: string; email: string; projects: string[] }
 export type TicketBrief = { key: string; summary: string; status: string; tone: "todo" | "doing" | "done"; assignee: string | null; url: string }
+// A ticket in a list: what a card needs, and its type, priority, sprint and last change.
+export type TicketRow = TicketBrief & { statusId: string; type: string | null; priority: string | null; sprint: string | null; updated: number }
+export type Transition = { id: string; name: string; to: string; tone: TicketBrief["tone"] }
+export type TicketFilter = "mine" | "reported" | "sprint"
 export type TicketComment = { author: string; at: number; body: string }
 export type Ticket = TicketBrief & {
+  isMine: boolean // assigned to you: the board may move it and comment
   type: string | null
   priority: string | null
   reporter: string | null
@@ -39,6 +51,56 @@ export function keysIn(texts: (string | null | undefined)[], projects: string[])
       if (wanted.has(m[1]!.toUpperCase()) && !out.includes(key)) out.push(key)
     }
   return out
+}
+
+// The tickets a session works on: those its branch and title name, then those
+// its conversation names twice or more (a passing mention of another ticket
+// is not one), the most named first; three at most.
+export function sessionKeys(named: string[], mentions: Map<string, number>, projects: string[]): string[] {
+  const wanted = new Set(projects.map(p => p.toUpperCase()))
+  const often = [...mentions].filter(([k, n]) => n >= 2 && wanted.has(k.split("-")[0]!)).sort((a, b) => b[1] - a[1]).map(([k]) => k)
+  return [...new Set([...named, ...often])].slice(0, 3)
+}
+
+// What a transcript line says in the session's own words: your messages and
+// Claude's (its text, and what it puts in its tools, such as a commit's
+// message); not what tools gave back (a git log names others' tickets).
+export function ownWords(line: string): string {
+  let d: any
+  try {
+    d = JSON.parse(line)
+  } catch {
+    return ""
+  }
+  if (d?.isMeta) return ""
+  const content = d?.message?.content
+  if (d?.type === "user") return typeof content === "string" ? content : Array.isArray(content) ? content.filter((b: any) => b?.type === "text").map((b: any) => b.text).join("\n") : ""
+  if (d?.type === "assistant" && Array.isArray(content))
+    return content.map((b: any) => (b?.type === "text" ? b.text : b?.type === "tool_use" ? JSON.stringify(b.input ?? "") : "")).join("\n")
+  return ""
+}
+const KEY = /(?<![A-Za-z0-9])([A-Z][A-Z0-9]{1,9}-\d{1,6})(?![0-9])/g
+
+// How often a session's conversations name each ticket key: read once, then only what they add.
+const mentionScans = new Map<string, { offset: number; counts: Map<string, number> }>()
+export async function mentionsIn(ids: string[]): Promise<Map<string, number>> {
+  const total = new Map<string, number>()
+  for (const id of ids) {
+    const path = await transcriptPath(id)
+    if (!path) continue
+    const { size } = await stat(path).catch(() => ({ size: 0 }))
+    let scan = mentionScans.get(id)
+    if (!scan || size < scan.offset) mentionScans.set(id, (scan = { offset: 0, counts: new Map() }))
+    const s = scan
+    s.offset = await readAppended(path, s.offset, size, text => {
+      for (const line of text.split("\n")) {
+        if (!/[A-Z]-\d/.test(line)) continue
+        for (const m of ownWords(line).matchAll(KEY)) s.counts.set(m[1]!, (s.counts.get(m[1]!) ?? 0) + 1)
+      }
+    })
+    for (const [k, n] of s.counts) total.set(k, (total.get(k) ?? 0) + n)
+  }
+  return total
 }
 
 // A site as the board keeps it: https and no trailing slash ("deale.atlassian.net" works too).
@@ -123,10 +185,58 @@ export function briefOf(raw: any, site: string): TicketBrief {
   }
 }
 
-export function ticketOf(raw: any, site: string): Ticket {
+// The open sprint's name, from Jira's sprint field (its id varies per site).
+const sprintOf = (value: unknown): string | null => {
+  const list = Array.isArray(value) ? value : []
+  const open = list.find((s: any) => s?.state === "active") ?? list.at(-1)
+  return open?.name ?? null
+}
+
+export function rowOf(raw: any, site: string, sprintField: string | null): TicketRow {
   const f = raw?.fields ?? {}
   return {
     ...briefOf(raw, site),
+    statusId: String(f.status?.id ?? ""),
+    type: f.issuetype?.name ?? null,
+    priority: f.priority?.name ?? null,
+    sprint: sprintField ? sprintOf(f[sprintField]) : null,
+    updated: Date.parse(f.updated ?? "") || 0,
+  }
+}
+
+// What a search asks for: your open tickets, those you reported, the open sprint's; and some words.
+export function jqlOf(filter: TicketFilter, projects: string[], text = ""): string {
+  const scope = `project in (${projects.join(",")})`
+  const who = filter === "reported" ? "reporter = currentUser()" : filter === "sprint" ? "sprint in openSprints()" : "assignee = currentUser()"
+  const words = text.trim().replace(/["\\]/g, " ").trim()
+  return [scope, who, filter === "mine" ? "statusCategory != Done" : null, words ? `text ~ "${words}"` : null].filter(Boolean).join(" AND ") + " ORDER BY updated DESC"
+}
+
+// The order of the statuses, as the team's board lays out its columns: of the
+// boards given (each its status ids, column by column), the one that holds
+// most of the statuses seen; none when no board holds any.
+export function pickOrder(boards: string[][], seen: string[]): string[] {
+  let best: string[] = []
+  let most = 0
+  for (const order of boards) {
+    const held = seen.filter(id => order.includes(id)).length
+    if (held > most) (best = order), (most = held)
+  }
+  return best
+}
+
+// A comment as Jira's document: a paragraph per line.
+export const docOf = (text: string) => ({
+  type: "doc",
+  version: 1,
+  content: text.split("\n").map(line => (line ? { type: "paragraph", content: [{ type: "text", text: line }] } : { type: "paragraph", content: [] })),
+})
+
+export function ticketOf(raw: any, site: string, me: string | null = null): Ticket {
+  const f = raw?.fields ?? {}
+  return {
+    ...briefOf(raw, site),
+    isMine: !!me && f.assignee?.accountId === me,
     type: f.issuetype?.name ?? null,
     priority: f.priority?.name ?? null,
     reporter: f.reporter?.displayName ?? null,
@@ -145,7 +255,8 @@ async function tokenOf(email: string): Promise<string | null> {
   return code === 0 ? stdout.trim() : null
 }
 
-async function call(setup: JiraSetup, path: string, init: RequestInit = {}, token?: string): Promise<any> {
+// One request to Jira, signed with your token; an error in words when it fails.
+async function request(setup: JiraSetup, path: string, init: RequestInit = {}, token?: string): Promise<Response> {
   const secret = token ?? (await tokenOf(setup.email))
   if (!secret) throw new Error("No Jira token in the keychain: set Jira up again in Settings")
   const res = await fetch(`${setup.site}${path}`, {
@@ -155,8 +266,9 @@ async function call(setup: JiraSetup, path: string, init: RequestInit = {}, toke
   })
   if (res.status === 401 || res.status === 403) throw new Error("Jira did not accept the email and token")
   if (!res.ok) throw new Error(`Jira answered ${res.status}`)
-  return res.json()
+  return res
 }
+const call = async (setup: JiraSetup, path: string, init: RequestInit = {}, token?: string): Promise<any> => (await request(setup, path, init, token)).json()
 
 // Checks the details with Jira, then keeps them: the token in the keychain, the rest in the settings.
 export async function connect(input: { site?: unknown; email?: unknown; token?: unknown; projects?: unknown }) {
@@ -216,18 +328,91 @@ export function briefsFor(keys: string[]): TicketBrief[] {
 
 // ---------- one ticket, and yours ----------
 
-export async function ticket(key: string): Promise<Ticket> {
-  const setup = jiraSetup()
-  if (!setup) throw new Error("Jira is not set up")
-  if (!/^[A-Z][A-Z0-9]{1,9}-\d{1,6}$/.test(key)) throw new Error("Not a ticket key")
-  const raw = await call(setup, `/rest/api/3/issue/${key}?fields=summary,status,assignee,reporter,priority,issuetype,updated,description,comment`)
-  return ticketOf(raw, setup.site)
+// Who you are on the site, and its sprint field: asked once.
+let me: { site: string; id: string } | null = null
+async function myId(setup: JiraSetup) {
+  if (me?.site === setup.site) return me.id
+  const r = await call(setup, "/rest/api/3/myself")
+  me = { site: setup.site, id: String(r?.accountId ?? "") }
+  return me.id
+}
+let sprintField: { site: string; id: string | null } | null = null
+async function sprintFieldOf(setup: JiraSetup) {
+  if (sprintField?.site === setup.site) return sprintField.id
+  const fields = await call(setup, "/rest/api/3/field").catch(() => [])
+  const found = (fields as any[]).find(f => f?.schema?.custom === "com.pyxis.greenhopper.jira:gh-sprint")
+  sprintField = { site: setup.site, id: found?.id ?? null }
+  return sprintField.id
 }
 
-export async function myTickets(): Promise<TicketBrief[]> {
+const setupOrThrow = () => {
   const setup = jiraSetup()
   if (!setup) throw new Error("Jira is not set up")
-  const jql = `assignee = currentUser() AND statusCategory != Done AND project in (${setup.projects.join(",")}) ORDER BY updated DESC`
-  const r = await call(setup, "/rest/api/3/search/jql", { method: "POST", body: JSON.stringify({ jql, fields: BRIEF_FIELDS, maxResults: 50 }) })
-  return (r?.issues ?? []).map((i: any) => briefOf(i, setup.site))
+  return setup
+}
+const keyOrThrow = (key: string) => {
+  if (!/^[A-Z][A-Z0-9]{1,9}-\d{1,6}$/.test(key)) throw new Error("Not a ticket key")
+  return key
+}
+
+export async function ticket(key: string): Promise<Ticket> {
+  const setup = setupOrThrow()
+  const raw = await call(setup, `/rest/api/3/issue/${keyOrThrow(key)}?fields=summary,status,assignee,reporter,priority,issuetype,updated,description,comment`)
+  return ticketOf(raw, setup.site, await myId(setup))
+}
+
+// The status order of each board of your projects (its columns, left to right): asked every ten minutes.
+let boardOrders: { site: string; at: number; orders: string[][] } | null = null
+async function boardOrdersOf(setup: JiraSetup) {
+  if (boardOrders?.site === setup.site && Date.now() - boardOrders.at < 600_000) return boardOrders.orders
+  const orders: string[][] = []
+  for (const project of setup.projects) {
+    const boards = await call(setup, `/rest/agile/1.0/board?projectKeyOrId=${project}&maxResults=10`).catch(() => null)
+    for (const b of boards?.values ?? []) {
+      const config = await call(setup, `/rest/agile/1.0/board/${b.id}/configuration`).catch(() => null)
+      orders.push((config?.columnConfig?.columns ?? []).flatMap((c: any) => (c.statuses ?? []).map((s: any) => String(s.id))))
+    }
+  }
+  boardOrders = { site: setup.site, at: Date.now(), orders }
+  return orders
+}
+
+export async function searchTickets(filter: TicketFilter, text = ""): Promise<{ tickets: TicketRow[]; order: string[] }> {
+  const setup = setupOrThrow()
+  const sprint = await sprintFieldOf(setup)
+  const fields = [...BRIEF_FIELDS, "issuetype", "priority", "updated", ...(sprint ? [sprint] : [])]
+  const r = await call(setup, "/rest/api/3/search/jql", { method: "POST", body: JSON.stringify({ jql: jqlOf(filter, setup.projects, text), fields, maxResults: 100 }) })
+  const tickets: TicketRow[] = (r?.issues ?? []).map((i: any) => rowOf(i, setup.site, sprint))
+  const order = pickOrder(await boardOrdersOf(setup), [...new Set(tickets.map(t => t.statusId))])
+  return { tickets, order }
+}
+
+// ---------- what you may do on yours ----------
+
+// A ticket assigned to you, else an error: the board writes on nobody else's.
+async function mineOrThrow(setup: JiraSetup, key: string) {
+  const raw = await call(setup, `/rest/api/3/issue/${keyOrThrow(key)}?fields=assignee`)
+  if (raw?.fields?.assignee?.accountId !== (await myId(setup))) throw new Error(`${key} is not assigned to you`)
+}
+
+export async function transitionsOf(key: string): Promise<Transition[]> {
+  const setup = setupOrThrow()
+  const r = await call(setup, `/rest/api/3/issue/${keyOrThrow(key)}/transitions`)
+  return (r?.transitions ?? []).map((t: any) => ({ id: String(t.id), name: String(t.name), to: String(t.to?.name ?? t.name), tone: TONE[t.to?.statusCategory?.key] ?? "todo" }))
+}
+
+export async function moveTicket(key: string, transitionId: string) {
+  const setup = setupOrThrow()
+  await mineOrThrow(setup, key)
+  if (!(await transitionsOf(key)).some(t => t.id === transitionId)) throw new Error("That move is not open for this ticket now")
+  await request(setup, `/rest/api/3/issue/${key}/transitions`, { method: "POST", body: JSON.stringify({ transition: { id: transitionId } }) }) // no body back (204)
+  briefs.delete(key)
+}
+
+export async function commentOn(key: string, text: string) {
+  const setup = setupOrThrow()
+  const body = text.trim()
+  if (!body) throw new Error("Write something first")
+  await mineOrThrow(setup, key)
+  await call(setup, `/rest/api/3/issue/${key}/comment`, { method: "POST", body: JSON.stringify({ body: docOf(body.slice(0, 10_000)) }) })
 }

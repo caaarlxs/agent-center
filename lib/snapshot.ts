@@ -2,7 +2,7 @@
 // desktop session runs several CLI sessions over its life), with its column,
 // what it waits for, its PRs, usage, tasks and the bridge mod's state.
 
-import { briefsFor, jiraSetup, keysIn } from "./jira"
+import { briefsFor, jiraSetup, keysIn, mentionsIn, sessionKeys } from "./jira"
 import { stat } from "node:fs/promises"
 import { HOME } from "./config"
 import { backgroundOf } from "./background"
@@ -201,7 +201,7 @@ async function cardOf(
     branch: repo.branch,
     prs: openPrs(await prRefs(ids, repo.root, repo.branch)),
     title,
-    tickets: jira ? briefsFor(keysIn([repo.branch, title], jira.projects)) : [],
+    tickets: jira ? briefsFor(sessionKeys(keysIn([repo.branch, title], jira.projects), await mentionsIn(ids), jira.projects)) : [],
     hasOwnTitle: !!item.title,
     state: question ? "asking" : permission ? "permission" : s.state,
     isStale: s.state === "working" && (column === "review" || column === "pending") && !wasStopped,
