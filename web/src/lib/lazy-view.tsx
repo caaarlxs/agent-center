@@ -1,16 +1,17 @@
 // A view whose code is not in the page's first download: it loads the first
 // time it shows, and `preload` starts that load early (on hover of its tab), so
-// the click finds it ready. `Loading` fills its place meanwhile.
+// the click finds it ready. `Loading` fills its place meanwhile, unless it
+// has no place of its own (a dialog floats over the page): then nothing shows.
 import { lazy, Suspense, type ComponentType, type ReactNode } from "react"
 import { Spinner } from "@/components/ui/spinner"
 
-export function lazyView<P extends object>(load: () => Promise<ComponentType<P>>) {
+export function lazyView<P extends object>(load: () => Promise<ComponentType<P>>, { isFloating = false } = {}) {
   let loading: Promise<{ default: ComponentType<P> }> | null = null
   const start = () => (loading ??= load().then(view => ({ default: view })))
   const View = lazy(start)
   return Object.assign(
     (props: P) => (
-      <Suspense fallback={<Loading />}>
+      <Suspense fallback={isFloating ? null : <Loading />}>
         <View {...props} />
       </Suspense>
     ),

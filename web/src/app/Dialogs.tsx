@@ -8,13 +8,14 @@ import { knownRepos } from "@/features/new-session/repos"
 import { setupStatus } from "@/features/setup/status"
 import { closeDialog, dialog, openDialog } from "./open-dialog"
 
-// Each dialog loads the first time it opens.
-const ContextDialog = lazyView(() => import("@/features/context/ContextDialog").then(m => m.ContextDialog))
-const DigestDialog = lazyView(() => import("@/features/digest/DigestDialog").then(m => m.DigestDialog))
-const NewSessionDialog = lazyView(() => import("@/features/new-session/NewSessionDialog").then(m => m.NewSessionDialog))
-const RunDialog = lazyView(() => import("@/features/run/RunDialog").then(m => m.RunDialog))
-const TicketDialog = lazyView(() => import("@/features/jira/TicketDialog").then(m => m.TicketDialog))
-const SetupDialog = lazyView(() => import("@/features/setup/SetupDialog").then(m => m.SetupDialog))
+// Each dialog loads the first time it opens; until then nothing shows (a
+// placeholder would take a column of the page, like a session's panel).
+const ContextDialog = lazyView(() => import("@/features/context/ContextDialog").then(m => m.ContextDialog), { isFloating: true })
+const DigestDialog = lazyView(() => import("@/features/digest/DigestDialog").then(m => m.DigestDialog), { isFloating: true })
+const NewSessionDialog = lazyView(() => import("@/features/new-session/NewSessionDialog").then(m => m.NewSessionDialog), { isFloating: true })
+const RunDialog = lazyView(() => import("@/features/run/RunDialog").then(m => m.RunDialog), { isFloating: true })
+const TicketDialog = lazyView(() => import("@/features/jira/TicketDialog").then(m => m.TicketDialog), { isFloating: true })
+const SetupDialog = lazyView(() => import("@/features/setup/SetupDialog").then(m => m.SetupDialog), { isFloating: true })
 
 const setupSeen = persistedStore("setupSeen", false)
 const LINKED = ["new", "setup", "digest", "context", "help"] as const
@@ -39,6 +40,7 @@ export function Dialogs() {
   useEffect(() => whenIdle(() => {
     NewSessionDialog.preload()
     SetupDialog.preload()
+    TicketDialog.preload()
     void knownRepos.load().catch(() => {})
   }), [])
   if (!open) return null
