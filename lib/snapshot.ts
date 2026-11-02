@@ -101,11 +101,13 @@ export async function prRefs(ids: string[], root: string, branch: string | null)
 }
 
 // A card shows open PRs only: a merged or closed one is done with.
-function openPrs(refs: { key: string; ref: string; cwd: string }[]): Pr[] {
+// Its pull requests in a state (open ones on the card; merged ones tell a
+// ticket its work is in), each once, four at most.
+function prsIn(refs: { key: string; ref: string; cwd: string }[], state: Pr["state"]): Pr[] {
   const unique = new Map<string, Pr>()
   for (const r of refs) {
     const pr = prLookup(r.key, r.ref, r.cwd)
-    if (pr?.state === "OPEN" && !unique.has(pr.url)) unique.set(pr.url, pr)
+    if (pr?.state === state && !unique.has(pr.url)) unique.set(pr.url, pr)
   }
   return [...unique.values()].slice(0, 4)
 }
@@ -191,6 +193,7 @@ async function cardOf(
   const title = item.title || (cleanPrompt(app?.title || s.title || s.first_prompt) ?? s.project)
   // Its Jira tickets (lib/jira.ts) and why, as the cache has them.
   const jira = jiraSetup()
+  const refs = await prRefs(ids, repo.root, repo.branch)
   return {
     id,
     hostId: s.host_session_id ?? app?.hostId ?? null,
@@ -199,7 +202,8 @@ async function cardOf(
     repoRoot: repo.root,
     isWorktree: s.cwd !== repo.root && !s.cwd.startsWith(`${repo.root}/`),
     branch: repo.branch,
-    prs: openPrs(await prRefs(ids, repo.root, repo.branch)),
+    prs: prsIn(refs, "OPEN"),
+    mergedPrs: prsIn(refs, "MERGED"),
     title,
     tickets: jira ? sessionTickets(sessionKeys(item.tickets ?? {}, keysIn([repo.branch, title], jira.projects), await mentionsIn(ids), jira.projects)) : [],
     hasOwnTitle: !!item.title,

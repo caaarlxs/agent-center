@@ -32,10 +32,11 @@ export type TicketRef = { key: string; summary: string; type: string | null; kin
 export type TicketRow = TicketBrief & {
   statusId: string; type: string | null; priority: string | null; sprint: string | null; updated: number
   parent: TicketRef | null; epic: TicketRef | null
+  isMine: boolean // assigned to you: the board may move it
 }
 // A column of the team's board: its name and the statuses it holds.
 export type BoardColumn = { name: string; statusIds: string[] }
-export type Transition = { id: string; name: string; to: string; tone: TicketBrief["tone"] }
+export type Transition = { id: string; name: string; to: string; toId: string; tone: TicketBrief["tone"] }
 export type TicketFilter = "mine" | "reported" | "sprint"
 export type TicketComment = { author: string; at: number; body: string }
 export type TicketLink = { how: string; ticket: TicketRef }
@@ -247,7 +248,7 @@ const sprintOf = (value: unknown): string | null => {
 
 // A ticket in a list. Its epic: its parent when that is one, else its
 // parent's parent when the search knows it (`epics`: parent key to epic).
-export function rowOf(raw: any, site: string, sprintField: string | null, epics: Map<string, TicketRef> = new Map()): TicketRow {
+export function rowOf(raw: any, site: string, sprintField: string | null, epics: Map<string, TicketRef> = new Map(), me: string | null = null): TicketRow {
   const f = raw?.fields ?? {}
   const parent = refOf(f.parent, site)
   const kind = kindOf(f.issuetype)
@@ -260,6 +261,7 @@ export function rowOf(raw: any, site: string, sprintField: string | null, epics:
     updated: Date.parse(f.updated ?? "") || 0,
     parent,
     epic: kind === "epic" ? null : parent?.kind === "epic" ? parent : parent ? (epics.get(parent.key) ?? null) : null,
+    isMine: !!me && f.assignee?.accountId === me,
   }
 }
 
@@ -485,7 +487,8 @@ export async function searchTickets(filter: TicketFilter, text = ""): Promise<{ 
   const fields = [...BRIEF_FIELDS, "priority", "updated", "parent", ...(sprint ? [sprint] : [])]
   const issues = await search(setup, jqlOf(filter, setup.projects, text), fields)
   const epics = await epicsAbove(setup, issues)
-  const tickets: TicketRow[] = issues.map(i => rowOf(i, setup.site, sprint, epics))
+  const me = await myId(setup)
+  const tickets: TicketRow[] = issues.map(i => rowOf(i, setup.site, sprint, epics, me))
   const columns = pickColumns(await boardColumnsOf(setup), [...new Set(tickets.map(t => t.statusId))])
   return { tickets, columns }
 }
@@ -501,7 +504,7 @@ async function mineOrThrow(setup: JiraSetup, key: string) {
 export async function transitionsOf(key: string): Promise<Transition[]> {
   const setup = setupOrThrow()
   const r = await call(setup, `/rest/api/3/issue/${keyOrThrow(key)}/transitions`)
-  return (r?.transitions ?? []).map((t: any) => ({ id: String(t.id), name: String(t.name), to: String(t.to?.name ?? t.name), tone: TONE[t.to?.statusCategory?.key] ?? "todo" }))
+  return (r?.transitions ?? []).map((t: any) => ({ id: String(t.id), name: String(t.name), to: String(t.to?.name ?? t.name), toId: String(t.to?.id ?? ""), tone: TONE[t.to?.statusCategory?.key] ?? "todo" }))
 }
 
 export async function moveTicket(key: string, transitionId: string) {

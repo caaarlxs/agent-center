@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest"
 import type { TicketRef, TicketRow } from "@/lib/api-types"
-import { promptFor, promptForAll } from "./jira"
+import { branchFor, promptFor, promptForAll } from "./jira"
 import { columnsOf, lanesOf } from "./Tickets"
 
 const row = (key: string, status: string, tone: TicketRow["tone"], statusId = status, epic: TicketRef | null = null): TicketRow =>
-  ({ key, summary: key, status, statusId, tone, kind: "task", assignee: null, url: "", type: null, priority: null, sprint: null, updated: 0, parent: epic, epic })
+  ({ key, summary: key, status, statusId, tone, kind: "task", assignee: null, url: "", type: null, priority: null, sprint: null, updated: 0, parent: epic, epic, isMine: false })
 const epic = (key: string): TicketRef => ({ key, summary: key, type: "Epic", kind: "epic", status: "To Do", tone: "todo", url: "" })
 
 describe("columnsOf", () => {
@@ -39,5 +39,13 @@ describe("promptFor", () => {
     const one = { ticket: { key: "PP-1", summary: "A", url: "u1" } }
     expect(promptForAll([one])).toBe("PP-1: A\n\nu1")
     expect(promptForAll([one, { ticket: { key: "PP-2", summary: "B", url: "u2" }, description: "d" }])).toBe("Work on these Jira tickets together:\n\nPP-1: A\n\nu1\n\n---\n\nPP-2: B\n\nu2\n\nDescription:\nd")
+  })
+})
+
+describe("branchFor", () => {
+  it("names a worktree by the first ticket's key and a few plain words of its summary", () => {
+    expect(branchFor([{ key: "PP-3050", summary: "[BE] Dato del Registro visible en ficha y teaser", url: "" }])).toBe("PP-3050-dato-del-registro-visible-en-ficha-y")
+    expect(branchFor([{ key: "PP-1", summary: "Añadir camión", url: "" }, { key: "PP-2", summary: "x", url: "" }])).toBe("PP-1-anadir-camion")
+    expect(branchFor([])).toBe("")
   })
 })

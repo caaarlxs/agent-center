@@ -67,6 +67,8 @@ describe("what Jira answers", () => {
     const row = rowOf(withSprint, "https://x", "customfield_10020")
     expect([row.type, row.priority, row.sprint, row.updated > 0]).toEqual(["Story", "High", "S42", true])
     expect(rowOf(raw, "https://x", null).sprint).toBeNull()
+    const mine = { ...raw, fields: { ...raw.fields, assignee: { displayName: "Carlos", accountId: "me" } } }
+    expect([rowOf(mine, "https://x", null, new Map(), "me").isMine, rowOf(mine, "https://x", null).isMine]).toEqual([true, false])
   })
 })
 

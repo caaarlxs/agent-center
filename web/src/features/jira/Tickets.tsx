@@ -1,17 +1,21 @@
 // The "Tickets" view (lib/jira.ts): your Jira tickets on the columns of your
 // team's board, all of them and all as wide, optionally in a
 // row per epic, so what sits in what shows. A filter (yours, the ones you
-// reported, the open sprint) and words narrow them. Each ticket shows its
+// reported, the open sprint), words, or "No session" (none works on it yet)
+// narrow them. Each ticket shows its
 // kind, priority, sprint and last change, its parent, and the sessions
-// linked to it with their state and PRs; a click opens it whole, "Session"
+// linked to it with their state and PRs, and on yours a note when a PR is
+// ahead of it (open, or merged) with its move; a click opens it whole, "Session"
 // begins one about it, and a tick (or ⌘-click) picks several to begin one
 // about them all.
 import { Plus, X } from "lucide-react"
 import { Fragment, useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { get } from "@/lib/api"
-import type { BoardColumn, Card, TicketFilter, TicketRef, TicketRow } from "@/lib/api-types"
+import { toast } from "sonner"
+import { get, post } from "@/lib/api"
+import type { BoardColumn, Card, TicketFilter, TicketRef, TicketRow, Transition } from "@/lib/api-types"
+import { createStore } from "@/lib/store"
 import { useNow } from "@/lib/now"
 import { cn } from "@/lib/utils"
 import { openDialog } from "@/app/open-dialog"
@@ -21,6 +25,10 @@ import { ago } from "@/features/session/state"
 import { Anim } from "@/components/icons/animated"
 import { WHY, startFrom } from "./jira"
 import { KindMark } from "./kinds"
+import { type SyncHint, syncHint } from "./sync"
+
+// Bumped when the board moves a ticket, so the view asks Jira again.
+const ticketsChanged = createStore(0)
 
 const FILTERS: { value: TicketFilter; label: string }[] = [
   { value: "mine", label: "Mine" },
@@ -67,8 +75,44 @@ export function lanesOf(tickets: TicketRow[]): Lane[] {
   return [...lanes.values()].sort((a, b) => Number(!a.epic) - Number(!b.epic) || b.tickets.length - a.tickets.length)
 }
 
-function TicketCard({ ticket, sessions, isPicked, isPicking, showsEpic, onPick }: {
-  ticket: TicketRow; sessions: Card[]; isPicked: boolean; isPicking: boolean; showsEpic: boolean; onPick: () => void
+// A ticket of yours behind its PR: the PR, and its move to the column it
+// should be in, confirmed first.
+function SyncNote({ ticket, hint }: { ticket: TicketRow; hint: SyncHint }) {
+  const [isAsking, setAsking] = useState(false)
+  const [isBusy, setBusy] = useState(false)
+  const move = async () => {
+    setBusy(true)
+    try {
+      const { transitions } = await get<{ transitions: Transition[] }>(`/api/jira/transitions?key=${ticket.key}`)
+      const to = transitions.find(t => hint.column.statusIds.includes(t.toId))
+      if (!to) throw new Error(`Jira does not let ${ticket.key} go to ${hint.column.name} from here`)
+      await post("/api/jira/move", { key: ticket.key, transition: to.id })
+      toast(`${ticket.key} moved to ${to.to}`)
+      ticketsChanged.set(ticketsChanged.get() + 1)
+    } catch (err) {
+      toast((err as Error).message || "Jira did not take it")
+    }
+    setBusy(false)
+    setAsking(false)
+  }
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 rounded-[8px] bg-ask-soft px-2 py-1 text-xs text-ask" onClick={e => e.stopPropagation()}>
+      <Anim.GitPullRequest size={12} />
+      <span className="min-w-0 flex-1">#{hint.pr.number} {hint.isMerged ? "merged" : "open"}</span>
+      {isAsking ? (
+        <>
+          <button className="rounded px-1.5 font-semibold hover:bg-ask/15" disabled={isBusy} onClick={() => void move()}>Move to {hint.column.name}</button>
+          <button className="rounded px-1.5 hover:bg-ask/15" disabled={isBusy} onClick={() => setAsking(false)}>Cancel</button>
+        </>
+      ) : (
+        <button className="rounded px-1.5 font-semibold hover:bg-ask/15" onClick={() => setAsking(true)} title={`Move ${ticket.key} to ${hint.column.name}`}>→ {hint.column.name}</button>
+      )}
+    </div>
+  )
+}
+
+function TicketCard({ ticket, sessions, hint, isPicked, isPicking, showsEpic, onPick }: {
+  ticket: TicketRow; sessions: Card[]; hint: SyncHint | null; isPicked: boolean; isPicking: boolean; showsEpic: boolean; onPick: () => void
 }) {
   const now = useNow()
   const prs = sessions.flatMap(s => s.prs ?? [])
@@ -114,6 +158,7 @@ function TicketCard({ ticket, sessions, isPicked, isPicking, showsEpic, onPick }
           ))}
         </div>
       )}
+      {hint && <SyncNote ticket={ticket} hint={hint} />}
       <footer className="flex items-center gap-2">
         {ticket.assignee && <span className="min-w-0 truncate text-xs text-text-muted">{ticket.assignee}</span>}
         <span className="flex-1" />
@@ -161,7 +206,7 @@ function TicketBoard({ tickets, board, grouping, cards, picking }: { tickets: Ti
               return (
                 <section key={i} className={cn("dots-veil flex min-h-0 flex-col gap-2 rounded-[12px] bg-side p-2", isByEpic && !here.length && "min-h-10")}>
                   {here.map(t => (
-                    <TicketCard key={t.key} ticket={t} sessions={sessionsByKey.get(t.key) ?? []} isPicked={picking.picked.includes(t.key)} isPicking={picking.picked.length > 0}
+                    <TicketCard key={t.key} ticket={t} sessions={sessionsByKey.get(t.key) ?? []} hint={syncHint(t, sessionsByKey.get(t.key) ?? [], columns)} isPicked={picking.picked.includes(t.key)} isPicking={picking.picked.length > 0}
                       showsEpic={!isByEpic} onPick={() => picking.onPick(t.key)} />
                   ))}
                 </section>
@@ -222,6 +267,8 @@ export function Tickets({ cards }: { cards: Card[] }) {
   const [board, setBoard] = useState<BoardColumn[]>([])
   const [error, setError] = useState<string | null>(null)
   const [picked, setPicked] = useState<string[]>([])
+  const [isUnstarted, setUnstarted] = useState(false)
+  const changed = ticketsChanged.use()
   // Words are asked for once you stop typing.
   useEffect(() => {
     const timer = setTimeout(() => setAsked(words), 400)
@@ -234,7 +281,7 @@ export function Tickets({ cards }: { cards: Card[] }) {
     void load()
     const timer = setInterval(load, 120_000)
     return () => ((alive = false), clearInterval(timer))
-  }, [filter, asked])
+  }, [filter, asked, changed])
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && picked.length && (e.stopPropagation(), setPicked([]))
     window.addEventListener("keydown", onKey, true)
@@ -246,20 +293,24 @@ export function Tickets({ cards }: { cards: Card[] }) {
       localStorage.setItem(GROUPING_KEY, g)
     } catch {}
   }
+  const started = useMemo(() => new Set(cards.flatMap(c => (c.tickets ?? []).map(t => t.key))), [cards])
+  const shown = tickets && (isUnstarted ? tickets.filter(t => !started.has(t.key)) : tickets)
   const pick = (key: string) => setPicked(p => (p.includes(key) ? p.filter(k => k !== key) : [...p, key]))
   return (
     <div className="relative flex h-full min-h-0 flex-col gap-3 px-5 pt-3.5 pb-5">
       <div className="flex flex-wrap items-center gap-3">
         <Segments label="Which tickets" options={FILTERS} value={filter} onChange={setFilter} />
         <Input value={words} onChange={e => setWords(e.target.value)} placeholder="Search tickets…" className="h-8 w-[240px]" />
-        {tickets && <span className="text-xs text-faint">{tickets.length} {tickets.length === 1 ? "ticket" : "tickets"}</span>}
+        <button className={cn("h-7 rounded-md border px-2.5 text-[12.5px] font-[550]", isUnstarted ? "border-brand bg-brand-soft text-brand-text" : "border-line text-text-muted hover:text-text")}
+          aria-pressed={isUnstarted} onClick={() => setUnstarted(v => !v)} title="Only the tickets no session works on">No session</button>
+        {shown && <span className="text-xs text-faint">{shown.length} {shown.length === 1 ? "ticket" : "tickets"}</span>}
         <span className="flex-1" />
         <Segments label="Group tickets" options={GROUPINGS} value={grouping} onChange={group} />
       </div>
-      {error && !tickets ? <p className="grid flex-1 place-items-center text-text-muted">{error}</p>
-        : !tickets ? <p className="grid flex-1 place-items-center"><span className="spinner" /></p>
-        : !tickets.length ? <p className="grid flex-1 place-items-center text-text-muted">No tickets here.</p>
-        : <TicketBoard tickets={tickets} board={board} grouping={grouping} cards={cards} picking={{ picked, onPick: pick }} />}
+      {error && !shown ? <p className="grid flex-1 place-items-center text-text-muted">{error}</p>
+        : !shown ? <p className="grid flex-1 place-items-center"><span className="spinner" /></p>
+        : !shown.length ? <p className="grid flex-1 place-items-center text-text-muted">No tickets here.</p>
+        : <TicketBoard tickets={shown} board={board} grouping={grouping} cards={cards} picking={{ picked, onPick: pick }} />}
       {picked.length > 0 && <PickedBar tickets={tickets ?? []} picked={picked} cards={cards} onClear={() => setPicked([])} />}
     </div>
   )

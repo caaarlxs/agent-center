@@ -107,7 +107,7 @@ function Prompt({ root, draft, onClose }: { root: string | null; draft?: NewDraf
       // The session has no id yet: its files wait in a folder of their own.
       const prompt = await messageWith(`new-${crypto.randomUUID().slice(0, 8)}`, textInput.value.trim(), files)
       const isWorktree = send && worktree
-      const res = await post<{ ok: boolean; id?: string }>("/api/new", { folder: root, prompt, send, ...chosen, worktree: isWorktree, suggestion: send ? draft?.suggestion : undefined, tickets: send ? draft?.tickets : undefined })
+      const res = await post<{ ok: boolean; id?: string }>("/api/new", { folder: root, prompt, send, ...chosen, worktree: isWorktree, worktreeName: isWorktree ? draft?.worktreeName : undefined, suggestion: send ? draft?.suggestion : undefined, tickets: send ? draft?.tickets : undefined })
       onClose()
       if (res.id) (toast(isWorktree ? "Session created in a new worktree: Claude is working" : "Session created: Claude is working"), setTimeout(() => openSession(res.id!), 600))
       else toast("New session opened in Claude")

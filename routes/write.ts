@@ -62,6 +62,8 @@ async function newSession(body: Record<string, unknown>) {
   if (body.worktree === true) {
     if (!(await repoInfo(folder)).branch) return json({ error: "A worktree needs a git repository: that folder is not one" }, 400)
     extra.push("--worktree")
+    // Its name, when the page gives one (a ticket's "PP-3050-short-title").
+    if (/^[A-Za-z0-9][\w.-]{0,59}$/.test(String(body.worktreeName ?? ""))) extra.push(String(body.worktreeName))
   }
   const suggestion = body.suggestion as { from?: unknown; taskId?: unknown } | undefined
   try {

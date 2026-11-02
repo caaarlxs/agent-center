@@ -25,11 +25,26 @@ export const WHY: Record<LinkWhy, string> = { started: "started from it", linked
 // The sessions linked to a ticket.
 export const sessionsOf = (cards: Card[], key: string) => cards.filter(c => c.tickets?.some(t => t.key === key))
 
+// The name of a worktree (and its branch) for some tickets: the first one's
+// key and a few words of its summary, plain ("PP-3050-dato-del-registro").
+export function branchFor(tickets: Named[]): string {
+  const first = tickets[0]
+  if (!first) return ""
+  const words = first.summary.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\[[^\]]*\]/g, " ").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean)
+  let name = first.key
+  for (const w of words) {
+    if (name.length + w.length + 1 > 48) break
+    name += `-${w}`
+  }
+  return name
+}
+
 // A new session about some tickets: their descriptions too, and the
-// repository their sessions use; the session remembers it started from them.
+// repository their sessions use, in a worktree on a branch named for them;
+// the session remembers it started from them.
 export async function startFrom(tickets: Named[], cards: Card[]) {
   const whole = await Promise.all(tickets.map(t => get<Ticket>(`/api/jira/ticket?key=${t.key}`).catch(() => null)))
   const root = tickets.flatMap(t => sessionsOf(cards, t.key)).find(c => c.repoRoot)?.repoRoot ?? null
   const prompt = promptForAll(tickets.map((ticket, i) => ({ ticket, description: whole[i]?.description })))
-  openDialog({ kind: "new", draft: { root, prompt, worktree: false, tickets: tickets.map(t => t.key) } })
+  openDialog({ kind: "new", draft: { root, prompt, worktree: true, worktreeName: branchFor(tickets), tickets: tickets.map(t => t.key) } })
 }
