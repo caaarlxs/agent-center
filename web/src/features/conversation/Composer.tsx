@@ -109,6 +109,7 @@ function Box({ id, card, bridge }: { id: string; card: Card | undefined; bridge:
   const { textInput } = usePromptInputController()
   const fill = composerFill.use()
   const focus = composerFocus.use()
+  const isSending = useRef(false)
   const box = useRef<HTMLDivElement>(null)
   const [isDrop, setDrop] = useState(false)
   const [isWaking, setWaking] = useState(false)
@@ -169,12 +170,19 @@ function Box({ id, card, bridge }: { id: string; card: Card | undefined; bridge:
         onSubmit={async ({ text, files }) => {
           if (!text.trim() && !files.length) return
           if (bridge?.isArchived) return void toast("Archived in Claude: unarchive it there (Open in Claude), then write")
+          // One at a time: the field keeps the text until the send is answered
+          // (it can take seconds to wake a session), and another Enter meanwhile
+          // would send it again.
+          if (isSending.current) throw new Error("already sending") // keeps what was typed
+          isSending.current = true
           try {
             await sendMessage(id, await messageWith(id, text.trim(), files))
             sent.play()
           } catch (err) {
             toast((err as Error).message || "Could not send")
             throw err // keeps what was typed
+          } finally {
+            isSending.current = false
           }
         }}
       >

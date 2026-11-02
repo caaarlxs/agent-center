@@ -989,6 +989,10 @@ export const PromptInputTextarea = ({
           return;
         }
         e.preventDefault();
+        // A held key repeats: one message, not several.
+        if (e.repeat) {
+          return;
+        }
 
         // Check if the submit button is disabled before submitting
         const { form } = e.currentTarget;
