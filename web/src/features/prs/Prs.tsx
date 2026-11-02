@@ -3,14 +3,15 @@
 // one, one line on where it stands, the reasons below it (each check, each
 // reviewer) with a button to ask the session to fix what is not; and the
 // actions: merge (method and delete branch kept, a confirm first), close
-// (confirmed), reopen, draft or ready. Merged and closed ones fold away. Read
+// (confirmed), reopen, draft or ready; and its code, file by file, when you
+// unfold it. Merged and closed ones fold away. Read
 // again every 30 s and after each action.
 import { ChevronDown, ChevronRight } from "lucide-react"
 import { useEffect, useState } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { get, post } from "@/lib/api"
-import type { PrDetail } from "@/lib/api-types"
+import type { FileDiff, PrDetail } from "@/lib/api-types"
 import { useNow } from "@/lib/now"
 import { persistedStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
@@ -21,6 +22,7 @@ import { mergeState, readinessRows, verdict, type Readiness, type Row } from "./
 import { Anim } from "@/components/icons/animated"
 import { doneIcon } from "@/components/icona/marks"
 import { MergeButton } from "./MergeButton"
+import { DiffView } from "@/features/changes/Changes"
 
 const CHIP = {
   OPEN: ["Open", "bg-work-soft text-work"],
@@ -98,6 +100,29 @@ function ReadyToMerge({ pr, sessionId, onBlockers }: { pr: PrDetail; sessionId: 
   )
 }
 
+// What the PR changes, file by file as Changes shows it: asked of GitHub when
+// it unfolds, again when the PR moves on.
+function PrCode({ pr }: { pr: PrDetail }) {
+  const [isOpen, setOpen] = useState(false)
+  const [files, setFiles] = useState<FileDiff[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => {
+    if (!isOpen) return
+    get<{ files: FileDiff[] }>(`/api/prs/diff?${new URLSearchParams({ url: pr.url })}`).then(r => (setFiles(r.files), setError(null)), (err: Error) => setError(err.message))
+  }, [isOpen, pr.url, pr.updatedAt])
+  return (
+    <div className="flex flex-col gap-2">
+      <button className="flex items-center gap-1.5 self-start rounded-md px-1 py-0.5 text-[12.5px] font-semibold text-text-muted hover:text-text" onClick={() => setOpen(v => !v)} aria-expanded={isOpen}>
+        {isOpen ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}{isOpen ? "Hide the code" : "Show the code"}
+      </button>
+      {isOpen && (error ? <p className="m-0 text-[12.5px] text-bad">{error}</p>
+        : !files ? <i className="skeleton block h-[120px] rounded-[9px]" />
+        : !files.length ? <p className="m-0 text-[12.5px] text-text-muted">No changes.</p>
+        : <div className="-mx-3.5 flex flex-col border-y border-line"><DiffView files={files} /></div>)}
+    </div>
+  )
+}
+
 function PrItem({ pr, sessionId, onDone }: { pr: PrDetail; sessionId?: string; onDone: () => void }) {
   const now = useNow()
   const method = mergeMethod.use()
@@ -138,6 +163,7 @@ function PrItem({ pr, sessionId, onDone }: { pr: PrDetail; sessionId?: string; o
         <span><b className="font-semibold text-work">+{pr.additions}</b> <b className="font-semibold text-bad">−{pr.deletions}</b> · {pr.changedFiles} {pr.changedFiles === 1 ? "file" : "files"} · {pr.commits} {pr.commits === 1 ? "commit" : "commits"}</span>
         {pr.author && <span>by {pr.author}</span>}
       </div>
+      <PrCode pr={pr} />
       {isOpen && sessionId && <ReadyToMerge pr={pr} sessionId={sessionId} onBlockers={setBlockers} />}
       {confirm ? (
         <div className="-mx-3.5 mt-0.5 -mb-3 flex flex-wrap items-center gap-2 rounded-b-xl border-t border-line bg-side px-3.5 py-2.5">

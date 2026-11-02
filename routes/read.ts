@@ -16,7 +16,7 @@ import { HOME } from "../lib/config"
 import { board } from "../lib/board"
 import { isArchivedInApp, readDesktop, suggestionStates } from "../lib/desktop"
 import { lastDigest } from "../lib/digest"
-import { detail as prDetail, lookup as prLookup, openThreads } from "../lib/github"
+import { PR_LIMIT, detail as prDetail, diffOf as prDiff, lookup as prLookup, openThreads } from "../lib/github"
 import { json } from "../lib/http"
 import { latestJson, latestState, stream } from "../lib/live"
 import { blockerFor, report } from "../lib/diagnose"
@@ -202,7 +202,7 @@ async function sessionRead(id: string, what: string, url: URL) {
       const refs = group ? await prRefs(group.ids, group.root, group.branch) : await prRefs([id], HOME, null)
       // The branch's PR resolves to a URL through the summary cache.
       const urls = [...new Set(refs.map(r => (r.ref.startsWith("https://") ? r.ref : prLookup(r.key, r.ref, r.cwd)?.url)).filter(Boolean) as string[])]
-      const prs = (await Promise.all(urls.slice(0, 12).map(prDetail))).filter(pr => pr !== null)
+      const prs = (await Promise.all(urls.slice(0, PR_LIMIT).map(prDetail))).filter(pr => pr !== null)
       const ofBranch = new Set(refs.filter(r => !r.ref.startsWith("https://")).map(r => prLookup(r.key, r.ref, r.cwd)?.url))
       return json({ prs: prs.map(pr => ({ ...pr, origin: ofBranch.has(pr.url) ? "branch" : "chat" })) })
     }
@@ -275,6 +275,7 @@ export async function handleRead(url: URL): Promise<Response | null> {
   if (path === "/api/setup") return json(await setupStatus())
   // Jira (lib/jira.ts): whether it is set up, one ticket, your open ones.
   if (path === "/api/jira") return json({ setup: jiraSetup() })
+  if (path === "/api/prs/diff") return await prDiff(url.searchParams.get("url") ?? "").then(files => json({ files }), (err: Error) => json({ error: err.message }, 400))
   if (path === "/api/jira/ticket") return await ticket(url.searchParams.get("key") ?? "").then(t => json(t), (err: Error) => json({ error: err.message }, 400))
   if (path === "/api/jira/search") {
     const filter = url.searchParams.get("filter")

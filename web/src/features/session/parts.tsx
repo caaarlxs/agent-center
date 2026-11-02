@@ -139,6 +139,9 @@ export function NewBadge({ card, className }: { card: Card; className?: string }
 
 // A tag: full on the board and the inbox; on the canvas a small icon and a
 // number, the words in the tooltip.
+// PRs named one by one; the rest as "+N PRs", in the PRs tab.
+const SHOWN_PRS = 4
+
 function Tag({ tone, isCompact, title, onClick, className, children }: {
   tone?: string; isCompact?: boolean; title?: string; onClick?: () => void; className?: string; children: ReactNode
 }) {
@@ -303,7 +306,10 @@ export function Meta({ card, now, className }: { card: Card; now: number; classN
       <MemoryChip card={card} now={now} />
       <RunChip card={card} />
       {card.tickets?.map(t => <TicketChip key={t.key} ticket={t} card={card} />)}
-      {card.prs?.map(pr => <PrChip key={pr.url} pr={pr} card={card} />)}
+      {card.prs?.slice(0, SHOWN_PRS).map(pr => <PrChip key={pr.url} pr={pr} card={card} />)}
+      {(card.prs?.length ?? 0) > SHOWN_PRS && (
+        <Tag title={card.prs!.slice(SHOWN_PRS).map(p => `#${p.number} ${p.title}`).join("\n")} onClick={() => openTab(card.id, "prs")}>+{card.prs!.length - SHOWN_PRS} PRs</Tag>
+      )}
       {card.taskCount > 0 && <Tag className="text-text" title="Show its tasks" onClick={() => openTab(card.id, "tasks")}><ListChecks />{card.taskCount} {card.taskCount === 1 ? "task" : "tasks"}</Tag>}
       <PendingChip card={card} />
       {card.column === "parked" && <Tag>{card.parkedUntil ? `until ${when(card.parkedUntil)}` : "no date"}</Tag>}

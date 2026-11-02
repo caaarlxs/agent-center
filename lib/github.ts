@@ -1,7 +1,9 @@
 // Pull requests through the `gh` CLI: a cached summary for the cards, the
-// full detail for the reader, and the actions the reader offers.
+// full detail for the reader, the actions the reader offers, and what a PR
+// changes.
 
 import { HOME } from "./config"
+import { type FileDiff, parse } from "./changes"
 import { exec } from "./proc"
 
 const SUMMARY_TTL_MS = 120_000
@@ -49,6 +51,9 @@ type Rollup = { name?: string; context?: string; conclusion?: string; state?: st
 
 const SUMMARY_FIELDS = "number,title,url,state,isDraft,reviewDecision,statusCheckRollup"
 const DETAIL_FIELDS = `${SUMMARY_FIELDS},baseRefName,headRefName,additions,deletions,changedFiles,mergeable,mergeStateStatus,author,updatedAt,createdAt,commits,latestReviews,reviewRequests`
+
+// The most PRs a session lists (its PRs tab, its card).
+export const PR_LIMIT = 12
 
 async function gh(args: string[], cwd = HOME, timeoutMs = 20_000) {
   const { code, stdout, stderr } = await exec(["gh", ...args], { cwd, timeoutMs })
@@ -213,4 +218,19 @@ export async function act(url: string, action: PrAction, opts: { method?: MergeM
   details.delete(url)
   for (const [key, hit] of summaries) if (key === url || hit.pr?.url === url) summaries.delete(key)
   return res.ok ? { ok: true } : { ok: false, error: res.err.split("\n").at(-1) || "gh failed" }
+}
+
+// What a PR changes, file by file, as the Changes tab shows a diff: asked of
+// GitHub, kept a minute. Too big a diff is cut, as a file too long is.
+const DIFF_MAX = 4_000_000
+const diffs = new Map<string, { at: number; files: FileDiff[] }>()
+export async function diffOf(url: string): Promise<FileDiff[]> {
+  if (!PR_URL.test(url)) throw new Error("Not a pull request's address")
+  const kept = diffs.get(url)
+  if (kept && Date.now() - kept.at < 60_000) return kept.files
+  const r = await gh(["pr", "diff", url], HOME, 30_000)
+  if (!r.ok) throw new Error(r.err || "gh could not read the diff")
+  const files = parse(r.out.slice(0, DIFF_MAX))
+  diffs.set(url, { at: Date.now(), files })
+  return files
 }

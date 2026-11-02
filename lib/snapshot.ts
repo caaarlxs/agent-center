@@ -12,7 +12,7 @@ import { canRunCommands } from "./commands"
 import { freshness } from "./freshness"
 import { memoryNow, memoryOf } from "./memory"
 import { readDesktop, type DesktopIndex } from "./desktop"
-import { lookup as prLookup, type Pr } from "./github"
+import { PR_LIMIT, lookup as prLookup, type Pr } from "./github"
 import { running } from "./launch"
 import { readTasks } from "./organizer"
 import { progressOf } from "./plan"
@@ -102,14 +102,14 @@ export async function prRefs(ids: string[], root: string, branch: string | null)
 
 // A card shows open PRs only: a merged or closed one is done with.
 // Its pull requests in a state (open ones on the card; merged ones tell a
-// ticket its work is in), each once, four at most.
+// ticket its work is in), each once, as many as its PRs tab lists.
 function prsIn(refs: { key: string; ref: string; cwd: string }[], state: Pr["state"]): Pr[] {
   const unique = new Map<string, Pr>()
   for (const r of refs) {
     const pr = prLookup(r.key, r.ref, r.cwd)
     if (pr?.state === state && !unique.has(pr.url)) unique.set(pr.url, pr)
   }
-  return [...unique.values()].slice(0, 4)
+  return [...unique.values()].slice(0, PR_LIMIT)
 }
 
 // The plan's limits are the account's: the freshest reading of any session.
