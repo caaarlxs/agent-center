@@ -1,5 +1,5 @@
 // The "Tickets" view (lib/jira.ts): your Jira tickets on the columns of your
-// team's board, all of them (an empty one folds to a strip), optionally in a
+// team's board, all of them and all as wide, optionally in a
 // row per epic, so what sits in what shows. A filter (yours, the ones you
 // reported, the open sprint) and words narrow them. Each ticket shows its
 // kind, priority, sprint and last change, its parent, and the sessions
@@ -72,7 +72,7 @@ function TicketCard({ ticket, sessions, isPicked, isPicking, showsEpic, onPick }
 }) {
   const now = useNow()
   const prs = sessions.flatMap(s => s.prs ?? [])
-  const facts = [ticket.priority, ticket.sprint].filter(Boolean).join(" · ")
+  const facts = [ticket.type, ticket.priority, ticket.sprint].filter(Boolean).join(" · ")
   // A sub-task's story, or a story's epic when the row does not say it already.
   const parent = ticket.parent && (showsEpic || ticket.parent.kind !== "epic") ? ticket.parent : null
   const why = (s: Card) => s.tickets.find(t => t.key === ticket.key)?.why
@@ -127,11 +127,10 @@ function TicketCard({ ticket, sessions, isPicked, isPicking, showsEpic, onPick }
 }
 
 function ColumnHead({ col }: { col: Column }) {
-  const isEmpty = !col.tickets.length
   return (
-    <h2 className={cn("sticky top-0 z-10 m-0 flex items-center gap-2 bg-bg pt-0.5 pb-2 text-xs font-[650] tracking-[0.04em] text-text-muted uppercase", isEmpty ? "justify-center" : "px-1.5")} title={isEmpty ? `${col.name}: none` : undefined}>
+    <h2 className="sticky top-0 z-10 m-0 flex items-center gap-2 bg-bg px-1.5 pt-0.5 pb-2 text-xs font-[650] tracking-[0.04em] text-text-muted uppercase" title={col.name}>
       <i className={cn("size-[7px] shrink-0 rounded-full", DOT[col.tone])} />
-      {!isEmpty && <><span className="truncate">{col.name}</span><span className="ml-auto font-medium text-faint">{col.tickets.length}</span></>}
+      <span className="truncate">{col.name}</span><span className="ml-auto font-medium text-faint">{col.tickets.length}</span>
     </h2>
   )
 }
@@ -147,8 +146,9 @@ function TicketBoard({ tickets, board, grouping, cards, picking }: { tickets: Ti
   const isByEpic = grouping === "epic"
   const columns = columnsOf(tickets, board)
   const lanes: Lane[] = isByEpic ? lanesOf(tickets) : [{ epic: null, tickets }]
-  const template = columns.map(c => (c.tickets.length ? "minmax(250px,1fr)" : "36px")).join(" ")
-  const minWidth = columns.reduce((w, c) => w + (c.tickets.length ? 250 : 36) + 12, 0)
+  // Every column as wide as the others, the empty ones too.
+  const template = `repeat(${columns.length}, minmax(250px, 1fr))`
+  const minWidth = columns.length * 262
   return (
     <div className="min-h-0 flex-1 overflow-auto">
       <div className="grid gap-x-3" style={{ gridTemplateColumns: template, minWidth, gridTemplateRows: isByEpic ? undefined : "auto 1fr", minHeight: isByEpic ? undefined : "100%" }}>
@@ -160,9 +160,6 @@ function TicketBoard({ tickets, board, grouping, cards, picking }: { tickets: Ti
               const here = lane.tickets.filter(t => col.statusIds.includes(t.statusId))
               return (
                 <section key={i} className={cn("dots-veil flex min-h-0 flex-col gap-2 rounded-[12px] bg-side p-2", isByEpic && !here.length && "min-h-10")}>
-                  {!col.tickets.length && !isByEpic && (
-                    <span className="mx-auto pt-1 text-[11px] font-[650] tracking-[0.06em] whitespace-nowrap text-faint uppercase [writing-mode:vertical-rl]">{col.name}</span>
-                  )}
                   {here.map(t => (
                     <TicketCard key={t.key} ticket={t} sessions={sessionsByKey.get(t.key) ?? []} isPicked={picking.picked.includes(t.key)} isPicking={picking.picked.length > 0}
                       showsEpic={!isByEpic} onPick={() => picking.onPick(t.key)} />

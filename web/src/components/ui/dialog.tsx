@@ -54,13 +54,21 @@ function DialogContent({
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean
 }) {
+  // Once it has come in, it drops the motion's blur(0px) and 3D tilt while
+  // open: left on, they keep it a layer of its own and its text looks blurred.
+  const [isSettled, setSettled] = React.useState(false)
+  React.useEffect(() => {
+    const timer = setTimeout(() => setSettled(true), 400)
+    return () => clearTimeout(timer)
+  }, [])
   return (
     <DialogPortal>
       <DialogOverlay />
       <DialogPrimitive.Content
         data-slot="dialog-content"
+        data-settled={isSettled || undefined}
         className={cn(
-          "fixed top-1/2 left-1/2 z-50 grid w-[min(560px,calc(100vw-32px))] max-w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-1/2 gap-3.5 rounded-[14px] border border-line bg-raised p-5 text-[13px] text-text shadow-pop duration-[160ms] ease-(--ease-out) outline-none",
+          "fixed top-1/2 left-1/2 z-50 grid w-[min(560px,calc(100vw-32px))] max-w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-1/2 gap-3.5 rounded-[14px] border border-line bg-raised p-5 text-[13px] text-text shadow-pop duration-[160ms] ease-(--ease-out) outline-none data-[settled]:data-[state=open]:filter-none! data-[settled]:data-[state=open]:transform-none!",
           className
         )}
         {...props}
