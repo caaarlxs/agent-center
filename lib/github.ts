@@ -133,7 +133,7 @@ function drain() {
     running++
     const ask = urls.length ? summariesOf(urls.map(([, q]) => q.ref)) : one(job[0]![1])
     void ask
-      .then(found => job.forEach(([key, q], i) => summaries.set(key, { pr: (urls.length ? found[i] : found[0]) ?? null, at: Date.now() })))
+      .then(found => job.forEach(([key], i) => summaries.set(key, { pr: (urls.length ? found[i] : found[0]) ?? null, at: Date.now() })))
       .catch(() => job.forEach(([key]) => summaries.set(key, { pr: summaries.get(key)?.pr ?? null, at: Date.now() })))
       .finally(() => (running--, drain()))
   }

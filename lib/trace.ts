@@ -84,7 +84,9 @@ class Timeline {
   private tools = new Map<string, Span>()
   private cursor: number // when Claude last had what it waited for
   end: number
-  constructor(readonly start: number) {
+  readonly start: number
+  constructor(start: number) {
+    this.start = start
     this.cursor = start
     this.end = start
   }

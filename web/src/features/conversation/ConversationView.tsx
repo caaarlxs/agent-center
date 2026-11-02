@@ -139,7 +139,7 @@ function EditedFiles({ item }: { item: EditsItem }) {
 
 function YourMessage({ item, onFork }: { item: Extract<Shown, { kind: "user" }>; onFork: () => void }) {
   return (
-    <div className="group/msg flex max-w-[88%] flex-col items-end gap-[3px] self-end" data-mark="you" data-mark-label={`You: ${item.text.replace(/\s+/g, " ").slice(0, 90)}`}>
+    <div className="group/msg flex max-w-[88%] flex-col items-end gap-[3px] self-end" data-mark="you" data-mark-label={sentFiles(item.text).text.replace(/\s+/g, " ").slice(0, 240)} data-mark-time={item.at ? clock(Date.parse(item.at)) : undefined}>
       <Bubble text={item.text} />
       <span className="flex items-center justify-end gap-2 text-[11px] text-faint">
         <button className={cn(linkBtn, "inline-flex items-center gap-1 text-[11.5px] no-underline opacity-0 transition-opacity duration-[120ms] group-hover/msg:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100")}
@@ -252,7 +252,7 @@ function Question({ item, sessionId, canAnswer: isAnswerable, picked, onPick }: 
   const mark = (isChosen: boolean) =>
     cn("mt-0.5 size-3.5 shrink-0 border-[1.5px] border-line-strong", item.isMulti ? "rounded" : "rounded-full", isChosen && "border-brand bg-brand shadow-[inset_0_0_0_2.5px_var(--surface)]")
   return (
-    <div className={cn(card, "w-[min(520px,100%)] self-start")} data-mark="ask" data-mark-label={`Question: ${item.text}`}>
+    <div className={cn(card, "w-[min(520px,100%)] self-start")} data-mark="ask" data-mark-label={item.text}>
       <p className="m-0 flex items-baseline gap-2 font-semibold"><Disc />{item.text}</p>
       {item.isMulti && canAnswer && <p className="mt-0.5 ml-[25px] text-xs text-faint">You can pick several</p>}
       {item.options.length > 0 && (
