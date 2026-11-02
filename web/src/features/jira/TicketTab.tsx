@@ -24,7 +24,7 @@ import { Markdown } from "@/features/conversation/Markdown"
 import { StateIcon } from "@/features/session/StateIcon"
 import { ago } from "@/features/session/state"
 import { Anim } from "@/components/icons/animated"
-import { WHY, sessionsOf, startFrom } from "./jira"
+import { WHY, keptTicket, loadTicket, sessionsOf, startFrom } from "./jira"
 import { KindMark, TONE, TicketRefRow } from "./kinds"
 
 const day = (at: number) => (at ? new Date(at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—")
@@ -117,20 +117,34 @@ const Fact = ({ label, children }: { label: string; children: ReactNode }) => (
   <><dt className="text-xs text-text-muted">{label}</dt><dd className="m-0 min-w-0 truncate text-[13px]">{children}</dd></>
 )
 
+// Its shape while it loads, so the dialog does not grow under the eye.
+const TicketSkeleton = () => (
+  <div className="@container flex animate-pulse flex-col gap-4" aria-busy>
+    <div className="h-3.5 w-40 rounded bg-hover" />
+    <div className="h-6 w-3/4 rounded bg-hover" />
+    <div className="grid gap-5 @[680px]:grid-cols-[minmax(0,1fr)_240px]">
+      <div className="flex flex-col gap-2.5">{[96, 88, 92, 70, 84, 60].map((w, i) => <div key={i} className="h-3 rounded bg-hover" style={{ width: `${w}%` }} />)}</div>
+      <div className="h-56 rounded-[12px] bg-hover" />
+    </div>
+  </div>
+)
+
 export function TicketView({ ticketKey }: { ticketKey: string }) {
   const now = useNow()
   const cards = useBoardCards()
-  const [ticket, setTicket] = useState<Ticket | null>(null)
+  // The one read on hover, if any, at once; then fresh from Jira (unless it
+  // was read a moment ago).
+  const [ticket, setTicket] = useState<Ticket | null>(() => keptTicket(ticketKey))
   const [error, setError] = useState<string | null>(null)
-  const load = () => get<Ticket>(`/api/jira/ticket?key=${encodeURIComponent(ticketKey)}`).then(t => (setTicket(t), setError(null)), (err: Error) => setError(err.message))
+  const load = (maxAgeMs = 0) => loadTicket(ticketKey, maxAgeMs).then(t => (setTicket(t), setError(null)), (err: Error) => setError(err.message))
   useEffect(() => {
-    setTicket(null)
-    void load()
-    const timer = setInterval(load, 60_000)
+    setTicket(keptTicket(ticketKey))
+    void load(5_000)
+    const timer = setInterval(() => void load(), 60_000)
     return () => clearInterval(timer)
   }, [ticketKey])
   if (error && !ticket) return <p className="m-0 text-[13px] text-bad">{ticketKey}: {error}</p>
-  if (!ticket) return <div className="grid min-h-40 place-items-center"><span className="spinner" /></div>
+  if (!ticket) return <TicketSkeleton />
   const sessions = sessionsOf(cards, ticket.key)
   const done = ticket.children.filter(c => c.tone === "done").length
   return (

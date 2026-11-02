@@ -7,6 +7,21 @@ import { openDialog } from "@/app/open-dialog"
 export const jiraSetup = createStore<JiraSetup | null | undefined>(undefined)
 export const loadJira = () => get<{ setup: JiraSetup | null }>("/api/jira").then(r => jiraSetup.set(r.setup), () => jiraSetup.set(null))
 
+// Tickets read whole, kept a minute: a ticket hovered is asked for before the
+// click, so its dialog opens with it already there.
+const TICKET_TTL_MS = 60_000
+const whole = new Map<string, { at: number; ticket: Promise<Ticket>; value?: Ticket }>()
+export function loadTicket(key: string, maxAgeMs = TICKET_TTL_MS): Promise<Ticket> {
+  const kept = whole.get(key)
+  if (kept && Date.now() - kept.at < maxAgeMs) return kept.ticket
+  const entry: { at: number; ticket: Promise<Ticket>; value?: Ticket } = { at: Date.now(), ticket: get<Ticket>(`/api/jira/ticket?key=${encodeURIComponent(key)}`) }
+  entry.ticket.then(t => (entry.value = t), () => whole.delete(key))
+  whole.set(key, entry)
+  return entry.ticket
+}
+export const prefetchTicket = (key: string) => void loadTicket(key).catch(() => {})
+export const keptTicket = (key: string): Ticket | null => whole.get(key)?.value ?? null
+
 type Named = { key: string; summary: string; url: string }
 
 // A new session about a ticket: its key, summary, address and description.
@@ -43,8 +58,8 @@ export function branchFor(tickets: Named[]): string {
 // repository their sessions use, in a worktree on a branch named for them;
 // the session remembers it started from them.
 export async function startFrom(tickets: Named[], cards: Card[]) {
-  const whole = await Promise.all(tickets.map(t => get<Ticket>(`/api/jira/ticket?key=${t.key}`).catch(() => null)))
+  const read = await Promise.all(tickets.map(t => loadTicket(t.key).catch(() => null)))
   const root = tickets.flatMap(t => sessionsOf(cards, t.key)).find(c => c.repoRoot)?.repoRoot ?? null
-  const prompt = promptForAll(tickets.map((ticket, i) => ({ ticket, description: whole[i]?.description })))
+  const prompt = promptForAll(tickets.map((ticket, i) => ({ ticket, description: read[i]?.description })))
   openDialog({ kind: "new", draft: { root, prompt, worktree: true, worktreeName: branchFor(tickets), tickets: tickets.map(t => t.key) } })
 }

@@ -5,6 +5,7 @@ import { Bookmark, Bug, Check, CornerDownRight, Zap } from "lucide-react"
 import type { TicketKind, TicketRef } from "@/lib/api-types"
 import { cn } from "@/lib/utils"
 import { openDialog } from "@/app/open-dialog"
+import { prefetchTicket } from "./jira"
 
 const KIND = {
   epic: { icon: Zap, color: "bg-[#8b5cf6]", label: "Epic" },
@@ -28,7 +29,7 @@ export function KindMark({ kind, type, size = 16 }: { kind: TicketKind; type?: s
 // Another ticket, as a row: its kind, key, summary and status; a click opens it.
 export function TicketRefRow({ ticket, note, className }: { ticket: TicketRef; note?: string; className?: string }) {
   return (
-    <button className={cn("flex w-full min-w-0 items-center gap-2 rounded-md px-1.5 py-1 text-left text-[13px] hover:bg-hover", className)} onClick={() => openDialog({ kind: "ticket", key: ticket.key })} title={`${ticket.key} · ${ticket.summary}`}>
+    <button className={cn("flex w-full min-w-0 items-center gap-2 rounded-md px-1.5 py-1 text-left text-[13px] hover:bg-hover", className)} onPointerEnter={() => prefetchTicket(ticket.key)} onClick={() => openDialog({ kind: "ticket", key: ticket.key })} title={`${ticket.key} · ${ticket.summary}`}>
       <KindMark kind={ticket.kind} type={ticket.type} size={15} />
       <span className="shrink-0 font-mono text-xs font-semibold text-text-muted">{ticket.key}</span>
       {note && <span className="shrink-0 text-xs text-faint">{note}</span>}

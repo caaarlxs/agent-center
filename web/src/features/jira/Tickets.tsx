@@ -8,7 +8,7 @@
 // ahead of it (open, or merged) with its move; a click opens it whole, "Session"
 // begins one about it, and a tick (or ⌘-click) picks several to begin one
 // about them all.
-import { Plus, X } from "lucide-react"
+import { Plus, RefreshCw, X } from "lucide-react"
 import { Fragment, useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -23,7 +23,7 @@ import { openSession } from "@/app/open-session"
 import { StateIcon } from "@/features/session/StateIcon"
 import { ago } from "@/features/session/state"
 import { Anim } from "@/components/icons/animated"
-import { WHY, startFrom } from "./jira"
+import { WHY, prefetchTicket, startFrom } from "./jira"
 import { KindMark } from "./kinds"
 import { type SyncHint, syncHint } from "./sync"
 
@@ -122,6 +122,7 @@ function TicketCard({ ticket, sessions, hint, isPicked, isPicking, showsEpic, on
   const why = (s: Card) => s.tickets.find(t => t.key === ticket.key)?.why
   return (
     <article className={cn("group flex cursor-pointer flex-col gap-1.5 rounded-[10px] border bg-surface px-3 py-2.5", isPicked ? "border-brand ring-2 ring-brand-soft" : "border-line hover:border-line-strong")}
+      onPointerEnter={() => prefetchTicket(ticket.key)}
       onClick={e => (e.metaKey || e.ctrlKey || e.shiftKey || isPicking ? onPick() : openDialog({ kind: "ticket", key: ticket.key }))}>
       <header className="flex items-center gap-1.5 text-xs">
         <KindMark kind={ticket.kind} type={ticket.type} size={15} />
@@ -250,6 +251,42 @@ const Segments = <T extends string>({ label, options, value, onChange }: { label
   </span>
 )
 
+// Your tickets from Jira for a filter and some words: again every two
+// minutes, when you come back to the window (after a while), when the board
+// moves one, and when you ask.
+const STALE_MS = 15_000
+function useTicketSearch(filter: TicketFilter, words: string) {
+  const [tickets, setTickets] = useState<TicketRow[] | null>(null)
+  const [board, setBoard] = useState<BoardColumn[]>([])
+  const [error, setError] = useState<string | null>(null)
+  const [isLoading, setLoading] = useState(false)
+  const [asked, setAsked] = useState(0)
+  const changed = ticketsChanged.use()
+  useEffect(() => {
+    let alive = true
+    let at = 0
+    const load = () => {
+      at = Date.now()
+      setLoading(true)
+      get<{ tickets: TicketRow[]; columns: BoardColumn[] }>(`/api/jira/search?${new URLSearchParams({ filter, q: words })}`)
+        .then(r => alive && (setTickets(r.tickets), setBoard(r.columns), setError(null)), (err: Error) => alive && setError(err.message))
+        .finally(() => alive && setLoading(false))
+    }
+    const onBack = () => document.visibilityState === "visible" && Date.now() - at > STALE_MS && load()
+    load()
+    const timer = setInterval(load, 120_000)
+    window.addEventListener("focus", onBack)
+    document.addEventListener("visibilitychange", onBack)
+    return () => {
+      alive = false
+      clearInterval(timer)
+      window.removeEventListener("focus", onBack)
+      document.removeEventListener("visibilitychange", onBack)
+    }
+  }, [filter, words, changed, asked])
+  return { tickets, board, error, isLoading, reload: () => setAsked(n => n + 1) }
+}
+
 function readGrouping(): Grouping {
   try {
     return localStorage.getItem(GROUPING_KEY) === "epic" ? "epic" : "status"
@@ -263,25 +300,14 @@ export function Tickets({ cards }: { cards: Card[] }) {
   const [grouping, setGrouping] = useState<Grouping>(readGrouping)
   const [words, setWords] = useState("")
   const [asked, setAsked] = useState("")
-  const [tickets, setTickets] = useState<TicketRow[] | null>(null)
-  const [board, setBoard] = useState<BoardColumn[]>([])
-  const [error, setError] = useState<string | null>(null)
+  const { tickets, board, error, isLoading, reload } = useTicketSearch(filter, asked)
   const [picked, setPicked] = useState<string[]>([])
   const [isUnstarted, setUnstarted] = useState(false)
-  const changed = ticketsChanged.use()
   // Words are asked for once you stop typing.
   useEffect(() => {
     const timer = setTimeout(() => setAsked(words), 400)
     return () => clearTimeout(timer)
   }, [words])
-  useEffect(() => {
-    let alive = true
-    const load = () => get<{ tickets: TicketRow[]; columns: BoardColumn[] }>(`/api/jira/search?${new URLSearchParams({ filter, q: asked })}`)
-      .then(r => alive && (setTickets(r.tickets), setBoard(r.columns), setError(null)), (err: Error) => alive && setError(err.message))
-    void load()
-    const timer = setInterval(load, 120_000)
-    return () => ((alive = false), clearInterval(timer))
-  }, [filter, asked, changed])
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && picked.length && (e.stopPropagation(), setPicked([]))
     window.addEventListener("keydown", onKey, true)
@@ -304,6 +330,9 @@ export function Tickets({ cards }: { cards: Card[] }) {
         <button className={cn("h-7 rounded-md border px-2.5 text-[12.5px] font-[550]", isUnstarted ? "border-brand bg-brand-soft text-brand-text" : "border-line text-text-muted hover:text-text")}
           aria-pressed={isUnstarted} onClick={() => setUnstarted(v => !v)} title="Only the tickets no session works on">No session</button>
         {shown && <span className="text-xs text-faint">{shown.length} {shown.length === 1 ? "ticket" : "tickets"}</span>}
+        <Button variant="ghost" className="size-7 px-0 text-text-muted" title="Reload from Jira" disabled={isLoading} onClick={reload}>
+          <RefreshCw size={14} className={cn(isLoading && "animate-spin")} />
+        </Button>
         <span className="flex-1" />
         <Segments label="Group tickets" options={GROUPINGS} value={grouping} onChange={group} />
       </div>
