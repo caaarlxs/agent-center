@@ -5,7 +5,7 @@
 // reading the recap aloud, waiting cards that shake). Look: light or dark,
 // the canvas's animated background, the code colours. Help: the diagnostics
 // report. It opens by itself, on Setup, while a required step is missing.
-import { Bell, Check, ChevronLeft, ChevronRight, LifeBuoy, Palette, Wrench, X } from "lucide-react"
+import { Bell, Check, ChevronLeft, ChevronRight, LifeBuoy, Palette, Ticket as TicketIcon, Wrench, X } from "lucide-react"
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -20,6 +20,7 @@ import { notify, shake, sound, speech, toggleNotify, toggleSound, type Speech } 
 import { CopyMark, useCopyMoment } from "@/components/icona/marks"
 import { SwapText } from "@/components/watermelon/SwapText"
 import { Checklist } from "./Checklist"
+import { JiraSettings } from "@/features/jira/JiraSettings"
 import { progressOf } from "./progress"
 import { type BoardStyle, boardStyle, chooseStyle } from "@/lib/board-style"
 import { type AppIcon, ICONS, appIcon, chooseAppIcon, iconSrc, loadAppIcon } from "@/lib/app-icon"
@@ -299,14 +300,15 @@ function Alerts() {
 }
 
 // The sections, in groups down the left side, as Claude's own settings.
-type Section = "setup" | "alerts" | "look" | "help"
+type Section = "setup" | "alerts" | "look" | "jira" | "help"
 const SECTION: Record<Section, { label: string; Icon: typeof Bell }> = {
   setup: { label: "Setup", Icon: Wrench },
   alerts: { label: "Alerts", Icon: Bell },
   look: { label: "Look", Icon: Palette },
+  jira: { label: "Jira", Icon: TicketIcon },
   help: { label: "Help", Icon: LifeBuoy },
 }
-const GROUPS: [string, Section[]][] = [["This Mac", ["setup"]], ["Preferences", ["alerts", "look"]], ["Support", ["help"]]]
+const GROUPS: [string, Section[]][] = [["This Mac", ["setup"]], ["Preferences", ["alerts", "look"]], ["Connections", ["jira"]], ["Support", ["help"]]]
 
 // The board's style: Classic, or Dots (orbs, the drifting field, bots, dot meters and numbers, dotted zones and notes).
 const STYLES: { value: BoardStyle; label: string; text: string }[] = [
@@ -434,6 +436,7 @@ export function SetupDialog({ onClose }: { onClose: () => void }) {
                   <CodeColours />
                 </>
               )}
+              {section === "jira" && <JiraSettings />}
               {section === "help" && <Diagnostics />}
             </ol>
           </section>

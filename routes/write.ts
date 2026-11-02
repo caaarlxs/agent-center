@@ -1,6 +1,7 @@
 // Board-wide actions (POST): new sessions, the digest, canvas zones and
 // notes, PR actions, tasks, files sent and dictation.
 
+import { connect, disconnect } from "../lib/jira"
 import { chooseIcon, isIcon } from "../lib/app-icon"
 import { stat } from "node:fs/promises"
 import { isTaskId, setNotes, setSuggestion, setZones } from "../lib/board"
@@ -146,6 +147,12 @@ export async function handleWrite(path: string, body: Record<string, unknown>): 
     }
   }
   switch (path) {
+    // Jira: the details checked with Jira, then kept (the token in the keychain).
+    case "/api/jira/connect":
+      return await connect(body).then(r => json(r), (err: Error) => json({ error: err.message }, 400))
+    case "/api/jira/disconnect":
+      await disconnect()
+      return json({ ok: true })
     // The app's icon: kept, named by the manifest, and put on the installed app in the Dock.
     case "/api/app-icon": {
       if (!isIcon(body.icon)) return json({ error: "No such icon" }, 400)

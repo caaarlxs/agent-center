@@ -5,7 +5,7 @@
 import { useSyncExternalStore } from "react"
 import { focusComposer } from "@/features/conversation/send"
 
-export type Tab = "chat" | "changes" | "commits" | "code" | "files" | "prs" | "tasks"
+export type Tab = "chat" | "changes" | "commits" | "code" | "files" | "prs" | "ticket" | "tasks"
 export const WORKSPACES: ReadonlySet<Tab> = new Set(["changes", "commits", "code", "files"])
 export type Open = { id: string; tab: Tab; file?: string } | null
 

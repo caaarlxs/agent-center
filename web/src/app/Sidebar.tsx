@@ -4,8 +4,9 @@
 // keyboard help at the foot. It folds to icons (slim), and in a narrow window
 // it is a drawer over the page.
 import { appIcon } from "@/lib/app-icon"
-import { BellOff, BookText, Columns3, Inbox, List, PanelLeft, Paperclip, Volume2, VolumeX } from "lucide-react"
-import { useState, type ReactNode } from "react"
+import { jiraSetup, loadJira } from "@/features/jira/jira"
+import { BellOff, BookText, Ticket, Columns3, Inbox, List, PanelLeft, Paperclip, Volume2, VolumeX } from "lucide-react"
+import { useEffect, useState, type ReactNode } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Kbd } from "@/components/ui/kbd"
@@ -142,6 +143,8 @@ export function Sidebar() {
   const isSlimChosen = sideFolded.use()
   const isDrawerOpen = sideOpen.use()
   const isSlim = isSlimChosen && !isDrawerOpen // the drawer always shows words
+  const hasJira = !!jiraSetup.use()
+  useEffect(() => void loadJira(), [])
   const repos = useLive(l => l.snapshot?.repos) ?? []
   const cards = useLive(l => l.snapshot?.cards) ?? []
   const version = useLive(l => l.snapshot?.version) // the commit the board runs
@@ -188,6 +191,12 @@ export function Sidebar() {
             title="General context: ~/.claude/CLAUDE.md, what Claude reads in every session. See it and edit it">
             <BookText className="size-3.5" />{!isSlim && "General context"}
           </Button>
+          {hasJira && (
+            <Button variant="outline" className={cn("h-[34px] w-full justify-start gap-2", isSlim && "justify-center gap-0 px-0")} onClick={() => openDialog({ kind: "tickets" })}
+              title="Your open Jira tickets: open one, or start a session about it">
+              <Ticket className="size-3.5" />{!isSlim && "My tickets"}
+            </Button>
+          )}
         </div>
         <nav className="flex flex-col gap-px">
           {VIEWS.map(v => (

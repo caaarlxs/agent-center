@@ -31,7 +31,8 @@ export const DESKTOP_LOG = join(HOME, "Library", "Logs", "Claude", "main.log")
 // voiceLanguage: what Whisper listens for ("auto", "en", "es"…).
 // runCommands: "▶" on the shell blocks of a conversation (lib/commands.ts).
 // appIcon: the app's icon (lib/app-icon.ts).
-export type Settings = { voiceLanguage?: string; organizer?: boolean; runCommands?: boolean; appIcon?: string }
+// jira: your Jira site, email and project keys (lib/jira.ts; the token is in the keychain).
+export type Settings = { voiceLanguage?: string; organizer?: boolean; runCommands?: boolean; appIcon?: string; jira?: { site: string; email: string; projects: string[] } }
 function readSettings(): Settings {
   try {
     return JSON.parse(readFileSync(SETTINGS_PATH, "utf8"))

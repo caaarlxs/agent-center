@@ -216,6 +216,17 @@ const PR_TONE = { open: "bg-work-soft text-work", draft: "bg-hover text-text-mut
 const CHECKS = { pass: ["✓", "text-work"], fail: ["✗", "text-bad"], pending: ["•", "text-ask"] } as const
 
 // A pull request: its state's colour, its checks; a click opens the PRs tab.
+// A Jira ticket the session works on (lib/jira.ts): its key, a dot of its
+// status (to do, in progress, done); a click shows it in the panel.
+const TICKET_DOT = { todo: "bg-faint", doing: "bg-review", done: "bg-work" } as const
+function TicketChip({ ticket, card, isCompact }: { ticket: Card["tickets"][number]; card: Card; isCompact?: boolean }) {
+  return (
+    <Tag isCompact={isCompact} className="font-mono text-text" title={`${ticket.key} · ${ticket.summary} — ${ticket.status}${ticket.assignee ? `, ${ticket.assignee}` : ""}`} onClick={() => openTab(card.id, "ticket")}>
+      <i className={cn("size-[7px] rounded-full", TICKET_DOT[ticket.tone])} />{ticket.key}
+    </Tag>
+  )
+}
+
 function PrChip({ pr, card, isCompact }: { pr: Pr; card: Card; isCompact?: boolean }) {
   const state = pr.state === "MERGED" ? "merged" : pr.state === "CLOSED" ? "closed" : pr.isDraft ? "draft" : "open"
   const checks = pr.checks ? CHECKS[pr.checks as keyof typeof CHECKS] : null
@@ -269,6 +280,7 @@ export function Signals({ card, now, isMid }: { card: Card; now: number; isMid?:
       <BackgroundChip card={card} now={now} isCompact />
       <MemoryChip card={card} now={now} isCompact />
       <RunChip card={card} isCompact />
+      {card.tickets?.[0] && <TicketChip ticket={card.tickets[0]} card={card} isCompact />}
       {prs.length === 1 && <PrChip pr={prs[0]} card={card} isCompact />}
       {prs.length > 1 && <Tag isCompact title={prs.map(p => `#${p.number} ${p.title}`).join("\n")} onClick={() => openTab(card.id, "prs")}><Anim.GitPullRequest size={12} />{prs.length}</Tag>}
       {card.taskCount > 0 && <Tag isCompact className="text-text" title={`${card.taskCount} ${card.taskCount === 1 ? "task" : "tasks"}`} onClick={() => openTab(card.id, "tasks")}><ListChecks />{card.taskCount}</Tag>}
@@ -290,6 +302,7 @@ export function Meta({ card, now, className }: { card: Card; now: number; classN
       <BackgroundChip card={card} now={now} />
       <MemoryChip card={card} now={now} />
       <RunChip card={card} />
+      {card.tickets?.map(t => <TicketChip key={t.key} ticket={t} card={card} />)}
       {card.prs?.map(pr => <PrChip key={pr.url} pr={pr} card={card} />)}
       {card.taskCount > 0 && <Tag className="text-text" title="Show its tasks" onClick={() => openTab(card.id, "tasks")}><ListChecks />{card.taskCount} {card.taskCount === 1 ? "task" : "tasks"}</Tag>}
       <PendingChip card={card} />
