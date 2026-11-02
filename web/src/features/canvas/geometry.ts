@@ -38,6 +38,20 @@ export function isInZone(zone: Zone, p: Point): boolean {
   return x >= zone.x && x <= zone.x + zone.w && y >= zone.y && y <= zone.y + zone.h
 }
 
+// The cards a zone holds: those inside it; when it is folded, the ones it
+// folded (a card put on its empty place since is not one of them). A zone
+// folded before it kept them holds the cards inside it.
+export function membersOf<C extends { id: string }>(zone: Zone, cards: C[], at: Record<string, Point>): C[] {
+  if (zone.collapsed && zone.held) return cards.filter(c => zone.held!.includes(c.id))
+  return cards.filter(c => at[c.id] && isInZone(zone, at[c.id]!))
+}
+
+// A place under a zone for the i-th card in its way when it unfolds: three per row.
+export const belowZone = (zone: Zone, i: number): Point => ({
+  x: snap(zone.x + (i % 3) * (CARD_W + GRID)),
+  y: snap(zone.y + zone.h + GRID + Math.floor(i / 3) * CARD_H),
+})
+
 // "Incoming": the dashed corner where cards with no place line up, as tall
 // as its rows (at least one).
 export function entryBox(slots: number) {

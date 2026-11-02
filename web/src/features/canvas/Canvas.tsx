@@ -28,7 +28,7 @@ import { type Level, SessionCard } from "@/features/session/SessionCard"
 import { hueOf } from "@/features/session/state"
 import { quietly, useFlip } from "@/features/board/flip"
 import { DoneBand, isOverDone } from "./DoneBand"
-import { CARD_W, GRID, type Point, entryBox, entrySlots, isInZone, newZone, onCanvas, placeCards, placeIn, snap } from "./geometry"
+import { CARD_W, GRID, type Point, belowZone, entryBox, entrySlots, isInZone, membersOf, newZone, onCanvas, placeCards, placeIn, snap } from "./geometry"
 import { NoteNode, type NoteNodeData } from "./NoteNode"
 import { attachTo, cardKey, newNote, noteAt, placeNote } from "./notes"
 import { useSyncedList } from "./useSyncedList"
@@ -154,7 +154,7 @@ export function Canvas() {
   const entry = useMemo(() => entryBox(entrySlots(all, moved)), [all, moved])
   // A folded zone hides its cards; the repo filter hides the others.
   const folded = useMemo(() => zones.filter(z => z.collapsed), [zones])
-  const hidden = useMemo(() => new Set(all.filter(c => folded.some(z => isInZone(z, at[c.id]))).map(c => c.id)), [all, folded, at])
+  const hidden = useMemo(() => new Set(folded.flatMap(z => membersOf(z, all, at)).map(c => c.id)), [all, folded, at])
   const shownCards = useMemo(() => all.filter(c => !hidden.has(c.id) && (!repo || c.repoRoot === repo)), [all, hidden, repo])
   const byKey = useMemo(() => new Map(shownCards.map(c => [cardKey(c), c])), [shownCards])
   const cardAt = useCallback((key: string) => {
@@ -162,7 +162,20 @@ export function Canvas() {
     return c ? at[c.id] : null
   }, [byKey, at])
 
-  const changeZone = useCallback((z: Zone) => saveZones(zones.map(x => (x.id === z.id ? z : x))), [zones, saveZones])
+  // Folding keeps the cards it folds; unfolding lets them go, and moves the
+  // cards put on its empty place meanwhile out from under it.
+  const changeZone = useCallback((z: Zone) => {
+    const was = zones.find(x => x.id === z.id)
+    let next = z
+    if (z.collapsed && !was?.collapsed) next = { ...z, held: membersOf({ ...z, collapsed: false }, all, at).map(c => c.id) }
+    if (!z.collapsed && was?.collapsed) {
+      const { held, ...open } = z
+      next = open
+      if (held) all.filter(c => isInZone(was, at[c.id]) && !held.includes(c.id)).forEach((c, i) => save(c.id, belowZone(was, i)))
+    }
+    saveZones(zones.map(x => (x.id === z.id ? next : x)))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [zones, saveZones, all, at])
   const removeZone = useCallback((z: Zone) => saveZones(zones.filter(x => x.id !== z.id)), [zones, saveZones])
   const changeNote = useCallback((n: Note) => saveNotes(notes.map(x => (x.id === n.id ? n : x))), [notes, saveNotes])
   const textNote = useCallback((n: Note, text: string) => saveNotes(notes.map(x => (x.id === n.id ? { ...x, text } : x)), true), [notes, saveNotes])
@@ -191,7 +204,7 @@ export function Canvas() {
       }
       const incoming: Node = { id: "incoming", type: "incoming", position: { x: entry.x, y: entry.y }, draggable: false, selectable: false, focusable: false, zIndex: -2, style: { width: entry.w, height: entry.h }, data: {} }
       const zoneNodes = zones.map(z => {
-        const members = all.filter(c => isInZone(z, at[c.id]))
+        const members = membersOf(z, all, at)
         const keys = new Set(members.map(cardKey))
         const riding = notes.flatMap(n => {
           const p = (n.cardId ? keys.has(n.cardId) : isInZone(z, n)) ? noteAt(n, cardAt) : null
@@ -224,7 +237,7 @@ export function Canvas() {
     const zone = (node.data as ZoneNodeData).zone
     carried.current = {
       zone: node.id, start: node.position,
-      cards: all.filter(c => isInZone(zone, at[c.id])).map(c => ({ id: c.id, from: at[c.id] })),
+      cards: membersOf(zone, all, at).map(c => ({ id: c.id, from: at[c.id] })),
       notes: notes.filter(n => !n.cardId && isInZone(zone, n)).map(n => ({ id: `note:${n.id}`, from: { x: n.x, y: n.y } })),
     }
   }
@@ -263,7 +276,7 @@ export function Canvas() {
   const dropInFolder = (zone: Zone, moving: Node[]) => {
     const putIn = () => {
       quietly(moving.map(m => m.id))
-      const taken = all.filter(c => isInZone(zone, at[c.id]) && !moving.some(m => m.id === c.id)).map(c => ({ ...at[c.id], w: CARD_W, h: heightOf(c.id) }))
+      const taken = membersOf(zone, all, at).filter(c => !moving.some(m => m.id === c.id)).map(c => ({ ...at[c.id], w: CARD_W, h: heightOf(c.id) }))
       let z = zone
       for (const m of moving) {
         const spot = placeIn(z, taken, heightOf(m.id))
@@ -271,7 +284,8 @@ export function Canvas() {
         taken.push({ ...spot.at, w: CARD_W, h: heightOf(m.id) })
         save(m.id, spot.at)
       }
-      if (z !== zone) changeZone(z)
+      // The folder keeps them: they are its cards, not ones put on its place.
+      saveZones(zones.map(x => (x.id === zone.id ? { ...z, held: [...new Set([...(membersOf(zone, all, at).map(c => c.id)), ...moving.map(m => m.id)])] } : x)))
     }
     toast(`${moving.length === 1 ? "Added" : `${moving.length} added`} to ${zone.name}`)
     if (isCalm()) return putIn()
@@ -407,6 +421,8 @@ export function Canvas() {
           const saved = savedZoom.get()
           if (saved === null ? Math.abs(v.zoom - fitRef.current) > 0.01 : Math.abs(v.zoom - saved) > 0.001) savedZoom.set(Math.abs(v.zoom - fitRef.current) < 0.01 ? null : v.zoom)
         }}
+        // A zone picked stays under its cards: raised, it took their clicks and drags.
+        elevateNodesOnSelect={false}
         panOnDrag={[1]} selectionOnDrag selectionMode={SelectionMode.Partial} panActivationKeyCode="Space" multiSelectionKeyCode={["Meta", "Shift"]} selectionKeyCode={null}
         minZoom={minZoomOf(fit)} maxZoom={ZOOM.max} fitView={false} proOptions={{ hideAttribution: true }}
         className={cn(isOverDoneNow && "[&_.react-flow__node.dragging]:opacity-90")}

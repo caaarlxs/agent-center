@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest"
 import type { Card, Zone } from "@/lib/api-types"
-import { CARD_H, CARD_W, ENTRY, GRID, isInZone, onCanvas, placeCards, snap } from "./geometry"
+import { belowZone, CARD_H, CARD_W, ENTRY, GRID, isInZone, membersOf, onCanvas, placeCards, snap } from "./geometry"
 
 const card = (id: string, extra: Partial<Card> = {}) => ({ id, column: "review", pos: null, ...extra }) as Card
 
@@ -33,4 +33,28 @@ test("a zone holds a card by its top centre", () => {
   expect(isInZone(zone, { x: 0, y: 0 })).toBe(true)
   expect(isInZone(zone, { x: 300, y: 0 })).toBe(false) // its centre is past the right edge
   expect(isInZone(zone, { x: 0, y: 170 })).toBe(false) // its top is too low
+})
+
+describe("membersOf", () => {
+  const zone: Zone = { id: "z", name: "Z", x: 0, y: 0, w: 700, h: 400 }
+  const at = { a: { x: 24, y: 48 }, b: { x: 360, y: 48 }, c: { x: 900, y: 48 } }
+  const cards = [card("a"), card("b"), card("c")]
+  test("an open zone holds the cards inside it", () => {
+    expect(membersOf(zone, cards, at).map(c => c.id)).toEqual(["a", "b"])
+  })
+  test("a folded zone holds the cards it folded, not those put on its place since", () => {
+    expect(membersOf({ ...zone, collapsed: true, held: ["a"] }, cards, at).map(c => c.id)).toEqual(["a"])
+  })
+  test("a zone folded before it kept them holds the cards inside it", () => {
+    expect(membersOf({ ...zone, collapsed: true }, cards, at).map(c => c.id)).toEqual(["a", "b"])
+  })
+})
+
+describe("belowZone", () => {
+  test("lines cards up under the zone, three per row", () => {
+    const zone: Zone = { id: "z", name: "Z", x: 48, y: 96, w: 696, h: 408 }
+    expect(belowZone(zone, 0)).toEqual({ x: 48, y: 96 + 408 + GRID })
+    expect(belowZone(zone, 2)).toEqual({ x: 48 + 2 * (CARD_W + GRID), y: 96 + 408 + GRID })
+    expect(belowZone(zone, 3)).toEqual({ x: 48, y: 96 + 408 + GRID + CARD_H })
+  })
 })
