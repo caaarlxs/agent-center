@@ -21,6 +21,9 @@ export type BoardItem = {
   tier?: string // its row on the tier list (TIERS); absent: the "other" row
   tier_rank?: number // its place in that row, left to right, as the person put it
   pos?: { x: number; y: number } // where it sits on the canvas view
+  // Its Jira tickets as the person set them (lib/jira.ts): the ones it was
+  // started from, the ones linked by hand, the ones unlinked by hand.
+  tickets?: { started?: string[]; linked?: string[]; off?: string[] }
 }
 
 // A named rectangle on the canvas; cards inside it belong to it by position.
@@ -96,7 +99,7 @@ export function itemOf(key: string, ids: string[]): BoardItem {
   return board.items[key] ?? ids.map(id => board.items[id]).find(Boolean) ?? {}
 }
 
-const ACTIONS = new Set(["pin", "unpin", "park", "unpark", "done", "undone", "archive", "unarchive", "seen", "unseen", "move", "rename", "color", "tier", "rank"])
+const ACTIONS = new Set(["pin", "unpin", "park", "unpark", "done", "undone", "archive", "unarchive", "seen", "unseen", "move", "rename", "color", "tier", "rank", "tickets"])
 export const isBoardAction = (action: string) => ACTIONS.has(action)
 
 // Applies one of ACTIONS to a group's item (`key`: the group's board key,
@@ -120,6 +123,9 @@ export async function applyAction(key: string, ids: string[], action: string, bo
   // A place in its row: any number (smaller is further left); null takes it off.
   const rank = action === "rank" && body.rank !== null ? Number(body.rank) : null
   if (action === "rank" && body.rank !== null && !Number.isFinite(rank)) return "invalid rank"
+  // Ticket keys: those it was started from, or one linked or unlinked.
+  const keys = action === "tickets" ? [body.started, body.link, body.unlink].flat().filter(k => k !== undefined) : []
+  if (keys.some(k => typeof k !== "string" || !/^[A-Z][A-Z0-9]{1,9}-\d{1,6}$/.test(k))) return "not a ticket key"
   if (!board.items[key]) {
     const legacy = itemOf(key, ids)
     if (Object.keys(legacy).length) board.items[key] = { ...legacy }
@@ -187,10 +193,22 @@ export async function applyAction(key: string, ids: string[], action: string, bo
       if (rank !== null) item.tier_rank = rank
       else delete item.tier_rank
       break
+    case "tickets":
+      item.tickets = ticketsAfter(item.tickets ?? {}, body as { started?: string[]; link?: string; unlink?: string })
+      break
   }
   if (Object.keys(item).length === 0) delete board.items[key]
   await saveBoard()
   return null
+}
+
+// A session's tickets after a change: started from some, one linked, one unlinked.
+export function ticketsAfter(t: NonNullable<BoardItem["tickets"]>, change: { started?: string[]; link?: string; unlink?: string }) {
+  const without = (list: string[] | undefined, key?: string) => (list ?? []).filter(k => k !== key)
+  const out = { started: change.started ?? without(t.started, change.unlink), linked: without(t.linked, change.unlink), off: without(t.off, change.link) }
+  if (change.link && !out.started.includes(change.link)) out.linked.push(change.link)
+  if (change.unlink) out.off.push(change.unlink)
+  return out
 }
 
 export const isTaskId = (id: unknown): id is string => typeof id === "string" && /^task_[\w-]{1,64}$/.test(id)

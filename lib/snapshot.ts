@@ -2,7 +2,7 @@
 // desktop session runs several CLI sessions over its life), with its column,
 // what it waits for, its PRs, usage, tasks and the bridge mod's state.
 
-import { briefsFor, jiraSetup, keysIn, mentionsIn, sessionKeys } from "./jira"
+import { jiraSetup, keysIn, mentionsIn, sessionKeys, sessionTickets } from "./jira"
 import { stat } from "node:fs/promises"
 import { HOME } from "./config"
 import { backgroundOf } from "./background"
@@ -189,7 +189,7 @@ async function cardOf(
   const question = column === "asking" ? bridge.question : null
   const permission = column === "asking" && !question ? bridge.permission : null
   const title = item.title || (cleanPrompt(app?.title || s.title || s.first_prompt) ?? s.project)
-  // The Jira tickets its branch and title name (lib/jira.ts), as the cache has them.
+  // Its Jira tickets (lib/jira.ts) and why, as the cache has them.
   const jira = jiraSetup()
   return {
     id,
@@ -201,7 +201,7 @@ async function cardOf(
     branch: repo.branch,
     prs: openPrs(await prRefs(ids, repo.root, repo.branch)),
     title,
-    tickets: jira ? briefsFor(sessionKeys(keysIn([repo.branch, title], jira.projects), await mentionsIn(ids), jira.projects)) : [],
+    tickets: jira ? sessionTickets(sessionKeys(item.tickets ?? {}, keysIn([repo.branch, title], jira.projects), await mentionsIn(ids), jira.projects)) : [],
     hasOwnTitle: !!item.title,
     state: question ? "asking" : permission ? "permission" : s.state,
     isStale: s.state === "working" && (column === "review" || column === "pending") && !wasStopped,

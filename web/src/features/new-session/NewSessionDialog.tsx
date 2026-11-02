@@ -107,7 +107,7 @@ function Prompt({ root, draft, onClose }: { root: string | null; draft?: NewDraf
       // The session has no id yet: its files wait in a folder of their own.
       const prompt = await messageWith(`new-${crypto.randomUUID().slice(0, 8)}`, textInput.value.trim(), files)
       const isWorktree = send && worktree
-      const res = await post<{ ok: boolean; id?: string }>("/api/new", { folder: root, prompt, send, ...chosen, worktree: isWorktree, suggestion: send ? draft?.suggestion : undefined })
+      const res = await post<{ ok: boolean; id?: string }>("/api/new", { folder: root, prompt, send, ...chosen, worktree: isWorktree, suggestion: send ? draft?.suggestion : undefined, tickets: send ? draft?.tickets : undefined })
       onClose()
       if (res.id) (toast(isWorktree ? "Session created in a new worktree: Claude is working" : "Session created: Claude is working"), setTimeout(() => openSession(res.id!), 600))
       else toast("New session opened in Claude")
@@ -162,7 +162,7 @@ export function NewSessionDialog({ draft, onClose }: { draft?: NewDraft; onClose
   return (
     <Dialog open onOpenChange={o => !o && onClose()}>
       <DialogContent showCloseButton={false} className="gap-2.5 [&>*]:min-w-0">
-        <DialogTitle className="mb-1">{draft?.suggestion ? "Start the suggested task" : "New session"}</DialogTitle>
+        <DialogTitle className="mb-1">{draft?.tickets?.length ? `Start from ${draft.tickets.join(", ")}` : draft?.suggestion ? "Start the suggested task" : "New session"}</DialogTitle>
         <Folders root={root} onPick={setRoot} />
         <PromptInputProvider initialInput={draft?.prompt ?? ""}>
           <Prompt root={root} draft={draft} onClose={onClose} />

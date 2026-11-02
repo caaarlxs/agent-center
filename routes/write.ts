@@ -4,7 +4,7 @@
 import { commentOn, connect, disconnect, moveTicket } from "../lib/jira"
 import { chooseIcon, isIcon } from "../lib/app-icon"
 import { stat } from "node:fs/promises"
-import { isTaskId, setNotes, setSuggestion, setZones } from "../lib/board"
+import { applyAction, isTaskId, setNotes, setSuggestion, setZones } from "../lib/board"
 import { requestSettings } from "../lib/bridge"
 import { activate, newInClient, pickFolder } from "../lib/client"
 import { logClientError } from "../lib/client-errors"
@@ -70,6 +70,7 @@ async function newSession(body: Record<string, unknown>) {
       void keepMode(done, mode)
     }, extra, mode)
     if (typeof suggestion?.from === "string" && isTaskId(suggestion.taskId)) await setSuggestion(suggestion.taskId, suggestion.from, { session: id })
+    if (Array.isArray(body.tickets) && body.tickets.length) await applyAction(id, [id], "tickets", { started: body.tickets.slice(0, 20) })
     refreshSoon()
     return json({ ok: true, id })
   } catch (err) {

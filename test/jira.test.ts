@@ -1,6 +1,7 @@
 // What is a ticket, and what Jira answers, in the board's words (lib/jira.ts).
 import { describe, expect, it } from "bun:test"
-import { briefOf, docOf, jqlOf, keysIn, markdownOf, ownWords, pickOrder, rowOf, sessionKeys, siteOf, ticketOf } from "../lib/jira"
+import { ticketsAfter } from "../lib/board"
+import { briefOf, docOf, jqlOf, keysIn, kindOf, markdownOf, pickColumns, rowOf, sessionKeys, siteOf, ticketOf, userKeys } from "../lib/jira"
 
 describe("keysIn", () => {
   it("finds a project's keys in branches and titles, once, in order", () => {
@@ -52,7 +53,7 @@ describe("what Jira answers", () => {
   }
   it("reads a card's brief", () => {
     expect(briefOf(raw, "https://deale.atlassian.net")).toEqual({
-      key: "PP-3130", summary: "Hide unavailable companies", status: "In Progress", tone: "doing", assignee: "Carlos", url: "https://deale.atlassian.net/browse/PP-3130",
+      key: "PP-3130", summary: "Hide unavailable companies", status: "In Progress", tone: "doing", kind: "story", assignee: "Carlos", url: "https://deale.atlassian.net/browse/PP-3130",
     })
   })
   it("reads a ticket whole, and whether it is yours", () => {
@@ -83,31 +84,77 @@ describe("docOf", () => {
   })
 })
 
-describe("pickOrder", () => {
-  it("takes the board that holds most of the statuses seen", () => {
-    const roadmap = ["10016", "10318", "3", "10067"]
-    const dev = ["10016", "10017", "3", "10053", "10067", "10219"]
-    expect(pickOrder([roadmap, dev], ["3", "10053", "10219"])).toBe(dev)
-    expect(pickOrder([roadmap], ["999"])).toEqual([])
+describe("kindOf", () => {
+  it("tells epics, stories, tasks, sub-tasks and bugs apart, in English or Spanish", () => {
+    expect([{ name: "Epic", hierarchyLevel: 1 }, { name: "Historia" }, { name: "Tarea" }, { name: "Subtarea", subtask: true }, { name: "Bug" }, { name: "Odd", hierarchyLevel: 0 }].map(kindOf))
+      .toEqual(["epic", "story", "task", "subtask", "bug", "task"])
+  })
+})
+
+describe("where a ticket sits", () => {
+  const ref = (key: string, type: object) => ({ key, fields: { summary: key, status: { name: "To Do", statusCategory: { key: "new" } }, issuetype: type } })
+  const epic = ref("PP-1", { name: "Epic", hierarchyLevel: 1 })
+  const story = ref("PP-2", { name: "Story", hierarchyLevel: 0 })
+  it("takes its parent as its epic when it is one", () => {
+    const row = rowOf({ key: "PP-2", fields: { ...story.fields, parent: epic } }, "https://x", null)
+    expect([row.kind, row.parent?.key, row.epic?.key]).toEqual(["story", "PP-1", "PP-1"])
+  })
+  it("takes a sub-task's epic from its parent's parent", () => {
+    const sub = { key: "PP-3", fields: { ...ref("PP-3", { name: "Sub-task", subtask: true }).fields, parent: story } }
+    expect(rowOf(sub, "https://x", null).epic).toBeNull()
+    const epics = new Map([["PP-2", rowOf(epic, "https://x", null) as any]])
+    expect(rowOf(sub, "https://x", null, epics).epic?.key).toBe("PP-1")
+  })
+  it("reads what sits in a ticket and how it links to others", () => {
+    const raw = { key: "PP-2", fields: { ...story.fields, subtasks: [ref("PP-3", { name: "Sub-task", subtask: true })], issuelinks: [{ type: { outward: "blocks", inward: "is blocked by" }, inwardIssue: ref("PP-9", { name: "Bug" }) }] } }
+    const t = ticketOf(raw, "https://x", null, null, [ref("PP-3", {}) as any, { key: "PP-4" } as any])
+    expect(t.children.map(c => c.key)).toEqual(["PP-3", "PP-4"])
+    expect(t.links.map(l => [l.how, l.ticket.key, l.ticket.kind])).toEqual([["is blocked by", "PP-9", "bug"]])
+  })
+})
+
+describe("pickColumns", () => {
+  it("takes the board whose columns hold most of the statuses seen", () => {
+    const roadmap = [{ name: "Ideas", statusIds: ["10016"] }, { name: "Done", statusIds: ["3"] }]
+    const dev = [{ name: "Backlog", statusIds: ["10016"] }, { name: "Review", statusIds: ["10053"] }, { name: "Testing", statusIds: ["10219", "3"] }]
+    expect(pickColumns([roadmap, dev], ["3", "10053", "10219"])).toBe(dev)
+    expect(pickColumns([roadmap], ["999"])).toEqual([])
   })
 })
 
 describe("sessionKeys", () => {
-  it("takes the branch's and title's, then those the conversation names twice or more", () => {
-    const mentions = new Map([["PP-3131", 9], ["PP-3130", 14], ["PP-2000", 1], ["OPS-5", 7]])
-    expect(sessionKeys(["PP-3130"], mentions, ["PP"])).toEqual(["PP-3130", "PP-3131"])
-    expect(sessionKeys([], new Map([["PP-1", 5], ["PP-2", 4], ["PP-3", 3], ["PP-4", 2]]), ["PP"])).toEqual(["PP-1", "PP-2", "PP-3"])
+  it("takes the ones it was started from or you linked, its branch's, then those you named, most first", () => {
+    const mentions = new Map([["PP-3131", 2], ["PP-3130", 4], ["OPS-5", 7]])
+    expect(sessionKeys({}, ["PP-3130"], mentions, ["PP"])).toEqual([{ key: "PP-3130", why: "branch" }, { key: "PP-3131", why: "named" }])
+    expect(sessionKeys({ started: ["PP-7"], linked: ["PP-8"] }, [], mentions, ["PP"]).map(l => l.why)).toEqual(["started", "linked", "named"])
+  })
+  it("leaves out the ones you unlinked, and names three at most beyond yours", () => {
+    expect(sessionKeys({ off: ["PP-1"] }, ["PP-1"], new Map([["PP-2", 1]]), ["PP"])).toEqual([{ key: "PP-2", why: "named" }])
+    expect(sessionKeys({}, [], new Map([["PP-1", 5], ["PP-2", 4], ["PP-3", 3], ["PP-4", 2]]), ["PP"])).toHaveLength(3)
+    expect(sessionKeys({ started: ["PP-1", "PP-2", "PP-3", "PP-4"] }, [], new Map([["PP-5", 9]]), ["PP"])).toHaveLength(4)
   })
 })
 
-describe("ownWords", () => {
-  it("keeps what you and Claude said, and what Claude put in its tools", () => {
-    expect(ownWords(JSON.stringify({ type: "user", message: { content: "Look at PP-1" } }))).toBe("Look at PP-1")
-    expect(ownWords(JSON.stringify({ type: "assistant", message: { content: [{ type: "text", text: "On it" }, { type: "tool_use", input: { command: "git commit -m 'fix (PP-2)'" } }] } }))).toContain("PP-2")
+describe("ticketsAfter", () => {
+  it("keeps the ones it was started from, links one, unlinks one", () => {
+    const started = ticketsAfter({}, { started: ["PP-1", "PP-2"] })
+    expect(started).toEqual({ started: ["PP-1", "PP-2"], linked: [], off: [] })
+    expect(ticketsAfter(started, { unlink: "PP-2" })).toEqual({ started: ["PP-1"], linked: [], off: ["PP-2"] })
+    expect(ticketsAfter({ off: ["PP-3"] }, { link: "PP-3" })).toEqual({ started: [], linked: ["PP-3"], off: [] })
   })
-  it("leaves out what tools gave back, and injected context", () => {
-    expect(ownWords(JSON.stringify({ type: "user", message: { content: [{ type: "tool_result", content: "abc fix (PP-9)" }] } }))).toBe("")
-    expect(ownWords(JSON.stringify({ type: "user", isMeta: true, message: { content: "PP-9" } }))).toBe("")
-    expect(ownWords("not json")).toBe("")
+})
+
+describe("userKeys", () => {
+  it("finds the keys you wrote yourself", () => {
+    expect(userKeys(JSON.stringify({ type: "user", message: { content: "Look at PP-1 and PP-2" } }))).toEqual(["PP-1", "PP-2"])
+    expect(userKeys(JSON.stringify({ type: "user", message: { content: [{ type: "text", text: "PP-1" }] } }))).toEqual(["PP-1"])
+  })
+  it("leaves out Claude, tools, injected context and lists", () => {
+    expect(userKeys(JSON.stringify({ type: "assistant", message: { content: [{ type: "text", text: "PP-1" }] } }))).toEqual([])
+    expect(userKeys(JSON.stringify({ type: "user", message: { content: [{ type: "tool_result", content: "PP-9" }] } }))).toEqual([])
+    expect(userKeys(JSON.stringify({ type: "user", isMeta: true, message: { content: "PP-9" } }))).toEqual([])
+    expect(userKeys(JSON.stringify({ type: "user", message: { content: "<command-name>/brief</command-name> PP-9" } }))).toEqual([])
+    expect(userKeys(JSON.stringify({ type: "user", message: { content: "PP-1 PP-2 PP-3 PP-4" } }))).toEqual([])
+    expect(userKeys("not json")).toEqual([])
   })
 })

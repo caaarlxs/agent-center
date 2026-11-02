@@ -1,6 +1,7 @@
 // Jira: the tickets your sessions work on, read live from your Jira Cloud site.
-// A session names its tickets in its branch and title ("fix/PP-3130-…") or
-// again and again in its conversation; the
+// A session is linked to a ticket when it was started from it, when you link
+// it by hand, when its branch or title names it ("fix/PP-3130-…"), or when you
+// name it in a message of your own (not Claude: a daily brief lists many); the
 // board reads their summary and status for its cards (all at once, every two
 // minutes) and a ticket's whole detail when you open it. Your own open tickets
 // are a search away (yours, the ones you reported, the open sprint, or by
@@ -18,24 +19,43 @@ import { saveSettings } from "./setup"
 import { transcriptPath } from "./transcript"
 
 export type JiraSetup = { site: string; email: string; projects: string[] }
-export type TicketBrief = { key: string; summary: string; status: string; tone: "todo" | "doing" | "done"; assignee: string | null; url: string }
-// A ticket in a list: what a card needs, and its type, priority, sprint and last change.
-export type TicketRow = TicketBrief & { statusId: string; type: string | null; priority: string | null; sprint: string | null; updated: number }
+// What kind of work a ticket is, whatever the site calls its types.
+export type TicketKind = "epic" | "story" | "task" | "subtask" | "bug"
+export type TicketBrief = { key: string; summary: string; status: string; tone: "todo" | "doing" | "done"; kind: TicketKind; assignee: string | null; url: string }
+// Why a session is linked to a ticket: started from it, linked by hand, its branch or title, your words.
+export type LinkWhy = "started" | "linked" | "branch" | "named"
+export type SessionTicket = TicketBrief & { why: LinkWhy }
+// Another ticket named from this one: its parent, a child, a link.
+export type TicketRef = { key: string; summary: string; type: string | null; kind: TicketKind; status: string; tone: TicketBrief["tone"]; url: string }
+// A ticket in a list: what a card needs, and its type, priority, sprint and
+// last change; what it sits in (its parent) and the epic above it.
+export type TicketRow = TicketBrief & {
+  statusId: string; type: string | null; priority: string | null; sprint: string | null; updated: number
+  parent: TicketRef | null; epic: TicketRef | null
+}
+// A column of the team's board: its name and the statuses it holds.
+export type BoardColumn = { name: string; statusIds: string[] }
 export type Transition = { id: string; name: string; to: string; tone: TicketBrief["tone"] }
 export type TicketFilter = "mine" | "reported" | "sprint"
 export type TicketComment = { author: string; at: number; body: string }
+export type TicketLink = { how: string; ticket: TicketRef }
 export type Ticket = TicketBrief & {
   isMine: boolean // assigned to you: the board may move it and comment
   type: string | null
   priority: string | null
   reporter: string | null
+  sprint: string | null
+  created: number
   updated: number
+  parent: TicketRef | null
+  children: TicketRef[]
+  links: TicketLink[]
   description: string
   comments: TicketComment[]
 }
 
 const KEYCHAIN = "agent-center.jira"
-const BRIEF_FIELDS = ["summary", "status", "assignee"]
+const BRIEF_FIELDS = ["summary", "status", "assignee", "issuetype"]
 const BRIEF_TTL_MS = 120_000
 
 // ---------- what is a ticket ----------
@@ -53,35 +73,46 @@ export function keysIn(texts: (string | null | undefined)[], projects: string[])
   return out
 }
 
-// The tickets a session works on: those its branch and title name, then those
-// its conversation names twice or more (a passing mention of another ticket
-// is not one), the most named first; three at most.
-export function sessionKeys(named: string[], mentions: Map<string, number>, projects: string[]): string[] {
+// The tickets a session works on, and why: those it was started from or you
+// linked, those its branch or title names, then those you named in your own
+// messages, the most named first (three of these at most); none you unlinked.
+export function sessionKeys(
+  links: { started?: string[]; linked?: string[]; off?: string[] },
+  named: string[], mentions: Map<string, number>, projects: string[],
+): { key: string; why: LinkWhy }[] {
   const wanted = new Set(projects.map(p => p.toUpperCase()))
-  const often = [...mentions].filter(([k, n]) => n >= 2 && wanted.has(k.split("-")[0]!)).sort((a, b) => b[1] - a[1]).map(([k]) => k)
-  return [...new Set([...named, ...often])].slice(0, 3)
+  const off = new Set(links.off ?? [])
+  const out = new Map<string, LinkWhy>()
+  const add = (keys: string[], why: LinkWhy) => { for (const k of keys) if (!off.has(k) && !out.has(k)) out.set(k, why) }
+  add(links.started ?? [], "started")
+  add(links.linked ?? [], "linked")
+  add(named, "branch")
+  const hand = out.size
+  add([...mentions].filter(([k]) => wanted.has(k.split("-")[0]!)).sort((a, b) => b[1] - a[1]).map(([k]) => k), "named")
+  return [...out].slice(0, Math.max(hand, 3)).map(([key, why]) => ({ key, why }))
 }
 
-// What a transcript line says in the session's own words: your messages and
-// Claude's (its text, and what it puts in its tools, such as a commit's
-// message); not what tools gave back (a git log names others' tickets).
-export function ownWords(line: string): string {
+// The ticket keys a transcript line names in your own words: a message you
+// wrote, not Claude's answers nor what tools gave back (a git log or a daily
+// brief names many tickets nobody works on). A message naming more than
+// three is a list, not work on them.
+export function userKeys(line: string): string[] {
   let d: any
   try {
     d = JSON.parse(line)
   } catch {
-    return ""
+    return []
   }
-  if (d?.isMeta) return ""
+  if (d?.isMeta || d?.type !== "user") return []
   const content = d?.message?.content
-  if (d?.type === "user") return typeof content === "string" ? content : Array.isArray(content) ? content.filter((b: any) => b?.type === "text").map((b: any) => b.text).join("\n") : ""
-  if (d?.type === "assistant" && Array.isArray(content))
-    return content.map((b: any) => (b?.type === "text" ? b.text : b?.type === "tool_use" ? JSON.stringify(b.input ?? "") : "")).join("\n")
-  return ""
+  const text = typeof content === "string" ? content : Array.isArray(content) ? content.filter((b: any) => b?.type === "text").map((b: any) => b.text).join("\n") : ""
+  if (/^\s*<(command-|local-command|system-reminder|task-notification)/.test(text)) return []
+  const keys = [...new Set([...text.matchAll(KEY)].map(m => m[1]!))]
+  return keys.length > 3 ? [] : keys
 }
 const KEY = /(?<![A-Za-z0-9])([A-Z][A-Z0-9]{1,9}-\d{1,6})(?![0-9])/g
 
-// How often a session's conversations name each ticket key: read once, then only what they add.
+// In how many of your messages each ticket key shows: read once, then only what they add.
 const mentionScans = new Map<string, { offset: number; counts: Map<string, number> }>()
 export async function mentionsIn(ids: string[]): Promise<Map<string, number>> {
   const total = new Map<string, number>()
@@ -95,7 +126,7 @@ export async function mentionsIn(ids: string[]): Promise<Map<string, number>> {
     s.offset = await readAppended(path, s.offset, size, text => {
       for (const line of text.split("\n")) {
         if (!/[A-Z]-\d/.test(line)) continue
-        for (const m of ownWords(line).matchAll(KEY)) s.counts.set(m[1]!, (s.counts.get(m[1]!) ?? 0) + 1)
+        for (const k of userKeys(line)) s.counts.set(k, (s.counts.get(k) ?? 0) + 1)
       }
     })
     for (const [k, n] of s.counts) total.set(k, (total.get(k) ?? 0) + n)
@@ -173,6 +204,17 @@ export const markdownOf = (doc: unknown): string => {
 
 const TONE: Record<string, TicketBrief["tone"]> = { new: "todo", indeterminate: "doing", done: "done" }
 
+// The kind of a ticket's type: by its place in the hierarchy (epics above,
+// sub-tasks below), then by its name, in English or Spanish.
+export function kindOf(type: any): TicketKind {
+  const name = String(type?.name ?? "").toLowerCase()
+  if (type?.hierarchyLevel >= 1 || /epic|épica/.test(name)) return "epic"
+  if (type?.subtask === true || type?.hierarchyLevel < 0 || /sub/.test(name)) return "subtask"
+  if (/bug|error|incidencia|fallo/.test(name)) return "bug"
+  if (/story|historia/.test(name)) return "story"
+  return "task"
+}
+
 export function briefOf(raw: any, site: string): TicketBrief {
   const f = raw?.fields ?? {}
   return {
@@ -180,8 +222,19 @@ export function briefOf(raw: any, site: string): TicketBrief {
     summary: String(f.summary ?? ""),
     status: String(f.status?.name ?? ""),
     tone: TONE[f.status?.statusCategory?.key] ?? "todo",
+    kind: kindOf(f.issuetype),
     assignee: f.assignee?.displayName ?? null,
     url: `${site}/browse/${raw?.key}`,
+  }
+}
+
+// Another ticket as Jira names it inside this one (its parent, a sub-task, a link).
+export function refOf(raw: any, site: string): TicketRef | null {
+  if (!raw?.key) return null
+  const f = raw.fields ?? {}
+  return {
+    key: String(raw.key), summary: String(f.summary ?? ""), type: f.issuetype?.name ?? null, kind: kindOf(f.issuetype),
+    status: String(f.status?.name ?? ""), tone: TONE[f.status?.statusCategory?.key] ?? "todo", url: `${site}/browse/${raw.key}`,
   }
 }
 
@@ -192,8 +245,12 @@ const sprintOf = (value: unknown): string | null => {
   return open?.name ?? null
 }
 
-export function rowOf(raw: any, site: string, sprintField: string | null): TicketRow {
+// A ticket in a list. Its epic: its parent when that is one, else its
+// parent's parent when the search knows it (`epics`: parent key to epic).
+export function rowOf(raw: any, site: string, sprintField: string | null, epics: Map<string, TicketRef> = new Map()): TicketRow {
   const f = raw?.fields ?? {}
+  const parent = refOf(f.parent, site)
+  const kind = kindOf(f.issuetype)
   return {
     ...briefOf(raw, site),
     statusId: String(f.status?.id ?? ""),
@@ -201,6 +258,8 @@ export function rowOf(raw: any, site: string, sprintField: string | null): Ticke
     priority: f.priority?.name ?? null,
     sprint: sprintField ? sprintOf(f[sprintField]) : null,
     updated: Date.parse(f.updated ?? "") || 0,
+    parent,
+    epic: kind === "epic" ? null : parent?.kind === "epic" ? parent : parent ? (epics.get(parent.key) ?? null) : null,
   }
 }
 
@@ -212,15 +271,14 @@ export function jqlOf(filter: TicketFilter, projects: string[], text = ""): stri
   return [scope, who, filter === "mine" ? "statusCategory != Done" : null, words ? `text ~ "${words}"` : null].filter(Boolean).join(" AND ") + " ORDER BY updated DESC"
 }
 
-// The order of the statuses, as the team's board lays out its columns: of the
-// boards given (each its status ids, column by column), the one that holds
-// most of the statuses seen; none when no board holds any.
-export function pickOrder(boards: string[][], seen: string[]): string[] {
-  let best: string[] = []
+// The columns of the team's board: of the boards given, the one whose
+// columns hold most of the statuses seen; none when no board holds any.
+export function pickColumns(boards: BoardColumn[][], seen: string[]): BoardColumn[] {
+  let best: BoardColumn[] = []
   let most = 0
-  for (const order of boards) {
-    const held = seen.filter(id => order.includes(id)).length
-    if (held > most) (best = order), (most = held)
+  for (const columns of boards) {
+    const held = seen.filter(id => columns.some(c => c.statusIds.includes(id))).length
+    if (held > most) (best = columns), (most = held)
   }
   return best
 }
@@ -232,15 +290,28 @@ export const docOf = (text: string) => ({
   content: text.split("\n").map(line => (line ? { type: "paragraph", content: [{ type: "text", text: line }] } : { type: "paragraph", content: [] })),
 })
 
-export function ticketOf(raw: any, site: string, me: string | null = null): Ticket {
+// Its links as Jira words them from this side ("blocks", "is blocked by").
+const linksOf = (list: any[] = [], site: string): TicketLink[] =>
+  list.flatMap(l => {
+    const ticket = refOf(l.outwardIssue ?? l.inwardIssue, site)
+    return ticket ? [{ how: String((l.outwardIssue ? l.type?.outward : l.type?.inward) ?? "relates to"), ticket }] : []
+  })
+
+export function ticketOf(raw: any, site: string, me: string | null = null, sprintField: string | null = null, children: TicketRef[] = []): Ticket {
   const f = raw?.fields ?? {}
+  const subtasks = (f.subtasks ?? []).map((t: any) => refOf(t, site)).filter(Boolean) as TicketRef[]
   return {
     ...briefOf(raw, site),
     isMine: !!me && f.assignee?.accountId === me,
     type: f.issuetype?.name ?? null,
     priority: f.priority?.name ?? null,
     reporter: f.reporter?.displayName ?? null,
+    sprint: sprintField ? sprintOf(f[sprintField]) : null,
+    created: Date.parse(f.created ?? "") || 0,
     updated: Date.parse(f.updated ?? "") || 0,
+    parent: refOf(f.parent, site),
+    children: [...subtasks, ...children.filter(c => !subtasks.some(t => t.key === c.key))],
+    links: linksOf(f.issuelinks, site),
     description: markdownOf(f.description),
     comments: (f.comment?.comments ?? []).map((c: any) => ({ author: c.author?.displayName ?? "Someone", at: Date.parse(c.created ?? "") || 0, body: markdownOf(c.body) })),
   }
@@ -326,6 +397,12 @@ export function briefsFor(keys: string[]): TicketBrief[] {
   return keys.map(k => briefs.get(k)?.brief).filter((b): b is TicketBrief => !!b)
 }
 
+// A session's tickets with why they are its own, as the cache has them.
+export function sessionTickets(links: { key: string; why: LinkWhy }[]): SessionTicket[] {
+  const found = new Map(briefsFor(links.map(l => l.key)).map(b => [b.key, b]))
+  return links.flatMap(l => (found.has(l.key) ? [{ ...found.get(l.key)!, why: l.why }] : []))
+}
+
 // ---------- one ticket, and yours ----------
 
 // Who you are on the site, and its sprint field: asked once.
@@ -355,36 +432,62 @@ const keyOrThrow = (key: string) => {
   return key
 }
 
+const REF_FIELDS = ["summary", "status", "issuetype"]
+const search = (setup: JiraSetup, jql: string, fields: string[], maxResults = 100) =>
+  call(setup, "/rest/api/3/search/jql", { method: "POST", body: JSON.stringify({ jql, fields, maxResults }) }).then(r => (r?.issues ?? []) as any[])
+
+// A ticket whole: and what sits in it (its sub-tasks, or an epic's tickets).
 export async function ticket(key: string): Promise<Ticket> {
   const setup = setupOrThrow()
-  const raw = await call(setup, `/rest/api/3/issue/${keyOrThrow(key)}?fields=summary,status,assignee,reporter,priority,issuetype,updated,description,comment`)
-  return ticketOf(raw, setup.site, await myId(setup))
+  const sprint = await sprintFieldOf(setup)
+  const fields = ["summary", "status", "assignee", "reporter", "priority", "issuetype", "created", "updated", "description", "comment", "parent", "subtasks", "issuelinks", ...(sprint ? [sprint] : [])]
+  const [raw, inside] = await Promise.all([
+    call(setup, `/rest/api/3/issue/${keyOrThrow(key)}?fields=${fields.join(",")}`),
+    search(setup, `parent = ${key} ORDER BY status, rank`, REF_FIELDS, 50).catch(() => []),
+  ])
+  return ticketOf(raw, setup.site, await myId(setup), sprint, inside.map(i => refOf(i, setup.site)!).filter(Boolean))
 }
 
-// The status order of each board of your projects (its columns, left to right): asked every ten minutes.
-let boardOrders: { site: string; at: number; orders: string[][] } | null = null
-async function boardOrdersOf(setup: JiraSetup) {
-  if (boardOrders?.site === setup.site && Date.now() - boardOrders.at < 600_000) return boardOrders.orders
-  const orders: string[][] = []
+// The columns of each board of your projects, left to right: asked every ten minutes.
+let boardColumns: { site: string; at: number; boards: BoardColumn[][] } | null = null
+async function boardColumnsOf(setup: JiraSetup) {
+  if (boardColumns?.site === setup.site && Date.now() - boardColumns.at < 600_000) return boardColumns.boards
+  const out: BoardColumn[][] = []
   for (const project of setup.projects) {
     const boards = await call(setup, `/rest/agile/1.0/board?projectKeyOrId=${project}&maxResults=10`).catch(() => null)
     for (const b of boards?.values ?? []) {
       const config = await call(setup, `/rest/agile/1.0/board/${b.id}/configuration`).catch(() => null)
-      orders.push((config?.columnConfig?.columns ?? []).flatMap((c: any) => (c.statuses ?? []).map((s: any) => String(s.id))))
+      // A column with no status (a kanban board's own backlog) holds no ticket.
+      const columns: BoardColumn[] = (config?.columnConfig?.columns ?? []).map((c: any) => ({ name: String(c.name ?? ""), statusIds: (c.statuses ?? []).map((s: any) => String(s.id)) }))
+      out.push(columns.filter(c => c.statusIds.length))
     }
   }
-  boardOrders = { site: setup.site, at: Date.now(), orders }
-  return orders
+  boardColumns = { site: setup.site, at: Date.now(), boards: out }
+  return out
 }
 
-export async function searchTickets(filter: TicketFilter, text = ""): Promise<{ tickets: TicketRow[]; order: string[] }> {
+// The epics above the tickets whose parent is not one (a sub-task's story's epic): one search more.
+async function epicsAbove(setup: JiraSetup, issues: any[]): Promise<Map<string, TicketRef>> {
+  const parents = [...new Set(issues.map(i => i.fields?.parent).filter(p => p?.key && kindOf(p.fields?.issuetype) !== "epic").map(p => String(p.key)))]
+  if (!parents.length) return new Map()
+  const found = await search(setup, `key in (${parents.slice(0, 100).join(",")})`, ["parent"]).catch(() => [])
+  const out = new Map<string, TicketRef>()
+  for (const p of found) {
+    const epic = refOf(p.fields?.parent, setup.site)
+    if (epic?.kind === "epic") out.set(String(p.key), epic)
+  }
+  return out
+}
+
+export async function searchTickets(filter: TicketFilter, text = ""): Promise<{ tickets: TicketRow[]; columns: BoardColumn[] }> {
   const setup = setupOrThrow()
   const sprint = await sprintFieldOf(setup)
-  const fields = [...BRIEF_FIELDS, "issuetype", "priority", "updated", ...(sprint ? [sprint] : [])]
-  const r = await call(setup, "/rest/api/3/search/jql", { method: "POST", body: JSON.stringify({ jql: jqlOf(filter, setup.projects, text), fields, maxResults: 100 }) })
-  const tickets: TicketRow[] = (r?.issues ?? []).map((i: any) => rowOf(i, setup.site, sprint))
-  const order = pickOrder(await boardOrdersOf(setup), [...new Set(tickets.map(t => t.statusId))])
-  return { tickets, order }
+  const fields = [...BRIEF_FIELDS, "priority", "updated", "parent", ...(sprint ? [sprint] : [])]
+  const issues = await search(setup, jqlOf(filter, setup.projects, text), fields)
+  const epics = await epicsAbove(setup, issues)
+  const tickets: TicketRow[] = issues.map(i => rowOf(i, setup.site, sprint, epics))
+  const columns = pickColumns(await boardColumnsOf(setup), [...new Set(tickets.map(t => t.statusId))])
+  return { tickets, columns }
 }
 
 // ---------- what you may do on yours ----------

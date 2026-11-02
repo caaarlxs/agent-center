@@ -26,6 +26,7 @@ import { Anim } from "@/components/icons/animated"
 import { useIsDots } from "@/lib/board-style"
 import { PanelTabs } from "./PanelTabs"
 import { EditActions } from "./EditActions"
+import { jiraSetup } from "@/features/jira/jira"
 
 // The conversation (with its markdown renderer) is not needed to draw the
 // board: it loads once the browser is idle, before you open one. The
@@ -49,7 +50,7 @@ const TABS: { key: Tab; label: string; icon: ReactNode }[] = [
   { key: "commits", label: "Commits", icon: <GitCommitHorizontal /> },
   { key: "code", label: "Code", icon: <Code2 /> },
   { key: "prs", label: "PRs", icon: <GitPullRequest /> },
-  { key: "ticket", label: "Ticket", icon: <Ticket /> },
+  { key: "ticket", label: "Tickets", icon: <Ticket /> },
   { key: "files", label: "Files", icon: <FileText /> },
   { key: "tasks", label: "Tasks", icon: <ListChecks /> },
 ]
@@ -212,8 +213,9 @@ export function SessionPanel({ id, tab: asked, file }: { id: string; tab: Tab; f
   const hasTasks = useLive(l => l.snapshot?.features?.organizer !== false)
   const result = openedResult.use()
   const wide = isWide.use()
-  // Tasks and Ticket only when the session has them.
-  const tabs = TABS.filter(t => (t.key !== "tasks" || hasTasks) && (t.key !== "ticket" || !!card?.tickets?.length))
+  // Tasks when the organizer is there; Tickets when Jira is set up.
+  const hasJira = !!jiraSetup.use()
+  const tabs = TABS.filter(t => (t.key !== "tasks" || hasTasks) && (t.key !== "ticket" || hasJira))
   const tab = tabs.some(t => t.key === asked) ? asked : "chat"
   const isWorkspace = WORKSPACES.has(tab)
   // Code stays mounted once opened, hidden while another tab shows.
