@@ -7,6 +7,7 @@ import { open, readdir, stat } from "node:fs/promises"
 import { join } from "node:path"
 import { HOME, PROJECTS_DIR as PROJECTS } from "./config"
 import { applyPlanOp, type PlanOp, type PlanStep } from "./plan-op"
+import { type TestRun, runnerOf, testRunOf } from "./tests"
 import { hasWidget, resultOf, type Widget, widgetOf } from "./widgets"
 
 const WINDOW = 3 * 1024 * 1024
@@ -51,6 +52,8 @@ export type Item = { key: string } & (
   | { kind: "suggestionGone"; taskId: string }
   // What a connector's tool gave back, drawn as the app's widget (lib/widgets.ts).
   | { kind: "widget"; widget: Widget }
+  // A test run (lib/tests.ts): what passed and failed, from what it printed.
+  | { kind: "tests"; run: TestRun; command: string }
 )
 
 // The calls whose result is drawn, by id: the result can come in a later read
@@ -158,6 +161,25 @@ function editOf(result: any): { path: string; added: number; removed: number } |
   return { path: result.filePath, added, removed }
 }
 
+// The commands that run tests, by call id: their result can come in a later read.
+const testCalls = new Map<string, string>()
+function rememberTests(id: string, command: string) {
+  testCalls.set(id, command)
+  if (testCalls.size > CALLS_KEPT) testCalls.delete(testCalls.keys().next().value!)
+}
+const resultText = (b: any) => (typeof b.content === "string" ? b.content : Array.isArray(b.content) ? b.content.map((c: any) => c?.text ?? "").join("\n") : "")
+
+// The test runs a row of tool results brings: one per result of a test command with a summary.
+function testItems(blocks: any[], row: any, uuid: string): Item[] {
+  return blocks.flatMap((b: any, i: number): Item[] => {
+    const command = b?.type === "tool_result" ? testCalls.get(b.tool_use_id) : undefined
+    if (!command) return []
+    const r = row.toolUseResult
+    const run = testRunOf(command, typeof r?.stdout === "string" ? `${r.stdout}\n${r.stderr ?? ""}` : resultText(b))
+    return run ? [{ key: `${uuid}:tests:${i}`, kind: "tests", run, command: command.replace(HOME, "~") }] : []
+  })
+}
+
 // The widgets a row of tool results brings, one per result whose call has one.
 function widgetItems(blocks: any[], row: any, uuid: string): Item[] {
   return blocks.flatMap((b: any, i: number): Item[] => {
@@ -199,7 +221,7 @@ function toItems(rows: any[]): Item[] {
     if (row.type === "user" && !row.isMeta) {
       const blocks = typeof content === "string" ? [{ type: "text", text: content }] : Array.isArray(content) ? content : []
       if (blocks.some((b: any) => b?.type === "tool_result")) {
-        items.push(...widgetItems(blocks, row, uuid))
+        items.push(...widgetItems(blocks, row, uuid), ...testItems(blocks, row, uuid))
         const edit = editOf(row.toolUseResult)
         if (edit) items.push({ key: `${uuid}:edit`, kind: "edit", ...edit })
         continue
@@ -214,6 +236,7 @@ function toItems(rows: any[]): Item[] {
         else if (block?.type === "tool_use") {
           const name = String(block.name ?? "")
           if (hasWidget(name)) rememberCall(String(block.id), name, block.input)
+          if (name === "Bash" && typeof block.input?.command === "string" && runnerOf(block.input.command)) rememberTests(String(block.id), block.input.command)
           if (name.endsWith("ccd_turn__wrap_up"))
             items.push({
               key,

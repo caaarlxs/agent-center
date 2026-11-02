@@ -54,3 +54,24 @@ export async function branchState(cwd: string, prBranch: string) {
   const ahead = await run(["git", "rev-list", "--count", "@{u}..HEAD"], cwd)
   return { branch, uncommitted: status ? status.split("\n").length : 0, unpushed: ahead === null ? null : Number(ahead) }
 }
+
+// Where a session's folder stands, for its next step: changes not committed,
+// commits not pushed (null: no upstream), and commits its branch has that the
+// repository's default branch has not (null: unknown).
+export async function workState(cwd: string) {
+  const branch = await run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd)
+  if (!branch) return null
+  const base = (await run(["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"], cwd)) ?? null
+  const [status, unpushed, ahead] = await Promise.all([
+    run(["git", "status", "--porcelain"], cwd),
+    run(["git", "rev-list", "--count", "@{u}..HEAD"], cwd),
+    base ? run(["git", "rev-list", "--count", `${base}..HEAD`], cwd) : Promise.resolve(null),
+  ])
+  return {
+    branch,
+    base: base?.replace(/^origin\//, "") ?? null,
+    uncommitted: status ? status.split("\n").length : 0,
+    unpushed: unpushed === null ? null : Number(unpushed),
+    ahead: ahead === null ? null : Number(ahead),
+  }
+}

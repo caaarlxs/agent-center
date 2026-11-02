@@ -1,6 +1,7 @@
 // How full a session's context is, under the reply box: a small ring that
-// fills (amber from 65%, red from 85%) and the share, its digits rolling;
-// the tokens show on hover.
+// fills (amber from 65%, red from 85%) and the share, its digits rolling; on
+// hover, the tokens, what the session would cost at API prices (in all, and
+// in the last five hours) and its model.
 import { Num } from "@/components/common/Num"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import type { Snapshot } from "@/lib/api-types"
@@ -12,6 +13,7 @@ type Usage = NonNullable<Snapshot["cards"][number]["usage"]>
 const R = 5.5
 const LENGTH = 2 * Math.PI * R
 const TONE = { ok: "text-text-muted", ask: "text-ask", bad: "text-bad" }
+const money = (n: number) => `$${n < 10 ? n.toFixed(2) : Math.round(n)}`
 
 export function UsageMeter({ usage }: { usage: Usage }) {
   const { pct, tone, tokens, window } = usageOf(usage)
@@ -27,7 +29,13 @@ export function UsageMeter({ usage }: { usage: Usage }) {
           <Num value={pct} suffix="%" />
         </span>
       </TooltipTrigger>
-      <TooltipContent side="top">Context used: {tokens} of {window} tokens{pct >= 85 ? " — consider starting a new session" : ""}</TooltipContent>
+      <TooltipContent side="top" className="flex flex-col gap-1 py-2">
+        <b className="font-semibold">Context: {tokens} of {window} tokens ({pct}%)</b>
+        <span className="h-1 w-48 overflow-hidden rounded-full bg-[color-mix(in_srgb,currentColor_20%,transparent)]"><i className="block h-full rounded-full bg-current" style={{ width: `${pct}%` }} /></span>
+        <span>At API prices: {money(usage.cost)} in all · {money(usage.recentCost)} in the last 5 h</span>
+        {usage.model && <span className="opacity-70">{usage.model}</span>}
+        {pct >= 65 && <span className="opacity-70">{pct >= 85 ? "Near full: Claude will compact it soon. A new session keeps more." : "Claude compacts the conversation when it fills."}</span>}
+      </TooltipContent>
     </Tooltip>
   )
 }

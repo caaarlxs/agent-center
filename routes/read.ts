@@ -24,7 +24,8 @@ import { freshness } from "../lib/freshness"
 import { monacoState } from "../lib/monaco"
 import { documentHtml, quickLook, WORD, WORKBOOK, workbookHtml } from "../lib/office"
 import { readTasks } from "../lib/organizer"
-import { branchState, knownRepos, repoInfo } from "../lib/repo"
+import { branchState, knownRepos, repoInfo, workState } from "../lib/repo"
+import { traceOf } from "../lib/trace"
 import { commandFor, status as runStatus, suggest as suggestRun } from "../lib/runner"
 import { fold, search } from "../lib/search"
 import { sessionEvents } from "../lib/session-events"
@@ -209,6 +210,19 @@ async function sessionRead(id: string, what: string, url: URL) {
     // "Ready to merge?": what the PR card does not say on its own. The
     // review comments still open, the session's folder (anything uncommitted
     // or unpushed on the PR's branch) and the session's open tasks.
+    // A turn on one timeline (lib/trace.ts): ?at=<its start>, else the last.
+    case "trace": {
+      const at = Number(url.searchParams.get("at")) || undefined
+      return json(await traceOf(group?.id ?? id, at))
+    }
+    // Its next step (the chips under the conversation): where its folder
+    // stands, and its branch's PR.
+    case "nextsteps": {
+      if (!group) return json({ error: "unknown session" }, 404)
+      const state = await workState(group.lead.cwd)
+      const pr = state && group.branch === state.branch ? prLookup(`${group.root}#${state.branch}`, state.branch, group.root) : null
+      return json({ state, pr })
+    }
     case "readiness": {
       const prUrl = url.searchParams.get("url") ?? ""
       const [pr, threads, tasks] = await Promise.all([

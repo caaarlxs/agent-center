@@ -13,6 +13,7 @@ import { Kbd } from "@/components/ui/kbd"
 import type { Card } from "@/lib/api-types"
 import { undoable } from "@/lib/toast"
 import { cn } from "@/lib/utils"
+import { usageOf } from "./usage"
 import { useIsDots } from "@/lib/board-style"
 import { openDialog } from "@/app/open-dialog"
 import { type Tab, openSession } from "@/app/open-session"
@@ -260,13 +261,12 @@ function PendingChip({ card, isCompact }: { card: Card; isCompact?: boolean }) {
 // How full the context is: past 85% a new session is worth it.
 export function UsageMeter({ usage, barW = 28 }: { usage: Card["usage"]; barW?: number }) {
   if (!usage) return null
-  const pct = Math.min(100, Math.round((usage.context / usage.window) * 100))
-  const tone = pct >= 85 ? "text-bad" : pct >= 65 ? "text-ask" : "text-faint"
-  const fill = pct >= 85 ? "bg-bad" : pct >= 65 ? "bg-ask" : "bg-faint"
-  const tokens = usage.context >= 1000 ? `${Math.round(usage.context / 1000)}k` : usage.context
+  const { pct, tone: level, tokens, window } = usageOf(usage)
+  const tone = { bad: "text-bad", ask: "text-ask", ok: "text-faint" }[level]
+  const fill = { bad: "bg-bad", ask: "bg-ask", ok: "bg-faint" }[level]
   return (
     <span className={cn("inline-flex flex-none items-center gap-[5px] text-[11px] font-semibold tabular-nums", tone)}
-      title={`Context used: ${tokens} of ${usage.window / 1000}k tokens (${pct}%)${pct >= 85 ? " — consider starting a new session" : ""}`}>
+      title={`Context used: ${tokens} of ${window} tokens (${pct}%)${pct >= 85 ? " — consider starting a new session" : ""}`}>
       <span className="meter h-1 overflow-hidden rounded-[2px] bg-hover" style={{ width: barW }}><i className={cn("block h-full rounded-[2px]", fill)} style={{ width: `${pct}%` }} /></span><Num value={pct} suffix="%" />
     </span>
   )

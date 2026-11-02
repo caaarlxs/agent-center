@@ -4,7 +4,7 @@
 // Files are workspaces: the panel takes the whole width. Code stays alive once
 // opened, so its open files and unsaved text survive a look at another tab.
 import { boardAct as actOn } from "@/features/board/act"
-import { Check, Clock, Code2, FileDiff, FileText, GitBranch, GitCommitHorizontal, GitPullRequest, ListChecks, Lock, MessageSquare, Minimize2, Palette, Pencil, Square, Star, Ticket } from "lucide-react"
+import { Activity, Check, Clock, Code2, FileDiff, FileText, GitBranch, GitCommitHorizontal, GitPullRequest, ListChecks, Lock, MessageSquare, Minimize2, Palette, Pencil, Square, Star, Ticket } from "lucide-react"
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Kbd } from "@/components/ui/kbd"
@@ -42,7 +42,8 @@ const Prs = lazyView(() => import("@/features/prs/Prs").then(m => m.Prs))
 const Tasks = lazyView(() => import("@/features/tasks/Tasks").then(m => m.Tasks))
 const Commits = lazyView(() => import("@/features/commits/Commits").then(m => m.Commits))
 const TicketTab = lazyView(() => import("@/features/jira/TicketTab").then(m => m.TicketTab))
-const PRELOAD: Partial<Record<string, () => void>> = { changes: Changes.preload, code: CodeWorkspace.preload, files: Files.preload, prs: Prs.preload, tasks: Tasks.preload, commits: Commits.preload }
+const Trace = lazyView(() => import("@/features/trace/Trace").then(m => m.Trace))
+const PRELOAD: Partial<Record<string, () => void>> = { changes: Changes.preload, code: CodeWorkspace.preload, files: Files.preload, prs: Prs.preload, tasks: Tasks.preload, commits: Commits.preload, trace: Trace.preload }
 
 const TABS: { key: Tab; label: string; icon: ReactNode }[] = [
   { key: "chat", label: "Conversation", icon: <MessageSquare /> },
@@ -51,6 +52,7 @@ const TABS: { key: Tab; label: string; icon: ReactNode }[] = [
   { key: "code", label: "Code", icon: <Code2 /> },
   { key: "prs", label: "PRs", icon: <GitPullRequest /> },
   { key: "ticket", label: "Tickets", icon: <Ticket /> },
+  { key: "trace", label: "Trace", icon: <Activity /> },
   { key: "files", label: "Files", icon: <FileText /> },
   { key: "tasks", label: "Tasks", icon: <ListChecks /> },
 ]
@@ -272,6 +274,7 @@ export function SessionPanel({ id, tab: asked, file }: { id: string; tab: Tab; f
         {tab === "prs" && <Guard key={id} where="prs"><Prs id={id} /></Guard>}
         {tab === "ticket" && card && <Guard key={id} where="ticket"><TicketTab card={card} /></Guard>}
         {tab === "tasks" && <Guard key={id} where="tasks"><Tasks id={id} /></Guard>}
+        {tab === "trace" && <Guard key={id} where="trace"><Trace id={id} /></Guard>}
         {tab === "files" && <Guard key={id} where="files"><Files id={id} file={file} /></Guard>}
         {hasCode && <div className={cn("flex min-h-0 flex-1 flex-col", tab !== "code" && "hidden")}><Guard key={id} where="code"><CodeWorkspace id={id} isShown={tab === "code"} /></Guard></div>}
       </div>

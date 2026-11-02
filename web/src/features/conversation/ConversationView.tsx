@@ -3,13 +3,15 @@
 // and chips, the time and a Fork link under each), Claude's answers in
 // Markdown, the tool runs folded, its task list, the "next step" box, the
 // questions it asks (answered here while it waits), the app's own dialogs,
-// the files and pages it sent, the tasks it suggests for a session of their
+// the files and pages it sent, its test runs (passed and failed), the tasks it suggests for a session of their
 // own (started from here), what still runs in the background, the reply
 // choices it offers, the approval it asks for, and your messages it has not
-// received yet, each with Undo. A "New messages" pill shows when more arrives
-// while you read further up.
-import { ArrowDown, ChevronDown, ChevronRight, FileText, GitFork, Globe, ListChecks, Square, Terminal, Bot, Wrench } from "lucide-react"
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
+// received yet, each with Undo; when it waits, what to do next (commit,
+// push, open the PR…). A "New messages" pill shows when more arrives
+// while you read further up; a line marks where each day starts, and a map
+// beside a long one shows where your messages, questions and failures are.
+import { ArrowDown, ChevronDown, ChevronRight, FileText, FlaskConical, GitFork, Globe, ListChecks, Square, Terminal, Bot, Wrench } from "lucide-react"
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 import { FileIcon } from "@/components/common/FileIcon"
 import { Button } from "@/components/ui/button"
@@ -27,6 +29,9 @@ import { openSession, showChange, showFile, showTab } from "@/app/open-session"
 import { fileName, sentFiles } from "@/features/prompt/files"
 import { ago } from "@/features/session/state"
 import { answer, launch, permit, stop } from "@/features/session/actions"
+import { ConversationMap } from "./ConversationMap"
+import { dayBreaks } from "./days"
+import { type Step, type WorkState, nextSteps } from "./next-steps"
 import { ForkDialog } from "./ForkDialog"
 import type { EditsItem, Shown, SuggestionItem } from "./items"
 import { Markdown, SessionOf } from "./Markdown"
@@ -115,7 +120,7 @@ function EditedFiles({ item }: { item: EditsItem }) {
     <span className="ml-auto shrink-0 font-mono text-xs tabular-nums"><span className="text-work">+{a}</span> <span className="text-bad">−{r}</span></span>
   )
   return (
-    <div className="max-w-[620px] shrink-0 overflow-hidden rounded-[12px] border border-line bg-surface">
+    <div className="max-w-[620px] shrink-0 overflow-hidden rounded-[12px] border border-line bg-surface" data-mark="edit" data-mark-label={`${item.files.length === 1 ? "1 file" : `${item.files.length} files`} changed`}>
       <div className="border-b border-line px-3.5 py-2.5 text-[13px] font-medium">{item.files.length === 1 ? "1 file changed" : `${item.files.length} files changed`}</div>
       {item.files.map(f => (
         <button key={f.path} onClick={() => showChange(f.path)} title={f.path}
@@ -134,7 +139,7 @@ function EditedFiles({ item }: { item: EditsItem }) {
 
 function YourMessage({ item, onFork }: { item: Extract<Shown, { kind: "user" }>; onFork: () => void }) {
   return (
-    <div className="group/msg flex max-w-[88%] flex-col items-end gap-[3px] self-end">
+    <div className="group/msg flex max-w-[88%] flex-col items-end gap-[3px] self-end" data-mark="you" data-mark-label={`You: ${item.text.replace(/\s+/g, " ").slice(0, 90)}`}>
       <Bubble text={item.text} />
       <span className="flex items-center justify-end gap-2 text-[11px] text-faint">
         <button className={cn(linkBtn, "inline-flex items-center gap-1 text-[11.5px] no-underline opacity-0 transition-opacity duration-[120ms] group-hover/msg:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100")}
@@ -247,7 +252,7 @@ function Question({ item, sessionId, canAnswer: isAnswerable, picked, onPick }: 
   const mark = (isChosen: boolean) =>
     cn("mt-0.5 size-3.5 shrink-0 border-[1.5px] border-line-strong", item.isMulti ? "rounded" : "rounded-full", isChosen && "border-brand bg-brand shadow-[inset_0_0_0_2.5px_var(--surface)]")
   return (
-    <div className={cn(card, "w-[min(520px,100%)] self-start")}>
+    <div className={cn(card, "w-[min(520px,100%)] self-start")} data-mark="ask" data-mark-label={`Question: ${item.text}`}>
       <p className="m-0 flex items-baseline gap-2 font-semibold"><Disc />{item.text}</p>
       {item.isMulti && canAnswer && <p className="mt-0.5 ml-[25px] text-xs text-faint">You can pick several</p>}
       {item.options.length > 0 && (
@@ -333,6 +338,73 @@ function Suggestion({ item, sessionId, state, onDismiss }: { item: SuggestionIte
             </>
           )}
       </div>
+    </div>
+  )
+}
+
+// A test run (lib/tests.ts): passed, failed and skipped, a bar of the share,
+// and the tests that failed (the first ones; the rest on a click).
+function TestRun({ item }: { item: Extract<Shown, { kind: "tests" }> }) {
+  const { run } = item
+  const [isAll, setAll] = useState(false)
+  const total = run.passed + run.failed + run.skipped
+  const isBad = run.failed > 0
+  const shown = isAll ? run.failures : run.failures.slice(0, 4)
+  return (
+    <div className={cn("flex w-[min(520px,100%)] shrink-0 flex-col gap-2 rounded-xl border bg-surface px-[13px] py-2.5", isBad ? "border-[color-mix(in_srgb,var(--bad)_40%,transparent)]" : "border-line")} data-mark={isBad ? "fail" : undefined} data-mark-label={`${run.failed} failed · ${run.runner}`}>
+      <div className="flex items-center gap-2 text-[13px]">
+        <FlaskConical className={cn("size-[14px] shrink-0", isBad ? "text-bad" : "text-work")} />
+        <b className="font-semibold">{isBad ? `${run.failed} ${run.failed === 1 ? "test fails" : "tests fail"}` : "Tests pass"}</b>
+        <span className="min-w-0 truncate font-mono text-[11.5px] text-faint" title={item.command}>{run.runner}</span>
+        <span className="ml-auto shrink-0 text-xs tabular-nums">
+          <span className="text-work">{run.passed} passed</span>
+          {run.failed > 0 && <span className="text-bad"> · {run.failed} failed</span>}
+          {run.skipped > 0 && <span className="text-faint"> · {run.skipped} skipped</span>}
+        </span>
+      </div>
+      <div className="flex h-1.5 overflow-hidden rounded-full bg-hover" aria-hidden>
+        <i className="bg-work" style={{ width: `${(run.passed / total) * 100}%` }} />
+        <i className="bg-bad" style={{ width: `${(run.failed / total) * 100}%` }} />
+      </div>
+      {shown.length > 0 && (
+        <ul className="m-0 flex list-none flex-col gap-0.5 p-0">
+          {shown.map(f => <li key={f} className="flex min-w-0 items-baseline gap-2 font-mono text-[11.5px]"><span className="shrink-0 font-extrabold text-bad">✗</span><span className="min-w-0 truncate" title={f}>{f}</span></li>)}
+          {run.failures.length > shown.length && <li><button className="text-xs font-semibold text-text-muted hover:text-text" onClick={() => setAll(true)}>{run.failures.length - shown.length} more</button></li>}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+// What to do next in a session that waits (next-steps.ts): a chip sends
+// Claude the message, or opens the tab. Asked again after each turn.
+function NextSteps({ sessionId, turn }: { sessionId: string; turn: string | undefined }) {
+  const [steps, setSteps] = useState<Step[]>([])
+  useEffect(() => {
+    let alive = true
+    get<{ state: WorkState | null; pr: Card["prs"][number] | null }>(`/api/sessions/${encodeURIComponent(sessionId)}/nextsteps`)
+      .then(r => alive && setSteps(nextSteps(r.state, r.pr)), () => alive && setSteps([]))
+    return () => void (alive = false)
+  }, [sessionId, turn])
+  if (!steps.length) return null
+  return (
+    <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+      <span className="mr-0.5 text-[11px] text-faint">Next</span>
+      {steps.map(s => (
+        <button key={s.label} title={s.message ?? `Open ${s.tab === "prs" ? "PRs" : "Changes"}`} onClick={() => (s.tab ? showTab(s.tab) : reply(sessionId, s.message!))}
+          className="h-[26px] rounded-[13px] border border-line bg-surface px-2.5 text-xs font-semibold text-text transition-[transform,border-color] duration-[120ms] ease-(--ease-out) hover:border-line-strong active:scale-[0.96]">
+          {s.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+// Where a new day starts in a long conversation.
+function DaySeparator({ label }: { label: string }) {
+  return (
+    <div className="my-1 flex shrink-0 items-center gap-2.5 text-[11.5px] font-semibold text-text-muted" role="separator" aria-label={label}>
+      <span className="h-px flex-1 bg-line" /><span className="rounded-full border border-line bg-surface px-2.5 py-0.5">{label}</span><span className="h-px flex-1 bg-line" />
     </div>
   )
 }
@@ -497,7 +569,7 @@ function ShownItem({ item, sessionId, asked, suggested, onFork }: { item: Shown;
       )
     case "chapter":
       return (
-        <div className="my-1.5 flex items-center gap-2.5 text-[11.5px] font-[650] tracking-[0.04em] text-faint uppercase">
+        <div className="my-1.5 flex items-center gap-2.5 text-[11.5px] font-[650] tracking-[0.04em] text-faint uppercase" data-mark="chapter" data-mark-label={item.title}>
           <span className="h-px flex-1 bg-line" />{item.title}<span className="h-px flex-1 bg-line" />
         </div>
       )
@@ -518,6 +590,8 @@ function ShownItem({ item, sessionId, asked, suggested, onFork }: { item: Shown;
       return <EditedFiles item={item} />
     case "widget":
       return <WidgetView widget={item.widget} sessionId={sessionId} />
+    case "tests":
+      return <TestRun item={item} />
     case "artifact":
       return (
         <div className="flex max-w-[520px] items-center gap-2.5 rounded-[10px] border border-line bg-surface px-3 py-2.5">
@@ -543,6 +617,9 @@ export function ConversationView({ sessionId, card: session, bridge }: { session
   const gone = takenBack.use()
   const waiting = useMemo(() => waitingOf(mine, bridge?.queued ?? [], gone), [mine, bridge?.queued, gone])
   const [forking, setForking] = useState<Extract<Shown, { kind: "user" }> | null>(null)
+  const today = new Date(useNow()).toDateString()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const breaks = useMemo(() => dayBreaks(shown as { key: string; at?: string | null }[], Date.now()), [shown, today])
 
   // A message sent from here shows as pending until the transcript has it.
   const userTexts = useMemo(() => shown.flatMap(i => (i.kind === "user" ? [i.text] : [])), [shown])
@@ -606,6 +683,8 @@ export function ConversationView({ sessionId, card: session, bridge }: { session
     .map(q => ({ key: `${question!.id}-${q.question}`, kind: "question", text: q.question, options: q.options, isMulti: !!q.multiSelect, answer: null }))
   const permission = session?.askKind === "permission" ? (session.bridge?.permission ?? null) : null
   const choices = session?.column === "asking" && !waiting.length ? (session.choices ?? []) : []
+  // Waiting for you with nothing to answer: the next step shows.
+  const isIdle = isLoaded && !!session && (session.column === "review" || session.column === "pending") && !waiting.length && !question && !session.isLaunching
 
   // Follows the bottom while you are there; what arrives while you read
   // further up raises "New messages".
@@ -641,6 +720,8 @@ export function ConversationView({ sessionId, card: session, bridge }: { session
 
   return (
     <SessionOf.Provider value={sessionId}>
+      <div className="relative flex min-h-0 flex-1 flex-col">
+      <ConversationMap box={box} />
       <div ref={box} onScroll={onScroll} className="relative flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto px-5 pt-[18px] pb-3 max-[860px]:px-3.5 max-[860px]:pt-3.5 max-[860px]:pb-2.5">
         {!isLoaded && !error && (
           <div className="flex flex-col gap-3">
@@ -649,7 +730,12 @@ export function ConversationView({ sessionId, card: session, bridge }: { session
         )}
         {error && <p className="text-center text-text-muted">{error}</p>}
         {hasMore && <Button variant="ghost" className="self-center" onClick={earlier}>Load earlier messages</Button>}
-        {shown.map(item => <ShownItem key={item.key} item={item} sessionId={sessionId} asked={asked} suggested={suggested} onFork={setForking} />)}
+        {shown.map(item => (
+          <Fragment key={item.key}>
+            {breaks.has(item.key) && <DaySeparator label={breaks.get(item.key)!} />}
+            <ShownItem item={item} sessionId={sessionId} asked={asked} suggested={suggested} onFork={setForking} />
+          </Fragment>
+        ))}
         {writing && <Markdown isStreaming>{writing}</Markdown>}
         {choices.length > 0 && (
           <div className="flex flex-wrap justify-end gap-1.5">
@@ -662,6 +748,7 @@ export function ConversationView({ sessionId, card: session, bridge }: { session
             ))}
           </div>
         )}
+        {isIdle && <NextSteps sessionId={sessionId} turn={lastKey} />}
         {waiting.map(p => <PendingMessage key={p.id} p={p} sessionId={sessionId} bridge={bridge} isWorking={session?.column === "working"} />)}
         {live.map(q => <Question key={q.key} item={q} sessionId={sessionId} canAnswer picked={picks[q.text]} onPick={asked.onPick} />)}
         {permission && <PermissionCard key={permission.id} sessionId={sessionId} permission={permission} />}
@@ -672,6 +759,7 @@ export function ConversationView({ sessionId, card: session, bridge }: { session
             <ArrowDown className="size-[13px]" />New messages
           </button>
         )}
+      </div>
       </div>
       {forking && <ForkDialog sessionId={sessionId} item={forking} onClose={() => setForking(null)} />}
     </SessionOf.Provider>
