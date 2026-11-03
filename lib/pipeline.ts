@@ -190,9 +190,10 @@ const orderIn = (v: unknown): OrderItem[] =>
     .map(x => ({ kind: x.step, id: textOf(x.id) || null, text: textOf(x.text) || null, envs: ENVS.filter(e => listOf(x.envs).includes(e)) }))
 // The findings that stop a ticket: they go back to Build.
 export const blocking = (findings: Finding[] | undefined) => (findings ?? []).filter(f => f.severity !== "minor")
-// The findings a build after a review fixes: the ones that stop the ticket,
-// or all of them when you ask for the minors too.
-export const toFixNow = (findings: Finding[] | undefined, isAll: boolean) => (isAll ? (findings ?? []) : blocking(findings)).map(f => f.id)
+// The findings a build after a review fixes: the ones you chose, else the
+// ones that stop the ticket.
+export const toFixNow = (findings: Finding[] | undefined, chosen?: string[]) =>
+  (chosen ? (findings ?? []).filter(f => chosen.includes(f.id)) : blocking(findings)).map(f => f.id)
 
 // The to-do items the build marked done (build.checklist.json: {"done": [...]} or a list).
 export function checkedIn(text: string | null): string[] {
@@ -442,8 +443,8 @@ export function stageToRun(state: PipelineState | null, asked?: Stage): Stage {
 
 // Starts the pipeline on a ticket of yours (or runs a stage again); taking
 // it, when you ask, makes it yours first. A build after a review fixes what
-// it found (review.fix.json): what stops the ticket, or, if you ask, the minors too.
-export async function startPipeline(key: string, take = false, asked?: Stage, isFixAll = false) {
+// it found (review.fix.json): the findings you chose, else what stops the ticket.
+export async function startPipeline(key: string, take = false, asked?: Stage, chosen?: string[]) {
   if (!isKey(key)) throw new Error("Not a ticket key")
   const state = await stateOf(key)
   if (state?.status === "running") throw new Error("A stage already runs on this ticket")
@@ -451,7 +452,7 @@ export async function startPipeline(key: string, take = false, asked?: Stage, is
   if (take) await assignToMe(key)
   await labelTicket(key, [LABELS.on], []) // also checks that it is yours
   if (isRelease(stage)) return startRelease(state!, stage)
-  if (stage === "build" && state?.stage === "review") await writeJsonAtomic(join(dirOf(key), "review.fix.json"), { fix: toFixNow(state.findings, isFixAll) }, { pretty: true })
+  if (stage === "build" && state?.stage === "review") await writeJsonAtomic(join(dirOf(key), "review.fix.json"), { fix: toFixNow(state.findings, chosen) }, { pretty: true })
   else if (stage !== "build") await rename(join(dirOf(key), "review.fix.json"), join(dirOf(key), "review.fix.json.prev")).catch(() => {})
   void run(key, (state?.runs ?? 0) + 1, stage)
 }
@@ -531,9 +532,9 @@ export async function stepPipeline(key: string, id: string, action: "approve" | 
   void tickRelease(key)
 }
 
-// A script's report, as it left it.
+// A script's report (or its log), as it left it.
 export async function pipelineReport(key: string, file: string) {
-  if (!isKey(key) || !/^S\w*-(staging|prod)-(simulate|execute)\.csv$/.test(file)) throw new Error("Not a report")
+  if (!isKey(key) || !/^S\w*-(staging|prod)-(simulate|execute)\.(csv|log)$/.test(file)) throw new Error("Not a report")
   return readText(join(dirOf(key), "scripts", file))
 }
 

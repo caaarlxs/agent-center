@@ -211,10 +211,10 @@ describe("blocking", () => {
 
 describe("toFixNow", () => {
   const finding = (id: string, severity: "blocker" | "major" | "minor") => ({ id, unit: null, severity, file: null, line: null, title: id, detail: "", fix: "" })
-  it("fixes the blockers and majors, or every finding when you ask for the minors too", () => {
-    const found = [finding("F1", "minor"), finding("F2", "major")]
-    expect(toFixNow(found, false)).toEqual(["F2"])
-    expect(toFixNow(found, true)).toEqual(["F1", "F2"])
-    expect(toFixNow(undefined, true)).toEqual([])
+  it("fixes the findings you chose (only ones it has), else the blockers and majors", () => {
+    const found = [finding("F1", "minor"), finding("F2", "major"), finding("F3", "minor")]
+    expect(toFixNow(found)).toEqual(["F2"])
+    expect(toFixNow(found, ["F3", "F1", "F9"])).toEqual(["F1", "F3"])
+    expect(toFixNow(undefined, ["F1"])).toEqual([])
   })
 })

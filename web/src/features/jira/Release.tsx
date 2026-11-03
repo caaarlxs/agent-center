@@ -95,6 +95,19 @@ function Mark({ step }: { step: ReleaseStep }) {
   return <span className={cn(box, "border border-line-strong")} />
 }
 
+// What a step did or does now, its error, and its links (the PR, the deploy, a script's log).
+function StepDetail({ step, ticketKey }: { step: ReleaseStep; ticketKey: string }) {
+  if (!step.detail && !step.error && !step.links.length) return null
+  return (
+    <span className="col-start-2 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-[11.5px] text-faint">
+      {step.status === "running" && step.detail ? <Shimmer as="span" duration={2.2} className="[--color-background:var(--text)] [--color-muted-foreground:var(--text-muted)]">{step.detail}</Shimmer> : step.detail && <span>{step.detail}</span>}
+      {step.error && <span className="text-bad">{step.error}</span>}
+      {step.links.map(l => <a key={l.url} href={l.url} target="_blank" rel="noreferrer" className="font-semibold text-brand no-underline hover:underline">{l.label}</a>)}
+      {step.report && step.status !== "pending" && <a href={reportUrl(ticketKey, step.report.replace(/\.csv$/, ".log"))} target="_blank" rel="noreferrer" className="font-semibold text-text-muted no-underline hover:text-text">Log</a>}
+    </span>
+  )
+}
+
 function StepRow({ step, ticketKey, isAtHand, onAct }: { step: ReleaseStep; ticketKey: string; isAtHand: boolean; onAct: (action: "approve" | "skip", value?: string) => void }) {
   const isFaint = step.status === "pending" || step.status === "skipped"
   return (
@@ -103,13 +116,7 @@ function StepRow({ step, ticketKey, isAtHand, onAct }: { step: ReleaseStep; tick
       <span className={cn("text-[13px] leading-[1.45]", isFaint ? "text-text-muted" : "text-text", step.status === "waiting" && "font-semibold")}>
         {step.title}{step.kind === "tag" && step.value && step.status !== "waiting" ? <span className="font-mono text-xs text-faint"> {step.value}</span> : null}
       </span>
-      {(step.detail || step.error || step.links.length > 0) && (
-        <span className="col-start-2 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-[11.5px] text-faint">
-          {step.status === "running" && step.detail ? <Shimmer as="span" duration={2.2} className="[--color-background:var(--text)] [--color-muted-foreground:var(--text-muted)]">{step.detail}</Shimmer> : step.detail && <span>{step.detail}</span>}
-          {step.error && <span className="text-bad">{step.error}</span>}
-          {step.links.map(l => <a key={l.url} href={l.url} target="_blank" rel="noreferrer" className="font-semibold text-brand no-underline hover:underline">{l.label}</a>)}
-        </span>
-      )}
+      <StepDetail step={step} ticketKey={ticketKey} />
       {(step.items.length > 0 || step.report) && (
         <div className="col-start-2 flex min-w-0 flex-col gap-2">
           <Items items={step.items} isOpen={step.status === "waiting" && step.kind === "check"} />
