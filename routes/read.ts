@@ -5,6 +5,8 @@
 import { jiraSetup, searchTickets, ticket, transitionsOf } from "../lib/jira"
 import { namedBy, repoPage, sessionCommits, sessionRepos } from "../lib/session-commits"
 import { ICONS, chosenIcon } from "../lib/app-icon"
+import { petsCatalog, petsState } from "../lib/pets"
+import { sheetOf } from "../lib/community-pets"
 import { basename } from "node:path"
 import { status as bridgeStatus } from "../lib/bridge"
 import { changesOf, commitDiff } from "../lib/changes"
@@ -297,6 +299,15 @@ export async function handleRead(url: URL): Promise<Response | null> {
   }
   if (path === "/api/jira/transitions") return await transitionsOf(url.searchParams.get("key") ?? "").then(t => json({ transitions: t }), (err: Error) => json({ error: err.message }, 400))
   if (path === "/api/app-icon") return json({ icon: chosenIcon(), icons: ICONS })
+  // Pets (lib/pets.ts): the packs to open, the pets you have, the one out.
+  if (path === "/api/pets") return json(await petsState())
+  // Every pet a pack can hold (codex-pets.net's, rated), and the sheet of one brought home.
+  if (path === "/api/pets/catalog") return json({ pets: await petsCatalog() })
+  const sheet = path.match(/^\/api\/pets\/community\/([^/]+)\/sheet$/)
+  if (sheet) {
+    const file = sheetOf(decodeURIComponent(sheet[1]!))
+    return file && (await file.exists()) ? new Response(file, { headers: { "content-type": "image/webp", "cache-control": "max-age=86400" } }) : new Response("Not found", { status: 404 })
+  }
   if (path === "/api/context") return json(await listContext())
   if (path === "/api/editor-themes") return json({ themes: await editorThemes() })
   if (path === "/api/context/file") {

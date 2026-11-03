@@ -2,7 +2,7 @@
 // board uses, with made-up data); everything else is the board: the sidebar,
 // the top bar with the view's name, the search and "Next up", the view, and
 // a session's panel sliding over them from the right.
-import { Menu } from "lucide-react"
+import { Menu, PawPrint } from "lucide-react"
 import { MotionConfig } from "motion/react"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
@@ -24,6 +24,8 @@ import { nextAfter, waitingOf } from "@/features/session/waiting"
 import { openNow, openSession, useOpenSession } from "./open-session"
 import { useAlerts } from "@/features/alerts/useAlerts"
 import { Dialogs } from "./Dialogs"
+import { PetLayer } from "@/features/pets/PetLayer"
+import { pets } from "@/features/pets/pets"
 import { HelpDialog } from "@/features/keys/HelpDialog"
 import { useBoardKeys } from "@/features/keys/useBoardKeys"
 import { useHistoryWalk } from "./history-walk"
@@ -220,8 +222,25 @@ function TopBar({ waiting, onSearch }: { waiting: number; onSearch: () => void }
         {waiting > 0 && <span className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-[9px] bg-ask px-[5px] text-[11px] font-bold text-surface tabular-nums"><Num value={waiting} /></span>}
         <Kbd className="opacity-70">F</Kbd>
       </Button>
+      <PetsButton />
       <Button className="size-8 px-0 min-[861px]:hidden" onClick={() => openDialog({ kind: "new" })} title="New session (N)"><Anim.Plus size={15} /></Button>
     </header>
+  )
+}
+
+// Pets, at the right of the top bar: the packs waiting to be opened on it.
+function PetsButton() {
+  const packs = pets.use()?.packs ?? 0
+  return (
+    <Button variant="outline" className="relative size-8 px-0" onClick={() => openDialog({ kind: "pets" })}
+      title={packs ? `Pets: ${packs} pack${packs > 1 ? "s" : ""} to open` : "Pets: your collection, and the one out on the board"}>
+      <PawPrint className="size-4" />
+      {packs > 0 && (
+        <span className="absolute -top-1.5 -right-1.5 inline-flex h-[17px] min-w-[17px] items-center justify-center rounded-[9px] bg-brand px-1 text-[10.5px] font-bold text-white tabular-nums shadow-[0_0_0_2px_var(--background)]">
+          <Num value={packs} />
+        </span>
+      )}
+    </Button>
   )
 }
 
@@ -273,6 +292,7 @@ function Board() {
       <SearchPalette open={isSearching} onOpenChange={setSearching} />
       <Dialogs />
       <HelpDialog />
+      <PetLayer />
     </div>
   )
 }
