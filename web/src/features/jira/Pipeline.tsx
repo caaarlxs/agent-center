@@ -258,13 +258,17 @@ function FindingRow({ finding: f, unit, isFixed }: { finding: Finding; unit: Uni
   )
 }
 
-function Findings({ state }: { state: PipelineState }) {
+// With only minors left, fixing them is yours to decide: a quiet link, not the next step.
+function Findings({ state, onFixMinors }: { state: PipelineState; onFixMinors: () => void }) {
   const findings = [...(state.findings ?? [])].sort((a, b) => SEVERITY[a.severity].rank - SEVERITY[b.severity].rank)
   const fixed = new Set(state.fixed ?? [])
   const toFix = findings.filter(f => f.severity !== "minor" && !fixed.has(f.id)).length
+  const canFixMinors = state.stage === "review" && state.status === "ready" && !toFix && findings.length > 0
   return (
     <div className="flex flex-col gap-1">
-      <h3 className="m-0 flex items-baseline gap-2 text-[13px] font-semibold">Findings<span className="text-xs font-medium text-faint tabular-nums">{toFix ? `${toFix} to fix · ` : ""}{findings.length} in all</span></h3>
+      <h3 className="m-0 flex items-baseline gap-2 text-[13px] font-semibold">Findings<span className="text-xs font-medium text-faint tabular-nums">{toFix ? `${toFix} to fix · ` : ""}{findings.length} in all</span>
+        {canFixMinors && <button className="ml-auto text-xs font-semibold text-text-muted transition-colors duration-120 hover:text-text" onClick={onFixMinors}>Fix {findings.length === 1 ? "it" : "them"} with build</button>}
+      </h3>
       <ol className="m-0 list-none p-0">
         {findings.map(f => <FindingRow key={f.id} finding={f} unit={state.units?.find(u => u.id === f.unit)} isFixed={fixed.has(f.id)} />)}
       </ol>
@@ -273,7 +277,7 @@ function Findings({ state }: { state: PipelineState }) {
 }
 
 // A stage that ended: what it left, and the next step (or running it again).
-function Outcome({ state, onRun }: { state: PipelineState; onRun: (stage?: Stage) => void }) {
+function Outcome({ state, onRun }: { state: PipelineState; onRun: (stage?: Stage, isAll?: boolean) => void }) {
   const isFailed = state.status === "failed"
   const next = nextStage(state)
   return (
@@ -284,7 +288,7 @@ function Outcome({ state, onRun }: { state: PipelineState; onRun: (stage?: Stage
         {isFailed && <Button variant="outline" className="h-7 shrink-0 text-xs" onClick={() => onRun()}>Run again</Button>}
         {next && <Button className="h-8 shrink-0 gap-1.5 text-xs" onClick={() => onRun(next)}><Play size={13} className="fill-current" />{startText(next, state.stage)}</Button>}
       </div>
-      {state.findings?.length && (state.stage === "review" || state.fixed?.length) ? <div className="mt-4"><Findings state={state} /></div> : null}
+      {state.findings?.length && (state.stage === "review" || state.fixed?.length) ? <div className="mt-4"><Findings state={state} onFixMinors={() => onRun("build", true)} /></div> : null}
       {state.stage !== "refine" && state.units?.length ? <Units units={state.units} /> : null}
       {state.stage !== "refine" && state.checklist?.length ? <div className="mt-4"><Checklist items={state.checklist} checked={state.checked ?? []} isBuilding={false} /></div> : null}
     </div>
@@ -365,7 +369,7 @@ export function Pipeline({ ticket, onTaken }: { ticket: Ticket; onTaken: () => v
   if (!data) return null
   const state = data.state
   const loadSoon = () => setTimeout(() => void load(), 800)
-  const start = async (stage?: Stage) => (await act("/api/pipeline/start", { key: ticket.key, stage }, stage ? startingText(stage, state?.stage) : "A session starts")) && loadSoon()
+  const start = async (stage?: Stage, isAll = false) => (await act("/api/pipeline/start", { key: ticket.key, stage, all: isAll }, stage ? startingText(stage, state?.stage) : "A session starts")) && loadSoon()
   const reset = () => confirmReset(async () => (await act("/api/pipeline/reset", { key: ticket.key }, "Started over: the comments stay in Jira")) && void load())
   const runs = state?.history ?? []
   const toggle = (f: Fold) => setFold(open => (open === f ? null : f))
@@ -385,7 +389,7 @@ export function Pipeline({ ticket, onTaken }: { ticket: Ticket; onTaken: () => v
         {!state && <RunButton ticket={ticket} onStarted={() => (loadSoon(), ticket.isMine || onTaken())} />}
         {state?.status === "running" && <Working state={state} now={now} />}
         {state?.status === "needs-info" && <Decisions key={state.askedAt} ticketKey={ticket.key} state={state} onSent={() => void load()} />}
-        {(state?.status === "ready" || state?.status === "failed") && <Outcome state={state} onRun={stage => void start(stage)} />}
+        {(state?.status === "ready" || state?.status === "failed") && <Outcome state={state} onRun={(stage, isAll) => void start(stage, isAll)} />}
       </div>
       {(docs.length > 0 || runs.length > 0) && (
         <footer className="border-t border-line px-4 py-2.5">

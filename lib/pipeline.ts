@@ -123,7 +123,7 @@ const STAGE: Record<Stage, StageDef> = {
 1. Lee ${join(STAGES_DIR, "build.md")} y ${join(STAGES_DIR, "environment.md")}, y síguelos.
 2. El plan está en ${join(dir, "plan.md")} y ${join(dir, "plan.json")}; el refinamiento, en ${join(dir, "refine.md")}; el ticket, en ${join(dir, "ticket.md")}.
 3. Trabaja en ${join(dir, "work")}. Lo que ya hizo un run anterior está en ${join(dir, "build.progress.json")}: no lo repitas. Marca las tareas de la checklist del plan en ${join(dir, "build.checklist.json")} en cuanto estén hechas.
-4. Si existe ${join(dir, "review.json")}, la revisión ya pasó: este run arregla sus hallazgos \`blocker\` y \`major\` (detalle en ${join(dir, "review.md")}), en las mismas ramas y PRs. Sigue la sección "Arreglar la revisión" de build.md.
+4. Si existe ${join(dir, "review.fix.json")}, la revisión ya pasó: este run arregla solo los hallazgos que lista (\`{"fix": ["F1"]}\`; detalle en ${join(dir, "review.md")}), en las mismas ramas y PRs. Sigue la sección "Arreglar la revisión" de build.md.
 5. Escribe el resumen en ${join(dir, "build.summary.md")} y al final ${join(dir, "build.json")}: {"verdict": "ready" | "needs-info", "questions": [...], "units": [{"id": "U1", "repo": "...", "title": "...", "branch": "...", "status": "done" | "failed", "pr": "https://github.com/..." | null}], "fixed": ["F1"]}. Todas las unidades, también las que no tocas.`,
   },
   review: {
@@ -163,6 +163,9 @@ const findingsIn = (v: unknown): Finding[] =>
       file: textOf(f.file) || null, line: Number.isInteger(f.line) ? f.line : null, title: textOf(f.title), detail: textOf(f.detail), fix: textOf(f.fix) }))
 // The findings that stop a ticket: they go back to Build.
 export const blocking = (findings: Finding[] | undefined) => (findings ?? []).filter(f => f.severity !== "minor")
+// The findings a build after a review fixes: the ones that stop the ticket,
+// or all of them when you ask for the minors too.
+export const toFixNow = (findings: Finding[] | undefined, isAll: boolean) => (isAll ? (findings ?? []) : blocking(findings)).map(f => f.id)
 
 // The to-do items the build marked done (build.checklist.json: {"done": [...]} or a list).
 export function checkedIn(text: string | null): string[] {
@@ -401,14 +404,17 @@ export function stageToRun(state: PipelineState | null, asked?: Stage): Stage {
 }
 
 // Starts the pipeline on a ticket of yours (or runs a stage again); taking
-// it, when you ask, makes it yours first.
-export async function startPipeline(key: string, take = false, asked?: Stage) {
+// it, when you ask, makes it yours first. A build after a review fixes what
+// it found (review.fix.json): what stops the ticket, or, if you ask, the minors too.
+export async function startPipeline(key: string, take = false, asked?: Stage, isFixAll = false) {
   if (!isKey(key)) throw new Error("Not a ticket key")
   const state = await stateOf(key)
   if (state?.status === "running") throw new Error("A stage already runs on this ticket")
   const stage = stageToRun(state, asked)
   if (take) await assignToMe(key)
   await labelTicket(key, [LABELS.on], []) // also checks that it is yours
+  if (stage === "build" && state?.stage === "review") await writeJsonAtomic(join(dirOf(key), "review.fix.json"), { fix: toFixNow(state.findings, isFixAll) }, { pretty: true })
+  else if (stage !== "build") await rename(join(dirOf(key), "review.fix.json"), join(dirOf(key), "review.fix.json.prev")).catch(() => {})
   void run(key, (state?.runs ?? 0) + 1, stage)
 }
 

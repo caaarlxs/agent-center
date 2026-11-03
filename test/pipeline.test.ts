@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { blocking, checkedIn, MARK, answeredAfter, answersComment, argsFor, parseResult, pipelineKeyOf, stageToRun, unbuilt, withRun, questionsComment, snapshotOf } from "../lib/pipeline"
+import { blocking, checkedIn, toFixNow, MARK, answeredAfter, answersComment, argsFor, parseResult, pipelineKeyOf, stageToRun, unbuilt, withRun, questionsComment, snapshotOf } from "../lib/pipeline"
 
 const questions = [
   { id: "Q1", question: "¿Cuál es el copy?", proposal: "El del ticket" },
@@ -188,5 +188,15 @@ describe("blocking", () => {
   it("counts the findings that stop a ticket: blockers and majors", () => {
     expect(blocking([finding("F1", "blocker"), finding("F2", "minor"), finding("F3", "major")]).map(f => f.id)).toEqual(["F1", "F3"])
     expect(blocking(undefined)).toEqual([])
+  })
+})
+
+describe("toFixNow", () => {
+  const finding = (id: string, severity: "blocker" | "major" | "minor") => ({ id, unit: null, severity, file: null, line: null, title: id, detail: "", fix: "" })
+  it("fixes the blockers and majors, or every finding when you ask for the minors too", () => {
+    const found = [finding("F1", "minor"), finding("F2", "major")]
+    expect(toFixNow(found, false)).toEqual(["F2"])
+    expect(toFixNow(found, true)).toEqual(["F1", "F2"])
+    expect(toFixNow(undefined, true)).toEqual([])
   })
 })
