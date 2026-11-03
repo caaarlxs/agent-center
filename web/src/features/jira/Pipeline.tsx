@@ -33,7 +33,7 @@ const FOLLOW_MS = 5_000
 const IDLE_MS = 30_000
 const CONFIRM_MS = 4_000
 
-async function act(path: string, body: object, done: string) {
+export async function act(path: string, body: object, done: string) {
   try {
     await post(path, body)
     toast(done)

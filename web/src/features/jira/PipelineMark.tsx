@@ -9,10 +9,9 @@ import { useIsDots } from "@/lib/board-style"
 import { cn } from "@/lib/utils"
 import { doingText, orbOf } from "@/features/conversation/session-events"
 import type { PipelineState, PipelineStatus, Stage } from "@server/pipeline"
+import { STAGES, stageAt } from "./pipeline-board"
 
-export const STAGES = ["Refine", "Plan", "Build", "Review", "Staging"]
-const AT: Record<Stage, number> = { refine: 0, plan: 1 }
-export const stageAt = (state: PipelineState) => AT[state.stage]
+export { STAGES, stageAt } from "./pipeline-board"
 
 // The state in two words: what the stage does, or what comes next.
 const DOING: Record<Stage, string> = { refine: "Refining", plan: "Planning" }
@@ -60,7 +59,7 @@ export function PipelineMark({ state, card, size = 24 }: { state: PipelineState;
 // The stages as a rail: short segments in a row, or, with labels, the whole
 // width with each stage's name under it.
 export function Rail({ state, hasLabels = false, className }: { state: PipelineState | null; hasLabels?: boolean; className?: string }) {
-  const at = state ? AT[state.stage] : -1
+  const at = state ? stageAt(state) : -1
   return (
     <ol className={cn("m-0 flex list-none p-0", hasLabels ? "gap-1.5" : "gap-[3px]", className)} aria-label={state ? `${STAGES[at]}: ${statusText(state)}` : "Not started"}>
       {STAGES.map((name, i) => (

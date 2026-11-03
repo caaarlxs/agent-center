@@ -416,3 +416,19 @@ html[data-theme-switch]::view-transition-new(root) { animation: theme-curtain 60
 [data-style=dots] .composer-box [data-slot=input-group]:focus-within, [data-style=dots] .composer-box.drop [data-slot=input-group] { border-style: dotted; border-width: 1.5px; box-shadow: none; }
 /* Board columns and tier rows: see-through, so the field of dots shows behind them as on the canvas. */
 [data-style=dots] .dots-veil:not(.bg-brand-soft) { background-color: color-mix(in srgb, var(--side) 55%, transparent); }
+
+/* The pipeline's board (features/jira/PipelineView): a ticket whose agent
+   works has a beam running round its edge; a stage at work, a line that
+   flows in its head. Still for whoever asks for less motion. */
+@property --beam { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+.beam::before {
+  content: ""; position: absolute; inset: -1px; border-radius: inherit; padding: 2px; pointer-events: none;
+  background: conic-gradient(from var(--beam), transparent 0 45%, color-mix(in srgb, var(--work) 35%, transparent) 70%, var(--work) 92%, transparent 100%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude;
+  animation: beam 3.2s linear infinite;
+}
+.beam { box-shadow: 0 0 22px color-mix(in srgb, var(--work) 14%, transparent); }
+@keyframes beam { to { --beam: 360deg; } }
+.flow { background: linear-gradient(90deg, transparent, var(--work), transparent) 0 0 / 50% 100% repeat-x, color-mix(in srgb, var(--work) 22%, transparent); animation: flow 1.8s linear infinite; }
+@keyframes flow { to { background-position: 200% 0, 0 0; } }
+@media (prefers-reduced-motion: reduce) { .beam::before, .flow { animation: none; } }

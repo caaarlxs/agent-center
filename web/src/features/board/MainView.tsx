@@ -38,7 +38,7 @@ const PipelineView = lazyView(() => import("@/features/jira/PipelineView").then(
 // React Flow and the canvas load the first time the canvas shows.
 const Canvas = lazyView(() => import("@/features/canvas/Canvas").then(m => m.Canvas))
 
-// The canvas's field of dots, behind the board and the tiers too (Dots style);
+// The canvas's field of dots, behind the board, the tiers and the pipeline too (Dots style);
 // its shader loads only then, and nothing stands in for it meanwhile.
 const DotField = lazy(() => import("@/features/canvas/Backdrop").then(m => ({ default: m.Backdrop })))
 
@@ -51,7 +51,7 @@ export function MainView() {
   const cards = useViewCards(allCards)
   const isDragging = !!dragging.use()
   const root = useRef<HTMLDivElement>(null)
-  const hasField = useIsDots() && (view === "board" || view === "tiers")
+  const hasField = useIsDots() && (view === "board" || view === "tiers" || view === "pipeline")
   const scope = `${view}|${groupBy.use()}|${repoFilter.use()}|${showDone.use()}|${hasData}`
   // The canvas runs its own (Canvas.tsx), once React Flow has drawn.
   useFlip(root, scope, whereTo, view !== "canvas")
