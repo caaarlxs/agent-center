@@ -94,6 +94,29 @@ async function scanned(sessionId: string): Promise<Scan | null> {
   return scan
 }
 
+// What a conversation spent: its tokens by kind (input, output, read from
+// and written to the cache), the model that answered most and the
+// API-equivalent cost of it all.
+export type Spend = { input: number; output: number; cacheRead: number; cacheWrite: number; cost: number; model: string | null }
+export function spendOf(messages: Iterable<{ model: string; usage: Usage }>): Spend {
+  const s: Spend = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, model: null }
+  const answers = new Map<string, number>()
+  for (const { model, usage: u } of messages) {
+    s.input += u.input_tokens ?? 0
+    s.output += u.output_tokens ?? 0
+    s.cacheRead += u.cache_read_input_tokens ?? 0
+    s.cacheWrite += u.cache_creation_input_tokens ?? 0
+    s.cost += costOf(model, u)
+    answers.set(model, (answers.get(model) ?? 0) + 1)
+  }
+  s.model = [...answers].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null
+  return s
+}
+export const sessionSpend = async (id: string) => {
+  const scan = await scanned(id).catch(() => null)
+  return scan ? spendOf(scan.messages.values()) : null
+}
+
 // recentCost: what it spent in the last 5 hours, the plan's short window.
 export type SessionUsage = { context: number; window: number; cost: number; recentCost: number; model: string | null; modelAt: number }
 const RECENT_MS = 5 * 3600_000

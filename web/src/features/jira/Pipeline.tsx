@@ -25,7 +25,9 @@ import { doingText } from "@/features/conversation/session-events"
 import { ago } from "@/features/session/state"
 import { repoDot } from "@/features/session/state"
 import type { PipelineState, Run, Stage, Unit } from "@server/pipeline"
+import { MODELS } from "@/features/prompt/Settings"
 import { PipelineMark, Rail, liveLine } from "./PipelineMark"
+import { costOf, dollars, tokens } from "./pipeline-board"
 
 type Data = { state: PipelineState | null; refine: string | null; plan: string | null }
 type Fold = "refine" | "plan" | "runs"
@@ -183,7 +185,13 @@ const DONE: Record<Stage, (r: Run) => string> = { refine: () => "Refined", plan:
 const sayRun = (r: Run, doing: string | null) =>
   r.status === "running" ? (doing ?? "Starting") : r.status === "needs-info" ? `Asked ${r.questions} question${r.questions === 1 ? "" : "s"}` : r.status === "failed" ? (r.error ?? "Failed") : DONE[r.stage ?? "refine"](r)
 
-// Every run, the latest first: what it ended in (or does now), how long, its log.
+// What a run spent: its model, the tokens it sent (cached or not) and got
+// back, and what that would cost on the API.
+const modelName = (id: string | null) => MODELS.find(([m]) => id?.startsWith(m))?.[1] ?? id ?? "—"
+const spendText = ({ spend: s }: Run) => s && `${modelName(s.model)} · ${tokens(s.input + s.cacheRead + s.cacheWrite)} in · ${tokens(s.output)} out · ≈${dollars(s.cost)}`
+
+// Every run, the latest first: what it ended in (or does now), how long,
+// what it spent, its log.
 function Runs({ history, now }: { history: Run[]; now: number }) {
   const cards = useLive(l => l.snapshot?.cards)
   return (
@@ -191,11 +199,12 @@ function Runs({ history, now }: { history: Run[]; now: number }) {
       {[...history].reverse().map(r => {
         const card = r.status === "running" ? cards?.find(c => c.id === r.sessionId) : undefined
         return (
-          <li key={r.n} className="grid grid-cols-[1.5rem_minmax(0,1fr)_auto_2rem] items-baseline gap-2">
+          <li key={r.n} className="grid grid-cols-[1.5rem_minmax(0,1fr)_auto_2rem] items-baseline gap-x-2 gap-y-0.5">
             <span className="font-mono text-faint">#{r.n}</span>
             <span className={cn("truncate", r.status === "failed" ? "text-bad" : "text-text-muted")}>{sayRun(r, doingText(card?.doing))}</span>
             <span className="text-faint tabular-nums">{minutes((r.endedAt ?? now) - r.startedAt)} · {ago(r.endedAt ?? r.startedAt, now)}</span>
             {r.sessionId ? <button className="text-right font-semibold text-text-muted hover:text-text" onClick={() => openLog(r.sessionId!)}>Log</button> : <span />}
+            {r.spend && <span className="col-span-3 col-start-2 truncate text-[11.5px] text-faint tabular-nums">{spendText(r)}</span>}
           </li>
         )
       })}
@@ -254,7 +263,7 @@ export function Pipeline({ ticket, onTaken }: { ticket: Ticket; onTaken: () => v
         <footer className="border-t border-line px-4 py-2.5">
           <div className="flex gap-5">
             {docs.map(([key, label]) => <FoldButton key={key} label={label} isOpen={fold === key} onToggle={() => toggle(key)} />)}
-            {runs.length > 0 && <FoldButton label={<>Runs<span className="font-medium text-faint">{runs.length}</span></>} isOpen={fold === "runs"} onToggle={() => toggle("runs")} />}
+            {runs.length > 0 && <FoldButton label={<>Runs<span className="font-medium text-faint">{runs.length} · ≈{dollars(costOf(runs))}</span></>} isOpen={fold === "runs"} onToggle={() => toggle("runs")} />}
           </div>
           {docs.map(([key, , text]) => fold === key && <Markdown key={key} className="mt-3 text-[13px]">{text!}</Markdown>)}
           {fold === "runs" && <div className="mt-3"><Runs history={runs} now={now} /></div>}

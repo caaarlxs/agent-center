@@ -24,6 +24,7 @@ import { writeJsonAtomic } from "./files"
 import { assignToMe, commentOn, labelTicket, ticket, type Ticket, type TicketComment } from "./jira"
 import { launch, running } from "./launch"
 import { applyAction } from "./board"
+import { sessionSpend, type Spend } from "./usage"
 
 export type Stage = "refine" | "plan"
 export type Question = { id: string; question: string; proposal: string }
@@ -31,7 +32,7 @@ export type Question = { id: string; question: string; proposal: string }
 export type Unit = { id: string; repo: string; subtask: string | null; branch: string; title: string; dependsOn: string[] }
 export type Result = { verdict: "ready" | "needs-info"; questions: Question[]; units: Unit[] }
 export type PipelineStatus = "running" | "needs-info" | "ready" | "failed"
-export type Run = { n: number; stage: Stage; sessionId: string | null; startedAt: number; endedAt: number | null; status: PipelineStatus; questions: number; units: number; error: string | null }
+export type Run = { n: number; stage: Stage; sessionId: string | null; startedAt: number; endedAt: number | null; status: PipelineStatus; questions: number; units: number; error: string | null; spend?: Spend | null }
 export type PipelineState = {
   key: string
   summary?: string // the ticket's title, when the run started
@@ -153,6 +154,10 @@ export function withRun(s: PipelineState): PipelineState {
 }
 const save = (s: PipelineState) => writeJsonAtomic(join(dirOf(s.key), "state.json"), withRun(s), { pretty: true })
 const readText = (path: string) => readFile(path, "utf8").catch(() => null)
+// Each run with what its session spent, read from its transcript (only what
+// was added since the last look): never saved, so it is always the session's own.
+const withSpend = async (s: PipelineState): Promise<PipelineState> =>
+  ({ ...s, history: await Promise.all((s.history ?? []).map(async r => ({ ...r, spend: r.sessionId ? await sessionSpend(r.sessionId) : null }))) })
 
 // The state and each stage's document, for the ticket's view. A run whose
 // session is gone without a result (the board restarted) is a failed one.
@@ -164,7 +169,7 @@ export async function pipelineOf(key: string) {
     await save(state)
   }
   const doc = (stage: Stage) => (state ? readText(join(dirOf(key), `${stage}.md`)) : null)
-  return { state, refine: await doc("refine"), plan: await doc("plan") }
+  return { state: state && (await withSpend(state)), refine: await doc("refine"), plan: await doc("plan") }
 }
 
 // ---------- the stage ----------
@@ -273,7 +278,7 @@ export async function resetPipeline(key: string) {
 export async function pipelines(): Promise<PipelineState[]> {
   const paths = await Array.fromAsync(new Bun.Glob("*/state.json").scan({ cwd: ROOT })).catch(() => [] as string[])
   const states = await Promise.all(paths.map(p => p.split("/")[0]!).filter(isKey).map(stateOf))
-  return states.filter((s): s is PipelineState => !!s).sort((a, b) => b.startedAt - a.startedAt)
+  return Promise.all(states.filter((s): s is PipelineState => !!s).sort((a, b) => b.startedAt - a.startedAt).map(withSpend))
 }
 
 // Answers written in Jira (by you or anyone): the stage runs again.

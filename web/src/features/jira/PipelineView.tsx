@@ -18,7 +18,7 @@ import { ago, repoDot } from "@/features/session/state"
 import type { PipelineState, Unit } from "@server/pipeline"
 import { act } from "./Pipeline"
 import { PipelineMark, liveLine } from "./PipelineMark"
-import { BUILT, STAGES, columnOf, isQueued } from "./pipeline-board"
+import { BUILT, STAGES, columnOf, costOf, dollars, isQueued } from "./pipeline-board"
 
 const openTicket = (key: string) => dialog.set({ kind: "ticket", key })
 const onOpenKey = (key: string) => (e: KeyboardEvent) => e.key === "Enter" && e.target === e.currentTarget && openTicket(key)
@@ -48,12 +48,14 @@ function TicketCard({ state, card, now }: { state: PipelineState; card: Card | u
           : isWaiting ? "border-dashed border-line-strong bg-[color-mix(in_srgb,var(--surface)_55%,transparent)] hover:border-text-muted"
           : "border-line bg-surface hover:border-line-strong")}>
       <header className="flex min-w-0 items-start gap-2.5">
-        <PipelineMark state={state} card={card} size={30} />
+        <PipelineMark state={state} card={card} size={40} />
         <div className="flex min-w-0 flex-1 flex-col gap-[3px]">
           <h3 className="m-0 line-clamp-2 text-sm leading-[1.35] font-[550] [overflow-wrap:anywhere]">{state.summary ?? card?.tickets.find(t => t.key === state.key)?.summary ?? state.key}</h3>
           <span className="flex items-center gap-2 text-xs">
             <span className="font-mono text-[11px] text-faint">{state.key}</span>
-            <span className="dot-time ml-auto text-xs whitespace-nowrap text-faint tabular-nums">{time}</span>
+            <span className="dot-time ml-auto text-xs whitespace-nowrap text-faint tabular-nums" title="API-equivalent cost of every run, and how long it has been like this">
+              {state.history?.length ? `≈${dollars(costOf(state.history))} · ` : ""}{time}
+            </span>
           </span>
         </div>
       </header>

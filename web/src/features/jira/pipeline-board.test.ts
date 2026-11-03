@@ -16,3 +16,12 @@ describe("columnOf", () => {
     expect(isQueued(at("plan", "running"))).toBe(false)
   })
 })
+
+describe("what runs spent", () => {
+  it("says tokens and dollars short, and adds up the runs", async () => {
+    const { tokens, dollars, costOf } = await import("./pipeline-board")
+    expect([tokens(3_687_970), tokens(55_157), tokens(706)]).toEqual(["3.7M", "55k", "706"])
+    expect([dollars(4.1), dollars(12.4)]).toEqual(["$4.10", "$12"])
+    expect(costOf([{ spend: { cost: 1.5 } }, { spend: null }, {}])).toBe(1.5)
+  })
+})
