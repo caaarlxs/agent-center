@@ -116,9 +116,9 @@ function promptText(raw: string): string | null {
 // A prompt the person typed while Claude was working is folded into the
 // running turn and stored as a `queued_command` attachment, not a user row.
 // A prompt the person typed: not a tool result, nor what the engine injects
-// (reminders, command wrappers start with "<").
+// (reminders, command wrappers start with "<"; the summary after a compaction).
 export function isPersonPrompt(row: any) {
-  if (row.type !== "user" || row.isMeta) return false
+  if (row.type !== "user" || row.isMeta || row.isCompactSummary) return false
   const c = row.message?.content
   if (typeof c === "string") return !c.startsWith("<")
   return Array.isArray(c) && c.some((b: any) => b?.type === "text" && !String(b.text).startsWith("<")) &&

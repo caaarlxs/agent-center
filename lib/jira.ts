@@ -37,7 +37,7 @@ export type TicketRow = TicketBrief & {
 // A column of the team's board: its name and the statuses it holds.
 export type BoardColumn = { name: string; statusIds: string[] }
 export type Transition = { id: string; name: string; to: string; toId: string; tone: TicketBrief["tone"] }
-export type TicketFilter = "mine" | "reported" | "sprint"
+export type TicketFilter = "mine" | "reported" | "sprint" | "all"
 export type TicketComment = { author: string; at: number; body: string }
 export type TicketLink = { how: string; ticket: TicketRef }
 export type Ticket = TicketBrief & {
@@ -265,12 +265,15 @@ export function rowOf(raw: any, site: string, sprintField: string | null, epics:
   }
 }
 
-// What a search asks for: your open tickets, those you reported, the open sprint's; and some words.
+// What a search asks for: your open tickets, those you reported, the open
+// sprint's, or all the project's; and some words. A key is that ticket, whatever the filter.
+const WHO: Record<TicketFilter, string | null> = { mine: "assignee = currentUser() AND statusCategory != Done", reported: "reporter = currentUser()", sprint: "sprint in openSprints()", all: null }
 export function jqlOf(filter: TicketFilter, projects: string[], text = ""): string {
   const scope = `project in (${projects.join(",")})`
-  const who = filter === "reported" ? "reporter = currentUser()" : filter === "sprint" ? "sprint in openSprints()" : "assignee = currentUser()"
   const words = text.trim().replace(/["\\]/g, " ").trim()
-  return [scope, who, filter === "mine" ? "statusCategory != Done" : null, words ? `text ~ "${words}"` : null].filter(Boolean).join(" AND ") + " ORDER BY updated DESC"
+  const key = /^[A-Z][A-Z0-9]+-\d+$/i.test(words) ? words.toUpperCase() : null
+  const parts = key ? [scope, `key = ${key}`] : [scope, WHO[filter], words ? `text ~ "${words}"` : null]
+  return parts.filter(Boolean).join(" AND ") + " ORDER BY updated DESC"
 }
 
 // The columns of the team's board: of the boards given, the one whose
@@ -521,4 +524,20 @@ export async function commentOn(key: string, text: string) {
   if (!body) throw new Error("Write something first")
   await mineOrThrow(setup, key)
   await call(setup, `/rest/api/3/issue/${key}/comment`, { method: "POST", body: JSON.stringify({ body: docOf(body.slice(0, 10_000)) }) })
+}
+
+// The ticket, now yours: only when you ask for it (to run the pipeline on it).
+export async function assignToMe(key: string) {
+  const setup = setupOrThrow()
+  await request(setup, `/rest/api/3/issue/${keyOrThrow(key)}/assignee`, { method: "PUT", body: JSON.stringify({ accountId: await myId(setup) }) }) // no body back (204)
+  briefs.delete(key)
+}
+
+// Labels added and removed on a ticket of yours (the pipeline's).
+export async function labelTicket(key: string, add: string[], remove: string[]) {
+  const setup = setupOrThrow()
+  await mineOrThrow(setup, key)
+  const labels = [...add.map(l => ({ add: l })), ...remove.map(l => ({ remove: l }))]
+  if (labels.length) await request(setup, `/rest/api/3/issue/${key}`, { method: "PUT", body: JSON.stringify({ update: { labels } }) }) // no body back (204)
+  briefs.delete(key)
 }

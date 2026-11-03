@@ -3,8 +3,9 @@
 // three days (the files while the page is open). The mode (a row of toggles)
 // and the model change in the session; the effort only shows, as the app
 // sends its own with every message. Under it, what a message would meet now
-// and how full the context is (a ring).
-import { Square } from "lucide-react"
+// and how full the context is (a ring). In the empty box, grey, the message
+// you would likely write next; Tab or → writes it, its button sends it.
+import { SendHorizontal, Square } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import type { FileUIPart } from "ai"
 import { toast } from "sonner"
@@ -24,7 +25,7 @@ import { MAX_BYTES, MAX_FILES, messageWith } from "@/features/prompt/files"
 import { launch, sleep, stopTurn, wake } from "@/features/session/actions"
 import { UsageMeter } from "@/features/session/UsageMeter"
 import { isBusyNow, isStuckNow, reachOf } from "./reach"
-import { composerFill, composerFocus, sendMessage } from "./send"
+import { composerFill, composerFocus, composerHint, sendMessage } from "./send"
 import { Anim } from "@/components/icons/animated"
 import { SendMark, useSendMoment } from "@/components/icona/marks"
 
@@ -128,6 +129,45 @@ function Box({ id, card, bridge }: { id: string; card: Card | undefined; bridge:
     requestAnimationFrame(cursorAtEnd)
   }, [fill, id, textInput])
   useEffect(() => void (focus?.id === id && cursorAtEnd()), [focus, id])
+  const hint = composerHint.use()
+  const suggested = hint?.id === id && !textInput.value ? hint.text : null
+  const fillHint = () => {
+    if (!suggested) return
+    textInput.setInput(suggested)
+    requestAnimationFrame(cursorAtEnd)
+  }
+  // Throws when it did not go, so the box keeps what was typed.
+  const send = async (text: string, files: FileUIPart[]) => {
+    if (!text.trim() && !files.length) return
+    if (bridge?.isArchived) return void toast("Archived in Claude: unarchive it there (Open in Claude), then write")
+    // One at a time: the field keeps the text until the send is answered
+    // (it can take seconds to wake a session), and another Enter meanwhile
+    // would send it again.
+    if (isSending.current) throw new Error("already sending")
+    isSending.current = true
+    try {
+      await sendMessage(id, await messageWith(id, text.trim(), files))
+      sent.play()
+    } catch (err) {
+      toast((err as Error).message || "Could not send")
+      throw err
+    } finally {
+      isSending.current = false
+    }
+  }
+  // The button sends the suggestion as it is (with any files picked); if it
+  // does not go, it stays in the box.
+  const attachments = usePromptInputAttachments()
+  const sendHint = () => {
+    if (!suggested) return
+    composerHint.set(null) // a second click would send it twice
+    send(suggested, attachments.files).then(attachments.clear, fillHint)
+  }
+  const takeHint = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (!suggested || (e.key !== "Tab" && e.key !== "ArrowRight") || e.shiftKey || e.metaKey || e.altKey || e.ctrlKey) return
+    e.preventDefault()
+    fillHint()
+  }
   // The draft: kept as you type, and once more when the chat closes.
   const latest = useRef(textInput.value)
   latest.current = textInput.value
@@ -167,34 +207,23 @@ function Box({ id, card, bridge }: { id: string; card: Card | undefined; bridge:
       <div className="relative">
       <PromptInput
         multiple maxFiles={MAX_FILES} maxFileSize={MAX_BYTES} onError={fileErrors}
-        onSubmit={async ({ text, files }) => {
-          if (!text.trim() && !files.length) return
-          if (bridge?.isArchived) return void toast("Archived in Claude: unarchive it there (Open in Claude), then write")
-          // One at a time: the field keeps the text until the send is answered
-          // (it can take seconds to wake a session), and another Enter meanwhile
-          // would send it again.
-          if (isSending.current) throw new Error("already sending") // keeps what was typed
-          isSending.current = true
-          try {
-            await sendMessage(id, await messageWith(id, text.trim(), files))
-            sent.play()
-          } catch (err) {
-            toast((err as Error).message || "Could not send")
-            throw err // keeps what was typed
-          } finally {
-            isSending.current = false
-          }
-        }}
+        onSubmit={({ text, files }) => send(text, files)}
       >
         <PickedFiles />
         <PromptInputBody>
-          <PromptInputTextarea placeholder="Reply… (paste or drag images and files)" />
+          <PromptInputTextarea placeholder={suggested ?? "Reply… (paste or drag images and files)"} onKeyDown={takeHint}
+            title={suggested ? "Tab or → writes the suggestion" : undefined} />
         </PromptInputBody>
         <div data-align="block-end" className="order-last flex w-full min-w-0 items-center gap-0.5 pt-1 pr-1.5 pb-1.5 pl-2">
           <AttachButton />
           <MicButton />
           {card && <><span className="mx-1.5 h-[18px] w-px shrink-0 bg-line" /><Settings card={card} bridge={bridge} /></>}
           <span className="flex-1" />
+          {suggested && !bridge?.isArchived && (
+            <button type="button" className={cn(subtle, "text-brand hover:text-brand")} onClick={sendHint} title="Sends the suggestion (Tab or → writes it in the box to change it first)">
+              <SendHorizontal />Send suggestion
+            </button>
+          )}
           {isWorking && card && (
             <button type="button" className={cn(subtle, "hover:text-bad")} onClick={() => stopTurn(card)} title="Stops the running turn, like Esc in Claude desktop (S)"><Square />Stop</button>
           )}

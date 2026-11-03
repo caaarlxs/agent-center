@@ -5,6 +5,7 @@
 import { Menu, PawPrint } from "lucide-react"
 import { MotionConfig } from "motion/react"
 import { useEffect, useMemo, useRef, useState } from "react"
+import { yours } from "@/features/board/state"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Kbd } from "@/components/ui/kbd"
@@ -56,10 +57,12 @@ export function App() {
 }
 
 // "Next up" (F): opens what waits for you after the open one, its reply box
-// ready; the canvas goes to it.
+// ready; the canvas goes to it. Then a ticket whose pipeline waits for your answers.
 export function nextUp() {
-  const waiting = waitingOf(live().snapshot?.cards ?? [])
+  const waiting = waitingOf(yours(live().snapshot?.cards ?? []))
   const open = openNow()
+  const ticket = live().snapshot?.pipelines.find(p => p.status === "needs-info")
+  if (!waiting.length && ticket) return void openDialog({ kind: "ticket", key: ticket.key })
   if (!waiting.length) return void toast("Nothing waits for you")
   if (waiting.length === 1 && waiting[0].id === open?.id) return void toast("Nothing else waits for you")
   const next = nextAfter(waiting, open?.id ?? null)
@@ -255,10 +258,12 @@ function Skeleton() {
 
 function Board() {
   const open = useOpenSession()
-  const cards = useLive(l => l.snapshot?.cards)
+  const all = useLive(l => l.snapshot?.cards)
+  const cards = useMemo(() => all && yours(all), [all])
   const repos = useLive(l => l.snapshot?.repos)
   const canRun = useLive(l => !!l.snapshot?.canRunCommands)
   const waiting = useMemo(() => waitingOf(cards ?? []), [cards])
+  const needsYou = useLive(l => l.snapshot?.pipelines.filter(p => p.status === "needs-info").length) ?? 0
   const [isSearching, setSearching] = useState(false)
   useAlerts()
   useMarkSeen()
@@ -283,7 +288,7 @@ function Board() {
     <div className="flex h-screen overflow-hidden bg-background text-foreground">
       <Sidebar />
       <main className="relative flex min-w-0 flex-1 flex-col">
-        <TopBar waiting={waiting.length} onSearch={() => setSearching(true)} />
+        <TopBar waiting={waiting.length + needsYou} onSearch={() => setSearching(true)} />
         <Offline />
         <UpdateBanner />
         <div className="relative min-h-0 flex-1">{cards ? <MainView /> : <Skeleton />}</div>

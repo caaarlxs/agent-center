@@ -9,7 +9,7 @@ import Editor from "@monaco-editor/react"
 import { useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
-import { get, post } from "@/lib/api"
+import { get, post, sessionFileUrl as at } from "@/lib/api"
 import { bytesText } from "@/lib/format"
 import { useMonaco, useMonacoTheme } from "@/lib/monaco"
 import { useNow } from "@/lib/now"
@@ -29,7 +29,6 @@ type Info = { path: string; size: number; isViewable: boolean; error?: string }
 
 const SOURCE = { sent: "sent", artifact: "published", written: "written" } // written: a file opened from the conversation
 const MAX_ROWS = 1000
-const at = (id: string, what: string, path: string) => `/api/sessions/${encodeURIComponent(id)}/${what}?path=${encodeURIComponent(path)}`
 const home = (path: string) => path.replace(/^\/Users\/[^/]+/, "~")
 const muted = "p-4 text-text-muted"
 
@@ -120,6 +119,7 @@ function Viewer({ id, file }: { id: string; file: Listed }) {
         {info && !info.error && (
           <>
             <button className={cn("inline-grid size-7 place-items-center rounded-[7px] text-text-muted transition-colors duration-200 hover:bg-press hover:text-text active:scale-[0.92]", copied.step >= 0 && "text-work hover:text-work")} onClick={copyPath} title="Copy the path"><CopyMark moment={copied} size={14} idle={<Anim.Copy size={14} />} /></button>
+            <Button variant="ghost" asChild><a href={at(id, "download", file.path)} download={file.name} title="Download it">Download</a></Button>
             <Button variant="ghost" onClick={() => openOnMac(true)} title="Show it in Finder">Show in Finder</Button>
             <Button variant="ghost" onClick={() => openOnMac()} title="Open it in its app on this Mac">Open on the Mac</Button>
           </>

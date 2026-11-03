@@ -13,6 +13,9 @@ export const composerFill = createStore<{ id: string; text: string } | null>(nul
 // object each time, so asking twice works twice.
 export const composerFocus = createStore<{ id: string } | null>(null)
 export const focusComposer = (id: string) => composerFocus.set({ id })
+// The message you would likely write next (lib/suggest.ts): grey in that
+// session's empty reply box, Tab or → takes it.
+export const composerHint = createStore<{ id: string; text: string } | null>(null)
 
 export async function takeBack(id: string, p: { id: string; text: string }) {
   try {

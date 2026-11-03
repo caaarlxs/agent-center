@@ -78,6 +78,12 @@ describe("jqlOf", () => {
     expect(jqlOf("reported", ["PP", "OPS"])).toBe("project in (PP,OPS) AND reporter = currentUser() ORDER BY updated DESC")
     expect(jqlOf("sprint", ["PP"], 'login "page"')).toBe('project in (PP) AND sprint in openSprints() AND text ~ "login  page" ORDER BY updated DESC')
   })
+  it("asks for the whole project", () => {
+    expect(jqlOf("all", ["PP"], "aviso")).toBe('project in (PP) AND text ~ "aviso" ORDER BY updated DESC')
+  })
+  it("finds a ticket by its key, whatever the filter", () => {
+    expect(jqlOf("mine", ["PP"], " pp-3093 ")).toBe("project in (PP) AND key = PP-3093 ORDER BY updated DESC")
+  })
 })
 
 describe("docOf", () => {

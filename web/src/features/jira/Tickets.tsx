@@ -34,6 +34,7 @@ const FILTERS: { value: TicketFilter; label: string }[] = [
   { value: "mine", label: "Mine" },
   { value: "reported", label: "Reported by me" },
   { value: "sprint", label: "Open sprint" },
+  { value: "all", label: "All" },
 ]
 type Grouping = "status" | "epic"
 const GROUPINGS: { value: Grouping; label: string }[] = [
@@ -326,7 +327,7 @@ export function Tickets({ cards }: { cards: Card[] }) {
     <div className="relative flex h-full min-h-0 flex-col gap-3 px-5 pt-3.5 pb-5">
       <div className="flex flex-wrap items-center gap-3">
         <Segments label="Which tickets" options={FILTERS} value={filter} onChange={setFilter} />
-        <Input value={words} onChange={e => setWords(e.target.value)} placeholder="Search tickets…" className="h-8 w-[240px]" />
+        <Input value={words} onChange={e => setWords(e.target.value)} placeholder="Search or PP-1234…" className="h-8 w-[240px]" />
         <button className={cn("h-7 rounded-md border px-2.5 text-[12.5px] font-[550]", isUnstarted ? "border-brand bg-brand-soft text-brand-text" : "border-line text-text-muted hover:text-text")}
           aria-pressed={isUnstarted} onClick={() => setUnstarted(v => !v)} title="Only the tickets no session works on">No session</button>
         {shown && <span className="text-xs text-faint">{shown.length} {shown.length === 1 ? "ticket" : "tickets"}</span>}

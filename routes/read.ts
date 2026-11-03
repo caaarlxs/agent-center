@@ -3,6 +3,7 @@
 // the person decided.
 
 import { jiraSetup, searchTickets, ticket, transitionsOf } from "../lib/jira"
+import { pipelineOf } from "../lib/pipeline"
 import { namedBy, repoPage, sessionCommits, sessionRepos } from "../lib/session-commits"
 import { ICONS, chosenIcon } from "../lib/app-icon"
 import { petsCatalog, petsState } from "../lib/pets"
@@ -27,6 +28,7 @@ import { monacoState } from "../lib/monaco"
 import { documentHtml, quickLook, WORD, WORKBOOK, workbookHtml } from "../lib/office"
 import { readTasks } from "../lib/organizer"
 import { branchState, knownRepos, repoInfo, workState } from "../lib/repo"
+import { suggestionOf } from "../lib/suggest"
 import { traceOf } from "../lib/trace"
 import { commandFor, status as runStatus, suggest as suggestRun } from "../lib/runner"
 import { fold, search } from "../lib/search"
@@ -127,6 +129,17 @@ function viewable(path: string, ext: string) {
   return new Response(Bun.file(path), { headers })
 }
 
+// A file to save, under its own name; never shown, never run.
+function saved(path: string) {
+  const name = path.split("/").pop() ?? "file"
+  return new Response(Bun.file(path), {
+    headers: {
+      "content-type": "application/octet-stream", "x-content-type-options": "nosniff", "content-security-policy": "sandbox",
+      "content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(name)}`,
+    },
+  })
+}
+
 async function sessionRead(id: string, what: string, url: URL) {
   if (!groupOf(id)) await latestJson() // right after a restart no snapshot has run yet
   const group = groupOf(id)
@@ -217,6 +230,9 @@ async function sessionRead(id: string, what: string, url: URL) {
       const at = Number(url.searchParams.get("at")) || undefined
       return json(await traceOf(group?.id ?? id, at))
     }
+    // The message you would likely write next (lib/suggest.ts).
+    case "suggest":
+      return json({ text: await suggestionOf(group?.id ?? id) })
     // Its next step (the chips under the conversation): where its folder
     // stands, and its branch's PR.
     case "nextsteps": {
@@ -248,13 +264,16 @@ async function sessionRead(id: string, what: string, url: URL) {
     // The "Files" tab: what the session sent, published or wrote.
     case "files":
       return json({ files: await sessionFiles(group?.ids ?? [id]) })
-    // One of its files: what it is (fileinfo), then its bytes (file).
+    // One of its files: what it is (fileinfo), then its bytes (file), or the
+    // file to save, whatever its size (download).
     case "fileinfo":
     case "file":
+    case "download":
     case "filepreview": {
       const file = await sessionFile(group?.ids ?? [id], url.searchParams.get("path") ?? "", group ? [group.lead.cwd, group.root] : [])
       if (!file) return json({ error: "This session does not name that file, or it is gone" }, 404)
       if (what === "fileinfo") return json(file)
+      if (what === "download") return saved(file.path)
       if (!file.isViewable) return json({ error: "Too large to show here: open it on the Mac" }, 413)
       if (what === "file") return viewable(file.path, file.ext)
       // What the browser cannot show itself: a page, tables or a picture.
@@ -292,10 +311,11 @@ export async function handleRead(url: URL): Promise<Response | null> {
   // Jira (lib/jira.ts): whether it is set up, one ticket, your open ones.
   if (path === "/api/jira") return json({ setup: jiraSetup() })
   if (path === "/api/prs/diff") return await prDiff(url.searchParams.get("url") ?? "").then(files => json({ files }), (err: Error) => json({ error: err.message }, 400))
+  if (path === "/api/pipeline") return await pipelineOf(url.searchParams.get("key") ?? "").then(r => json(r), (err: Error) => json({ error: err.message }, 400))
   if (path === "/api/jira/ticket") return await ticket(url.searchParams.get("key") ?? "").then(t => json(t), (err: Error) => json({ error: err.message }, 400))
   if (path === "/api/jira/search") {
     const filter = url.searchParams.get("filter")
-    return await searchTickets(filter === "reported" || filter === "sprint" ? filter : "mine", url.searchParams.get("q") ?? "").then(r => json(r), (err: Error) => json({ error: err.message }, 400))
+    return await searchTickets(filter === "reported" || filter === "sprint" || filter === "all" ? filter : "mine", url.searchParams.get("q") ?? "").then(r => json(r), (err: Error) => json({ error: err.message }, 400))
   }
   if (path === "/api/jira/transitions") return await transitionsOf(url.searchParams.get("key") ?? "").then(t => json({ transitions: t }), (err: Error) => json({ error: err.message }, 400))
   if (path === "/api/app-icon") return json({ icon: chosenIcon(), icons: ICONS })

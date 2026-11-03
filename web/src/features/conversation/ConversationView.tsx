@@ -10,12 +10,12 @@
 // push, open the PR…). A "New messages" pill shows when more arrives
 // while you read further up; a line marks where each day starts, and a map
 // beside a long one shows where your messages, questions and failures are.
-import { ArrowDown, ChevronDown, ChevronRight, FileText, FlaskConical, GitFork, Globe, ListChecks, Square, Terminal, Bot, Wrench } from "lucide-react"
+import { ArrowDown, ChevronDown, ChevronRight, Download, FileText, FlaskConical, GitFork, Globe, ListChecks, Square, Terminal, Bot, Wrench } from "lucide-react"
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 import { FileIcon } from "@/components/common/FileIcon"
 import { Button } from "@/components/ui/button"
-import { get, post } from "@/lib/api"
+import { get, post, sessionFileUrl } from "@/lib/api"
 import type { Bridge, Card, Permission, Snapshot, SuggestionState } from "@/lib/api-types"
 import { bytesText, clock, memText, MEMORY_WARN } from "@/lib/format"
 import { useLive } from "@/lib/live"
@@ -39,7 +39,7 @@ import { type Live, orbOf, turnLine, useLiveAnswer } from "./session-events"
 import { useTypewriter } from "./typewriter"
 import { WidgetView } from "./Widget"
 import { type Pending, deliveredOf, dropPending, stampOf, takenBack, usePending, waitingOf } from "./pending"
-import { reply, takeBack } from "./send"
+import { composerHint, reply, takeBack } from "./send"
 import { dialogAnswer, linesText, nameOf, partsOf } from "./text"
 import { type Suggestions, useConversation } from "./useConversation"
 import { Anim } from "@/components/icons/animated"
@@ -98,15 +98,23 @@ function Bubble({ text: raw, isPending }: { text: string; isPending?: boolean })
 const chip = "inline-flex h-[30px] max-w-[260px] items-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 text-[12.5px] text-text no-underline hover:border-line-strong"
 
 // A file Claude showed you: its type, name and size ("gone" when it is no
-// longer there); a click opens it in the Files tab.
+// longer there); a click opens it in the Files tab, the arrow saves it.
 function FileChip({ sessionId, path }: { sessionId: string; path: string }) {
   const [info, setInfo] = useState<{ path?: string; size?: number; error?: string } | null>(null)
-  useEffect(() => void get<{ path: string; size: number }>(`/api/sessions/${encodeURIComponent(sessionId)}/fileinfo?path=${encodeURIComponent(path)}`).then(setInfo, (err: Error) => setInfo({ error: err.message })), [sessionId, path])
+  useEffect(() => void get<{ path: string; size: number }>(sessionFileUrl(sessionId, "fileinfo", path)).then(setInfo, (err: Error) => setInfo({ error: err.message })), [sessionId, path])
   return (
-    <button className={chip} onClick={() => showFile(path)} title={info?.path ?? path}>
-      <FileIcon path={path} /><span className="truncate">{nameOf(path)}</span>
-      {info?.size != null ? <small className="shrink-0 text-[11px] text-faint tabular-nums">{bytesText(info.size)}</small> : info?.error && <small className="shrink-0 text-[11px] text-faint">gone</small>}
-    </button>
+    <span className={cn(chip, "pr-1")}>
+      <button className="inline-flex min-w-0 items-center gap-1.5" onClick={() => showFile(path)} title={info?.path ?? path}>
+        <FileIcon path={path} /><span className="truncate">{nameOf(path)}</span>
+        {info?.size != null ? <small className="shrink-0 text-[11px] text-faint tabular-nums">{bytesText(info.size)}</small> : info?.error && <small className="shrink-0 text-[11px] text-faint">gone</small>}
+      </button>
+      {info?.size != null && (
+        <a href={sessionFileUrl(sessionId, "download", path)} download={nameOf(path)} title="Download"
+          className="inline-grid size-6 shrink-0 place-items-center rounded-md text-text-muted transition-[background-color,color,transform] duration-[120ms] hover:bg-hover hover:text-text active:scale-[0.92]">
+          <Download className="size-3.5" />
+        </a>
+      )}
+    </span>
   )
 }
 
@@ -398,6 +406,19 @@ function NextSteps({ sessionId, turn }: { sessionId: string; turn: string | unde
       ))}
     </div>
   )
+}
+
+// Asks for the message you would likely write next once the session waits
+// for you after a turn; gone as soon as it works again.
+function useSuggestion(sessionId: string, isYourTurn: boolean, turn: string | undefined) {
+  useEffect(() => {
+    const drop = () => composerHint.get()?.id === sessionId && composerHint.set(null)
+    if (!isYourTurn) return void drop()
+    let alive = true
+    get<{ text: string | null }>(`/api/sessions/${encodeURIComponent(sessionId)}/suggest`)
+      .then(r => alive && (r.text ? composerHint.set({ id: sessionId, text: r.text }) : drop()), () => {})
+    return () => void ((alive = false), drop())
+  }, [sessionId, isYourTurn, turn])
 }
 
 // Where a new day starts in a long conversation.
@@ -692,6 +713,10 @@ export function ConversationView({ sessionId, card: session, bridge }: { session
   const stick = useRef(true)
   const [hasNew, setHasNew] = useState(false)
   const lastKey = shown.at(-1)?.key
+  // Free for your next message (a question in Claude's text too, not a dialog
+  // or a permission): the suggestion is asked for.
+  const isYourTurn = isLoaded && !!session && ["review", "pending", "asking"].includes(session.column) && !waiting.length && !question && !permission && !session.isLaunching
+  useSuggestion(sessionId, isYourTurn, lastKey)
   const prevLast = useRef<string | undefined>(undefined)
   useLayoutEffect(() => {
     const el = box.current
