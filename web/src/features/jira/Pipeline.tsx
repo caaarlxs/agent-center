@@ -19,11 +19,11 @@ import { ago } from "@/features/session/state"
 import type { PipelineState } from "@server/pipeline"
 
 type Data = { state: PipelineState | null; refine: string | null }
-const STAGES = ["Refine", "Plan", "Build", "Review", "Staging"]
+export const STAGES = ["Refine", "Plan", "Build", "Review", "Staging"]
 const FOLLOW_MS = 5_000
 const IDLE_MS = 30_000
 
-const STATUS: Record<PipelineState["status"], { text: string; tone: string }> = {
+export const STATUS: Record<PipelineState["status"], { text: string; tone: string }> = {
   running: { text: "Refining", tone: "text-work" },
   "needs-info": { text: "Waiting for answers", tone: "text-ask" },
   ready: { text: "Ready to plan", tone: "text-work" },
@@ -41,7 +41,7 @@ async function act(path: string, body: object, done: string) {
   }
 }
 
-function Stages({ state }: { state: PipelineState | null }) {
+export function Stages({ state }: { state: PipelineState | null }) {
   return (
     <ol className="m-0 flex list-none items-center gap-1 p-0 text-[11.5px] font-semibold">
       {STAGES.map((s, i) => (

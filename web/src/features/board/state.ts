@@ -36,10 +36,14 @@ export const overrides = createStore<Overrides>({})
 // Choosing a view also stops drawing a zone.
 export const setView = (v: View) => (view.set(v), drawingZone.set(false))
 
+// The sessions that are yours: a pipeline stage's shows in the Pipeline view only.
+export const yours = (cards: Card[]) => cards.filter(c => !c.pipeline)
+
 // The cards as the board shows them: the server's, with what was just done
-// here on top, without the archived ones.
+// here on top, without the archived ones nor the pipeline's.
 export function useBoardCards(): Card[] {
-  const cards = useLive(l => l.snapshot?.cards)
+  const all = useLive(l => l.snapshot?.cards)
+  const cards = useMemo(() => all && yours(all), [all])
   const ov = overrides.use()
   useEffect(() => {
     if (cards) overrides.set(settle(overrides.get(), cards, Date.now()))

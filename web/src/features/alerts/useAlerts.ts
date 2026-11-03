@@ -1,7 +1,8 @@
 // Tells you what your sessions did, on every update of the board: the Dock
 // badge counts who asks; then the chime, the Mac's voice, the notification in
 // another window, and the once-only notice of the sessions with the bell.
-import { useEffect, useRef } from "react"
+import { useEffect, useMemo, useRef } from "react"
+import { yours } from "@/features/board/state"
 import { toast } from "sonner"
 import { post } from "@/lib/api"
 import { useLive } from "@/lib/live"
@@ -15,7 +16,8 @@ const upper = (s: string) => s[0].toUpperCase() + s.slice(1)
 const NOTICE = { done: "Finished", ask: "Asking you something", permission: "Needs approval to continue" }
 
 export function useAlerts() {
-  const cards = useLive(l => l.snapshot?.cards)
+  const all = useLive(l => l.snapshot?.cards)
+  const cards = useMemo(() => all && yours(all), [all])
   const seen = useRef<Seen | null>(null)
   useEffect(() => {
     if (!cards) return

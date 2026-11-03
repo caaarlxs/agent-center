@@ -15,6 +15,7 @@ import { readDesktop, type DesktopIndex } from "./desktop"
 import { PR_LIMIT, lookup as prLookup, type Pr } from "./github"
 import { running } from "./launch"
 import { readTasks } from "./organizer"
+import { pipelineKeyOf, pipelines } from "./pipeline"
 import { progressOf } from "./plan"
 import { prUrlsIn } from "./prs"
 import { repoInfo } from "./repo"
@@ -207,6 +208,8 @@ async function cardOf(
     title,
     tickets: jira ? sessionTickets(sessionKeys(item.tickets ?? {}, keysIn([repo.branch, title], jira.projects), await mentionsIn(ids), jira.projects)) : [],
     hasOwnTitle: !!item.title,
+    // The ticket a pipeline stage works on: its session shows in the Pipeline view only.
+    pipeline: pipelineKeyOf(s.first_prompt),
     state: question ? "asking" : permission ? "permission" : s.state,
     isStale: s.state === "working" && (column === "review" || column === "pending") && !wasStopped,
     isInterrupted: wasStopped && (column === "review" || column === "pending"),
@@ -302,6 +305,7 @@ export async function snapshot() {
 
   const repos = new Map<string, { root: string; name: string; count: number }>()
   for (const c of visible) {
+    if (c.pipeline) continue
     const r = repos.get(c.repoRoot) ?? { root: c.repoRoot, name: c.repo, count: 0 }
     if (c.column !== "done") r.count++
     repos.set(c.repoRoot, r)
@@ -316,6 +320,7 @@ export async function snapshot() {
     canRunCommands: canRunCommands(),
     memory: { total: visible.reduce((sum, c) => sum + (c.memory?.total ?? 0), 0), pressure: memory.pressure },
     features: { organizer },
+    pipelines: await pipelines(),
     update: await freshness(),
     version,
   }

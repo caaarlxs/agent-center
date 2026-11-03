@@ -30,6 +30,7 @@ export type Refine = { verdict: "ready" | "needs-info"; questions: Question[] }
 export type PipelineStatus = "running" | "needs-info" | "ready" | "failed"
 export type PipelineState = {
   key: string
+  summary?: string // the ticket's title, when the run started
   stage: "refine"
   status: PipelineStatus
   sessionId: string | null
@@ -42,6 +43,9 @@ export type PipelineState = {
 }
 
 export const MARK = "🤖 Agent Center"
+// The first words of a stage's prompt: they tell its session from yours.
+const TAG = "[Pipeline]"
+export const pipelineKeyOf = (prompt?: string | null) => (prompt?.startsWith(`${TAG} `) ? (prompt.slice(TAG.length + 1).match(/^[A-Z][A-Z0-9]+-\d+/)?.[0] ?? null) : null)
 export const LABELS = { on: "agent", needsInfo: "agent-needs-info", ready: "agent-ready" }
 const ROOT = join(DATA_DIR, "pipeline")
 export const STAGES_DIR = join(ROOT, "stages")
@@ -120,7 +124,7 @@ export async function pipelineOf(key: string) {
 
 // ---------- the stage ----------
 
-const promptFor = (key: string, dir: string) => `[Pipeline] ${key} · refinar
+const promptFor = (key: string, dir: string) => `${TAG} ${key} · refinar
 
 Eres la etapa 1 del pipeline: refinar el ticket ${key}.
 
@@ -147,7 +151,7 @@ async function runStage(key: string, runs: number) {
     Promise.all(t.children.slice(0, 15).map(c => ticket(c.key).catch(() => null))).then(all => all.filter(Boolean) as Ticket[]),
   ])
   await Bun.write(join(dir, "ticket.md"), snapshotOf(t, parent, children))
-  const state = EMPTY(key, runs)
+  const state = { ...EMPTY(key, runs), summary: t.summary }
   await save(state)
   const fail = async (error: string) => save({ ...((await stateOf(key)) ?? state), status: "failed", error, endedAt: Date.now() })
   try {
@@ -207,12 +211,17 @@ export async function resetPipeline(key: string) {
   await rename(dirOf(key), `${dirOf(key)}.old-${Date.now()}`).catch(() => {})
 }
 
+// Every ticket in the pipeline (not the runs started over), the latest first.
+export async function pipelines(): Promise<PipelineState[]> {
+  const paths = await Array.fromAsync(new Bun.Glob("*/state.json").scan({ cwd: ROOT })).catch(() => [] as string[])
+  const states = await Promise.all(paths.map(p => p.split("/")[0]!).filter(isKey).map(stateOf))
+  return states.filter((s): s is PipelineState => !!s).sort((a, b) => b.startedAt - a.startedAt)
+}
+
 // Answers written in Jira (by you or anyone): the stage runs again.
 async function poll() {
-  const keys = await Array.fromAsync(new Bun.Glob("*/state.json").scan({ cwd: ROOT })).catch(() => [] as string[])
-  for (const path of keys) {
-    const state = await stateOf(path.split("/")[0]!)
-    if (state?.status !== "needs-info" || !state.askedAt) continue
+  for (const state of await pipelines()) {
+    if (state.status !== "needs-info" || !state.askedAt) continue
     try {
       const t = await ticket(state.key)
       if (answeredAfter(t.comments, state.askedAt)) {

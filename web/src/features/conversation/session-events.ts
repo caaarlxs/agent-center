@@ -103,7 +103,7 @@ export function useLiveAnswer(id: string, itemCount: number) {
 // says only that; another, its name and its file or pattern.
 const SAYS_ITSELF = new Set(["Bash", "Agent", "Task"])
 const toolName = (name: string) => (name.startsWith("mcp__") ? name.split("__").slice(2).join("__") : name)
-function doingText(d: Doing | null | undefined) {
+export function doingText(d: Doing | null | undefined) {
   if (!d) return null
   if (d.kind !== "tool") return d.kind === "thinking" ? "Thinking" : "Writing"
   const name = toolName(d.tool ?? "tool")

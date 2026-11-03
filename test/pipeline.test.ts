@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { MARK, answeredAfter, answersComment, parseRefine, questionsComment, snapshotOf } from "../lib/pipeline"
+import { MARK, answeredAfter, answersComment, parseRefine, pipelineKeyOf, questionsComment, snapshotOf } from "../lib/pipeline"
 
 const questions = [
   { id: "Q1", question: "¿Cuál es el copy?", proposal: "El del ticket" },
@@ -62,5 +62,15 @@ describe("snapshotOf", () => {
     expect(md).toContain("## Padre: PP-0 · Épica\n\nDe la épica.")
     expect(md).toContain("### PP-3 · [BE] Campo (Backlog)\n\nHacer el campo.")
     expect(md).toContain("- relates to PP-2 · Regla (Backlog)")
+  })
+})
+
+describe("pipelineKeyOf", () => {
+  it("tells a pipeline session by its first prompt", () => {
+    expect(pipelineKeyOf("[Pipeline] PP-3093 · refinar\n\nEres la etapa 1")).toBe("PP-3093")
+  })
+  it("leaves your own sessions alone", () => {
+    expect(pipelineKeyOf("Mira el [Pipeline] PP-3093")).toBeNull()
+    expect(pipelineKeyOf(null)).toBeNull()
   })
 })

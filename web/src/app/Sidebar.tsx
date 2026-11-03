@@ -5,8 +5,9 @@
 // it is a drawer over the page.
 import { appIcon } from "@/lib/app-icon"
 import { jiraSetup, loadJira } from "@/features/jira/jira"
-import { BellOff, BookText, Ticket, Columns3, Inbox, List, PanelLeft, Paperclip, Volume2, VolumeX } from "lucide-react"
+import { BellOff, BookText, Ticket, Columns3, Inbox, List, PanelLeft, Paperclip, Volume2, VolumeX, Workflow } from "lucide-react"
 import { useEffect, useState, type ReactNode } from "react"
+import { yours } from "@/features/board/state"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Kbd } from "@/components/ui/kbd"
@@ -55,6 +56,7 @@ const VIEWS: { key: View; label: string; title: string; icon: ReactNode }[] = [
   { key: "canvas", label: "Canvas", title: "Canvas (3)", icon: <Anim.LayoutGrid size={16} /> },
   { key: "tiers", label: "Tiers", title: "Tiers: sessions by importance (4)", icon: <List className="size-4 shrink-0" /> },
   { key: "tickets", label: "Tickets", title: "Your Jira tickets (5)", icon: <Ticket className="size-4 shrink-0" /> },
+  { key: "pipeline", label: "Pipeline", title: "Tickets agents work on, by stage (6)", icon: <Workflow className="size-4 shrink-0" /> },
 ]
 
 // A row under the limits (.side-uploads): icon, words, a number on the right.
@@ -147,7 +149,8 @@ export function Sidebar() {
   const hasJira = !!jiraSetup.use()
   useEffect(() => void loadJira(), [])
   const repos = useLive(l => l.snapshot?.repos) ?? []
-  const cards = useLive(l => l.snapshot?.cards) ?? []
+  const cards = yours(useLive(l => l.snapshot?.cards) ?? [])
+  const needsYou = useLive(l => l.snapshot?.pipelines.filter(p => p.status === "needs-info").length) ?? 0
   const version = useLive(l => l.snapshot?.version) // the commit the board runs
   const isConnected = useLive(l => l.isConnected)
   const chosen = repoFilter.use()
@@ -194,7 +197,7 @@ export function Sidebar() {
           </Button>
         </div>
         <nav className="flex flex-col gap-px">
-          {VIEWS.filter(v => v.key !== "tickets" || hasJira).map(v => (
+          {VIEWS.filter(v => (v.key !== "tickets" && v.key !== "pipeline") || hasJira).map(v => (
             <button key={v.key} className={navRow(shown === v.key, isSlim)} onClick={() => chooseView(v.key)} title={v.title}>
               {v.icon}{!isSlim && v.label}
               {v.key === "inbox" && (unread > 0 || asking > 0) && (
@@ -202,6 +205,9 @@ export function Sidebar() {
                   {unread > 0 && !isSlim && <Pill tone="new" title="Updated since you last looked" isSlim={isSlim}><Num value={unread} suffix=" new" /></Pill>}
                   {asking > 0 && <Pill tone="ask" title="Asking you something" isSlim={isSlim}><Num value={asking} /></Pill>}
                 </span>
+              )}
+              {v.key === "pipeline" && needsYou > 0 && (
+                <span className={cn(!isSlim && "ml-auto")}><Pill tone="ask" title="Tickets waiting for your answers" isSlim={isSlim}><Num value={needsYou} /></Pill></span>
               )}
             </button>
           ))}
