@@ -1,7 +1,8 @@
 // The pipeline on a ticket (lib/pipeline.ts): the stages, from refining to
 // staging, and where this one stands. Refining runs as a session of its own;
 // when it needs a person, its questions show here, each with the agent's
-// proposal, and the answers go to Jira and start the stage again. Start over
+// proposal, and the answers go to Jira and start the stage again. Each run
+// keeps a line (what it ended in, its log a click away). Start over
 // clears the run and the labels; the comments stay. On a ticket of someone
 // else's it runs only once you take it (two clicks: it is assigned to you).
 import { ChevronDown, Play, RotateCcw } from "lucide-react"
@@ -10,13 +11,15 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { get, post } from "@/lib/api"
 import type { Ticket } from "@/lib/api-types"
+import { useLive } from "@/lib/live"
 import { useNow } from "@/lib/now"
 import { cn } from "@/lib/utils"
 import { dialog } from "@/app/open-dialog"
 import { openSession } from "@/app/open-session"
 import { Markdown } from "@/features/conversation/Markdown"
+import { doingText } from "@/features/conversation/session-events"
 import { ago } from "@/features/session/state"
-import type { PipelineState } from "@server/pipeline"
+import type { PipelineState, Run } from "@server/pipeline"
 
 type Data = { state: PipelineState | null; refine: string | null }
 export const STAGES = ["Refine", "Plan", "Build", "Review", "Staging"]
@@ -68,11 +71,39 @@ function Questions({ ticketKey, state, onSent }: { ticketKey: string; state: Pip
         <label key={q.id} className="flex flex-col gap-1.5">
           <span className="text-[13px]"><b className="mr-1 font-mono text-xs text-text-muted">{q.id}</b>{q.question}</span>
           <textarea value={answers[q.id] ?? ""} onChange={e => setAnswers(a => ({ ...a, [q.id]: e.target.value }))} rows={2}
-            className="min-h-[44px] resize-y rounded-[8px] border border-line bg-surface px-2 py-1.5 text-[13px] outline-none focus:border-brand" />
+            className="max-h-[280px] min-h-[44px] resize-none rounded-[8px] border border-line bg-surface px-2.5 py-2 text-[13px] leading-[1.5] outline-none [field-sizing:content] focus:border-brand" />
         </label>
       ))}
       <Button className="h-8 self-end text-xs" disabled={isBusy} onClick={() => void send()}>Send to Jira and continue</Button>
     </div>
+  )
+}
+
+const minutes = (ms: number) => `${Math.max(1, Math.round(ms / 60_000))} min`
+const sayRun = (r: Run, doing: string | null) =>
+  r.status === "running" ? (doing ?? "Starting") : r.status === "needs-info" ? `Asked ${r.questions} question${r.questions === 1 ? "" : "s"}` : r.status === "failed" ? (r.error ?? "Failed") : "Refined: ready to plan"
+
+// Every run, the latest first: what it ended in (or does now), how long, its log.
+function Runs({ history, now }: { history: Run[]; now: number }) {
+  const cards = useLive(l => l.snapshot?.cards)
+  return (
+    <ol className="m-0 flex list-none flex-col gap-1 p-0 text-xs">
+      {[...history].reverse().map(r => {
+        const card = r.status === "running" ? cards?.find(c => c.id === r.sessionId) : undefined
+        return (
+          <li key={r.n} className="flex items-baseline gap-2">
+            <span className="w-6 shrink-0 font-mono text-faint">#{r.n}</span>
+            <span className={cn("min-w-0 flex-1 truncate", r.status === "failed" ? "text-bad" : "text-text-muted")}>
+              {r.status === "running" && <i className="run-dot mr-1.5 inline-block size-1.5 rounded-full bg-work align-middle" />}{sayRun(r, doingText(card?.doing))}
+            </span>
+            <span className="shrink-0 text-faint tabular-nums">{minutes((r.endedAt ?? now) - r.startedAt)} · {ago(r.endedAt ?? r.startedAt, now)} ago</span>
+            {r.sessionId && (
+              <button className="shrink-0 font-semibold text-text-muted underline-offset-2 hover:text-text hover:underline" onClick={() => (dialog.set(null), openSession(r.sessionId))}>Log</button>
+            )}
+          </li>
+        )
+      })}
+    </ol>
   )
 }
 
@@ -127,17 +158,12 @@ export function Pipeline({ ticket, onTaken }: { ticket: Ticket; onTaken: () => v
       {!state && <RunButton ticket={ticket} onStarted={() => setTimeout(() => (void load(), ticket.isMine || onTaken()), 800)} />}
       {state && status && (
         <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[13px]">
-          {isRunning ? <i className="run-dot size-2 rounded-full bg-work" /> : null}
           <b className={cn("font-semibold", status.tone)}>{status.text}</b>
-          <span className="text-xs text-faint">run {state.runs} · {ago(state.endedAt ?? state.startedAt, now)} ago</span>
-          {state.sessionId && (
-            <button className="text-xs font-semibold text-brand underline-offset-2 hover:underline" onClick={() => (dialog.set(null), openSession(state.sessionId))}>Open session</button>
-          )}
           {state.status === "failed" && <Button variant="outline" className="ml-auto h-7 text-xs" onClick={() => void start()}>Run again</Button>}
         </div>
       )}
-      {state?.status === "failed" && state.error && <p className="m-0 text-xs text-bad">{state.error}</p>}
       {state?.status === "needs-info" && <Questions key={state.askedAt} ticketKey={ticket.key} state={state} onSent={() => void load()} />}
+      {state?.history?.length ? <Runs history={state.history} now={now} /> : null}
       {data.refine && (
         <div className="flex flex-col gap-2">
           <button className="inline-flex items-center gap-1 self-start text-xs font-semibold text-text-muted hover:text-text" onClick={() => setOpen(v => !v)} aria-expanded={isOpen}>

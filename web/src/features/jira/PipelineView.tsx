@@ -1,14 +1,12 @@
 // Every ticket agents work on (lib/pipeline.ts), by what it waits for: you
 // first, then the ones at work, then the ones done. Each row says its stage,
-// its state and what its session does now; the ticket opens on a click, its
-// session from the row. The stages' sessions show only here.
+// its state and what its session does now; a click opens the ticket. The stages' sessions show only here.
 import { useMemo } from "react"
 import type { Card } from "@/lib/api-types"
 import { useLive } from "@/lib/live"
 import { useNow } from "@/lib/now"
 import { cn } from "@/lib/utils"
 import { dialog } from "@/app/open-dialog"
-import { openSession } from "@/app/open-session"
 import { doingText } from "@/features/conversation/session-events"
 import { ago } from "@/features/session/state"
 import type { PipelineState } from "@server/pipeline"
@@ -32,23 +30,23 @@ function Row({ state, card, now }: { state: PipelineState; card: Card | undefine
   const status = STATUS[state.status]
   const line = lineOf(state, card)
   return (
-    <li className="flex flex-col gap-2 rounded-[10px] border border-line bg-side p-3">
-      <div className="flex min-w-0 items-baseline gap-2">
-        <button className="min-w-0 truncate text-left text-[13.5px] font-semibold hover:underline" onClick={() => dialog.set({ kind: "ticket", key: state.key })}>
-          <span className="mr-2 font-mono text-xs text-text-muted">{state.key}</span>{state.summary ?? card?.tickets.find(t => t.key === state.key)?.summary}
-        </button>
-        <b className={cn("ml-auto shrink-0 text-xs font-semibold", status.tone)}>{status.text}</b>
-      </div>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-        <Stages state={state} />
-        <span className="text-xs text-faint">run {state.runs} · {ago(state.endedAt ?? state.startedAt, now)} ago</span>
-        {state.sessionId && (
-          <button className="ml-auto text-xs font-semibold text-brand underline-offset-2 hover:underline" onClick={() => openSession(state.sessionId!)}>Open session</button>
-        )}
-      </div>
-      {line && <p className={cn("m-0 truncate text-[12.5px]", state.status === "failed" ? "text-bad" : "text-text-muted")}>
-        {state.status === "running" && <i className="run-dot mr-1.5 inline-block size-1.5 rounded-full bg-work align-middle" />}{line}
-      </p>}
+    <li>
+      <button className="flex w-full flex-col gap-2 rounded-[10px] border border-line bg-side p-3 text-left transition-[border-color,transform] duration-[120ms] hover:border-line-strong active:scale-[0.995]"
+        onClick={() => dialog.set({ kind: "ticket", key: state.key })}>
+        <span className="flex w-full min-w-0 items-baseline gap-2">
+          <span className="min-w-0 truncate text-[13.5px] font-semibold">
+            <span className="mr-2 font-mono text-xs text-text-muted">{state.key}</span>{state.summary ?? card?.tickets.find(t => t.key === state.key)?.summary}
+          </span>
+          <b className={cn("ml-auto shrink-0 text-xs font-semibold", status.tone)}>{status.text}</b>
+        </span>
+        <span className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+          <Stages state={state} />
+          <span className="text-xs text-faint">run {state.runs} · {ago(state.endedAt ?? state.startedAt, now)} ago</span>
+        </span>
+        {line && <span className={cn("block w-full truncate text-[12.5px]", state.status === "failed" ? "text-bad" : "text-text-muted")}>
+          {state.status === "running" && <i className="run-dot mr-1.5 inline-block size-1.5 rounded-full bg-work align-middle" />}{line}
+        </span>}
+      </button>
     </li>
   )
 }

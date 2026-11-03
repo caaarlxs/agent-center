@@ -1,5 +1,5 @@
 // A ticket taken from Jira to done by agents, one stage at a time; each stage
-// a session of its own, on the board like any other. The first stage
+// a session of its own, shown in the Pipeline view only and put away once it ends. The first stage
 // refines: an agent reads the ticket (a snapshot the board writes for it),
 // the code and the docs, and decides whether another agent could build it
 // without asking anything. What only a person decides goes to Jira as
@@ -23,11 +23,11 @@ import { writeJsonAtomic } from "./files"
 import { assignToMe, commentOn, labelTicket, ticket, type Ticket, type TicketComment } from "./jira"
 import { launch, running } from "./launch"
 import { applyAction } from "./board"
-import { activate } from "./client"
 
 export type Question = { id: string; question: string; proposal: string }
 export type Refine = { verdict: "ready" | "needs-info"; questions: Question[] }
 export type PipelineStatus = "running" | "needs-info" | "ready" | "failed"
+export type Run = { n: number; sessionId: string | null; startedAt: number; endedAt: number | null; status: PipelineStatus; questions: number; error: string | null }
 export type PipelineState = {
   key: string
   summary?: string // the ticket's title, when the run started
@@ -40,6 +40,7 @@ export type PipelineState = {
   askedAt: number | null // when the questions went to Jira
   questions: Question[]
   error: string | null
+  history?: Run[] // every run since the last start over, the latest last
 }
 
 export const MARK = "🤖 Agent Center"
@@ -102,12 +103,17 @@ export function snapshotOf(t: Ticket, parent: Ticket | null, children: Ticket[])
 
 async function stateOf(key: string): Promise<PipelineState | null> {
   try {
-    return JSON.parse(await readFile(join(dirOf(key), "state.json"), "utf8"))
+    return withRun(JSON.parse(await readFile(join(dirOf(key), "state.json"), "utf8"))) // a state from before the history has its run in it
   } catch {
     return null
   }
 }
-const save = (s: PipelineState) => writeJsonAtomic(join(dirOf(s.key), "state.json"), s, { pretty: true })
+// The state with its run in the history: added the first time, then kept up to date.
+export function withRun(s: PipelineState): PipelineState {
+  const run: Run = { n: s.runs, sessionId: s.sessionId, startedAt: s.startedAt, endedAt: s.endedAt, status: s.status, questions: s.questions.length, error: s.error }
+  return { ...s, history: [...(s.history ?? []).filter(r => r.n !== s.runs), run].sort((a, b) => a.n - b.n) }
+}
+const save = (s: PipelineState) => writeJsonAtomic(join(dirOf(s.key), "state.json"), withRun(s), { pretty: true })
 const readText = (path: string) => readFile(path, "utf8").catch(() => null)
 
 // The state, the result and the questions, for the ticket's view. A run whose
@@ -137,9 +143,17 @@ No escribas en Jira ni en los repos: el board publica tus preguntas.`
 
 // Runs the stage; whatever fails before the session starts leaves a failed state.
 const run = (key: string, runs: number) =>
-  runStage(key, runs).catch(err => save({ ...EMPTY(key, runs), status: "failed", error: String(err?.message ?? err), endedAt: Date.now() }))
+  runStage(key, runs).catch(async err => save({ ...(await fresh(key, runs)), status: "failed", error: String(err?.message ?? err), endedAt: Date.now() }))
 const EMPTY = (key: string, runs: number): PipelineState =>
   ({ key, stage: "refine", status: "running", sessionId: null, runs, startedAt: Date.now(), endedAt: null, askedAt: null, questions: [], error: null })
+// A new run, with the ticket's history so far.
+const fresh = async (key: string, runs: number): Promise<PipelineState> => {
+  const prev = await stateOf(key)
+  return { ...EMPTY(key, runs), summary: prev?.summary, history: prev?.history ?? [] }
+}
+// A stage's session is the pipeline's, not yours: once it ends it leaves the
+// board (its log stays a click away in the ticket), and never goes to Claude desktop.
+const putAway = (id: string) => void applyAction(id, [id], "archive", {}).catch(() => {})
 
 async function runStage(key: string, runs: number) {
   const dir = dirOf(key)
@@ -151,12 +165,12 @@ async function runStage(key: string, runs: number) {
     Promise.all(t.children.slice(0, 15).map(c => ticket(c.key).catch(() => null))).then(all => all.filter(Boolean) as Ticket[]),
   ])
   await Bun.write(join(dir, "ticket.md"), snapshotOf(t, parent, children))
-  const state = { ...EMPTY(key, runs), summary: t.summary }
+  const state = { ...(await fresh(key, runs)), summary: t.summary }
   await save(state)
   const fail = async (error: string) => save({ ...((await stateOf(key)) ?? state), status: "failed", error, endedAt: Date.now() })
   try {
-    const id = await launch(dir, promptFor(key, dir), done => void (finish(key).catch(err => fail(String(err?.message ?? err))), activate(done)), [], "auto",
-      () => void fail("The session ended with an error"))
+    const id = await launch(dir, promptFor(key, dir), done => void finish(key).catch(err => fail(String(err?.message ?? err))).finally(() => putAway(done)), [], "auto",
+      failed => void fail("The session ended with an error").finally(() => putAway(failed)))
     await save({ ...state, sessionId: id })
     await applyAction(id, [id], "tickets", { started: [key] })
   } catch (err) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { MARK, answeredAfter, answersComment, parseRefine, pipelineKeyOf, questionsComment, snapshotOf } from "../lib/pipeline"
+import { MARK, answeredAfter, answersComment, parseRefine, pipelineKeyOf, withRun, questionsComment, snapshotOf } from "../lib/pipeline"
 
 const questions = [
   { id: "Q1", question: "¿Cuál es el copy?", proposal: "El del ticket" },
@@ -72,5 +72,18 @@ describe("pipelineKeyOf", () => {
   it("leaves your own sessions alone", () => {
     expect(pipelineKeyOf("Mira el [Pipeline] PP-3093")).toBeNull()
     expect(pipelineKeyOf(null)).toBeNull()
+  })
+})
+
+describe("withRun", () => {
+  const base = { key: "PP-1", stage: "refine" as const, sessionId: "s1", startedAt: 100, endedAt: null, askedAt: null, questions: [], error: null }
+  it("adds each run to the history once, then keeps it up to date", () => {
+    const one = withRun({ ...base, status: "running", runs: 1 })
+    expect(one.history).toEqual([{ n: 1, sessionId: "s1", startedAt: 100, endedAt: null, status: "running", questions: 0, error: null }])
+    const asked = withRun({ ...one, status: "needs-info", endedAt: 900, questions: [{ id: "Q1", question: "¿A?", proposal: "" }] })
+    expect(asked.history).toHaveLength(1)
+    expect(asked.history![0]).toMatchObject({ status: "needs-info", endedAt: 900, questions: 1 })
+    const two = withRun({ ...asked, status: "running", runs: 2, sessionId: "s2", startedAt: 1000, endedAt: null, questions: [] })
+    expect(two.history!.map(r => [r.n, r.status])).toEqual([[1, "needs-info"], [2, "running"]])
   })
 })
