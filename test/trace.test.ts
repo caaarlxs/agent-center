@@ -66,3 +66,14 @@ describe("a subagent in the background", () => {
     expect([turn.spans[0]!.model, turn.spans[0]!.detail]).toEqual(["claude-opus-5-5", null])
   })
 })
+
+describe("turnsOf after a compaction", () => {
+  it("does not take the summary for a message of yours", () => {
+    const rows = [
+      { type: "user", uuid: "1", message: { content: "haz el test" } },
+      { type: "assistant", uuid: "2", message: { content: [{ type: "text", text: "Hecho" }] } },
+      { type: "user", uuid: "3", isCompactSummary: true, message: { content: "This session is being continued from a previous conversation…" } },
+    ]
+    expect(turnsOf(rows).map(t => t.length)).toEqual([3])
+  })
+})

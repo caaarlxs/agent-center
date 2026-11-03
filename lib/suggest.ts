@@ -15,7 +15,7 @@ export type Exchange = { you: string; claude: string }
 const TURNS = 3
 const YOU_CHARS = 1500
 const CLAUDE_CHARS = 3000
-const MAX_CHARS = 200
+const MAX_CHARS = 600
 const TIMEOUT_MS = 60_000
 
 const textIn = (row: any): string => {
@@ -52,7 +52,7 @@ export const promptFor = (exchanges: Exchange[]) => `Below is the end of a conve
 
 Rules:
 - Write as the PERSON, never as Claude: the person reads Claude's answer and replies to it. Never explain, propose or summarize, and never ask the person anything.
-- Same language and tone as the person's earlier messages. 12 words at most.
+- Same language, tone and way of writing as the person's earlier messages. As long as the reply needs: often one short sentence, a few sentences when the reply needs them (several of the options Claude offers, in an order). Never more than a short paragraph, and never a request, condition or detail that is not already in the conversation.
 - Only a reply that needs nothing beyond the conversation: a yes or no to a yes-or-no question ("Sí, súbelo"), one of the options Claude offers ("Haz la opción 2"), or the obvious next step Claude names.
 - If Claude asks for something only the person knows (which repo, a name, a date, a fact, an opinion), or offers nothing to reply to, answer exactly NONE.
 - Answer with the message alone, no quotes.
@@ -60,6 +60,7 @@ Rules:
 Examples:
 CLAUDE: "...Tests pass. ¿Hago push a main?" -> Sí, haz el push
 CLAUDE: "...I can fix A or B. Which one first?" -> Fix A first
+CLAUDE: "...Propongo 1) caché, 2) reintentos y 3) logs. ¿Cuáles hago?" -> Haz la 1 y la 3. La 2 déjala para más adelante, primero quiero ver cómo queda lo demás
 CLAUDE: "...¿Qué repo usarías para la prueba?" -> NONE
 CLAUDE: "...Done: the page now loads in 1 s." -> NONE
 

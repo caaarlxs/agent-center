@@ -31,6 +31,6 @@ describe("answerOf", () => {
   it("has none when Claude sees none", () => {
     expect(answerOf("NONE")).toBeNull()
     expect(answerOf("")).toBeNull()
-    expect(answerOf("x".repeat(400))).toBeNull()
+    expect(answerOf("x".repeat(700))).toBeNull()
   })
 })
