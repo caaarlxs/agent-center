@@ -21,6 +21,7 @@ export type Pr = {
   isDraft: boolean
   reviewDecision: string | null
   checks: Checks
+  createdAt?: string | null // when it was opened (lib/pets.ts counts the new ones)
 }
 
 export type PrDetail = Pr & {
@@ -49,7 +50,7 @@ export type Reviewer = { login: string; state: "APPROVED" | "CHANGES_REQUESTED" 
 
 type Rollup = { name?: string; context?: string; conclusion?: string; state?: string; status?: string; detailsUrl?: string; targetUrl?: string; startedAt?: string; completedAt?: string }[]
 
-const SUMMARY_FIELDS = "number,title,url,state,isDraft,reviewDecision,statusCheckRollup"
+const SUMMARY_FIELDS = "number,title,url,state,isDraft,reviewDecision,statusCheckRollup,createdAt"
 const DETAIL_FIELDS = `${SUMMARY_FIELDS},baseRefName,headRefName,additions,deletions,changedFiles,mergeable,mergeStateStatus,author,updatedAt,createdAt,commits,latestReviews,reviewRequests`
 
 // The most PRs a session lists (its PRs tab, its card).
@@ -101,6 +102,7 @@ function summary(raw: any): Pr {
     isDraft: !!raw.isDraft,
     reviewDecision: raw.reviewDecision || null,
     checks: checksOf(raw.statusCheckRollup),
+    createdAt: raw.createdAt ?? null,
   }
 }
 
@@ -149,7 +151,7 @@ const ROLLUP: Record<string, Checks> = { SUCCESS: "pass", FAILURE: "fail", ERROR
 export async function summariesOf(urls: string[]): Promise<(Pr | null)[]> {
   const parts = urls.map((url, i) => {
     const [, owner, name, number] = url.match(/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/(\d+)$/)!
-    return `p${i}: repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(name)}) { pullRequest(number: ${number}) { number title url state isDraft reviewDecision commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } } }`
+    return `p${i}: repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(name)}) { pullRequest(number: ${number}) { number title url state isDraft reviewDecision createdAt commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } } }`
   })
   const res = await gh(["api", "graphql", "-f", `query={ ${parts.join(" ")} }`], HOME, 30_000)
   if (!res.out) throw new Error(res.err || "gh could not read the PRs")
@@ -158,7 +160,7 @@ export async function summariesOf(urls: string[]): Promise<(Pr | null)[]> {
     const raw = data[`p${i}`]?.pullRequest
     if (!raw) return null
     const rollup = raw.commits?.nodes?.[0]?.commit?.statusCheckRollup?.state
-    return { number: raw.number, title: raw.title, url: raw.url, state: raw.state, isDraft: !!raw.isDraft, reviewDecision: raw.reviewDecision || null, checks: ROLLUP[rollup] ?? null }
+    return { number: raw.number, title: raw.title, url: raw.url, state: raw.state, isDraft: !!raw.isDraft, reviewDecision: raw.reviewDecision || null, checks: ROLLUP[rollup] ?? null, createdAt: raw.createdAt ?? null }
   })
 }
 
