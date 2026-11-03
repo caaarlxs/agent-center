@@ -402,15 +402,15 @@ function NextSteps({ sessionId, turn }: { sessionId: string; turn: string | unde
 
 // Asks for the message you would likely write next once the session waits
 // for you after a turn; gone as soon as it works again.
-function useSuggestion(sessionId: string, isIdle: boolean, turn: string | undefined) {
+function useSuggestion(sessionId: string, isYourTurn: boolean, turn: string | undefined) {
   useEffect(() => {
     const drop = () => composerHint.get()?.id === sessionId && composerHint.set(null)
-    if (!isIdle) return void drop()
+    if (!isYourTurn) return void drop()
     let alive = true
     get<{ text: string | null }>(`/api/sessions/${encodeURIComponent(sessionId)}/suggest`)
       .then(r => alive && (r.text ? composerHint.set({ id: sessionId, text: r.text }) : drop()), () => {})
     return () => void ((alive = false), drop())
-  }, [sessionId, isIdle, turn])
+  }, [sessionId, isYourTurn, turn])
 }
 
 // Where a new day starts in a long conversation.
@@ -705,7 +705,10 @@ export function ConversationView({ sessionId, card: session, bridge }: { session
   const stick = useRef(true)
   const [hasNew, setHasNew] = useState(false)
   const lastKey = shown.at(-1)?.key
-  useSuggestion(sessionId, isIdle, lastKey)
+  // Free for your next message (a question in Claude's text too, not a dialog
+  // or a permission): the suggestion is asked for.
+  const isYourTurn = isLoaded && !!session && ["review", "pending", "asking"].includes(session.column) && !waiting.length && !question && !permission && !session.isLaunching
+  useSuggestion(sessionId, isYourTurn, lastKey)
   const prevLast = useRef<string | undefined>(undefined)
   useLayoutEffect(() => {
     const el = box.current
