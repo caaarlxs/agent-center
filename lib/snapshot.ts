@@ -7,7 +7,8 @@ import { stat } from "node:fs/promises"
 import { HOME } from "./config"
 import { backgroundOf } from "./background"
 import { board, itemOf, keepAcrossAccounts, type BoardItem } from "./board"
-import { doingOf, status as bridgeStatus, type Limits, type Permission } from "./bridge"
+import { doingOf, status as bridgeStatus, type Permission } from "./bridge"
+import { accountLimits } from "./limits"
 import { canRunCommands } from "./commands"
 import { freshness } from "./freshness"
 import { memoryNow, memoryOf } from "./memory"
@@ -111,16 +112,6 @@ function prsIn(refs: { key: string; ref: string; cwd: string }[], state: Pr["sta
     if (pr?.state === state && !unique.has(pr.url)) unique.set(pr.url, pr)
   }
   return [...unique.values()].slice(0, PR_LIMIT)
-}
-
-// The plan's limits are the account's: the freshest reading of any session.
-// Some sessions (Opus ones, it seems) read only a weekly window, with another
-// value: a reading with the 5-hour window wins while it is under 30 minutes
-// old, so the two bars never jump between sources.
-function accountLimits(readings: (Limits | null)[]) {
-  const all = readings.filter((r): r is Limits => !!r?.windows?.length).sort((a, b) => b.at - a.at)
-  const full = all.find(r => r.windows.some(w => w.kind === "five_hour"))
-  return full && Date.now() - full.at < 30 * 60_000 ? full : (all[0] ?? null)
 }
 
 // What a tool approval asks, in one line: the tool and what it would do.
