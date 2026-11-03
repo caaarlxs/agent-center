@@ -46,10 +46,15 @@ export type Question = { id: string; question: string; proposal: string }
 export type Unit = { id: string; repo: string; subtask: string | null; branch: string; title: string; dependsOn: string[]; status?: "done" | "failed"; pr?: string | null }
 // An item of the plan's to-do list: what gets done, in plain words, and its unit.
 export type ChecklistItem = { id: string; text: string; unit: string | null }
+// A script a plan runs on the data (a backfill, a migration): its unit, the
+// command, when it runs and where. It simulates unless EXECUTE=true, and
+// leaves a report of every record it touches (REPORT=<file.csv>).
+export type Env = "staging" | "prod"
+export type PlanScript = { id: string; unit: string | null; title: string; command: string; when: string; envs: Env[] }
 // What a review found in a unit's PR: how bad, where, and how to fix it.
 export type Severity = "blocker" | "major" | "minor"
 export type Finding = { id: string; unit: string | null; severity: Severity; file: string | null; line: number | null; title: string; detail: string; fix: string }
-export type Result = { verdict: "ready" | "needs-info"; questions: Question[]; units: Unit[]; checklist: ChecklistItem[]; findings: Finding[]; fixed: string[] }
+export type Result = { verdict: "ready" | "needs-info"; questions: Question[]; units: Unit[]; checklist: ChecklistItem[]; findings: Finding[]; fixed: string[]; scripts: PlanScript[] }
 export type PipelineStatus = "running" | "needs-info" | "ready" | "failed"
 export type Run = { n: number; stage: Stage; sessionId: string | null; startedAt: number; endedAt: number | null; status: PipelineStatus; questions: number; units: number; findings?: number; error: string | null; spend?: Spend | null }
 export type PipelineState = {
@@ -66,6 +71,7 @@ export type PipelineState = {
   questions: Question[]
   units?: Unit[] // the plan's, once it is ready (then the build's)
   checklist?: ChecklistItem[] // the plan's to-do list
+  scripts?: PlanScript[] // the plan's scripts on the data
   checked?: string[] // the items of it the build marked done
   findings?: Finding[] // the last review's
   fixed?: string[] // the findings a build fixed since
@@ -111,16 +117,16 @@ const STAGE: Record<Stage, StageDef> = {
     verb: "planificar", title: "Plan", done: "planificado: listo para construir", label: LABELS.planned, unlabel: [LABELS.ready, LABELS.built, LABELS.reviewed], model: "claude-opus-5-5", effort: "medium", writes: false,
     brief: (key, dir) => `Eres la etapa 2 del pipeline: planificar el ticket ${key}, ya refinado.
 
-1. Lee ${join(STAGES_DIR, "plan.md")} y ${join(STAGES_DIR, "environment.md")}, y síguelos.
+1. Lee ${join(STAGES_DIR, "plan.md")} y ${join(STAGES_DIR, "environment.md")}, y síguelos. Si el ticket cambia datos que ya existen, lee también ${join(STAGES_DIR, "scripts.md")}.
 2. El refinamiento aprobado está en ${join(dir, "refine.md")}. El ticket, al día, en ${join(dir, "ticket.md")}: sus comentarios mandan.
 3. Escribe el plan en ${join(dir, "plan.md")} y el resumen en ${join(dir, "plan.summary.md")}.
-4. Escribe al final ${join(dir, "plan.json")}: {"verdict": "ready" | "needs-info", "questions": [...], "units": [{"id": "U1", "repo": "...", "subtask": "PP-...", "branch": "...", "title": "...", "dependsOn": []}], "checklist": [{"id": "C1", "text": "...", "unit": "U1"}]}.`,
+4. Escribe al final ${join(dir, "plan.json")}: {"verdict": "ready" | "needs-info", "questions": [...], "units": [{"id": "U1", "repo": "...", "subtask": "PP-...", "branch": "...", "title": "...", "dependsOn": []}], "checklist": [{"id": "C1", "text": "...", "unit": "U1"}], "scripts": [{"id": "S1", "unit": "U1", "title": "...", "command": "...", "when": "...", "envs": ["staging", "prod"]}]}.`,
   },
   build: {
     verb: "construir", title: "Construcción", done: "construido: PRs abiertas", label: LABELS.built, unlabel: [LABELS.ready, LABELS.planned, LABELS.reviewed], model: "claude-opus-5-5", effort: "high", writes: true,
     brief: (key, dir) => `Eres la etapa 3 del pipeline: construir el ticket ${key}, ya planificado.
 
-1. Lee ${join(STAGES_DIR, "build.md")} y ${join(STAGES_DIR, "environment.md")}, y síguelos.
+1. Lee ${join(STAGES_DIR, "build.md")} y ${join(STAGES_DIR, "environment.md")}, y síguelos. Si plan.json tiene \`scripts\`, lee también ${join(STAGES_DIR, "scripts.md")}.
 2. El plan está en ${join(dir, "plan.md")} y ${join(dir, "plan.json")}; el refinamiento, en ${join(dir, "refine.md")}; el ticket, en ${join(dir, "ticket.md")}.
 3. Trabaja en ${join(dir, "work")}. Lo que ya hizo un run anterior está en ${join(dir, "build.progress.json")}: no lo repitas. Marca las tareas de la checklist del plan en ${join(dir, "build.checklist.json")} en cuanto estén hechas.
 4. Si existe ${join(dir, "review.fix.json")}, la revisión ya pasó: este run arregla solo los hallazgos que lista (\`{"fix": ["F1"]}\`; detalle en ${join(dir, "review.md")}), en las mismas ramas y PRs. Sigue la sección "Arreglar la revisión" de build.md.
@@ -130,7 +136,7 @@ const STAGE: Record<Stage, StageDef> = {
     verb: "revisar", title: "Revisión", done: "revisado", label: LABELS.reviewed, unlabel: [LABELS.ready, LABELS.planned, LABELS.built], model: "claude-opus-5-5", effort: "high", writes: false,
     brief: (key, dir) => `Eres la etapa 4 del pipeline: revisar las PRs del ticket ${key}, ya construido.
 
-1. Lee ${join(STAGES_DIR, "review.md")} y ${join(STAGES_DIR, "environment.md")}, y síguelos.
+1. Lee ${join(STAGES_DIR, "review.md")} y ${join(STAGES_DIR, "environment.md")}, y síguelos. Si plan.json tiene \`scripts\`, lee también ${join(STAGES_DIR, "scripts.md")}.
 2. Las PRs están en ${join(dir, "build.json")}; el plan, en ${join(dir, "plan.md")}; el refinamiento y sus criterios de aceptación, en ${join(dir, "refine.md")}; el ticket, en ${join(dir, "ticket.md")}. El código de cada unidad está en su worktree de ${join(dir, "work")}: léelo, no lo cambies.
 3. Si existe ${join(dir, "review.json.prev")}, es la revisión anterior: comprueba primero que sus hallazgos están arreglados.
 4. Escribe los hallazgos en ${join(dir, "review.md")} y el resumen en ${join(dir, "review.summary.md")}.
@@ -161,6 +167,12 @@ const findingsIn = (v: unknown): Finding[] =>
     .filter(f => textOf(f?.title))
     .map((f, i) => ({ id: String(f.id ?? `F${i + 1}`), unit: textOf(f.unit) || null, severity: SEVERITIES.includes(f.severity) ? f.severity : "minor",
       file: textOf(f.file) || null, line: Number.isInteger(f.line) ? f.line : null, title: textOf(f.title), detail: textOf(f.detail), fix: textOf(f.fix) }))
+const ENVS: Env[] = ["staging", "prod"]
+const scriptsIn = (v: unknown): PlanScript[] =>
+  listOf(v)
+    .filter(x => textOf(x?.title) && textOf(x?.command))
+    .map((x, i) => ({ id: String(x.id ?? `S${i + 1}`), unit: textOf(x.unit) || null, title: textOf(x.title), command: textOf(x.command), when: textOf(x.when),
+      envs: ENVS.filter(e => listOf(x.envs).includes(e)) }))
 // The findings that stop a ticket: they go back to Build.
 export const blocking = (findings: Finding[] | undefined) => (findings ?? []).filter(f => f.severity !== "minor")
 // The findings a build after a review fixes: the ones that stop the ticket,
@@ -198,7 +210,7 @@ export function parseResult(text: string, stage: Stage): Result {
     .filter(c => typeof c?.text === "string" && c.text.trim())
     .map((c, i) => ({ id: String(c.id ?? `C${i + 1}`), text: c.text.trim(), unit: typeof c.unit === "string" && c.unit ? c.unit : null }))
   if (stage === "plan" && data.verdict === "ready" && !units.length) throw new Error("plan.json is ready but has no units")
-  return { verdict: data.verdict, questions, units, checklist, findings: findingsIn(data.findings), fixed: listOf(data.fixed).map(String) }
+  return { verdict: data.verdict, questions, units, checklist, findings: findingsIn(data.findings), fixed: listOf(data.fixed).map(String), scripts: scriptsIn(data.scripts) }
 }
 
 export const questionsComment = (key: string, questions: Question[], stage: Stage) =>
@@ -301,7 +313,7 @@ const EMPTY = (key: string, runs: number, stage: Stage): PipelineState =>
 const fresh = async (key: string, runs: number, stage: Stage): Promise<PipelineState> => {
   const prev = await stateOf(key)
   // The plan's units and to-do list, and the review's findings, stay with the ticket for the stages after it.
-  return { ...EMPTY(key, runs, stage), summary: prev?.summary, history: prev?.history ?? [], units: prev?.units, checklist: prev?.checklist, checked: prev?.checked,
+  return { ...EMPTY(key, runs, stage), summary: prev?.summary, history: prev?.history ?? [], units: prev?.units, checklist: prev?.checklist, checked: prev?.checked, scripts: prev?.scripts,
     ...(stage === "review" ? {} : { findings: prev?.findings, fixed: stage === "build" ? [] : prev?.fixed }) }
 }
 // A stage's session is the pipeline's, not yours: once it ends it leaves the
@@ -384,11 +396,12 @@ async function finish(key: string) {
   await commentOn(key, `${MARK} · ${key} ${stage.done}\n\n${prs ? `${prs}\n\n` : ""}${md.slice(0, COMMENT_CHARS)}${md.length > COMMENT_CHARS ? "\n\n(…recortado)" : ""}`)
   await labelTicket(key, [stage.label], [LABELS.needsInfo, ...stage.unlabel])
   const checklist = state.stage === "plan" ? result.checklist : state.checklist
+  const scripts = state.stage === "plan" ? result.scripts : state.scripts
   const checked = state.stage === "build" ? checkedIn(await readText(join(dir, "build.checklist.json"))) : state.checked
   // A review keeps the build's units (it has none of its own) and leaves its findings.
   const units = state.stage === "review" ? state.units : result.units
   const found = state.stage === "review" ? { findings: result.findings, fixed: [] } : state.stage === "build" ? { fixed: result.fixed } : {}
-  await save({ ...state, status: "ready", questions: [], units, checklist, checked, ...found, endedAt: Date.now() })
+  await save({ ...state, status: "ready", questions: [], units, checklist, checked, scripts, ...found, endedAt: Date.now() })
 }
 
 // The stage a start runs: the one asked for, else the ticket's own (again).

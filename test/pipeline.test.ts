@@ -8,8 +8,8 @@ const questions = [
 
 describe("parseResult", () => {
   it("reads the verdict and the questions", () => {
-    expect(parseResult(JSON.stringify({ verdict: "needs-info", questions }), "refine")).toEqual({ verdict: "needs-info", questions, units: [], checklist: [], findings: [], fixed: [] })
-    expect(parseResult(`{"verdict":"ready","questions":[]}`, "refine")).toEqual({ verdict: "ready", questions: [], units: [], checklist: [], findings: [], fixed: [] })
+    expect(parseResult(JSON.stringify({ verdict: "needs-info", questions }), "refine")).toEqual({ verdict: "needs-info", questions, units: [], checklist: [], findings: [], fixed: [], scripts: [] })
+    expect(parseResult(`{"verdict":"ready","questions":[]}`, "refine")).toEqual({ verdict: "ready", questions: [], units: [], checklist: [], findings: [], fixed: [], scripts: [] })
   })
   it("numbers questions without an id and drops empty ones", () => {
     const r = parseResult(JSON.stringify({ verdict: "needs-info", questions: [{ question: "¿A?", proposal: "" }, { question: " " }] }), "refine")
@@ -37,6 +37,16 @@ describe("parseResult", () => {
       { id: "C7", text: "Mostrar el aviso en la app", unit: null },
     ])
     expect(parseResult(JSON.stringify({ verdict: "ready", units }), "plan").checklist).toEqual([])
+  })
+  it("reads the scripts a plan runs on the data: each numbered, with its unit, command and environments", () => {
+    const scripts = [
+      { unit: "U1", title: "Backfill del motivo", command: "python scripts/backfill.py", when: "Tras el deploy de U1", envs: ["staging", "prod", "dev"] },
+      { id: "S4", title: "Sin comando" },
+      { title: " ", command: "x" },
+    ]
+    expect(parseResult(JSON.stringify({ verdict: "ready", units: [{ repo: "api-service", title: "Campo" }], scripts }), "plan").scripts).toEqual([
+      { id: "S1", unit: "U1", title: "Backfill del motivo", command: "python scripts/backfill.py", when: "Tras el deploy de U1", envs: ["staging", "prod"] },
+    ])
   })
   it("reads a review's findings: each numbered, its severity (minor when unknown) and where", () => {
     const findings = [

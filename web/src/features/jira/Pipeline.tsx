@@ -26,7 +26,7 @@ import { doingText } from "@/features/conversation/session-events"
 import { ago } from "@/features/session/state"
 import { repoDot } from "@/features/session/state"
 import type { Helper, Step } from "@server/activity"
-import type { ChecklistItem, Finding, PipelineState, Run, Severity, Stage, Unit } from "@server/pipeline"
+import type { ChecklistItem, Finding, PipelineState, PlanScript, Run, Severity, Stage, Unit } from "@server/pipeline"
 import { MODELS } from "@/features/prompt/Settings"
 import { PipelineMark, Rail, liveLine, startText, startingText } from "./PipelineMark"
 import { costOf, dollars, nextStage, tokens } from "./pipeline-board"
@@ -229,6 +229,31 @@ function Units({ units }: { units: Unit[] }) {
   )
 }
 
+// The scripts the plan runs on the data: what each does, in which repo,
+// when, and where (the staging stage runs them, a report each time).
+function Scripts({ scripts, units }: { scripts: PlanScript[]; units: Unit[] }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <h3 className="m-0 text-[13px] font-semibold">Scripts on the data</h3>
+      <ol className="m-0 flex list-none flex-col gap-2 p-0">
+        {scripts.map(x => {
+          const unit = units.find(u => u.id === x.unit)
+          return (
+            <li key={x.id} className="flex flex-col gap-0.5">
+              <span className="text-[13px] leading-[1.45]">{x.title}</span>
+              <span className="flex min-w-0 items-baseline gap-2 text-[11.5px] text-faint">
+                {unit && <span className="inline-flex shrink-0 items-center gap-1.5"><i className="size-[7px] rounded-[2px]" style={{ background: repoDot(unit.repo) }} />{unit.repo}</span>}
+                <span className="min-w-0 truncate font-mono text-[11px]">{x.command}</span>
+              </span>
+              {(x.when || x.envs.length > 0) && <span className="text-[11.5px] text-faint">{[x.when, x.envs.join(" → ")].filter(Boolean).join(" · ")}</span>}
+            </li>
+          )
+        })}
+      </ol>
+    </div>
+  )
+}
+
 // What the review found, the worst first: each says what fails and where (a
 // click shows why and the fix); the ones a build fixed since, ticked.
 const SEVERITY: Record<Severity, { rank: number; dot: string }> = { blocker: { rank: 0, dot: "bg-bad" }, major: { rank: 1, dot: "bg-ask" }, minor: { rank: 2, dot: "bg-line-strong" } }
@@ -289,9 +314,19 @@ function Outcome({ state, onRun }: { state: PipelineState; onRun: (stage?: Stage
         {next && <Button className="h-8 shrink-0 gap-1.5 text-xs" onClick={() => onRun(next)}><Play size={13} className="fill-current" />{startText(next, state.stage)}</Button>}
       </div>
       {state.findings?.length && (state.stage === "review" || state.fixed?.length) ? <div className="mt-4"><Findings state={state} onFixMinors={() => onRun("build", true)} /></div> : null}
-      {state.stage !== "refine" && state.units?.length ? <Units units={state.units} /> : null}
-      {state.stage !== "refine" && state.checklist?.length ? <div className="mt-4"><Checklist items={state.checklist} checked={state.checked ?? []} isBuilding={false} /></div> : null}
+      {state.stage !== "refine" && <Planned state={state} />}
     </div>
+  )
+}
+
+// What the plan left, for every stage after it: its units, its scripts on the data, its to-do list.
+function Planned({ state }: { state: PipelineState }) {
+  return (
+    <>
+      {state.units?.length ? <Units units={state.units} /> : null}
+      {state.scripts?.length ? <div className="mt-4"><Scripts scripts={state.scripts} units={state.units ?? []} /></div> : null}
+      {state.checklist?.length ? <div className="mt-4"><Checklist items={state.checklist} checked={state.checked ?? []} isBuilding={false} /></div> : null}
+    </>
   )
 }
 
