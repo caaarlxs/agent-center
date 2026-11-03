@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { checkedIn, MARK, answeredAfter, answersComment, argsFor, parseResult, pipelineKeyOf, stageToRun, unbuilt, withRun, questionsComment, snapshotOf } from "../lib/pipeline"
+import { blocking, checkedIn, MARK, answeredAfter, answersComment, argsFor, parseResult, pipelineKeyOf, stageToRun, unbuilt, withRun, questionsComment, snapshotOf } from "../lib/pipeline"
 
 const questions = [
   { id: "Q1", question: "¿Cuál es el copy?", proposal: "El del ticket" },
@@ -8,8 +8,8 @@ const questions = [
 
 describe("parseResult", () => {
   it("reads the verdict and the questions", () => {
-    expect(parseResult(JSON.stringify({ verdict: "needs-info", questions }), "refine")).toEqual({ verdict: "needs-info", questions, units: [], checklist: [] })
-    expect(parseResult(`{"verdict":"ready","questions":[]}`, "refine")).toEqual({ verdict: "ready", questions: [], units: [], checklist: [] })
+    expect(parseResult(JSON.stringify({ verdict: "needs-info", questions }), "refine")).toEqual({ verdict: "needs-info", questions, units: [], checklist: [], findings: [], fixed: [] })
+    expect(parseResult(`{"verdict":"ready","questions":[]}`, "refine")).toEqual({ verdict: "ready", questions: [], units: [], checklist: [], findings: [], fixed: [] })
   })
   it("numbers questions without an id and drops empty ones", () => {
     const r = parseResult(JSON.stringify({ verdict: "needs-info", questions: [{ question: "¿A?", proposal: "" }, { question: " " }] }), "refine")
@@ -37,6 +37,21 @@ describe("parseResult", () => {
       { id: "C7", text: "Mostrar el aviso en la app", unit: null },
     ])
     expect(parseResult(JSON.stringify({ verdict: "ready", units }), "plan").checklist).toEqual([])
+  })
+  it("reads a review's findings: each numbered, its severity (minor when unknown) and where", () => {
+    const findings = [
+      { unit: "U1", severity: "blocker", file: "src/a.ts", line: 12, title: "El campo no se guarda", detail: "save() lo ignora", fix: "Añadirlo a save()" },
+      { id: "F7", severity: "rare", title: "Nombre confuso" },
+      { title: " " },
+    ]
+    expect(parseResult(JSON.stringify({ verdict: "ready", findings }), "review").findings).toEqual([
+      { id: "F1", unit: "U1", severity: "blocker", file: "src/a.ts", line: 12, title: "El campo no se guarda", detail: "save() lo ignora", fix: "Añadirlo a save()" },
+      { id: "F7", unit: null, severity: "minor", file: null, line: null, title: "Nombre confuso", detail: "", fix: "" },
+    ])
+  })
+  it("reads the findings a build fixed", () => {
+    const units = [{ id: "U1", repo: "api-service", title: "Campo", status: "done", pr: "https://x/pull/1" }]
+    expect(parseResult(JSON.stringify({ verdict: "ready", units, fixed: ["F1", 2] }), "build").fixed).toEqual(["F1", "2"])
   })
   it("refuses a ready plan with no units", () => {
     expect(() => parseResult(`{"verdict":"ready","units":[]}`, "plan")).toThrow()
@@ -116,7 +131,7 @@ describe("withRun", () => {
 })
 
 describe("stageToRun", () => {
-  const at = (stage: "refine" | "plan" | "build", status: "running" | "needs-info" | "ready" | "failed") => ({ stage, status }) as never
+  const at = (stage: "refine" | "plan" | "build" | "review", status: "running" | "needs-info" | "ready" | "failed") => ({ stage, status }) as never
   it("runs the ticket's own stage again, or refines a new one", () => {
     expect(stageToRun(null)).toBe("refine")
     expect(stageToRun(at("plan", "failed"))).toBe("plan")
@@ -125,6 +140,13 @@ describe("stageToRun", () => {
     expect(stageToRun(at("plan", "ready"), "build")).toBe("build")
     expect(() => stageToRun(at("plan", "running"), "build")).toThrow()
     expect(stageToRun(at("build", "failed"))).toBe("build")
+  })
+  it("reviews once the build is done, and builds again to fix what the review found", () => {
+    expect(stageToRun(at("build", "ready"), "review")).toBe("review")
+    expect(() => stageToRun(at("build", "failed"), "review")).toThrow()
+    expect(() => stageToRun(at("plan", "ready"), "review")).toThrow()
+    expect(stageToRun(at("review", "ready"), "build")).toBe("build")
+    expect(() => stageToRun(at("review", "running"), "build")).toThrow()
   })
   it("plans only once the refinement is done", () => {
     expect(stageToRun(at("refine", "ready"), "plan")).toBe("plan")
@@ -148,6 +170,7 @@ describe("argsFor", () => {
     expect(args).toEqual(expect.arrayContaining(["--setting-sources", "project,local", "--strict-mcp-config", "--model", "claude-opus-5-5", "--effort", "high"]))
     expect(argsFor("plan", "/data/pipeline")).toEqual(expect.arrayContaining(["--effort", "medium"]))
     expect(argsFor("build", "/data/pipeline")).toEqual(expect.arrayContaining(["--add-dir", "/data/pipeline/repos"]))
+    expect(argsFor("review", "/data/pipeline")).not.toContain("--add-dir")
   })
 })
 
@@ -157,5 +180,13 @@ describe("checkedIn", () => {
     expect(checkedIn(`["C2"]`)).toEqual(["C2"])
     expect(checkedIn("not json")).toEqual([])
     expect(checkedIn(null)).toEqual([])
+  })
+})
+
+describe("blocking", () => {
+  const finding = (id: string, severity: "blocker" | "major" | "minor") => ({ id, unit: null, severity, file: null, line: null, title: id, detail: "", fix: "" })
+  it("counts the findings that stop a ticket: blockers and majors", () => {
+    expect(blocking([finding("F1", "blocker"), finding("F2", "minor"), finding("F3", "major")]).map(f => f.id)).toEqual(["F1", "F3"])
+    expect(blocking(undefined)).toEqual([])
   })
 })

@@ -18,7 +18,7 @@ import { ago, repoDot } from "@/features/session/state"
 import type { PipelineState, Unit } from "@server/pipeline"
 import { act, useActivity } from "./Pipeline"
 import { PipelineMark, liveLine, startText, startingText } from "./PipelineMark"
-import { BUILT, STAGES, columnOf, costOf, dollars, isQueued, nextStage } from "./pipeline-board"
+import { BUILT, STAGES, columnOf, costOf, dollars, isQueued, nextStage, toFix } from "./pipeline-board"
 
 const openTicket = (key: string) => dialog.set({ kind: "ticket", key })
 const onOpenKey = (key: string) => (e: KeyboardEvent) => e.key === "Enter" && e.target === e.currentTarget && openTicket(key)
@@ -79,7 +79,7 @@ function Live({ state, card }: { state: PipelineState; card: Card | undefined })
 
 function TicketCard({ state, card, now }: { state: PipelineState; card: Card | undefined; now: number }) {
   const isRunning = state.status === "running"
-  const isAsking = state.status === "needs-info"
+  const isAsking = state.status === "needs-info" || toFix(state).length > 0
   const isWaiting = isQueued(state)
   // Done with its stage, the next one starts from here (if there is an agent for it).
   const next = nextStage(state)
@@ -108,8 +108,8 @@ function TicketCard({ state, card, now }: { state: PipelineState; card: Card | u
       {state.units?.length ? <Repos units={state.units} /> : null}
       {next && (
         <Button className="h-7 self-start gap-1.5 text-xs"
-          onClick={e => (e.stopPropagation(), void act("/api/pipeline/start", { key: state.key, stage: next }, startingText(next)))}>
-          <Play size={12} className="fill-current" />{startText(next)}
+          onClick={e => (e.stopPropagation(), void act("/api/pipeline/start", { key: state.key, stage: next }, startingText(next, state.stage)))}>
+          <Play size={12} className="fill-current" />{startText(next, state.stage)}
         </Button>
       )}
     </article>
@@ -120,7 +120,7 @@ function TicketCard({ state, card, now }: { state: PipelineState; card: Card | u
 // it waits for you), its number and name, and how many tickets it holds.
 function StageHead({ n, name, tickets }: { n: number; name: string; tickets: PipelineState[] }) {
   const isWorking = tickets.some(t => t.status === "running")
-  const isAsking = tickets.some(t => t.status === "needs-info")
+  const isAsking = tickets.some(t => t.status === "needs-info" || toFix(t).length > 0)
   return (
     <header className="mx-1.5 mb-3 flex flex-col gap-2.5">
       <i className={cn("block h-[2px] rounded-full", isWorking ? "flow" : isAsking ? "bg-ask" : "bg-line-strong")} />

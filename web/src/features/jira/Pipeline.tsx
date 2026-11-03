@@ -3,7 +3,8 @@
 // now. When it needs you, its decisions: each a question and the agent's
 // proposal, kept as it is unless you change it; the answers go to Jira and
 // start the stage again. Refined, the next step (plan); planned, its units of
-// work in order. When it fails, why, and running it again. The runs and each
+// work in order; reviewed, what it found in the PRs (the blockers and majors
+// go back to the build). When it fails, why, and running it again. The runs and each
 // stage's document wait folded at the foot. Start over clears the run and
 // the labels; the comments stay. On someone else's ticket it runs only once
 // you take it (two clicks: it is assigned to you).
@@ -25,12 +26,12 @@ import { doingText } from "@/features/conversation/session-events"
 import { ago } from "@/features/session/state"
 import { repoDot } from "@/features/session/state"
 import type { Helper, Step } from "@server/activity"
-import type { ChecklistItem, PipelineState, Run, Stage, Unit } from "@server/pipeline"
+import type { ChecklistItem, Finding, PipelineState, Run, Severity, Stage, Unit } from "@server/pipeline"
 import { MODELS } from "@/features/prompt/Settings"
 import { PipelineMark, Rail, liveLine, startText, startingText } from "./PipelineMark"
 import { costOf, dollars, nextStage, tokens } from "./pipeline-board"
 
-type Data = { state: PipelineState | null; refine: string | null; plan: string | null; build: string | null }
+type Data = { state: PipelineState | null; refine: string | null; plan: string | null; build: string | null; review: string | null }
 type Fold = Stage | "runs"
 const FOLLOW_MS = 5_000
 const IDLE_MS = 30_000
@@ -228,6 +229,49 @@ function Units({ units }: { units: Unit[] }) {
   )
 }
 
+// What the review found, the worst first: each says what fails and where (a
+// click shows why and the fix); the ones a build fixed since, ticked.
+const SEVERITY: Record<Severity, { rank: number; dot: string }> = { blocker: { rank: 0, dot: "bg-bad" }, major: { rank: 1, dot: "bg-ask" }, minor: { rank: 2, dot: "bg-line-strong" } }
+
+function FindingRow({ finding: f, unit, isFixed }: { finding: Finding; unit: Unit | undefined; isFixed: boolean }) {
+  const [isOpen, setOpen] = useState(false)
+  const where = f.file ? `${f.file}${f.line ? `:${f.line}` : ""}` : ""
+  return (
+    <li className="border-t border-line first:border-t-0">
+      <button className="grid w-full grid-cols-[14px_minmax(0,1fr)_auto] items-baseline gap-x-2.5 gap-y-0.5 py-2 text-left" onClick={() => setOpen(o => !o)} aria-expanded={isOpen}>
+        {isFixed ? <Check size={12} className="text-work" /> : <i className={cn("size-2 translate-y-[-1px] rounded-full", SEVERITY[f.severity].dot)} title={f.severity} />}
+        <span className={cn("text-[13px] leading-[1.45]", isFixed ? "text-text-muted line-through decoration-line-strong" : "text-text")}>{f.title}</span>
+        <span className="text-[11px] text-faint">{f.severity}</span>
+        <span className="col-start-2 flex min-w-0 items-baseline gap-2 text-[11.5px] text-faint">
+          {unit && <span className="inline-flex shrink-0 items-center gap-1.5"><i className="size-[7px] rounded-[2px]" style={{ background: repoDot(unit.repo) }} />{unit.repo}</span>}
+          {where && <span className="min-w-0 truncate font-mono text-[11px]">{where}</span>}
+        </span>
+      </button>
+      {isOpen && (
+        <div className="ml-6 flex flex-col gap-2 pb-3 text-[13px] leading-[1.55]">
+          {f.detail && <p className="m-0 text-text-muted">{f.detail}</p>}
+          {f.fix && <p className="m-0 border-l-2 border-line-strong pl-3 text-text-muted">{f.fix}</p>}
+          {unit?.pr && <a href={`${unit.pr}/files`} target="_blank" rel="noreferrer" className="self-start text-xs font-semibold text-brand no-underline hover:underline">Open in PR #{unit.pr.split("/").pop()}</a>}
+        </div>
+      )}
+    </li>
+  )
+}
+
+function Findings({ state }: { state: PipelineState }) {
+  const findings = [...(state.findings ?? [])].sort((a, b) => SEVERITY[a.severity].rank - SEVERITY[b.severity].rank)
+  const fixed = new Set(state.fixed ?? [])
+  const toFix = findings.filter(f => f.severity !== "minor" && !fixed.has(f.id)).length
+  return (
+    <div className="flex flex-col gap-1">
+      <h3 className="m-0 flex items-baseline gap-2 text-[13px] font-semibold">Findings<span className="text-xs font-medium text-faint tabular-nums">{toFix ? `${toFix} to fix · ` : ""}{findings.length} in all</span></h3>
+      <ol className="m-0 list-none p-0">
+        {findings.map(f => <FindingRow key={f.id} finding={f} unit={state.units?.find(u => u.id === f.unit)} isFixed={fixed.has(f.id)} />)}
+      </ol>
+    </div>
+  )
+}
+
 // A stage that ended: what it left, and the next step (or running it again).
 function Outcome({ state, onRun }: { state: PipelineState; onRun: (stage?: Stage) => void }) {
   const isFailed = state.status === "failed"
@@ -238,8 +282,9 @@ function Outcome({ state, onRun }: { state: PipelineState; onRun: (stage?: Stage
         <PipelineMark state={state} size={22} />
         <span className={cn("min-w-0 flex-1 text-[13.5px]", isFailed ? "text-bad" : "font-semibold text-work")}>{liveLine(state, undefined)}</span>
         {isFailed && <Button variant="outline" className="h-7 shrink-0 text-xs" onClick={() => onRun()}>Run again</Button>}
-        {next && <Button className="h-8 shrink-0 gap-1.5 text-xs" onClick={() => onRun(next)}><Play size={13} className="fill-current" />{startText(next)}</Button>}
+        {next && <Button className="h-8 shrink-0 gap-1.5 text-xs" onClick={() => onRun(next)}><Play size={13} className="fill-current" />{startText(next, state.stage)}</Button>}
       </div>
+      {state.findings?.length && (state.stage === "review" || state.fixed?.length) ? <div className="mt-4"><Findings state={state} /></div> : null}
       {state.stage !== "refine" && state.units?.length ? <Units units={state.units} /> : null}
       {state.stage !== "refine" && state.checklist?.length ? <div className="mt-4"><Checklist items={state.checklist} checked={state.checked ?? []} isBuilding={false} /></div> : null}
     </div>
@@ -264,7 +309,7 @@ function RunButton({ ticket, onStarted }: { ticket: Ticket; onStarted: () => voi
 // ---------- the foot ----------
 
 const minutes = (ms: number) => `${Math.max(1, Math.round(ms / 60_000))} min`
-const DONE: Record<Stage, (r: Run) => string> = { refine: () => "Refined", plan: r => `Planned in ${r.units} unit${r.units === 1 ? "" : "s"}`, build: r => `Built ${r.units} unit${r.units === 1 ? "" : "s"}` }
+const DONE: Record<Stage, (r: Run) => string> = { refine: () => "Refined", plan: r => `Planned in ${r.units} unit${r.units === 1 ? "" : "s"}`, build: r => `Built ${r.units} unit${r.units === 1 ? "" : "s"}`, review: r => `Reviewed: ${r.findings ?? 0} finding${r.findings === 1 ? "" : "s"}` }
 const sayRun = (r: Run, doing: string | null) =>
   r.status === "running" ? (doing ?? "Starting") : r.status === "needs-info" ? `Asked ${r.questions} question${r.questions === 1 ? "" : "s"}` : r.status === "failed" ? (r.error ?? "Failed") : DONE[r.stage ?? "refine"](r)
 
@@ -320,11 +365,11 @@ export function Pipeline({ ticket, onTaken }: { ticket: Ticket; onTaken: () => v
   if (!data) return null
   const state = data.state
   const loadSoon = () => setTimeout(() => void load(), 800)
-  const start = async (stage?: Stage) => (await act("/api/pipeline/start", { key: ticket.key, stage }, stage ? startingText(stage) : "A session starts")) && loadSoon()
+  const start = async (stage?: Stage) => (await act("/api/pipeline/start", { key: ticket.key, stage }, stage ? startingText(stage, state?.stage) : "A session starts")) && loadSoon()
   const reset = () => confirmReset(async () => (await act("/api/pipeline/reset", { key: ticket.key }, "Started over: the comments stay in Jira")) && void load())
   const runs = state?.history ?? []
   const toggle = (f: Fold) => setFold(open => (open === f ? null : f))
-  const docs = ([["refine", "Refinement", data.refine], ["plan", "Plan", data.plan], ["build", "Build", data.build]] as const).filter(([, , text]) => text)
+  const docs = ([["refine", "Refinement", data.refine], ["plan", "Plan", data.plan], ["build", "Build", data.build], ["review", "Review", data.review]] as const).filter(([, , text]) => text)
   return (
     <section className="overflow-hidden rounded-[12px] border border-line bg-side">
       <header className="flex items-start gap-4 px-4 pt-3.5 pb-3">

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
-import { columnOf, isQueued, nextStage } from "./pipeline-board"
+import { columnOf, isQueued, nextStage, toFix } from "./pipeline-board"
 
-const at = (stage: "refine" | "plan" | "build", status: "running" | "needs-info" | "ready" | "failed") => ({ stage, status }) as never
+const at = (stage: "refine" | "plan" | "build" | "review", status: "running" | "needs-info" | "ready" | "failed", findings?: { id: string; severity: string }[]) => ({ stage, status, findings }) as never
 
 describe("columnOf", () => {
   it("puts a ticket in its stage's column while the stage is open", () => {
@@ -18,8 +18,28 @@ describe("columnOf", () => {
   it("offers the next stage there is an agent for", () => {
     expect(nextStage(at("refine", "ready"))).toBe("plan")
     expect(nextStage(at("plan", "ready"))).toBe("build")
-    expect(nextStage(at("build", "ready"))).toBeNull()
+    expect(nextStage(at("build", "ready"))).toBe("review")
+    expect(nextStage(at("review", "ready"))).toBeNull()
     expect(nextStage(at("plan", "running"))).toBeNull()
+  })
+})
+
+describe("a review", () => {
+  const found = [{ id: "F1", severity: "major" }, { id: "F2", severity: "minor" }]
+  it("sends its blockers and majors back to the build, and the ticket stays in Review", () => {
+    expect(toFix(at("review", "ready", found)).map(f => f.id)).toEqual(["F1"])
+    expect(nextStage(at("review", "ready", found))).toBe("build")
+    expect(columnOf(at("review", "ready", found))).toBe(3)
+    expect(isQueued(at("review", "ready", found))).toBe(false)
+  })
+  it("with only minors, lets the ticket wait for staging", () => {
+    const minor = [{ id: "F2", severity: "minor" }]
+    expect(toFix(at("review", "ready", minor))).toEqual([])
+    expect(columnOf(at("review", "ready", minor))).toBe(4)
+    expect(isQueued(at("review", "ready", minor))).toBe(true)
+  })
+  it("counts nothing to fix on a ticket at another stage", () => {
+    expect(toFix(at("build", "ready", found))).toEqual([])
   })
 })
 

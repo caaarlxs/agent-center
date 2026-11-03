@@ -9,24 +9,36 @@ import { useIsDots } from "@/lib/board-style"
 import { cn } from "@/lib/utils"
 import { doingText, orbOf } from "@/features/conversation/session-events"
 import type { PipelineState, PipelineStatus, Stage } from "@server/pipeline"
-import { STAGES, stageAt } from "./pipeline-board"
+import { STAGES, stageAt, toFix } from "./pipeline-board"
 
 export { STAGES, stageAt } from "./pipeline-board"
 
 // The state in two words: what the stage does, or what comes next.
-const DOING: Record<Stage, string> = { refine: "Refining", plan: "Planning", build: "Building" }
-const NEXT: Record<Stage, string> = { refine: "Ready to plan", plan: "Ready to build", build: "Ready to review" }
-const START: Record<Stage, string> = { refine: "Run refine", plan: "Run plan", build: "Run build" }
-export const startText = (stage: Stage) => START[stage]
-const STARTING: Record<Stage, string> = { refine: "Refining", plan: "Planning", build: "Building" }
-export const startingText = (stage: Stage) => `${STARTING[stage]}: a session starts`
+const DOING: Record<Stage, string> = { refine: "Refining", plan: "Planning", build: "Building", review: "Reviewing" }
+const NEXT: Record<Stage, string> = { refine: "Ready to plan", plan: "Ready to build", build: "Ready to review", review: "Ready for staging" }
+const START: Record<Stage, string> = { refine: "Run refine", plan: "Run plan", build: "Run build", review: "Run review" }
+// Building after a review fixes what it found.
+const isFix = (stage: Stage, from?: Stage) => stage === "build" && from === "review"
+export const startText = (stage: Stage, from?: Stage) => (isFix(stage, from) ? "Fix with build" : START[stage])
+export const startingText = (stage: Stage, from?: Stage) => `${isFix(stage, from) ? "Fixing" : DOING[stage]}: a session starts`
+// A review with something to fix waits for you, like a question does.
+const lookOf = (state: PipelineState): PipelineStatus => (toFix(state).length ? "needs-info" : state.status)
 export const statusText = (state: PipelineState) =>
-  state.status === "running" ? DOING[state.stage] : state.status === "ready" ? NEXT[state.stage] : state.status === "needs-info" ? "Waiting for you" : "Failed"
+  toFix(state).length ? "To fix" : state.status === "running" ? DOING[state.stage] : state.status === "ready" ? NEXT[state.stage] : state.status === "needs-info" ? "Waiting for you" : "Failed"
 const TONE: Record<PipelineStatus, { text: string; bar: string }> = {
   running: { text: "text-work", bar: "bg-[linear-gradient(90deg,var(--work),color-mix(in_srgb,var(--work)_35%,transparent),var(--work))] bg-[length:200%_100%] animate-shimmer" },
   "needs-info": { text: "text-ask", bar: "bg-ask" },
   ready: { text: "text-work", bar: "bg-work" },
   failed: { text: "text-bad", bar: "bg-bad" },
+}
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`
+
+// A review done: what is left to fix, else the minor findings, else nothing.
+function reviewLine(state: PipelineState) {
+  const fix = toFix(state).length
+  const minor = (state.findings?.length ?? 0) - fix
+  return fix ? `${plural(fix, "finding")} to fix` : minor ? `Reviewed: ${minor} minor` : "Reviewed: nothing to fix"
 }
 
 // The line a ticket says now: what its agent does, the decisions it waits
@@ -35,6 +47,8 @@ export function liveLine(state: PipelineState, card: Card | undefined): string {
   if (state.status === "running") return doingText(card?.doing) ?? "Starting"
   if (state.status === "needs-info") return `${state.questions.length} decision${state.questions.length === 1 ? "" : "s"} for you`
   if (state.status === "failed") return state.error ?? "The run failed"
+  if (state.stage === "review") return reviewLine(state)
+  if (state.stage === "build" && state.fixed?.length) return `Fixed ${plural(state.fixed.length, "finding")}: ready to review`
   if (state.stage === "build") return `Built: ${state.units?.filter(u => u.pr).length ?? 0} draft PRs open`
   if (state.stage === "plan") return `Planned in ${state.units?.length ?? 0} unit${state.units?.length === 1 ? "" : "s"}: ready to build`
   return "Refined: ready to plan"
@@ -42,21 +56,22 @@ export function liveLine(state: PipelineState, card: Card | undefined): string {
 
 export function PipelineMark({ state, card, size = 24 }: { state: PipelineState; card?: Card; size?: number }) {
   const isDots = useIsDots()
-  const tone = TONE[state.status].text
+  const look = lookOf(state)
+  const tone = TONE[look].text
   const box = { width: size, height: size }
   const title = statusText(state)
-  if (state.status === "ready" || state.status === "failed") {
-    const Icon = state.status === "ready" ? Check : AlertTriangle
+  if (look === "ready" || look === "failed") {
+    const Icon = look === "ready" ? Check : AlertTriangle
     return (
-      <span className={cn("inline-flex flex-none items-center justify-center rounded-full", tone, state.status === "ready" ? "bg-work-soft" : "bg-bad-soft")} style={box} role="img" aria-label={title} title={title}>
+      <span className={cn("inline-flex flex-none items-center justify-center rounded-full", tone, look === "ready" ? "bg-work-soft" : "bg-bad-soft")} style={box} role="img" aria-label={title} title={title}>
         <Icon style={{ width: size * 0.55, height: size * 0.55 }} />
       </span>
     )
   }
-  const look = state.status === "running" ? orbOf(card?.doing) : ({ state: "waiting", variant: "default" } as const)
+  const orb = state.status === "running" ? orbOf(card?.doing) : ({ state: "waiting", variant: "default" } as const)
   return (
     <span className={cn("inline-flex flex-none items-center justify-center", tone)} style={box} role="img" aria-label={title} title={title}>
-      {isDots ? <OrbView {...look} size={Math.round(size * 0.86)} /> : <i className={cn("size-2 rounded-full bg-current", state.status === "running" && "run-dot")} />}
+      {isDots ? <OrbView {...orb} size={Math.round(size * 0.86)} /> : <i className={cn("size-2 rounded-full bg-current", state.status === "running" && "run-dot")} />}
     </span>
   )
 }
@@ -69,8 +84,8 @@ export function Rail({ state, hasLabels = false, className }: { state: PipelineS
     <ol className={cn("m-0 flex list-none p-0", hasLabels ? "gap-1.5" : "gap-[3px]", className)} aria-label={state ? `${STAGES[at]}: ${statusText(state)}` : "Not started"}>
       {STAGES.map((name, i) => (
         <li key={name} className={cn("flex flex-col gap-1.5", hasLabels && "min-w-0 flex-1")} title={hasLabels ? undefined : name}>
-          <i className={cn("block rounded-full", hasLabels ? "h-1 w-full" : "h-1 w-3.5", i < at ? "bg-text-muted" : i === at && state ? TONE[state.status].bar : "bg-line-strong")} />
-          {hasLabels && <span className={cn("truncate text-[11.5px]", i === at && state ? cn("font-semibold", TONE[state.status].text) : "text-faint")}>{name}</span>}
+          <i className={cn("block rounded-full", hasLabels ? "h-1 w-full" : "h-1 w-3.5", i < at ? "bg-text-muted" : i === at && state ? TONE[lookOf(state)].bar : "bg-line-strong")} />
+          {hasLabels && <span className={cn("truncate text-[11.5px]", i === at && state ? cn("font-semibold", TONE[lookOf(state)].text) : "text-faint")}>{name}</span>}
         </li>
       ))}
     </ol>
