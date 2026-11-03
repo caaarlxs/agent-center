@@ -1,5 +1,5 @@
 // The message you would likely write next (grey in the reply box, Tab takes
-// it): Haiku reads the last turns of the session (your message and Claude's
+// it): Sonnet reads the last turns of the session (your message and Claude's
 // last words in each) and writes it in your language and tone, or nothing
 // when no reply is obvious. Headless, no tools, no hooks, nothing saved;
 // once per turn (kept by the turn's last row), only when asked.
@@ -45,18 +45,34 @@ export function answerOf(text: string): string | null {
   return message
 }
 
-const promptFor = (exchanges: Exchange[]) => `You predict the next message a person will type to Claude Code, an AI coding assistant, in their conversation. Below are its last turns: what the person wrote, then what Claude answered.
+// The person's next message, never Claude's words: when Claude asks for
+// what only the person knows (a name, a fact, a choice it does not offer),
+// there is none.
+export const promptFor = (exchanges: Exchange[]) => `Below is the end of a conversation between a PERSON and CLAUDE, an AI coding assistant. Guess the next message the PERSON types.
 
-Write the one message the person most likely sends next, as they would write it: their language, their tone, short (15 words at most). It follows from Claude's last answer: it answers Claude's question, picks the option Claude offers, approves what Claude proposes, or asks for the obvious next step. Do not invent facts that are not in the conversation.
+Rules:
+- Write as the PERSON, never as Claude: the person reads Claude's answer and replies to it. Never explain, propose or summarize, and never ask the person anything.
+- Same language and tone as the person's earlier messages. 12 words at most.
+- Only a reply that needs nothing beyond the conversation: a yes or no to a yes-or-no question ("Sí, súbelo"), one of the options Claude offers ("Haz la opción 2"), or the obvious next step Claude names.
+- If Claude asks for something only the person knows (which repo, a name, a date, a fact, an opinion), or offers nothing to reply to, answer exactly NONE.
+- Answer with the message alone, no quotes.
 
-If no reply is obvious, answer exactly NONE. Answer with the message only, no quotes and nothing else.
+Examples:
+CLAUDE: "...Tests pass. ¿Hago push a main?" -> Sí, haz el push
+CLAUDE: "...I can fix A or B. Which one first?" -> Fix A first
+CLAUDE: "...¿Qué repo usarías para la prueba?" -> NONE
+CLAUDE: "...Done: the page now loads in 1 s." -> NONE
 
-${exchanges.map(e => `<person>\n${e.you}\n</person>\n<claude>\n${e.claude}\n</claude>`).join("\n\n")}`
+The conversation:
+
+${exchanges.map(e => `<person>\n${e.you}\n</person>\n<claude>\n${e.claude}\n</claude>`).join("\n\n")}
+
+The PERSON's next message (or NONE):`
 
 async function write(exchanges: Exchange[]): Promise<string | null> {
   const { code, stdout } = await exec(
     [
-      await claudeBinary(), "-p", "--output-format", "json", "--model", "haiku",
+      await claudeBinary(), "-p", "--output-format", "json", "--model", "sonnet",
       "--tools", "", "--no-session-persistence", "--settings", JSON.stringify({ disableAllHooks: true }),
     ],
     { cwd: DATA_DIR, env: claudeEnv(), input: promptFor(exchanges), timeoutMs: TIMEOUT_MS },
