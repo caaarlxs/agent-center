@@ -31,10 +31,11 @@ export async function claudeBinary() {
 }
 
 // Starts the session and resolves its id as soon as Claude Code reports it.
-// `onDone(id)` runs when the first turn ends well.
+// `onDone(id)` runs when the first turn ends well, `onFail(id)` when it ends
+// with an error.
 // `extraArgs`: more flags for Claude Code (a fork's --resume …). `mode`: the
 // permission mode the turn runs in.
-export async function launch(folder: string, prompt: string, onDone?: (id: string) => void, extraArgs: string[] = [], mode = "auto"): Promise<string> {
+export async function launch(folder: string, prompt: string, onDone?: (id: string) => void, extraArgs: string[] = [], mode = "auto", onFail?: (id: string) => void): Promise<string> {
   // The prompt goes after "--", so one that starts with "-" is never a flag.
   const proc = Bun.spawn(
     [await claudeBinary(), "-p", "--output-format", "stream-json", "--verbose", "--permission-mode", mode, ...extraArgs, "--", prompt],
@@ -70,6 +71,7 @@ export async function launch(folder: string, prompt: string, onDone?: (id: strin
       if (id) {
         running.delete(id)
         if (code === 0) onDone?.(id)
+        else onFail?.(id)
       }
       else (clearTimeout(timer), reject(new Error(`Claude Code ended without a session (code ${code})`)))
     })

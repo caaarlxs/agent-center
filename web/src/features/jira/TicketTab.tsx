@@ -26,6 +26,7 @@ import { ago } from "@/features/session/state"
 import { Anim } from "@/components/icons/animated"
 import { WHY, keptTicket, loadTicket, sessionsOf, startFrom } from "./jira"
 import { KindMark, TONE, TicketRefRow } from "./kinds"
+import { Pipeline } from "./Pipeline"
 
 const day = (at: number) => (at ? new Date(at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—")
 
@@ -162,6 +163,7 @@ export function TicketView({ ticketKey }: { ticketKey: string }) {
       </header>
       <div className="grid gap-5 @[680px]:grid-cols-[minmax(0,1fr)_240px]">
         <div className="flex min-w-0 flex-col gap-5">
+          <Pipeline ticket={ticket} />
           <Section title="Description">
             {ticket.description ? <Markdown className="text-[13.5px]">{ticket.description}</Markdown> : <p className="m-0 text-[13px] text-faint">No description.</p>}
           </Section>

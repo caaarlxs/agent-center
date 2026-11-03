@@ -29,6 +29,7 @@ import { stopAll as stopRuns } from "./lib/runner"
 import { MAX_UPLOAD_BYTES } from "./lib/uploads"
 import { deliverHere } from "./lib/deliver"
 import { startWaking } from "./lib/wake"
+import { startPipelinePoll } from "./lib/pipeline"
 import { handleRead } from "./routes/read"
 import { handleSession } from "./routes/session"
 import { handleUpload, handleWrite } from "./routes/write"
@@ -112,6 +113,7 @@ await mkdir(SESSIONS_DIR, { recursive: true })
 watch(SESSIONS_DIR, refreshSoon)
 startLive()
 startWaking(activate, deliverHere)
+startPipelinePoll()
 
 Bun.serve({
   port: PORT,

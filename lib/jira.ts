@@ -522,3 +522,12 @@ export async function commentOn(key: string, text: string) {
   await mineOrThrow(setup, key)
   await call(setup, `/rest/api/3/issue/${key}/comment`, { method: "POST", body: JSON.stringify({ body: docOf(body.slice(0, 10_000)) }) })
 }
+
+// Labels added and removed on a ticket of yours (the pipeline's).
+export async function labelTicket(key: string, add: string[], remove: string[]) {
+  const setup = setupOrThrow()
+  await mineOrThrow(setup, key)
+  const labels = [...add.map(l => ({ add: l })), ...remove.map(l => ({ remove: l }))]
+  if (labels.length) await request(setup, `/rest/api/3/issue/${key}`, { method: "PUT", body: JSON.stringify({ update: { labels } }) }) // no body back (204)
+  briefs.delete(key)
+}

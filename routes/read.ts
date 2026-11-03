@@ -3,6 +3,7 @@
 // the person decided.
 
 import { jiraSetup, searchTickets, ticket, transitionsOf } from "../lib/jira"
+import { pipelineOf } from "../lib/pipeline"
 import { namedBy, repoPage, sessionCommits, sessionRepos } from "../lib/session-commits"
 import { ICONS, chosenIcon } from "../lib/app-icon"
 import { basename } from "node:path"
@@ -294,6 +295,7 @@ export async function handleRead(url: URL): Promise<Response | null> {
   // Jira (lib/jira.ts): whether it is set up, one ticket, your open ones.
   if (path === "/api/jira") return json({ setup: jiraSetup() })
   if (path === "/api/prs/diff") return await prDiff(url.searchParams.get("url") ?? "").then(files => json({ files }), (err: Error) => json({ error: err.message }, 400))
+  if (path === "/api/pipeline") return await pipelineOf(url.searchParams.get("key") ?? "").then(r => json(r), (err: Error) => json({ error: err.message }, 400))
   if (path === "/api/jira/ticket") return await ticket(url.searchParams.get("key") ?? "").then(t => json(t), (err: Error) => json({ error: err.message }, 400))
   if (path === "/api/jira/search") {
     const filter = url.searchParams.get("filter")

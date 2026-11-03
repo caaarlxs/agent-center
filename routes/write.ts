@@ -2,6 +2,7 @@
 // notes, PR actions, tasks, files sent and dictation.
 
 import { commentOn, connect, disconnect, moveTicket } from "../lib/jira"
+import { answerPipeline, resetPipeline, startPipeline } from "../lib/pipeline"
 import { chooseIcon, isIcon } from "../lib/app-icon"
 import { stat } from "node:fs/promises"
 import { applyAction, isTaskId, setNotes, setSuggestion, setZones } from "../lib/board"
@@ -158,6 +159,14 @@ export async function handleWrite(path: string, body: Record<string, unknown>): 
       return await moveTicket(String(body.key ?? ""), String(body.transition ?? "")).then(() => json({ ok: true }), (err: Error) => json({ error: err.message }, 400))
     case "/api/jira/comment":
       return await commentOn(String(body.key ?? ""), String(body.text ?? "")).then(() => json({ ok: true }), (err: Error) => json({ error: err.message }, 400))
+    // The pipeline on a ticket of yours (lib/pipeline.ts): start a stage,
+    // answer its questions (to Jira, then the stage again), start over.
+    case "/api/pipeline/start":
+      return await startPipeline(String(body.key ?? "")).then(() => (refreshSoon(), json({ ok: true })), (err: Error) => json({ error: err.message }, 400))
+    case "/api/pipeline/answer":
+      return await answerPipeline(String(body.key ?? ""), (body.answers ?? {}) as Record<string, string>).then(() => json({ ok: true }), (err: Error) => json({ error: err.message }, 400))
+    case "/api/pipeline/reset":
+      return await resetPipeline(String(body.key ?? "")).then(() => json({ ok: true }), (err: Error) => json({ error: err.message }, 400))
     case "/api/jira/disconnect":
       await disconnect()
       return json({ ok: true })
