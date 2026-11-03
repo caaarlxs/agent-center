@@ -3,8 +3,10 @@
 // waits for you says what it is about to do and has its button: the tag it
 // would push (yours to change) and the changes that go with it, a script's
 // simulation and its report, what to test. The steps of a release not
-// started yet show what it will do.
-import { AlertTriangle, Check, ChevronRight, Download } from "lucide-react"
+// started yet show what it will do. Each step's icon tells its kind: a merge,
+// a tag, a release PR, a script on the data, something only a person does,
+// the check at the end.
+import { AlertTriangle, Check, ChevronRight, ClipboardCheck, Database, Download, GitMerge, GitPullRequestArrow, Hand, Tag, type LucideIcon } from "lucide-react"
 import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Shimmer } from "@/components/ai-elements/shimmer"
@@ -59,7 +61,11 @@ function Items({ items, isOpen: startsOpen }: { items: string[]; isOpen: boolean
 }
 
 // The button of the step that waits for you; the ones that change the world ask twice.
-const GO: Record<StepKind, string> = { merge: "Merge and deploy", promote: "Open the release PR and merge it", tag: "Push the tag", simulate: "Simulate", execute: "Run for real", manual: "Mark done", check: "It works" }
+const GO: Record<StepKind, string> = { merge: "Merge and deploy", promote: "Open the release PR and merge it", tag: "Push the tag", simulate: "Looks right", execute: "Run for real", manual: "Mark done", check: "It works" }
+const KIND: Record<StepKind, { icon: LucideIcon; name: string }> = {
+  merge: { icon: GitMerge, name: "Merge" }, promote: { icon: GitPullRequestArrow, name: "Release PR" }, tag: { icon: Tag, name: "Tag" },
+  simulate: { icon: Database, name: "Script" }, execute: { icon: Database, name: "Script" }, manual: { icon: Hand, name: "By you" }, check: { icon: ClipboardCheck, name: "Check" },
+}
 const ASKS_TWICE: StepKind[] = ["merge", "promote", "tag", "execute"]
 
 function Waiting({ step, onAct }: { step: ReleaseStep; onAct: (action: "approve" | "skip", value?: string) => void }) {
@@ -99,7 +105,7 @@ function Mark({ step }: { step: ReleaseStep }) {
 function StepDetail({ step, ticketKey }: { step: ReleaseStep; ticketKey: string }) {
   if (!step.detail && !step.error && !step.links.length) return null
   return (
-    <span className="col-start-2 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-[11.5px] text-faint">
+    <span className="col-start-2 flex flex-wrap items-baseline gap-x-3 pl-[21px] gap-y-0.5 text-[11.5px] text-faint">
       {step.status === "running" && step.detail ? <Shimmer as="span" duration={2.2} className="[--color-background:var(--text)] [--color-muted-foreground:var(--text-muted)]">{step.detail}</Shimmer> : step.detail && <span>{step.detail}</span>}
       {step.error && <span className="text-bad">{step.error}</span>}
       {step.links.map(l => <a key={l.url} href={l.url} target="_blank" rel="noreferrer" className="font-semibold text-brand no-underline hover:underline">{l.label}</a>)}
@@ -110,21 +116,23 @@ function StepDetail({ step, ticketKey }: { step: ReleaseStep; ticketKey: string 
 
 function StepRow({ step, ticketKey, isAtHand, onAct }: { step: ReleaseStep; ticketKey: string; isAtHand: boolean; onAct: (action: "approve" | "skip", value?: string) => void }) {
   const isFaint = step.status === "pending" || step.status === "skipped"
+  const { icon: Icon, name } = KIND[step.kind]
   return (
     <li className="grid grid-cols-[15px_minmax(0,1fr)] gap-x-2.5 gap-y-1.5 border-t border-line py-2.5 first:border-t-0">
       <span className="mt-[2px]"><Mark step={step} /></span>
-      <span className={cn("text-[13px] leading-[1.45]", isFaint ? "text-text-muted" : "text-text", step.status === "waiting" && "font-semibold")}>
-        {step.title}{step.kind === "tag" && step.value && step.status !== "waiting" ? <span className="font-mono text-xs text-faint"> {step.value}</span> : null}
+      <span className={cn("flex items-baseline gap-2 text-[13px] leading-[1.45]", isFaint ? "text-text-muted" : "text-text", step.status === "waiting" && "font-semibold")}>
+        <Icon size={13} className="shrink-0 translate-y-[2px] text-faint" aria-label={name} />
+        <span className="min-w-0">{step.title}{step.kind === "tag" && step.value && step.status !== "waiting" ? <span className="font-mono text-xs text-faint"> {step.value}</span> : null}</span>
       </span>
       <StepDetail step={step} ticketKey={ticketKey} />
       {(step.items.length > 0 || step.report) && (
-        <div className="col-start-2 flex min-w-0 flex-col gap-2">
+        <div className="col-start-2 flex min-w-0 flex-col gap-2 pl-[21px]">
           <Items items={step.items} isOpen={step.status === "waiting" && step.kind === "check"} />
           {step.report && (step.status !== "pending") && <ReportView ticketKey={ticketKey} file={step.report} />}
         </div>
       )}
       {isAtHand && (step.status === "waiting" || step.status === "failed") && (
-        <div className="col-start-2">{step.status === "waiting" ? <Waiting key={step.id} step={step} onAct={onAct} /> : null}</div>
+        <div className="col-start-2 pl-[21px]">{step.status === "waiting" ? <Waiting key={step.id} step={step} onAct={onAct} /> : null}</div>
       )}
     </li>
   )

@@ -8,17 +8,17 @@ const config = { ...DEFAULT_CONFIG, repos: { "web-app": { prod: "promote:prod" }
 const state = (extra = {}) => ({ key: "PP-1", stage: "review", status: "ready", units, scripts: [script], ...extra }) as never
 
 describe("releaseSteps", () => {
-  it("takes each unit to staging in the plan's order, its scripts after it, and a check at the end", () => {
+  it("simulates the scripts first, then takes each unit to staging in the plan's order, runs the scripts for real in their place, and checks at the end", () => {
     const order = [{ kind: "manual", id: null, text: "Tell QA", envs: ["staging"] }, { kind: "unit", id: "U2", text: null, envs: [] }, { kind: "unit", id: "U1", text: null, envs: [] }, { kind: "script", id: "S1", text: null, envs: [] }, { kind: "unit", id: "U3", text: null, envs: [] }]
     const steps = releaseSteps(state({ order }), "staging", config)
     expect(steps.map(s => [s.id, s.kind, s.script ?? s.repo])).toEqual([
-      ["R1", "manual", null], ["R2", "merge", "web-app"], ["R3", "merge", "api-service"], ["R4", "simulate", "S1"], ["R5", "execute", "S1"], ["R6", "manual", "mobile-app"], ["R7", "check", null],
+      ["R1", "simulate", "S1"], ["R2", "manual", null], ["R3", "merge", "web-app"], ["R4", "merge", "api-service"], ["R5", "execute", "S1"], ["R6", "manual", "mobile-app"], ["R7", "check", null],
     ])
     expect(steps[5]!.title).toBe("mobile-app: Publish the app")
     expect(steps.every(s => s.status === "pending")).toBe(true)
   })
   it("without an order, takes the units in order and then the scripts", () => {
-    expect(releaseSteps(state(), "staging", config).map(s => s.kind)).toEqual(["merge", "merge", "manual", "simulate", "execute", "check"])
+    expect(releaseSteps(state(), "staging", config).map(s => s.kind)).toEqual(["simulate", "merge", "merge", "manual", "execute", "check"])
   })
   it("takes prod by a tag, or by the repo's own way, each repo once", () => {
     const twice = [...units, unit("U4", "api-service", 10)]
@@ -29,10 +29,11 @@ describe("releaseSteps", () => {
 })
 
 describe("isGated", () => {
-  it("lets the board merge to staging and simulate on its own; everything else waits for you", () => {
+  it("in staging, merges and runs a script you approved on its own; in prod, everything but a simulation waits for you", () => {
     const steps = releaseSteps(state(), "staging", config)
     const [merge, simulate, execute] = ["merge", "simulate", "execute"].map(k => steps.find(s => s.kind === k))
-    expect([isGated(merge!, "staging"), isGated(simulate!, "staging"), isGated(execute!, "staging")]).toEqual([false, false, true])
+    expect([isGated(merge!, "staging"), isGated(simulate!, "staging"), isGated(execute!, "staging")]).toEqual([false, false, false])
+    expect(steps.filter(s => s.kind === "manual" || s.kind === "check").every(s => isGated(s, "staging"))).toBe(true)
     expect(releaseSteps(state(), "prod", config).every(s => s.kind === "simulate" || isGated(s, "prod"))).toBe(true)
   })
 })
@@ -130,6 +131,21 @@ describe("advanceRelease", () => {
     r = await advanceRelease(approveStep(retryStep(r.release, "R1"), "R1", "v0.17.0"), ctx, ops)
     expect(calls).toContain("git -C /d/repos/api-service push origin v0.17.0")
     expect(r.release.steps[0]).toMatchObject({ status: "running", phase: "deploy" })
+  })
+  it("simulates on the PR's branch before it is deployed, then waits for you to look at it", async () => {
+    const { calls, ops } = fake({})
+    const files: Record<string, string> = { "/d/PP-1/scripts/S1-staging-simulate.exit": "0\n", "/d/PP-1/scripts/S1-staging-simulate.csv": "id,action,reason,before,after,result,error\nc1,write,,,,simulated,\n" }
+    ops.readText = async path => files[path] ?? null
+    const release: Release = { env: "staging", steps: releaseSteps(state({ units: [units[0]] }), "staging", config) }
+    let r = await advanceRelease(release, ctx, ops)
+    expect(calls).toContain("git -C /d/PP-1/release/api-service checkout -q --detach origin/feat/U1")
+    expect(r.release.steps[0]).toMatchObject({ kind: "simulate", status: "running", report: "S1-staging-simulate.csv" })
+    r = await advanceRelease(r.release, ctx, ops)
+    expect(r.release.steps[0]).toMatchObject({ status: "waiting", detail: "1 records: 1 write" })
+    expect(calls.some(c => c.includes("pr merge"))).toBe(false)
+    r = await advanceRelease(approveStep(r.release, "R1"), ctx, ops)
+    expect(r.release.steps[0]).toMatchObject({ status: "done", detail: "1 records: 1 write" })
+    expect(calls.some(c => c.includes("pr merge"))).toBe(true)
   })
   it("fails a step whose command fails, and lets you skip it", async () => {
     const { ops } = fake({ "pr view": JSON.stringify({ state: "OPEN", isDraft: false }), "pr merge": "!not mergeable" })

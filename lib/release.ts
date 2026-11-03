@@ -1,12 +1,14 @@
 // A ticket's release: the steps that take its PRs to staging, and then to
 // prod, run by the board itself (no agent: the same commands every time, and
 // nothing to pay). Each step is a merge, a tag, a branch promoted, a script
-// on the data (simulated first, then for real), something only a person does,
-// or the check at the end. The board goes on by itself only where nothing
-// can go wrong that a person would want to see first: merging to staging and
-// simulating a script. Every other step waits for you, with what it is about
-// to do (the tag it would push and what goes with it, the simulation's
-// report), and so does every step in prod.
+// on the data, something only a person does, or the check at the end. Every
+// script is simulated first of all, before anything deploys (on the code of
+// its PR), and waits for you to look at its report: that is your yes to the
+// release. Then the deploys, and each script for real in its place. In
+// staging the board merges, and runs a script you approved, on its own; what
+// only a person does and the check wait for you. In prod everything but a
+// simulation waits for you, with what it is about to do (the tag it would
+// push and what goes with it, the simulation's report).
 //
 // How each repo deploys comes from the team's <data>/pipeline/stages/deploy.json
 // (DeployConfig): "merge" (a merge to the default branch deploys), "tag" (a
@@ -73,13 +75,15 @@ function deployStep(u: Unit, env: Env, config: DeployConfig): Omit<ReleaseStep, 
   return blank("merge", `${u.repo}: merge PR #${prNumber(u.pr)} and deploy`, base)
 }
 
-// The steps of a release to an environment: the plan's order (else its units,
-// then its scripts), a repo released to prod once, and a check at the end.
+// The steps of a release to an environment: its scripts simulated first;
+// then the plan's order (else its units, then its scripts), each script for
+// real in its place, a repo released to prod once; and a check at the end.
 export function releaseSteps(state: PipelineState, env: Env, config: DeployConfig): ReleaseStep[] {
   const units = state.units ?? []
   const scripts = state.scripts ?? []
   const order: OrderItem[] = state.order?.length ? state.order
     : [...units.map(u => ({ kind: "unit" as const, id: u.id, text: null, envs: [] })), ...scripts.map(x => ({ kind: "script" as const, id: x.id, text: null, envs: [] }))]
+  const simulations: Omit<ReleaseStep, "id">[] = []
   const steps: Omit<ReleaseStep, "id">[] = []
   const released = new Set<string>()
   for (const item of order) {
@@ -94,16 +98,18 @@ export function releaseSteps(state: PipelineState, env: Env, config: DeployConfi
     const x = item.kind === "script" ? scripts.find(s => s.id === item.id) : undefined
     if (x && (!x.envs.length || x.envs.includes(env))) {
       const repo = units.find(v => v.id === x.unit)?.repo ?? null
-      steps.push(blank("simulate", `${x.title}: simulate`, { unit: x.unit, repo, script: x.id }), blank("execute", `${x.title}: run for real`, { unit: x.unit, repo, script: x.id }))
+      simulations.push(blank("simulate", `${x.title}: simulate`, { unit: x.unit, repo, script: x.id }))
+      steps.push(blank("execute", `${x.title}: run for real`, { unit: x.unit, repo, script: x.id }))
     }
   }
   steps.push(blank("check", env === "staging" ? "Test it in staging" : "Check it in prod"))
-  return steps.map((s, i) => ({ ...s, id: `R${i + 1}` }))
+  return [...simulations, ...steps].map((s, i) => ({ ...s, id: `R${i + 1}` }))
 }
 
-// What waits for you: in prod, every step but a simulation; in staging, all
-// but merging and simulating.
-export const isGated = (step: ReleaseStep, env: Env) => step.kind !== "simulate" && (env === "prod" || step.kind !== "merge")
+// What waits for you before it starts: in prod, every step but a simulation;
+// in staging, what only a person does and the check (a script for real was
+// approved with its simulation). A simulation waits for you once it ends.
+export const isGated = (step: ReleaseStep, env: Env) => step.kind !== "simulate" && (env === "prod" || step.kind === "manual" || step.kind === "check")
 
 // The next version after the latest vX.Y.Z tag.
 export function nextTag(tags: string[], bump: DeployConfig["tag"]["bump"]) {
@@ -238,12 +244,17 @@ async function prepare(step: ReleaseStep, release: Release, ctx: Ctx, ops: Ops):
   return {}
 }
 
-// Where a script runs: a checkout of what the environment runs now.
+// Where a script runs: a checkout of what the environment runs, once its
+// repo is deployed; before that, of what is about to be (in staging, its PR's
+// branch; in prod, what staging runs).
 async function checkout(step: ReleaseStep, release: Release, ctx: Ctx, ops: Ops) {
   const clone = cloneOf(step, ctx)
   await must(ops, ["git", "-C", clone, "fetch", "-q", "--tags", "origin"], { timeoutMs: 60_000 })
-  const shipped = release.steps.find(s => s.repo === step.repo && (s.kind === "tag" || s.kind === "promote") && s.status === "done")
-  const ref = release.env === "prod" && shipped ? (shipped.kind === "tag" ? shipped.value! : `origin/${shipped.value}`) : "origin/HEAD"
+  const shipped = release.steps.find(s => s.repo === step.repo && ["merge", "tag", "promote"].includes(s.kind) && s.status === "done")
+  const branch = ctx.units.find(u => u.id === step.unit)?.branch
+  const ref = shipped?.kind === "tag" ? shipped.value!
+    : shipped?.kind === "promote" ? `origin/${shipped.value}`
+    : !shipped && release.env === "staging" && branch ? `origin/${branch}` : "origin/HEAD"
   const path = `${ctx.dir}/release/${step.repo}`
   if (ops.exists(path)) await must(ops, ["git", "-C", path, "checkout", "-q", "--detach", ref])
   else await must(ops, ["git", "-C", clone, "worktree", "add", "-q", "--detach", path, ref])
@@ -270,7 +281,8 @@ async function checkScript(step: ReleaseStep, ctx: Ctx, ops: Ops): Promise<Patch
   if (exit === null) return ops.isAlive(step.pid ?? 0) ? {} : { status: "failed", error: "The script stopped before it ended" }
   const report = await ops.readText(`${ctx.dir}/scripts/${step.report}`)
   const detail = report ? reportOf(report).text : "No report: the script does not follow scripts.md"
-  if (exit.trim() === "0") return { status: "done", detail }
+  // A simulation waits for you to look at it; that is your yes to the release.
+  if (exit.trim() === "0") return { status: step.kind === "simulate" ? "waiting" : "done", detail }
   const log = lines((await ops.readText(`${base}.log`)) ?? "").slice(-3).join(" · ")
   return { status: "failed", detail, error: `Exit ${exit.trim()}${log ? `: ${log}` : ""}` }
 }
@@ -383,8 +395,9 @@ export function approveStep(release: Release, id: string, value?: string): Relea
   if (!current(release, id)) throw new Error("That step does not wait for you")
   const step = release.steps.find(s => s.id === id)!
   if (step.status !== "waiting" && step.status !== "pending") throw new Error("That step does not wait for you")
-  // "Go on" past a deploy nobody saw: you checked it.
+  // "Go on" past a deploy nobody saw: you checked it. A simulation you looked at is done.
   if (step.phase === "deploy") return withStep(release, id, { status: "done", detail: "Checked by you" })
+  if (step.phase === "script" && step.status === "waiting") return withStep(release, id, { status: "done" })
   return withStep(release, id, { status: "pending", isApproved: true, ...(value?.trim() ? { value: value.trim() } : {}) })
 }
 export function retryStep(release: Release, id: string): Release {
