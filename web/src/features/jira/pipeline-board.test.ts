@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { columnOf, isQueued, nextStage, toFix, waitingStep } from "./pipeline-board"
+import { columnOf, isQueued, journeyOf, nextStage, toFix, waitingStep } from "./pipeline-board"
 
 type At = "refine" | "plan" | "build" | "review" | "staging" | "prod"
 const at = (stage: At, status: "running" | "needs-info" | "ready" | "failed", findings?: { id: string; severity: string }[], release?: unknown) => ({ stage, status, findings, release }) as never
@@ -58,6 +58,27 @@ describe("a release", () => {
     expect(waitingStep(at("staging", "running", [], release))?.id).toBe("R2")
     expect(waitingStep(at("staging", "ready", [], release))).toBeUndefined()
     expect(waitingStep(at("build", "running"))).toBeUndefined()
+  })
+})
+
+describe("journeyOf", () => {
+  const units = [{ id: "U1", repo: "a", pr: "https://x/pull/1" }, { id: "U2", repo: "b", pr: null }]
+  const history = [{ stage: "refine", questions: 4 }, { stage: "refine", questions: 0 }, { stage: "plan", questions: 0 }]
+  it("says each stage done so far in one fact, the one at hand by its state, and the next one waiting", () => {
+    const state = { stage: "review", status: "ready", units, history, findings: [{ id: "F1", severity: "minor" }] } as never
+    const preview = { env: "staging", steps: [{ status: "pending" }, { status: "pending" }] } as never
+    expect(journeyOf(state, preview).map(n => [n.tone, n.fact])).toEqual([
+      ["done", "4 decisions"], ["done", "2 units"], ["done", "1 PR"], ["done", "1 minor"], ["next", "2 steps"], ["todo", null],
+    ])
+  })
+  it("shows what waits for you, and a release under way by its steps", () => {
+    const fix = { stage: "review", status: "ready", units, history, findings: [{ id: "F1", severity: "major" }] } as never
+    expect(journeyOf(fix, null)[3]).toEqual({ stage: "review", tone: "ask", fact: "1 to fix" })
+    const release = { env: "staging", steps: [{ status: "done" }, { status: "waiting" }, { status: "pending" }] }
+    const deploying = { stage: "staging", status: "running", units, history, release } as never
+    expect(journeyOf(deploying, null)[4]).toEqual({ stage: "staging", tone: "ask", fact: "1/3 steps" })
+    expect(journeyOf({ ...(deploying as object), status: "failed" } as never, null)[4]!.tone).toBe("bad")
+    expect(journeyOf({ stage: "plan", status: "running", history } as never, null).map(n => n.tone)).toEqual(["done", "work", "todo", "todo", "todo", "todo"])
   })
 })
 

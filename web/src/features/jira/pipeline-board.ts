@@ -1,7 +1,7 @@
 // Where a ticket stands on the pipeline's board: the column of the stage it
 // is at, or, once that stage is done, the next one's, waiting at its door.
 import type { Finding, PipelineState, Stage } from "@server/pipeline"
-import type { ReleaseStep } from "@server/release"
+import type { Release, ReleaseStep } from "@server/release"
 
 export const STAGES = ["Refine", "Plan", "Build", "Review", "Staging", "Prod"]
 export const BUILT = 6 // the stages that run, from the left
@@ -23,6 +23,48 @@ export const isRelease = (stage: Stage) => stage === "staging" || stage === "pro
 // Live in prod, it is done: it waits for nothing.
 export const isQueued = (state: PipelineState) => state.status === "ready" && !toFix(state).length && state.stage !== "prod"
 export const columnOf = (state: PipelineState) => Math.min(stageAt(state) + (isQueued(state) ? 1 : 0), STAGES.length - 1)
+
+// The stages at a glance: each one's state (done, at work, waiting for you,
+// failed, next, still ahead) and the one fact that says what it did.
+export type Tone = "done" | "work" | "ask" | "bad" | "next" | "todo"
+export type JourneyNode = { stage: Stage; tone: Tone; fact: string | null }
+export const STAGE_KEYS: Stage[] = ["refine", "plan", "build", "review", "staging", "prod"]
+const count = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`
+const isOver = (s: { status: string }) => s.status === "done" || s.status === "skipped"
+
+function factOf(stage: Stage, state: PipelineState, preview: Release | null): string | null {
+  const units = state.units ?? []
+  if (stage === "refine") {
+    const asked = (state.history ?? []).filter(r => (r.stage ?? "refine") === "refine").reduce((n, r) => n + r.questions, 0)
+    return asked ? count(asked, "decision") : "Refined"
+  }
+  if (stage === "plan") return count(units.length, "unit")
+  if (stage === "build") return count(units.filter(u => u.pr).length, "PR")
+  if (stage === "review") {
+    const findings = state.findings ?? []
+    const fix = toFix(state).length
+    return fix ? `${fix} to fix` : findings.length ? `${findings.length} minor` : "Clean"
+  }
+  const release = state.release?.env === stage ? state.release : preview?.env === stage ? preview : null
+  if (!release) return null
+  return release === state.release ? `${release.steps.filter(isOver).length}/${release.steps.length} steps` : count(release.steps.length, "step")
+}
+
+function toneOf(i: number, at: number, state: PipelineState): Tone {
+  if (i < at) return "done"
+  if (i > at) return i === at + 1 && isQueued(state) ? "next" : "todo"
+  if (state.status === "failed") return "bad"
+  if (state.status === "needs-info" || toFix(state).length || waitingStep(state)) return "ask"
+  return state.status === "running" ? "work" : "done"
+}
+
+export function journeyOf(state: PipelineState, preview: Release | null): JourneyNode[] {
+  const at = stageAt(state)
+  return STAGE_KEYS.map((stage, i) => {
+    const tone = toneOf(i, at, state)
+    return { stage, tone, fact: tone === "todo" || (tone === "work" && i === at && !isRelease(stage)) ? null : factOf(stage, state, preview) }
+  })
+}
 
 // What runs spent, in a few characters: tokens (3.9M, 55k) and the
 // API-equivalent cost ($4.10, $12).
