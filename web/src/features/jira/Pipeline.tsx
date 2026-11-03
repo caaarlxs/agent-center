@@ -25,7 +25,7 @@ import { doingText } from "@/features/conversation/session-events"
 import { ago } from "@/features/session/state"
 import { repoDot } from "@/features/session/state"
 import type { Helper, Step } from "@server/activity"
-import type { PipelineState, Run, Stage, Unit } from "@server/pipeline"
+import type { ChecklistItem, PipelineState, Run, Stage, Unit } from "@server/pipeline"
 import { MODELS } from "@/features/prompt/Settings"
 import { PipelineMark, Rail, liveLine, startText, startingText } from "./PipelineMark"
 import { costOf, dollars, nextStage, tokens } from "./pipeline-board"
@@ -117,7 +117,7 @@ function Decisions({ ticketKey, state, onSent }: { ticketKey: string; state: Pip
 // While a stage runs, read every few seconds: its last steps (the latest
 // first, the one still open breathing), its subagents (what each was sent to
 // do and its last step) and, while it builds, how far each unit got.
-type Activity = { steps: Step[]; helpers: Helper[]; units: Unit[] }
+type Activity = { steps: Step[]; helpers: Helper[]; units: Unit[]; checked?: string[] }
 const ACTIVITY_MS = 4_000
 
 export function useActivity(key: string) {
@@ -129,6 +129,29 @@ export function useActivity(key: string) {
     return () => clearInterval(timer)
   }, [key])
   return activity
+}
+
+// The plan's to-do list in plain words, each item ticked once the build has
+// done it (the one it works on next, breathing, while it builds).
+function Checklist({ items, checked, isBuilding }: { items: ChecklistItem[]; checked: string[]; isBuilding: boolean }) {
+  const done = new Set(checked)
+  const next = isBuilding ? items.find(i => !done.has(i.id))?.id : undefined
+  return (
+    <div className="flex flex-col gap-2">
+      <h3 className="m-0 flex items-baseline gap-2 text-[13px] font-semibold">To do<span className="text-xs font-medium text-faint tabular-nums">{items.filter(i => done.has(i.id)).length} of {items.length}</span></h3>
+      <ol className="m-0 flex list-none flex-col gap-1.5 p-0">
+        {items.map(i => (
+          <li key={i.id} className="flex items-start gap-2.5 text-[13px] leading-[1.45]">
+            <span className={cn("mt-[3px] grid size-[15px] shrink-0 place-items-center rounded-full border transition-colors duration-200",
+              done.has(i.id) ? "border-work bg-work text-background" : i.id === next ? "border-work" : "border-line-strong")}>
+              {done.has(i.id) ? <Check size={10} strokeWidth={3} /> : i.id === next ? <i className="run-dot size-[5px] rounded-full bg-work" /> : null}
+            </span>
+            <span className={done.has(i.id) ? "text-text-muted" : "text-text"}>{i.text}</span>
+          </li>
+        ))}
+      </ol>
+    </div>
+  )
 }
 
 const stepText = (s: Step) => `${s.tool} · ${s.text}`
@@ -174,6 +197,7 @@ function Working({ state, now }: { state: PipelineState; now: number }) {
         <span className="ml-auto shrink-0 text-xs text-faint tabular-nums">{ago(state.startedAt, now)}</span>
         {state.sessionId && <button className="shrink-0 text-xs font-semibold text-text-muted hover:text-text" onClick={() => openLog(state.sessionId!)}>Log</button>}
       </div>
+      {state.checklist?.length ? <Checklist items={state.checklist} checked={activity?.checked ?? []} isBuilding={state.stage === "build"} /> : null}
       {activity?.units.length ? <Units units={activity.units} /> : null}
       {activity?.helpers.length ? <Helpers helpers={activity.helpers} /> : null}
       {steps.length > 0 && <Steps steps={steps} />}
@@ -217,6 +241,7 @@ function Outcome({ state, onRun }: { state: PipelineState; onRun: (stage?: Stage
         {next && <Button className="h-8 shrink-0 gap-1.5 text-xs" onClick={() => onRun(next)}><Play size={13} className="fill-current" />{startText(next)}</Button>}
       </div>
       {state.stage !== "refine" && state.units?.length ? <Units units={state.units} /> : null}
+      {state.stage !== "refine" && state.checklist?.length ? <div className="mt-4"><Checklist items={state.checklist} checked={state.checked ?? []} isBuilding={false} /></div> : null}
     </div>
   )
 }

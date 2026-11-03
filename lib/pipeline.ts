@@ -42,7 +42,9 @@ export const isStage = (v: unknown): v is Stage => v === "refine" || v === "plan
 export type Question = { id: string; question: string; proposal: string }
 // A unit of work: one repo, one PR.
 export type Unit = { id: string; repo: string; subtask: string | null; branch: string; title: string; dependsOn: string[]; status?: "done" | "failed"; pr?: string | null }
-export type Result = { verdict: "ready" | "needs-info"; questions: Question[]; units: Unit[] }
+// An item of the plan's to-do list: what gets done, in plain words, and its unit.
+export type ChecklistItem = { id: string; text: string; unit: string | null }
+export type Result = { verdict: "ready" | "needs-info"; questions: Question[]; units: Unit[]; checklist: ChecklistItem[] }
 export type PipelineStatus = "running" | "needs-info" | "ready" | "failed"
 export type Run = { n: number; stage: Stage; sessionId: string | null; startedAt: number; endedAt: number | null; status: PipelineStatus; questions: number; units: number; error: string | null; spend?: Spend | null }
 export type PipelineState = {
@@ -57,7 +59,9 @@ export type PipelineState = {
   endedAt: number | null
   askedAt: number | null // when the questions went to Jira
   questions: Question[]
-  units?: Unit[] // the plan's, once it is ready
+  units?: Unit[] // the plan's, once it is ready (then the build's)
+  checklist?: ChecklistItem[] // the plan's to-do list
+  checked?: string[] // the items of it the build marked done
   error: string | null
   history?: Run[] // every run since the last start over, the latest last
 }
@@ -103,7 +107,7 @@ const STAGE: Record<Stage, StageDef> = {
 1. Lee ${join(STAGES_DIR, "plan.md")} y ${join(STAGES_DIR, "environment.md")}, y síguelos.
 2. El refinamiento aprobado está en ${join(dir, "refine.md")}. El ticket, al día, en ${join(dir, "ticket.md")}: sus comentarios mandan.
 3. Escribe el plan en ${join(dir, "plan.md")} y el resumen en ${join(dir, "plan.summary.md")}.
-4. Escribe al final ${join(dir, "plan.json")}: {"verdict": "ready" | "needs-info", "questions": [...], "units": [{"id": "U1", "repo": "...", "subtask": "PP-...", "branch": "...", "title": "...", "dependsOn": []}]}.`,
+4. Escribe al final ${join(dir, "plan.json")}: {"verdict": "ready" | "needs-info", "questions": [...], "units": [{"id": "U1", "repo": "...", "subtask": "PP-...", "branch": "...", "title": "...", "dependsOn": []}], "checklist": [{"id": "C1", "text": "...", "unit": "U1"}]}.`,
   },
   build: {
     verb: "construir", title: "Construcción", done: "construido: PRs abiertas", label: LABELS.built, unlabel: [LABELS.ready, LABELS.planned], model: "claude-opus-5-5", effort: "high", writes: true,
@@ -111,7 +115,7 @@ const STAGE: Record<Stage, StageDef> = {
 
 1. Lee ${join(STAGES_DIR, "build.md")} y ${join(STAGES_DIR, "environment.md")}, y síguelos.
 2. El plan está en ${join(dir, "plan.md")} y ${join(dir, "plan.json")}; el refinamiento, en ${join(dir, "refine.md")}; el ticket, en ${join(dir, "ticket.md")}.
-3. Trabaja en ${join(dir, "work")}. Lo que ya hizo un run anterior está en ${join(dir, "build.progress.json")}: no lo repitas.
+3. Trabaja en ${join(dir, "work")}. Lo que ya hizo un run anterior está en ${join(dir, "build.progress.json")}: no lo repitas. Marca las tareas de la checklist del plan en ${join(dir, "build.checklist.json")} en cuanto estén hechas.
 4. Escribe el resumen en ${join(dir, "build.summary.md")} y al final ${join(dir, "build.json")}: {"verdict": "ready" | "needs-info", "questions": [...], "units": [{"id": "U1", "repo": "...", "title": "...", "branch": "...", "status": "done" | "failed", "pr": "https://github.com/..." | null}]}.`,
   },
 }
@@ -132,6 +136,16 @@ const unitsIn = (v: unknown, isBuild: boolean): Unit[] =>
       branch: String(u.branch ?? ""), title: u.title.trim(), dependsOn: listOf(u.dependsOn).map(String),
       ...(isBuild ? { status: u.status === "done" ? ("done" as const) : ("failed" as const), pr: typeof u.pr === "string" && u.pr ? u.pr : null } : {}) }))
 
+// The to-do items the build marked done (build.checklist.json: {"done": [...]} or a list).
+export function checkedIn(text: string | null): string[] {
+  try {
+    const data = text ? JSON.parse(text) : null
+    return listOf(Array.isArray(data) ? data : data?.done).map(String)
+  } catch {
+    return []
+  }
+}
+
 // What a build left undone: the units without a PR, or none at all.
 export function unbuilt(units: Unit[]): string | null {
   if (!units.length) return "The build left no units"
@@ -149,8 +163,11 @@ export function parseResult(text: string, stage: Stage): Result {
     .map((q, i) => ({ id: String(q.id ?? `Q${i + 1}`), question: q.question.trim(), proposal: String(q.proposal ?? "").trim() }))
   if (data.verdict === "needs-info" && !questions.length) throw new Error(`${stage}.json needs info but asks nothing`)
   const units = unitsIn(data.units, stage === "build")
+  const checklist: ChecklistItem[] = listOf(data.checklist)
+    .filter(c => typeof c?.text === "string" && c.text.trim())
+    .map((c, i) => ({ id: String(c.id ?? `C${i + 1}`), text: c.text.trim(), unit: typeof c.unit === "string" && c.unit ? c.unit : null }))
   if (stage === "plan" && data.verdict === "ready" && !units.length) throw new Error("plan.json is ready but has no units")
-  return { verdict: data.verdict, questions, units }
+  return { verdict: data.verdict, questions, units, checklist }
 }
 
 export const questionsComment = (key: string, questions: Question[], stage: Stage) =>
@@ -224,14 +241,14 @@ export async function pipelineOf(key: string) {
 export async function pipelineActivity(key: string) {
   if (!isKey(key)) throw new Error("Not a ticket key")
   const state = await stateOf(key)
-  if (state?.status !== "running" || !state.sessionId) return { steps: [], helpers: [], units: [] }
+  if (state?.status !== "running" || !state.sessionId) return { steps: [], helpers: [], units: [], checked: [] }
   const progress = await readText(join(dirOf(key), "build.progress.json"))
   let units: Unit[] = []
   try {
     const data = progress ? JSON.parse(progress) : null
     units = unitsIn(Array.isArray(data) ? data : data?.units, true)
   } catch {}
-  return { ...(await activityOf(state.sessionId)), units }
+  return { ...(await activityOf(state.sessionId)), units, checked: checkedIn(await readText(join(dirOf(key), "build.checklist.json"))) }
 }
 
 // ---------- the stage ----------
@@ -252,7 +269,8 @@ const EMPTY = (key: string, runs: number, stage: Stage): PipelineState =>
 // A new run, with the ticket's history so far.
 const fresh = async (key: string, runs: number, stage: Stage): Promise<PipelineState> => {
   const prev = await stateOf(key)
-  return { ...EMPTY(key, runs, stage), summary: prev?.summary, history: prev?.history ?? [] }
+  // The plan's units and to-do list stay with the ticket for the stages after it.
+  return { ...EMPTY(key, runs, stage), summary: prev?.summary, history: prev?.history ?? [], units: prev?.units, checklist: prev?.checklist }
 }
 // A stage's session is the pipeline's, not yours: once it ends it leaves the
 // board (its log stays a click away in the ticket), and never goes to Claude desktop.
@@ -333,7 +351,9 @@ async function finish(key: string) {
   const prs = result.units.filter(u => u.pr).map(u => `- ${u.repo}: ${u.pr}`).join("\n")
   await commentOn(key, `${MARK} · ${key} ${stage.done}\n\n${prs ? `${prs}\n\n` : ""}${md.slice(0, COMMENT_CHARS)}${md.length > COMMENT_CHARS ? "\n\n(…recortado)" : ""}`)
   await labelTicket(key, [stage.label], [LABELS.needsInfo, ...stage.unlabel])
-  await save({ ...state, status: "ready", questions: [], units: result.units, endedAt: Date.now() })
+  const checklist = state.stage === "plan" ? result.checklist : state.checklist
+  const checked = state.stage === "build" ? checkedIn(await readText(join(dir, "build.checklist.json"))) : state.checked
+  await save({ ...state, status: "ready", questions: [], units: result.units, checklist, checked, endedAt: Date.now() })
 }
 
 // The stage a start runs: the one asked for, else the ticket's own (again).

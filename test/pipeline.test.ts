@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { MARK, answeredAfter, answersComment, argsFor, parseResult, pipelineKeyOf, stageToRun, unbuilt, withRun, questionsComment, snapshotOf } from "../lib/pipeline"
+import { checkedIn, MARK, answeredAfter, answersComment, argsFor, parseResult, pipelineKeyOf, stageToRun, unbuilt, withRun, questionsComment, snapshotOf } from "../lib/pipeline"
 
 const questions = [
   { id: "Q1", question: "¿Cuál es el copy?", proposal: "El del ticket" },
@@ -8,8 +8,8 @@ const questions = [
 
 describe("parseResult", () => {
   it("reads the verdict and the questions", () => {
-    expect(parseResult(JSON.stringify({ verdict: "needs-info", questions }), "refine")).toEqual({ verdict: "needs-info", questions, units: [] })
-    expect(parseResult(`{"verdict":"ready","questions":[]}`, "refine")).toEqual({ verdict: "ready", questions: [], units: [] })
+    expect(parseResult(JSON.stringify({ verdict: "needs-info", questions }), "refine")).toEqual({ verdict: "needs-info", questions, units: [], checklist: [] })
+    expect(parseResult(`{"verdict":"ready","questions":[]}`, "refine")).toEqual({ verdict: "ready", questions: [], units: [], checklist: [] })
   })
   it("numbers questions without an id and drops empty ones", () => {
     const r = parseResult(JSON.stringify({ verdict: "needs-info", questions: [{ question: "¿A?", proposal: "" }, { question: " " }] }), "refine")
@@ -28,6 +28,15 @@ describe("parseResult", () => {
       { id: "U1", repo: "company-service", subtask: null, branch: "", title: "Campo", dependsOn: [], status: "done", pr: "https://github.com/deale-org/company-service/pull/7" },
       { id: "U2", repo: "deale-frontend", subtask: null, branch: "", title: "Aviso", dependsOn: [], status: "failed", pr: null },
     ])
+  })
+  it("reads a plan's to-do list in plain words, each item numbered and tied to its unit", () => {
+    const checklist = [{ text: "Guardar por qué una empresa no se publica", unit: "U1" }, { id: "C7", text: "Mostrar el aviso en la app" }, { text: " " }]
+    const units = [{ repo: "company-service", title: "Campo" }]
+    expect(parseResult(JSON.stringify({ verdict: "ready", units, checklist }), "plan").checklist).toEqual([
+      { id: "C1", text: "Guardar por qué una empresa no se publica", unit: "U1" },
+      { id: "C7", text: "Mostrar el aviso en la app", unit: null },
+    ])
+    expect(parseResult(JSON.stringify({ verdict: "ready", units }), "plan").checklist).toEqual([])
   })
   it("refuses a ready plan with no units", () => {
     expect(() => parseResult(`{"verdict":"ready","units":[]}`, "plan")).toThrow()
@@ -139,5 +148,14 @@ describe("argsFor", () => {
     expect(args).toEqual(expect.arrayContaining(["--setting-sources", "project,local", "--strict-mcp-config", "--model", "claude-opus-5-5", "--effort", "high"]))
     expect(argsFor("plan", "/data/pipeline")).toEqual(expect.arrayContaining(["--effort", "medium"]))
     expect(argsFor("build", "/data/pipeline")).toEqual(expect.arrayContaining(["--add-dir", "/data/pipeline/repos"]))
+  })
+})
+
+describe("checkedIn", () => {
+  it("reads the items the build marked done, as a list or under done", () => {
+    expect(checkedIn(`{"done": ["C1", "C3"]}`)).toEqual(["C1", "C3"])
+    expect(checkedIn(`["C2"]`)).toEqual(["C2"])
+    expect(checkedIn("not json")).toEqual([])
+    expect(checkedIn(null)).toEqual([])
   })
 })

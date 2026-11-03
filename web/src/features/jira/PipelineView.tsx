@@ -34,14 +34,20 @@ function Repos({ units }: { units: Unit[] }) {
 }
 
 // While its agent works: what it does now (or each subagent at work, and
-// its step), and how many of the plan's units are built (one segment each).
+// its step), and how far it got: the to-do list ticked, else the units built
+// (one segment each).
 function Live({ state, card }: { state: PipelineState; card: Card | undefined }) {
   const activity = useActivity(state.key)
   const steps = activity?.steps ?? []
   const current = steps.findLast(s => s.isOpen) ?? steps.at(-1)
   const busy = activity?.helpers.filter(h => !h.isDone) ?? []
+  // Its progress: the to-do list ticked, else the units built.
+  const checked = new Set(activity?.checked ?? [])
   const units = activity?.units.length ? activity.units : (state.units ?? [])
-  const done = units.filter(u => u.status === "done").length
+  const bar = state.checklist?.length
+    ? state.checklist.map(c => ({ id: c.id, title: c.text, tone: checked.has(c.id) ? "bg-work" : "bg-line-strong" }))
+    : units.map(u => ({ id: u.id, title: `${u.id} · ${u.repo}`, tone: u.status === "done" ? "bg-work" : u.status === "failed" ? "bg-bad" : "bg-line-strong" }))
+  const done = bar.filter(b => b.tone === "bg-work").length
   const shimmer = "[--color-background:var(--text)] [--color-muted-foreground:var(--text-muted)]"
   return (
     <div className="flex flex-col gap-2">
@@ -59,12 +65,12 @@ function Live({ state, card }: { state: PipelineState; card: Card | undefined })
       ) : (
         <Shimmer as="p" duration={2.2} className={cn("m-0 line-clamp-2 text-[12.5px] leading-[1.45]", shimmer)}>{current?.text ?? liveLine(state, card)}</Shimmer>
       )}
-      {units.length > 0 && state.stage === "build" && (
+      {bar.length > 0 && state.stage === "build" && (
         <span className="flex items-center gap-2">
           <span className="flex flex-1 gap-[3px]">
-            {units.map(u => <i key={u.id} title={`${u.id} · ${u.repo}`} className={cn("h-1 flex-1 rounded-full", u.status === "done" ? "bg-work" : u.status === "failed" ? "bg-bad" : "bg-line-strong")} />)}
+            {bar.map(b => <i key={b.id} title={b.title} className={cn("h-1 flex-1 rounded-full transition-colors duration-300", b.tone)} />)}
           </span>
-          <span className="dot-time text-[11px] text-faint tabular-nums">{done}/{units.length}</span>
+          <span className="dot-time text-[11px] text-faint tabular-nums">{done}/{bar.length}</span>
         </span>
       )}
     </div>
