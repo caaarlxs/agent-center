@@ -7,6 +7,7 @@
 // The "Tickets" tab of a session: the tickets linked to it and why (started
 // from it, linked by you, its branch or title, you named it), one open whole;
 // link another by its key, or unlink one that is not its own.
+import { BotAvatar } from "bot-avatars"
 import { ChevronDown, Link2, Plus, X } from "lucide-react"
 import { type ReactNode, useEffect, useState } from "react"
 import { toast } from "sonner"
@@ -27,6 +28,7 @@ import { Anim } from "@/components/icons/animated"
 import { WHY, keptTicket, loadTicket, sessionsOf, startFrom } from "./jira"
 import { KindMark, TONE, TicketRefRow } from "./kinds"
 import { Pipeline } from "./Pipeline"
+import { readComment } from "./comment"
 
 const day = (at: number) => (at ? new Date(at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—")
 
@@ -105,6 +107,38 @@ function CommentBox({ ticket, onDone }: { ticket: Ticket; onDone: () => void }) 
   )
 }
 
+const LONG_CHARS = 700 // a comment longer than this shows folded first
+
+// A comment: who wrote it (the pipeline's, as Agent Center, its title on its
+// own) and when; a long one folded under a fade until you open it.
+function Comment({ author, at, body, now }: { author: string; at: number; body: string; now: number }) {
+  const { isAgent, title, text } = readComment(body)
+  const isLong = text.length > LONG_CHARS
+  const [isOpen, setOpen] = useState(false)
+  return (
+    <li className="flex gap-2.5 border-t border-line py-3.5 first:border-t-0 first:pt-1">
+      {isAgent ? <BotAvatar type="droid" state="default" size={24} className="shrink-0" aria-hidden />
+        : <span className="grid size-6 shrink-0 place-items-center rounded-full bg-hover text-[11px] font-bold text-text-muted">{author.slice(0, 1)}</span>}
+      <div className="min-w-0 flex-1">
+        <div className="mb-1 flex items-baseline gap-2 text-xs">
+          <b className="font-semibold">{isAgent ? "Agent Center" : author}</b>
+          {isAgent && <span className="text-faint">as {author}</span>}
+          <span className="text-faint">{ago(at, now)} ago</span>
+        </div>
+        {title && <p className="m-0 mb-1.5 text-[13.5px] font-semibold">{title}</p>}
+        <div className={cn(isLong && !isOpen && "max-h-[200px] overflow-hidden [mask-image:linear-gradient(to_bottom,black_55%,transparent)]")}>
+          <Markdown className="text-[13px]">{text}</Markdown>
+        </div>
+        {isLong && (
+          <button className="mt-1 text-xs font-semibold text-text-muted transition-colors duration-120 hover:text-text" onClick={() => setOpen(v => !v)} aria-expanded={isOpen}>
+            {isOpen ? "Show less" : "Show all"}
+          </button>
+        )}
+      </div>
+    </li>
+  )
+}
+
 function Section({ title, extra, children }: { title: string; extra?: ReactNode; children: ReactNode }) {
   return (
     <section className="flex flex-col gap-1.5">
@@ -179,18 +213,10 @@ export function TicketView({ ticketKey }: { ticketKey: string }) {
             </Section>
           )}
           <Section title={ticket.comments.length === 1 ? "1 comment" : `${ticket.comments.length} comments`}>
-            <div className="flex flex-col gap-3">
-              {ticket.comments.map((c, i) => (
-                <div key={i} className="flex gap-2.5">
-                  <span className="grid size-6 shrink-0 place-items-center rounded-full bg-hover text-[11px] font-bold text-text-muted">{c.author.slice(0, 1)}</span>
-                  <div className="min-w-0 flex-1">
-                    <div className="mb-0.5 flex items-baseline gap-2 text-xs"><b className="font-semibold">{c.author}</b><span className="text-faint">{ago(c.at, now)} ago</span></div>
-                    <Markdown className="text-[13px]">{c.body}</Markdown>
-                  </div>
-                </div>
-              ))}
-              {ticket.isMine && <CommentBox ticket={ticket} onDone={() => void load()} />}
-            </div>
+            <ol className="m-0 flex list-none flex-col p-0">
+              {ticket.comments.map((c, i) => <Comment key={i} author={c.author} at={c.at} body={c.body} now={now} />)}
+            </ol>
+            {ticket.isMine && <CommentBox ticket={ticket} onDone={() => void load()} />}
           </Section>
         </div>
         <aside className="flex flex-col gap-4 self-start rounded-[12px] border border-line bg-side p-3 @[680px]:sticky @[680px]:top-0">
