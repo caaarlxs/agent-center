@@ -7,12 +7,12 @@ const result = (id: string) => ({ type: "user", message: { content: [{ type: "to
 describe("stepsOf", () => {
   it("lists the tool calls, the latest last, open until their result comes back", () => {
     const rows = [
-      call(1, "a", "Bash", { command: "git fetch", description: "Fetch company-service" }), result("a"),
+      call(1, "a", "Bash", { command: "git fetch", description: "Fetch api-service" }), result("a"),
       call(2, "b", "Read", { file_path: "/repo/plan.md" }), result("b"),
       call(3, "c", "Agent", { description: "Build U1", prompt: "..." }),
     ]
     expect(stepsOf(rows)).toEqual([
-      { at: 1000, tool: "Bash", text: "Fetch company-service", isOpen: false },
+      { at: 1000, tool: "Bash", text: "Fetch api-service", isOpen: false },
       { at: 2000, tool: "Read", text: "/repo/plan.md", isOpen: false },
       { at: 3000, tool: "Agent", text: "Build U1", isOpen: true },
     ])

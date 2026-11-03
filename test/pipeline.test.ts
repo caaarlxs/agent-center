@@ -16,22 +16,22 @@ describe("parseResult", () => {
     expect(r.questions).toEqual([{ id: "Q1", question: "¿A?", proposal: "" }])
   })
   it("reads a plan's units, numbering the ones without an id", () => {
-    const units = [{ repo: "company-service", subtask: "PP-2", branch: "feat/PP-2-x", title: "Campo", dependsOn: [] }, { id: "U9", repo: "deale-frontend", title: "Aviso", dependsOn: ["U1"] }, { title: "sin repo" }]
+    const units = [{ repo: "api-service", subtask: "PP-2", branch: "feat/PP-2-x", title: "Campo", dependsOn: [] }, { id: "U9", repo: "web-app", title: "Aviso", dependsOn: ["U1"] }, { title: "sin repo" }]
     expect(parseResult(JSON.stringify({ verdict: "ready", units }), "plan").units).toEqual([
-      { id: "U1", repo: "company-service", subtask: "PP-2", branch: "feat/PP-2-x", title: "Campo", dependsOn: [] },
-      { id: "U9", repo: "deale-frontend", subtask: null, branch: "", title: "Aviso", dependsOn: ["U1"] },
+      { id: "U1", repo: "api-service", subtask: "PP-2", branch: "feat/PP-2-x", title: "Campo", dependsOn: [] },
+      { id: "U9", repo: "web-app", subtask: null, branch: "", title: "Aviso", dependsOn: ["U1"] },
     ])
   })
   it("reads what the build left of each unit: its status and its PR", () => {
-    const units = [{ id: "U1", repo: "company-service", title: "Campo", status: "done", pr: "https://github.com/deale-org/company-service/pull/7" }, { id: "U2", repo: "deale-frontend", title: "Aviso", status: "weird" }]
+    const units = [{ id: "U1", repo: "api-service", title: "Campo", status: "done", pr: "https://github.com/acme/api-service/pull/7" }, { id: "U2", repo: "web-app", title: "Aviso", status: "weird" }]
     expect(parseResult(JSON.stringify({ verdict: "ready", units }), "build").units).toEqual([
-      { id: "U1", repo: "company-service", subtask: null, branch: "", title: "Campo", dependsOn: [], status: "done", pr: "https://github.com/deale-org/company-service/pull/7" },
-      { id: "U2", repo: "deale-frontend", subtask: null, branch: "", title: "Aviso", dependsOn: [], status: "failed", pr: null },
+      { id: "U1", repo: "api-service", subtask: null, branch: "", title: "Campo", dependsOn: [], status: "done", pr: "https://github.com/acme/api-service/pull/7" },
+      { id: "U2", repo: "web-app", subtask: null, branch: "", title: "Aviso", dependsOn: [], status: "failed", pr: null },
     ])
   })
   it("reads a plan's to-do list in plain words, each item numbered and tied to its unit", () => {
     const checklist = [{ text: "Guardar por qué una empresa no se publica", unit: "U1" }, { id: "C7", text: "Mostrar el aviso en la app" }, { text: " " }]
-    const units = [{ repo: "company-service", title: "Campo" }]
+    const units = [{ repo: "api-service", title: "Campo" }]
     expect(parseResult(JSON.stringify({ verdict: "ready", units, checklist }), "plan").checklist).toEqual([
       { id: "C1", text: "Guardar por qué una empresa no se publica", unit: "U1" },
       { id: "C7", text: "Mostrar el aviso en la app", unit: null },
