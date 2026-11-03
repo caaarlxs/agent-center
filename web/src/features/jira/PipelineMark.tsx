@@ -8,12 +8,17 @@ import type { Card } from "@/lib/api-types"
 import { useIsDots } from "@/lib/board-style"
 import { cn } from "@/lib/utils"
 import { doingText, orbOf } from "@/features/conversation/session-events"
-import type { PipelineState, PipelineStatus } from "@server/pipeline"
+import type { PipelineState, PipelineStatus, Stage } from "@server/pipeline"
 
 export const STAGES = ["Refine", "Plan", "Build", "Review", "Staging"]
-const AT: Record<PipelineState["stage"], number> = { refine: 0 }
+const AT: Record<Stage, number> = { refine: 0, plan: 1 }
+export const stageAt = (state: PipelineState) => AT[state.stage]
 
-export const STATUS_TEXT: Record<PipelineStatus, string> = { running: "Refining", "needs-info": "Waiting for you", ready: "Ready to plan", failed: "Failed" }
+// The state in two words: what the stage does, or what comes next.
+const DOING: Record<Stage, string> = { refine: "Refining", plan: "Planning" }
+const NEXT: Record<Stage, string> = { refine: "Ready to plan", plan: "Ready to build" }
+export const statusText = (state: PipelineState) =>
+  state.status === "running" ? DOING[state.stage] : state.status === "ready" ? NEXT[state.stage] : state.status === "needs-info" ? "Waiting for you" : "Failed"
 const TONE: Record<PipelineStatus, { text: string; bar: string }> = {
   running: { text: "text-work", bar: "bg-[linear-gradient(90deg,var(--work),color-mix(in_srgb,var(--work)_35%,transparent),var(--work))] bg-[length:200%_100%] animate-shimmer" },
   "needs-info": { text: "text-ask", bar: "bg-ask" },
@@ -27,6 +32,7 @@ export function liveLine(state: PipelineState, card: Card | undefined): string {
   if (state.status === "running") return doingText(card?.doing) ?? "Starting"
   if (state.status === "needs-info") return `${state.questions.length} decision${state.questions.length === 1 ? "" : "s"} for you`
   if (state.status === "failed") return state.error ?? "The run failed"
+  if (state.stage === "plan") return `Planned in ${state.units?.length ?? 0} unit${state.units?.length === 1 ? "" : "s"}: ready to build`
   return "Refined: ready to plan"
 }
 
@@ -34,7 +40,7 @@ export function PipelineMark({ state, card, size = 24 }: { state: PipelineState;
   const isDots = useIsDots()
   const tone = TONE[state.status].text
   const box = { width: size, height: size }
-  const title = STATUS_TEXT[state.status]
+  const title = statusText(state)
   if (state.status === "ready" || state.status === "failed") {
     const Icon = state.status === "ready" ? Check : AlertTriangle
     return (
@@ -56,7 +62,7 @@ export function PipelineMark({ state, card, size = 24 }: { state: PipelineState;
 export function Rail({ state, hasLabels = false, className }: { state: PipelineState | null; hasLabels?: boolean; className?: string }) {
   const at = state ? AT[state.stage] : -1
   return (
-    <ol className={cn("m-0 flex list-none p-0", hasLabels ? "gap-1.5" : "gap-[3px]", className)} aria-label={state ? `${STAGES[at]}: ${STATUS_TEXT[state.status]}` : "Not started"}>
+    <ol className={cn("m-0 flex list-none p-0", hasLabels ? "gap-1.5" : "gap-[3px]", className)} aria-label={state ? `${STAGES[at]}: ${statusText(state)}` : "Not started"}>
       {STAGES.map((name, i) => (
         <li key={name} className={cn("flex flex-col gap-1.5", hasLabels && "min-w-0 flex-1")} title={hasLabels ? undefined : name}>
           <i className={cn("block rounded-full", hasLabels ? "h-1 w-full" : "h-1 w-3.5", i < at ? "bg-text-muted" : i === at && state ? TONE[state.status].bar : "bg-line-strong")} />

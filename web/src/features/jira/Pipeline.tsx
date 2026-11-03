@@ -2,8 +2,9 @@
 // it only what this moment asks for. While a stage runs, what its agent does
 // now. When it needs you, its decisions: each a question and the agent's
 // proposal, kept as it is unless you change it; the answers go to Jira and
-// start the stage again. When it fails, why, and running it again. The runs
-// and the refinement wait folded at the foot. Start over clears the run and
+// start the stage again. Refined, the next step (plan); planned, its units of
+// work in order. When it fails, why, and running it again. The runs and each
+// stage's document wait folded at the foot. Start over clears the run and
 // the labels; the comments stay. On someone else's ticket it runs only once
 // you take it (two clicks: it is assigned to you).
 import { ChevronRight, Play, RotateCcw } from "lucide-react"
@@ -22,10 +23,12 @@ import { openSession } from "@/app/open-session"
 import { Markdown } from "@/features/conversation/Markdown"
 import { doingText } from "@/features/conversation/session-events"
 import { ago } from "@/features/session/state"
-import type { PipelineState, Run } from "@server/pipeline"
+import { repoDot } from "@/features/session/state"
+import type { PipelineState, Run, Stage, Unit } from "@server/pipeline"
 import { PipelineMark, Rail, liveLine } from "./PipelineMark"
 
-type Data = { state: PipelineState | null; refine: string | null }
+type Data = { state: PipelineState | null; refine: string | null; plan: string | null }
+type Fold = "refine" | "plan" | "runs"
 const FOLLOW_MS = 5_000
 const IDLE_MS = 30_000
 const CONFIRM_MS = 4_000
@@ -121,12 +124,39 @@ function Working({ state, now }: { state: PipelineState; now: number }) {
   )
 }
 
-function Outcome({ state, onAgain }: { state: PipelineState; onAgain: () => void }) {
+// The units of a plan, in order: each a repo and a PR, with what it delivers,
+// its branch and what it waits for.
+function Units({ units }: { units: Unit[] }) {
   return (
-    <div className="flex items-center gap-2.5">
-      <PipelineMark state={state} size={22} />
-      <span className={cn("min-w-0 flex-1 text-[13.5px]", state.status === "failed" ? "text-bad" : "font-semibold text-work")}>{liveLine(state, undefined)}</span>
-      {state.status === "failed" && <Button variant="outline" className="h-7 shrink-0 text-xs" onClick={onAgain}>Run again</Button>}
+    <ol className="m-0 mt-3 flex list-none flex-col gap-px p-0">
+      {units.map((u, i) => (
+        <li key={u.id} className="grid grid-cols-[1rem_minmax(0,1fr)_auto] items-baseline gap-x-2.5 gap-y-0.5 rounded-[8px] px-1 py-1.5">
+          <span className="text-right font-mono text-xs text-faint">{i + 1}</span>
+          <span className="flex min-w-0 items-baseline gap-2">
+            <span className="inline-flex shrink-0 items-center gap-1.5 text-[13px] font-semibold"><i className="size-2 rounded-[3px]" style={{ background: repoDot(u.repo) }} />{u.repo}</span>
+            <span className="min-w-0 truncate text-[13px] text-text-muted">{u.title}</span>
+          </span>
+          <span className="font-mono text-[11px] text-faint">{u.subtask ?? ""}</span>
+          <span />
+          <span className="min-w-0 truncate font-mono text-[11px] text-faint">{u.branch}{u.dependsOn.length > 0 && <span className="font-sans"> · after {u.dependsOn.map(d => units.findIndex(x => x.id === d) + 1 || d).join(", ")}</span>}</span>
+        </li>
+      ))}
+    </ol>
+  )
+}
+
+// A stage that ended: what it left, and the next step (or running it again).
+function Outcome({ state, onRun }: { state: PipelineState; onRun: (stage?: Stage) => void }) {
+  const isFailed = state.status === "failed"
+  return (
+    <div className="flex flex-col">
+      <div className="flex items-center gap-2.5">
+        <PipelineMark state={state} size={22} />
+        <span className={cn("min-w-0 flex-1 text-[13.5px]", isFailed ? "text-bad" : "font-semibold text-work")}>{liveLine(state, undefined)}</span>
+        {isFailed && <Button variant="outline" className="h-7 shrink-0 text-xs" onClick={() => onRun()}>Run again</Button>}
+        {!isFailed && state.stage === "refine" && <Button className="h-8 shrink-0 gap-1.5 text-xs" onClick={() => onRun("plan")}><Play size={13} className="fill-current" />Run plan</Button>}
+      </div>
+      {!isFailed && state.stage === "plan" && state.units?.length ? <Units units={state.units} /> : null}
     </div>
   )
 }
@@ -149,8 +179,9 @@ function RunButton({ ticket, onStarted }: { ticket: Ticket; onStarted: () => voi
 // ---------- the foot ----------
 
 const minutes = (ms: number) => `${Math.max(1, Math.round(ms / 60_000))} min`
+const DONE: Record<Stage, (r: Run) => string> = { refine: () => "Refined", plan: r => `Planned in ${r.units} unit${r.units === 1 ? "" : "s"}` }
 const sayRun = (r: Run, doing: string | null) =>
-  r.status === "running" ? (doing ?? "Starting") : r.status === "needs-info" ? `Asked ${r.questions} question${r.questions === 1 ? "" : "s"}` : r.status === "failed" ? (r.error ?? "Failed") : "Refined"
+  r.status === "running" ? (doing ?? "Starting") : r.status === "needs-info" ? `Asked ${r.questions} question${r.questions === 1 ? "" : "s"}` : r.status === "failed" ? (r.error ?? "Failed") : DONE[r.stage ?? "refine"](r)
 
 // Every run, the latest first: what it ended in (or does now), how long, its log.
 function Runs({ history, now }: { history: Run[]; now: number }) {
@@ -172,7 +203,7 @@ function Runs({ history, now }: { history: Run[]; now: number }) {
   )
 }
 
-function Fold({ label, isOpen, onToggle }: { label: ReactNode; isOpen: boolean; onToggle: () => void }) {
+function FoldButton({ label, isOpen, onToggle }: { label: ReactNode; isOpen: boolean; onToggle: () => void }) {
   return (
     <button className={cn("inline-flex items-center gap-1 text-xs font-semibold transition-colors duration-120", isOpen ? "text-text" : "text-text-muted hover:text-text")} onClick={onToggle} aria-expanded={isOpen}>
       <ChevronRight size={13} className={cn("transition-transform duration-150 ease-(--ease-out)", isOpen && "rotate-90")} />{label}
@@ -185,7 +216,7 @@ function Fold({ label, isOpen, onToggle }: { label: ReactNode; isOpen: boolean; 
 export function Pipeline({ ticket, onTaken }: { ticket: Ticket; onTaken: () => void }) {
   const now = useNow()
   const [data, setData] = useState<Data | null>(null)
-  const [fold, setFold] = useState<"refine" | "runs" | null>(null)
+  const [fold, setFold] = useState<Fold | null>(null)
   const [isResetting, confirmReset] = useConfirm()
   const load = () => get<Data>(`/api/pipeline?key=${encodeURIComponent(ticket.key)}`).then(setData, () => {})
   const isRunning = data?.state?.status === "running"
@@ -197,10 +228,11 @@ export function Pipeline({ ticket, onTaken }: { ticket: Ticket; onTaken: () => v
   if (!data) return null
   const state = data.state
   const loadSoon = () => setTimeout(() => void load(), 800)
-  const start = async () => (await act("/api/pipeline/start", { key: ticket.key }, "Refining: a session starts")) && loadSoon()
+  const start = async (stage?: Stage) => (await act("/api/pipeline/start", { key: ticket.key, stage }, stage === "plan" ? "Planning: a session starts" : "A session starts")) && loadSoon()
   const reset = () => confirmReset(async () => (await act("/api/pipeline/reset", { key: ticket.key }, "Started over: the comments stay in Jira")) && void load())
   const runs = state?.history ?? []
-  const toggle = (f: "refine" | "runs") => setFold(open => (open === f ? null : f))
+  const toggle = (f: Fold) => setFold(open => (open === f ? null : f))
+  const docs = ([["refine", "Refinement", data.refine], ["plan", "Plan", data.plan]] as const).filter(([, , text]) => text)
   return (
     <section className="overflow-hidden rounded-[12px] border border-line bg-side">
       <header className="flex items-start gap-4 px-4 pt-3.5 pb-3">
@@ -216,15 +248,15 @@ export function Pipeline({ ticket, onTaken }: { ticket: Ticket; onTaken: () => v
         {!state && <RunButton ticket={ticket} onStarted={() => (loadSoon(), ticket.isMine || onTaken())} />}
         {state?.status === "running" && <Working state={state} now={now} />}
         {state?.status === "needs-info" && <Decisions key={state.askedAt} ticketKey={ticket.key} state={state} onSent={() => void load()} />}
-        {(state?.status === "ready" || state?.status === "failed") && <Outcome state={state} onAgain={() => void start()} />}
+        {(state?.status === "ready" || state?.status === "failed") && <Outcome state={state} onRun={stage => void start(stage)} />}
       </div>
-      {(data.refine || runs.length > 0) && (
+      {(docs.length > 0 || runs.length > 0) && (
         <footer className="border-t border-line px-4 py-2.5">
           <div className="flex gap-5">
-            {data.refine && <Fold label="Refinement" isOpen={fold === "refine"} onToggle={() => toggle("refine")} />}
-            {runs.length > 0 && <Fold label={<>Runs<span className="font-medium text-faint">{runs.length}</span></>} isOpen={fold === "runs"} onToggle={() => toggle("runs")} />}
+            {docs.map(([key, label]) => <FoldButton key={key} label={label} isOpen={fold === key} onToggle={() => toggle(key)} />)}
+            {runs.length > 0 && <FoldButton label={<>Runs<span className="font-medium text-faint">{runs.length}</span></>} isOpen={fold === "runs"} onToggle={() => toggle("runs")} />}
           </div>
-          {fold === "refine" && data.refine && <Markdown className="mt-3 text-[13px]">{data.refine}</Markdown>}
+          {docs.map(([key, , text]) => fold === key && <Markdown key={key} className="mt-3 text-[13px]">{text!}</Markdown>)}
           {fold === "runs" && <div className="mt-3"><Runs history={runs} now={now} /></div>}
         </footer>
       )}

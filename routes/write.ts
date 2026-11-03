@@ -162,7 +162,7 @@ export async function handleWrite(path: string, body: Record<string, unknown>): 
     // The pipeline on a ticket of yours (lib/pipeline.ts): start a stage,
     // answer its questions (to Jira, then the stage again), start over.
     case "/api/pipeline/start":
-      return await startPipeline(String(body.key ?? ""), body.take === true).then(() => (refreshSoon(), json({ ok: true })), (err: Error) => json({ error: err.message }, 400))
+      return await startPipeline(String(body.key ?? ""), body.take === true, body.stage === "plan" || body.stage === "refine" ? body.stage : undefined).then(() => (refreshSoon(), json({ ok: true })), (err: Error) => json({ error: err.message }, 400))
     case "/api/pipeline/answer":
       return await answerPipeline(String(body.key ?? ""), (body.answers ?? {}) as Record<string, string>).then(() => json({ ok: true }), (err: Error) => json({ error: err.message }, 400))
     case "/api/pipeline/reset":

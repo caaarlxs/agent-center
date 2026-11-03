@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils"
 import { dialog } from "@/app/open-dialog"
 import { ago } from "@/features/session/state"
 import type { PipelineState } from "@server/pipeline"
-import { PipelineMark, Rail, STAGES, liveLine } from "./PipelineMark"
+import { PipelineMark, Rail, STAGES, liveLine, stageAt } from "./PipelineMark"
 
 const GROUPS: { title: string; dot: string; has: (s: PipelineState) => boolean }[] = [
   { title: "Needs you", dot: "bg-ask", has: s => s.status === "needs-info" || s.status === "failed" },
@@ -41,7 +41,7 @@ function Row({ state, card, now }: { state: PipelineState; card: Card | undefine
         </span>
       </span>
       <span className="flex items-center gap-2.5 @max-[640px]:hidden">
-        <span className="text-xs text-faint">{STAGES[0]}</span>
+        <span className="text-xs text-faint">{STAGES[stageAt(state)]}</span>
         <Rail state={state} />
       </span>
       <span className="text-right text-xs whitespace-nowrap text-faint tabular-nums">{time}</span>
