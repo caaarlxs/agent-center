@@ -151,7 +151,12 @@ export function turnOf(rows: any[], now = Date.now()): Turn {
 
 export async function tailRows(id: string): Promise<any[]> {
   const path = await transcriptPath(id)
-  if (!path) return []
+  return path ? rowsAt(path) : []
+}
+
+// The rows of a transcript's tail (a session's, or a subagent's), its
+// messages only.
+export async function rowsAt(path: string): Promise<any[]> {
   const { size } = await stat(path)
   const from = Math.max(0, size - WINDOW)
   const handle = await open(path, "r")

@@ -7,7 +7,7 @@
 // stage's document wait folded at the foot. Start over clears the run and
 // the labels; the comments stay. On someone else's ticket it runs only once
 // you take it (two clicks: it is assigned to you).
-import { ChevronRight, Play, RotateCcw } from "lucide-react"
+import { Check, ChevronRight, Play, RotateCcw } from "lucide-react"
 import { useEffect, useState, type ReactNode } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -24,6 +24,7 @@ import { Markdown } from "@/features/conversation/Markdown"
 import { doingText } from "@/features/conversation/session-events"
 import { ago } from "@/features/session/state"
 import { repoDot } from "@/features/session/state"
+import type { Helper, Step } from "@server/activity"
 import type { PipelineState, Run, Stage, Unit } from "@server/pipeline"
 import { MODELS } from "@/features/prompt/Settings"
 import { PipelineMark, Rail, liveLine, startText, startingText } from "./PipelineMark"
@@ -113,15 +114,69 @@ function Decisions({ ticketKey, state, onSent }: { ticketKey: string; state: Pip
 
 // ---------- the moment ----------
 
-// While a stage runs: what its agent does now, for how long, and its log.
+// While a stage runs, read every few seconds: its last steps (the latest
+// first, the one still open breathing), its subagents (what each was sent to
+// do and its last step) and, while it builds, how far each unit got.
+type Activity = { steps: Step[]; helpers: Helper[]; units: Unit[] }
+const ACTIVITY_MS = 4_000
+
+function useActivity(key: string) {
+  const [activity, setActivity] = useState<Activity | null>(null)
+  useEffect(() => {
+    const load = () => get<Activity>(`/api/pipeline/activity?key=${encodeURIComponent(key)}`).then(setActivity, () => {})
+    void load()
+    const timer = setInterval(load, ACTIVITY_MS)
+    return () => clearInterval(timer)
+  }, [key])
+  return activity
+}
+
+const stepText = (s: Step) => `${s.tool} · ${s.text}`
+
+function Steps({ steps }: { steps: Step[] }) {
+  return (
+    <ol className="m-0 flex list-none flex-col border-l border-line p-0 pl-3">
+      {[...steps].reverse().map((s, i) => (
+        <li key={`${s.at}${i}`} className={cn("relative flex min-w-0 items-baseline gap-2 py-[3px] text-xs", i > 2 && "opacity-60")}>
+          <i className={cn("absolute top-[9px] -left-[16px] size-[7px] rounded-full", s.isOpen ? "run-dot bg-work" : "bg-line-strong")} />
+          <span className="w-11 shrink-0 font-mono text-[11px] text-faint">{s.tool}</span>
+          <span className={cn("min-w-0 truncate", s.isOpen ? "text-text" : "text-text-muted")}>{s.text}</span>
+        </li>
+      ))}
+    </ol>
+  )
+}
+
+function Helpers({ helpers }: { helpers: Helper[] }) {
+  return (
+    <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
+      {helpers.map((h, i) => (
+        <li key={i} className="grid grid-cols-[14px_minmax(0,1fr)] items-baseline gap-x-2 text-xs">
+          {h.isDone ? <Check size={12} className="text-work" /> : <i className="run-dot size-[7px] translate-y-[-1px] rounded-full bg-work" />}
+          <span className="truncate font-semibold">{h.description}</span>
+          {!h.isDone && h.step && <span className="col-start-2 truncate text-[11.5px] text-faint">{stepText(h.step)}</span>}
+        </li>
+      ))}
+    </ul>
+  )
+}
+
 function Working({ state, now }: { state: PipelineState; now: number }) {
   const card = useLive(l => l.snapshot?.cards.find(c => c.id === state.sessionId))
+  const activity = useActivity(state.key)
+  const steps = activity?.steps ?? []
+  const current = steps.findLast(s => s.isOpen) ?? steps.at(-1)
   return (
-    <div className="flex items-center gap-2.5">
-      <PipelineMark state={state} card={card} size={22} />
-      <Shimmer as="span" duration={2.2} className="min-w-0 truncate text-[13.5px] [--color-background:var(--text)] [--color-muted-foreground:var(--text-muted)]">{liveLine(state, card)}</Shimmer>
-      <span className="ml-auto shrink-0 text-xs text-faint tabular-nums">{ago(state.startedAt, now)}</span>
-      {state.sessionId && <button className="shrink-0 text-xs font-semibold text-text-muted hover:text-text" onClick={() => openLog(state.sessionId!)}>Log</button>}
+    <div className="flex flex-col gap-3.5">
+      <div className="flex items-center gap-2.5">
+        <PipelineMark state={state} card={card} size={22} />
+        <Shimmer as="span" duration={2.2} className="min-w-0 truncate text-[13.5px] [--color-background:var(--text)] [--color-muted-foreground:var(--text-muted)]">{current?.text ?? liveLine(state, card)}</Shimmer>
+        <span className="ml-auto shrink-0 text-xs text-faint tabular-nums">{ago(state.startedAt, now)}</span>
+        {state.sessionId && <button className="shrink-0 text-xs font-semibold text-text-muted hover:text-text" onClick={() => openLog(state.sessionId!)}>Log</button>}
+      </div>
+      {activity?.units.length ? <Units units={activity.units} /> : null}
+      {activity?.helpers.length ? <Helpers helpers={activity.helpers} /> : null}
+      {steps.length > 0 && <Steps steps={steps} />}
     </div>
   )
 }

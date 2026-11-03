@@ -23,14 +23,19 @@
 // Starting over clears that and the labels, and keeps the comments: the
 // questions and answers are context for the next run.
 
+import { spawn } from "node:child_process"
+import { randomUUID } from "node:crypto"
+import { openSync } from "node:fs"
 import { mkdir, readFile, rename } from "node:fs/promises"
 import { join } from "node:path"
 import { DATA_DIR } from "./config"
 import { writeJsonAtomic } from "./files"
 import { assignToMe, commentOn, labelTicket, ticket, type Ticket, type TicketComment } from "./jira"
-import { launch, running } from "./launch"
+import { claudeBinary, running } from "./launch"
+import { claudeEnv } from "./proc"
 import { applyAction } from "./board"
 import { sessionSpend, type Spend } from "./usage"
+import { activityOf } from "./activity"
 
 export type Stage = "refine" | "plan" | "build"
 export const isStage = (v: unknown): v is Stage => v === "refine" || v === "plan" || v === "build"
@@ -46,6 +51,7 @@ export type PipelineState = {
   stage: Stage
   status: PipelineStatus
   sessionId: string | null
+  pid?: number | null // the stage's process, on its own: it outlives a restart of the board
   runs: number
   startedAt: number
   endedAt: number | null
@@ -203,13 +209,29 @@ const withSpend = async (s: PipelineState): Promise<PipelineState> =>
 export async function pipelineOf(key: string) {
   if (!isKey(key)) throw new Error("Not a ticket key")
   let state = await stateOf(key)
-  if (state?.status === "running" && state.sessionId && !running.has(state.sessionId) && !(await readText(join(dirOf(key), `${state.stage}.json`)))) {
+  // A run from before the stages ran on their own: gone with the board that started it.
+  if (state?.status === "running" && !state.pid && state.sessionId && !running.has(state.sessionId) && !(await readText(join(dirOf(key), `${state.stage}.json`)))) {
     state = { ...state, status: "failed", error: "The session ended without a result", endedAt: Date.now() }
     await save(state)
   }
   // A stage's document; the build has only its summary.
   const doc = async (stage: Stage) => (state ? ((await readText(join(dirOf(key), `${stage}.md`))) ?? readText(join(dirOf(key), `${stage}.summary.md`))) : null)
   return { state: state && (await withSpend(state)), refine: await doc("refine"), plan: await doc("plan"), build: await doc("build") }
+}
+
+// What the running stage does now: its session's steps and subagents, and,
+// while it builds, how far each unit got (build.progress.json).
+export async function pipelineActivity(key: string) {
+  if (!isKey(key)) throw new Error("Not a ticket key")
+  const state = await stateOf(key)
+  if (state?.status !== "running" || !state.sessionId) return { steps: [], helpers: [], units: [] }
+  const progress = await readText(join(dirOf(key), "build.progress.json"))
+  let units: Unit[] = []
+  try {
+    const data = progress ? JSON.parse(progress) : null
+    units = unitsIn(Array.isArray(data) ? data : data?.units, true)
+  } catch {}
+  return { ...(await activityOf(state.sessionId)), units }
 }
 
 // ---------- the stage ----------
@@ -248,14 +270,44 @@ async function runStage(key: string, runs: number, stage: Stage) {
   await Bun.write(join(dir, "ticket.md"), snapshotOf(t, parent, children))
   const state = { ...(await fresh(key, runs, stage)), summary: t.summary }
   await save(state)
-  const fail = async (error: string) => save({ ...((await stateOf(key)) ?? state), status: "failed", error, endedAt: Date.now() })
+  const id = randomUUID()
+  const pid = await spawnStage(dir, id, promptFor(key, dir, stage), stage, () => void watch())
+  await save({ ...state, sessionId: id, pid })
+  await applyAction(id, [id], "tickets", { started: [key] })
+}
+
+// A stage's session, started on its own (its own process group, its output to
+// <stage>.log), so restarting the board never stops it: the board learns it
+// ended by watching its process, not by being its parent.
+async function spawnStage(dir: string, id: string, prompt: string, stage: Stage, onExit: () => void): Promise<number> {
+  const log = openSync(join(dir, `${stage}.log`), "a")
+  const proc = spawn(await claudeBinary(), ["-p", "--session-id", id, "--output-format", "stream-json", "--verbose", "--permission-mode", "auto", ...argsFor(stage), "--", prompt],
+    { cwd: dir, env: claudeEnv({ AGENT_CENTER_LAUNCH: "1" }), detached: true, stdio: ["ignore", log, log] })
+  if (!proc.pid) throw new Error("Claude Code did not start")
+  proc.on("exit", onExit)
+  proc.unref()
+  return proc.pid
+}
+
+const isAlive = (pid: number) => {
   try {
-    const id = await launch(dir, promptFor(key, dir, stage), done => void finish(key).catch(err => fail(String(err?.message ?? err))).finally(() => putAway(done)), argsFor(stage), "auto",
-      failed => void fail("The session ended with an error").finally(() => putAway(failed)))
-    await save({ ...state, sessionId: id })
-    await applyAction(id, [id], "tickets", { started: [key] })
+    return process.kill(pid, 0), true
   } catch (err) {
-    await fail((err as Error).message)
+    return (err as NodeJS.ErrnoException).code === "EPERM"
+  }
+}
+
+// The runs whose process has ended: their result goes to Jira (or they
+// failed), and their session is put away. Every few seconds, at once when a
+// process the board started ends, and when the board starts.
+const ending = new Set<string>()
+async function watch() {
+  for (const state of await pipelines()) {
+    if (state.status !== "running" || !state.pid || isAlive(state.pid) || ending.has(state.key)) continue
+    ending.add(state.key)
+    await finish(state.key)
+      .catch(async err => save({ ...((await stateOf(state.key)) ?? state), status: "failed", error: String(err?.message ?? err), endedAt: Date.now() }))
+      .finally(() => (ending.delete(state.key), state.sessionId && putAway(state.sessionId)))
   }
 }
 
@@ -343,4 +395,9 @@ async function poll() {
     } catch {}
   }
 }
-export const startPipelinePoll = () => setInterval(() => void poll(), POLL_MS)
+const WATCH_MS = 10_000
+export const startPipelinePoll = () => {
+  void watch()
+  setInterval(() => void watch(), WATCH_MS)
+  setInterval(() => void poll(), POLL_MS)
+}

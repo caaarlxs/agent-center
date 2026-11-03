@@ -2,7 +2,8 @@
 // Claude Code records on each assistant row. Transcripts are append-only, so
 // each pass reads only what was added since the last one.
 
-import { stat } from "node:fs/promises"
+import { readdir, stat } from "node:fs/promises"
+import { basename, dirname, join } from "node:path"
 import { readAppended } from "./files"
 import { transcriptPath } from "./transcript"
 
@@ -83,7 +84,9 @@ function ingest(scan: Scan, chunk: string) {
 
 async function scanned(sessionId: string): Promise<Scan | null> {
   const path = await transcriptPath(sessionId)
-  if (!path) return null
+  return path ? scannedAt(path) : null
+}
+async function scannedAt(path: string): Promise<Scan> {
   const { size } = await stat(path)
   let scan = scans.get(path)
   if (!scan || size < scan.offset) {
@@ -112,9 +115,14 @@ export function spendOf(messages: Iterable<{ model: string; usage: Usage }>): Sp
   s.model = [...answers].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null
   return s
 }
-export const sessionSpend = async (id: string) => {
-  const scan = await scanned(id).catch(() => null)
-  return scan ? spendOf(scan.messages.values()) : null
+// A session's spend with its subagents' (each in a transcript of its own).
+export async function sessionSpend(id: string): Promise<Spend | null> {
+  const path = await transcriptPath(id)
+  if (!path) return null
+  const dir = join(dirname(path), basename(path, ".jsonl"), "subagents")
+  const helpers = (await readdir(dir).catch(() => [] as string[])).filter(n => n.endsWith(".jsonl")).map(n => join(dir, n))
+  const scans = (await Promise.all([path, ...helpers].map(p => scannedAt(p).catch(() => null)))).filter((s): s is Scan => !!s)
+  return spendOf(scans.flatMap(s => [...s.messages.values()]))
 }
 
 // recentCost: what it spent in the last 5 hours, the plan's short window.
