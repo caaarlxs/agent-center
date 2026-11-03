@@ -69,3 +69,38 @@ export function endOf(c: Ran): { isOk: boolean; text: string } | null {
   return c.exitCode === 0 ? { isOk: true, text: `Done in ${took} s` } : { isOk: false, text: `Ended with code ${c.exitCode} in ${took} s` }
 }
 export const SHELL_LANG = /\blanguage-(bash|sh|shell|zsh)\b/
+
+// A block with no language whose every line is a command (after any
+// `NAME=value`), as Claude often writes them: a path list, code or output is not.
+const COMMANDS = new Set(("cd ls pwd git gh aws gcloud az bun bunx npm npx pnpm yarn node deno python python3 pip pip3 uv uvx poetry pytest " +
+  "make cargo go docker kubectl helm terraform sls serverless curl wget cat tail head less grep rg find fd mkdir rm cp mv ln touch chmod " +
+  "echo printf export source open brew claude sed awk jq yq tee ssh scp rsync psql mysql redis-cli sqlite3 launchctl kill pkill ps lsof " +
+  "xargs tar zip unzip env sudo time watch diff wc sort uniq ruby rails bundle java mvn gradle swift xcodebuild crapper dryer mutator").split(" "))
+const ENV = /^(?:[A-Za-z_]\w*=(?:"[^"]*"|'[^']*'|\S*)\s+)*/
+const RUNNABLE = /^(?:\.{1,2}\/|\.venv\/bin\/|venv\/bin\/|node_modules\/\.bin\/|bin\/|\S*\/bin\/)/
+const isCommandLine = (line: string) => {
+  const first = line.replace(ENV, "").split(/\s/)[0] ?? ""
+  return COMMANDS.has(first) || RUNNABLE.test(first)
+}
+export function isShellLike(text: string): boolean {
+  const lines = text.replace(/\\\n/g, " ").split("\n").map(l => l.trim()).filter(l => l && !l.startsWith("#"))
+  return lines.length > 0 && lines.every(isCommandLine)
+}
+
+// What makes a command touch something real (prod, a write, a delete):
+// Run asks before it runs one of these.
+const RISKS = [
+  /(?<![\w.])prod(?:uction)?(?!\w)/i,
+  /--execute\b|\bEXECUTE=(?:true|1)\b/,
+  /\b(?:put|update|delete|batch-write)-item\b/,
+  /\brm\s+-[a-zA-Z]*[rf][a-zA-Z]*/,
+  /--force\b|\bpush\s+-f\b/,
+  /\b(?:delete|destroy|drop\s+table|truncate)\b/i,
+]
+export function riskOf(command: string): string | null {
+  for (const re of RISKS) {
+    const m = command.match(re)
+    if (m) return m[0]
+  }
+  return null
+}

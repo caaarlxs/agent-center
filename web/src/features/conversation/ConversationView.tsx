@@ -39,7 +39,7 @@ import { type Live, orbOf, turnLine, useLiveAnswer } from "./session-events"
 import { useTypewriter } from "./typewriter"
 import { WidgetView } from "./Widget"
 import { type Pending, deliveredOf, dropPending, stampOf, takenBack, usePending, waitingOf } from "./pending"
-import { reply, takeBack } from "./send"
+import { composerHint, reply, takeBack } from "./send"
 import { dialogAnswer, linesText, nameOf, partsOf } from "./text"
 import { type Suggestions, useConversation } from "./useConversation"
 import { Anim } from "@/components/icons/animated"
@@ -400,6 +400,19 @@ function NextSteps({ sessionId, turn }: { sessionId: string; turn: string | unde
   )
 }
 
+// Asks for the message you would likely write next once the session waits
+// for you after a turn; gone as soon as it works again.
+function useSuggestion(sessionId: string, isIdle: boolean, turn: string | undefined) {
+  useEffect(() => {
+    const drop = () => composerHint.get()?.id === sessionId && composerHint.set(null)
+    if (!isIdle) return void drop()
+    let alive = true
+    get<{ text: string | null }>(`/api/sessions/${encodeURIComponent(sessionId)}/suggest`)
+      .then(r => alive && (r.text ? composerHint.set({ id: sessionId, text: r.text }) : drop()), () => {})
+    return () => void ((alive = false), drop())
+  }, [sessionId, isIdle, turn])
+}
+
 // Where a new day starts in a long conversation.
 function DaySeparator({ label }: { label: string }) {
   return (
@@ -692,6 +705,7 @@ export function ConversationView({ sessionId, card: session, bridge }: { session
   const stick = useRef(true)
   const [hasNew, setHasNew] = useState(false)
   const lastKey = shown.at(-1)?.key
+  useSuggestion(sessionId, isIdle, lastKey)
   const prevLast = useRef<string | undefined>(undefined)
   useLayoutEffect(() => {
     const el = box.current

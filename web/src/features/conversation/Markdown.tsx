@@ -11,7 +11,7 @@ import { post } from "@/lib/api"
 import { useShikiTheme, useTokens } from "@/lib/code-theme"
 import { cn } from "@/lib/utils"
 import { showFile } from "@/app/open-session"
-import { endOf, pathInCode, pathInLink, SHELL_LANG, nameOf } from "./text"
+import { endOf, isShellLike, pathInCode, pathInLink, riskOf, SHELL_LANG, nameOf } from "./text"
 import { Anim } from "@/components/icons/animated"
 import { CopyMark, useCopyMoment } from "@/components/icona/marks"
 import { SwapText } from "@/components/watermelon/SwapText"
@@ -86,15 +86,25 @@ function RunOutput({ sessionId, command, onEnd }: { sessionId: string; command: 
   )
 }
 
-// A code block: Copy, and Run for a shell block (only with the can-run class).
+// A code block: Copy, and Run for a shell block, marked so or made only of
+// commands (only with the can-run class). A command that touches something
+// real (prod, a write, a delete) runs on a second click.
 function CodeBox({ text, lang }: { text: string; lang: string }) {
   const sessionId = useContext(SessionOf)
   const [copied, setCopied] = useState<"Copy" | "Copied" | "Could not copy">("Copy")
   const [runs, setRuns] = useState(0) // each Run starts a new output
   const [isRunning, setRunning] = useState(false)
-  const isShell = SHELL_LANG.test(lang)
+  const [risk, setRisk] = useState<string | null>(null) // asking to confirm
   const mark = useCopyMoment()
   const fence = lang.split(/\s+/).find(c => c.startsWith("language-")) ?? null
+  const isShell = SHELL_LANG.test(lang) || (!fence && isShellLike(text))
+  const run = () => {
+    const found = riskOf(text)
+    if (found && !risk) return void (setRisk(found), setTimeout(() => setRisk(null), 4000))
+    setRisk(null)
+    setRuns(n => n + 1)
+    setRunning(true)
+  }
   const tokens = useTokens(text.replace(/\n$/, ""), fence, useShikiTheme())
   const copy = () =>
     copyText(text.replace(/\n$/, "")).then(
@@ -105,8 +115,10 @@ function CodeBox({ text, lang }: { text: string; lang: string }) {
     <div className="group/code">
       <div className="sticky top-2 z-[1] float-right mt-1.5 mr-1.5 -mb-[30px] flex gap-1">
         {isShell && sessionId && (
-          <button type="button" className={cn(toolBtn, "code-run hidden text-work hover:text-work")} title="Run in the session's folder" disabled={isRunning}
-            onClick={() => (setRuns(n => n + 1), setRunning(true))}><Play className="size-3 fill-current" />Run</button>
+          <button type="button" className={cn(toolBtn, "code-run hidden", risk ? "border-bad text-bad opacity-100 hover:text-bad" : "text-work hover:text-work")} disabled={isRunning}
+            title={risk ? `It touches “${risk}”: click again to run it` : "Run in the session's folder"} onClick={run}>
+            <Play className="size-3 fill-current" />{risk ? `Run · ${risk}?` : "Run"}
+          </button>
         )}
         <button type="button" className={cn(toolBtn, copied === "Copied" && "text-work hover:text-work")} title="Copy" onClick={copy}>
           <CopyMark moment={mark} size={13} idle={copied === "Copied" ? <Check className="size-[13px]" /> : <Anim.Copy size={13} />} /><SwapText text={copied} />

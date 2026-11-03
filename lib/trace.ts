@@ -149,7 +149,7 @@ export function turnOf(rows: any[], now = Date.now()): Turn {
   }
 }
 
-async function tailRows(id: string): Promise<any[]> {
+export async function tailRows(id: string): Promise<any[]> {
   const path = await transcriptPath(id)
   if (!path) return []
   const { size } = await stat(path)

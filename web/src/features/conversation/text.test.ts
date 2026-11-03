@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { dialogAnswer, endOf, familyOf, isTemplate, partsOf, pathInCode, pathInLink } from "./text"
+import { dialogAnswer, endOf, familyOf, isShellLike, isTemplate, partsOf, pathInCode, pathInLink, riskOf } from "./text"
 
 describe("partsOf", () => {
   it("folds pasted blocks away from what was typed", () => {
@@ -59,5 +59,39 @@ describe("endOf", () => {
     expect(endOf(base)).toEqual({ isOk: true, text: "Done in 3 s" })
     expect(endOf({ ...base, exitCode: 2 })).toEqual({ isOk: false, text: "Ended with code 2 in 3 s" })
     expect(endOf({ ...base, wasStopped: true })).toEqual({ isOk: false, text: "Stopped after 3 s" })
+  })
+})
+
+describe("isShellLike", () => {
+  it("takes a block whose lines are all commands", () => {
+    expect(isShellLike("cd ~/Desktop/deale/company-service\nSTAGE=prod AWS_DEFAULT_REGION=eu-west-1 EXECUTE=true .venv/bin/python scripts/x.py 2>&1 | tee tmp/x.log\n")).toBe(true)
+    expect(isShellLike(`aws dynamodb get-item --table-name t --key '{"pk":{"S":"a"}}'`)).toBe(true)
+    expect(isShellLike("git status\n# a comment\n\nbun x vitest run")).toBe(true)
+    expect(isShellLike("docker run \\\n  --rm \\\n  img")).toBe(true)
+    expect(isShellLike("./scripts/deploy.sh staging")).toBe(true)
+  })
+  it("leaves out paths, prose, code and output", () => {
+    expect(isShellLike("~/Desktop/deale/tmp/a.json\n~/Desktop/deale/tmp/a.csv")).toBe(false)
+    expect(isShellLike("/private/tmp/x/empresas.xlsx")).toBe(false)
+    expect(isShellLike("const a = 1\nconsole.log(a)")).toBe(false)
+    expect(isShellLike("Error: something failed\n  at foo (bar.ts:1)")).toBe(false)
+    expect(isShellLike("git status\nThis is not a command")).toBe(false)
+    expect(isShellLike("")).toBe(false)
+  })
+})
+
+describe("riskOf", () => {
+  it("names what makes a command touch something real", () => {
+    expect(riskOf("STAGE=prod EXECUTE=true .venv/bin/python x.py")).toBe("prod")
+    expect(riskOf("aws dynamodb get-item --table-name feature-flags-prod")).toBe("prod")
+    expect(riskOf("aws dynamodb put-item --table-name t")).toBe("put-item")
+    expect(riskOf("rm -rf build")).toBe("rm -rf")
+    expect(riskOf("git push --force origin main")).toBe("--force")
+    expect(riskOf("python x.py --execute")).toBe("--execute")
+  })
+  it("lets the rest run at once", () => {
+    expect(riskOf("git status")).toBeNull()
+    expect(riskOf("bun x vitest run")).toBeNull()
+    expect(riskOf("cat products.json")).toBeNull()
   })
 })

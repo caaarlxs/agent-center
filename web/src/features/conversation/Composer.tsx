@@ -3,7 +3,8 @@
 // three days (the files while the page is open). The mode (a row of toggles)
 // and the model change in the session; the effort only shows, as the app
 // sends its own with every message. Under it, what a message would meet now
-// and how full the context is (a ring).
+// and how full the context is (a ring). In the empty box, grey, the message
+// you would likely write next; Tab or → takes it.
 import { Square } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import type { FileUIPart } from "ai"
@@ -24,7 +25,7 @@ import { MAX_BYTES, MAX_FILES, messageWith } from "@/features/prompt/files"
 import { launch, sleep, stopTurn, wake } from "@/features/session/actions"
 import { UsageMeter } from "@/features/session/UsageMeter"
 import { isBusyNow, isStuckNow, reachOf } from "./reach"
-import { composerFill, composerFocus, sendMessage } from "./send"
+import { composerFill, composerFocus, composerHint, sendMessage } from "./send"
 import { Anim } from "@/components/icons/animated"
 import { SendMark, useSendMoment } from "@/components/icona/marks"
 
@@ -128,6 +129,14 @@ function Box({ id, card, bridge }: { id: string; card: Card | undefined; bridge:
     requestAnimationFrame(cursorAtEnd)
   }, [fill, id, textInput])
   useEffect(() => void (focus?.id === id && cursorAtEnd()), [focus, id])
+  const hint = composerHint.use()
+  const suggested = hint?.id === id && !textInput.value ? hint.text : null
+  const takeHint = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (!suggested || (e.key !== "Tab" && e.key !== "ArrowRight") || e.shiftKey || e.metaKey || e.altKey || e.ctrlKey) return
+    e.preventDefault()
+    textInput.setInput(suggested)
+    requestAnimationFrame(cursorAtEnd)
+  }
   // The draft: kept as you type, and once more when the chat closes.
   const latest = useRef(textInput.value)
   latest.current = textInput.value
@@ -188,7 +197,8 @@ function Box({ id, card, bridge }: { id: string; card: Card | undefined; bridge:
       >
         <PickedFiles />
         <PromptInputBody>
-          <PromptInputTextarea placeholder="Reply… (paste or drag images and files)" />
+          <PromptInputTextarea placeholder={suggested ?? "Reply… (paste or drag images and files)"} onKeyDown={takeHint}
+            title={suggested ? "Tab or → writes the suggestion" : undefined} />
         </PromptInputBody>
         <div data-align="block-end" className="order-last flex w-full min-w-0 items-center gap-0.5 pt-1 pr-1.5 pb-1.5 pl-2">
           <AttachButton />

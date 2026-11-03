@@ -25,6 +25,7 @@ import { monacoState } from "../lib/monaco"
 import { documentHtml, quickLook, WORD, WORKBOOK, workbookHtml } from "../lib/office"
 import { readTasks } from "../lib/organizer"
 import { branchState, knownRepos, repoInfo, workState } from "../lib/repo"
+import { suggestionOf } from "../lib/suggest"
 import { traceOf } from "../lib/trace"
 import { commandFor, status as runStatus, suggest as suggestRun } from "../lib/runner"
 import { fold, search } from "../lib/search"
@@ -215,6 +216,9 @@ async function sessionRead(id: string, what: string, url: URL) {
       const at = Number(url.searchParams.get("at")) || undefined
       return json(await traceOf(group?.id ?? id, at))
     }
+    // The message you would likely write next (lib/suggest.ts).
+    case "suggest":
+      return json({ text: await suggestionOf(group?.id ?? id) })
     // Its next step (the chips under the conversation): where its folder
     // stands, and its branch's PR.
     case "nextsteps": {
