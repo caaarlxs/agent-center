@@ -4,7 +4,8 @@
 // proposal, kept as it is unless you change it; the answers go to Jira and
 // start the stage again. Refined, the next step (plan); planned, its units of
 // work in order; reviewed, what it found in the PRs (the blockers and majors
-// go back to the build). When it fails, why, and running it again. The runs and each
+// go back to the build); deploying, the release's steps (Release.tsx), each
+// with its button when it waits for you. When it fails, why, and running it again. The runs and each
 // stage's document wait folded at the foot. Start over clears the run and
 // the labels; the comments stay. On someone else's ticket it runs only once
 // you take it (two clicks: it is assigned to you).
@@ -29,9 +30,12 @@ import type { Helper, Step } from "@server/activity"
 import type { ChecklistItem, Finding, PipelineState, PlanScript, Run, Severity, Stage, Unit } from "@server/pipeline"
 import { MODELS } from "@/features/prompt/Settings"
 import { PipelineMark, Rail, liveLine, startText, startingText } from "./PipelineMark"
-import { costOf, dollars, nextStage, tokens } from "./pipeline-board"
+import { costOf, dollars, isRelease, nextStage, tokens } from "./pipeline-board"
+import { ReleaseSteps, SkipFailed } from "./Release"
+import type { Release } from "@server/release"
 
-type Data = { state: PipelineState | null; refine: string | null; plan: string | null; build: string | null; review: string | null }
+type Data = { state: PipelineState | null; refine: string | null; plan: string | null; build: string | null; review: string | null; preview: Release | null }
+type OnStep = (step: string, action: "approve" | "skip", value?: string) => void
 type Fold = Stage | "runs"
 const FOLLOW_MS = 5_000
 const IDLE_MS = 30_000
@@ -302,17 +306,33 @@ function Findings({ state, onFixMinors }: { state: PipelineState; onFixMinors: (
 }
 
 // A stage that ended: what it left, and the next step (or running it again).
-function Outcome({ state, onRun }: { state: PipelineState; onRun: (stage?: Stage, isAll?: boolean) => void }) {
+// Starting a release changes the world: it asks once more.
+function StartButton({ stage, from, onRun }: { stage: Stage; from: Stage; onRun: (stage: Stage) => void }) {
+  const [isAsking, confirm] = useConfirm()
+  const label = startText(stage, from)
+  const press = () => (isRelease(stage) ? confirm(() => onRun(stage)) : onRun(stage))
+  return (
+    <Button variant={isAsking ? "destructive" : "default"} className="h-8 shrink-0 gap-1.5 text-xs" onClick={press}>
+      <Play size={13} className="fill-current" />{isAsking ? `Sure? ${label}` : label}
+    </Button>
+  )
+}
+
+function Outcome({ state, preview, onRun, onStep }: { state: PipelineState; preview: Release | null; onRun: (stage?: Stage, isAll?: boolean) => void; onStep: OnStep }) {
   const isFailed = state.status === "failed"
   const next = nextStage(state)
+  const release = isRelease(state.stage) ? state.release : null
   return (
     <div className="flex flex-col">
       <div className="flex items-center gap-2.5">
         <PipelineMark state={state} size={22} />
         <span className={cn("min-w-0 flex-1 text-[13.5px]", isFailed ? "text-bad" : "font-semibold text-work")}>{liveLine(state, undefined)}</span>
-        {isFailed && <Button variant="outline" className="h-7 shrink-0 text-xs" onClick={() => onRun()}>Run again</Button>}
-        {next && <Button className="h-8 shrink-0 gap-1.5 text-xs" onClick={() => onRun(next)}><Play size={13} className="fill-current" />{startText(next, state.stage)}</Button>}
+        {isFailed && release && <SkipFailed release={release} onAct={onStep} />}
+        {isFailed && <Button variant="outline" className="h-7 shrink-0 text-xs" onClick={() => onRun()}>{release ? "Retry" : "Run again"}</Button>}
+        {next && <StartButton stage={next} from={state.stage} onRun={onRun} />}
       </div>
+      {release && <div className="mt-4"><ReleaseSteps ticketKey={state.key} release={release} /></div>}
+      {preview && next && isRelease(next) && <div className="mt-4"><ReleaseSteps ticketKey={state.key} release={preview} isPreview /></div>}
       {state.findings?.length && (state.stage === "review" || state.fixed?.length) ? <div className="mt-4"><Findings state={state} onFixMinors={() => onRun("build", true)} /></div> : null}
       {state.stage !== "refine" && <Planned state={state} />}
     </div>
@@ -348,7 +368,7 @@ function RunButton({ ticket, onStarted }: { ticket: Ticket; onStarted: () => voi
 // ---------- the foot ----------
 
 const minutes = (ms: number) => `${Math.max(1, Math.round(ms / 60_000))} min`
-const DONE: Record<Stage, (r: Run) => string> = { refine: () => "Refined", plan: r => `Planned in ${r.units} unit${r.units === 1 ? "" : "s"}`, build: r => `Built ${r.units} unit${r.units === 1 ? "" : "s"}`, review: r => `Reviewed: ${r.findings ?? 0} finding${r.findings === 1 ? "" : "s"}` }
+const DONE: Record<Stage, (r: Run) => string> = { refine: () => "Refined", plan: r => `Planned in ${r.units} unit${r.units === 1 ? "" : "s"}`, build: r => `Built ${r.units} unit${r.units === 1 ? "" : "s"}`, review: r => `Reviewed: ${r.findings ?? 0} finding${r.findings === 1 ? "" : "s"}`, staging: () => "Deployed to staging", prod: () => "Deployed to prod" }
 const sayRun = (r: Run, doing: string | null) =>
   r.status === "running" ? (doing ?? "Starting") : r.status === "needs-info" ? `Asked ${r.questions} question${r.questions === 1 ? "" : "s"}` : r.status === "failed" ? (r.error ?? "Failed") : DONE[r.stage ?? "refine"](r)
 
@@ -404,6 +424,7 @@ export function Pipeline({ ticket, onTaken }: { ticket: Ticket; onTaken: () => v
   if (!data) return null
   const state = data.state
   const loadSoon = () => setTimeout(() => void load(), 800)
+  const step: OnStep = async (id, action, value) => (await act("/api/pipeline/step", { key: ticket.key, step: id, action, value }, action === "skip" ? "Skipped" : "On it")) && loadSoon()
   const start = async (stage?: Stage, isAll = false) => (await act("/api/pipeline/start", { key: ticket.key, stage, all: isAll }, stage ? startingText(stage, state?.stage) : "A session starts")) && loadSoon()
   const reset = () => confirmReset(async () => (await act("/api/pipeline/reset", { key: ticket.key }, "Started over: the comments stay in Jira")) && void load())
   const runs = state?.history ?? []
@@ -422,9 +443,9 @@ export function Pipeline({ ticket, onTaken }: { ticket: Ticket; onTaken: () => v
       </header>
       <div className="px-4 pb-4">
         {!state && <RunButton ticket={ticket} onStarted={() => (loadSoon(), ticket.isMine || onTaken())} />}
-        {state?.status === "running" && <Working state={state} now={now} />}
+        {state?.status === "running" && (state.release && isRelease(state.stage) ? <ReleaseSteps ticketKey={ticket.key} release={state.release} onAct={step} /> : <Working state={state} now={now} />)}
         {state?.status === "needs-info" && <Decisions key={state.askedAt} ticketKey={ticket.key} state={state} onSent={() => void load()} />}
-        {(state?.status === "ready" || state?.status === "failed") && <Outcome state={state} onRun={(stage, isAll) => void start(stage, isAll)} />}
+        {(state?.status === "ready" || state?.status === "failed") && <Outcome state={state} preview={data.preview} onRun={(stage, isAll) => void start(stage, isAll)} onStep={step} />}
       </div>
       {(docs.length > 0 || runs.length > 0) && (
         <footer className="border-t border-line px-4 py-2.5">

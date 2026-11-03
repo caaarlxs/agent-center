@@ -6,6 +6,7 @@
 // Setup's own steps ("outdated"). "Update" (POST /api/update) builds the
 // page, brings the rest up to date and restarts the server.
 
+import { statSync } from "node:fs"
 import { stat } from "node:fs/promises"
 import { join } from "node:path"
 import { APP_DIR } from "./config"
@@ -26,6 +27,17 @@ export async function printOf(root: string, patterns: string[]) {
   for (const pattern of patterns)
     for await (const path of new Bun.Glob(pattern).scan({ cwd: root, onlyFiles: true })) {
       const info = await stat(join(root, path)).catch(() => null)
+      if (info) rows.push(`${path}:${info.mtimeMs}:${info.size}`)
+    }
+  return Bun.hash(rows.sort().join("\n")).toString(36)
+}
+// The same, read at once: the print of the files the server started with.
+// (Scanned asynchronously while the modules load, it could wait forever.)
+export function printNow(root: string, patterns: string[]) {
+  const rows: string[] = []
+  for (const pattern of patterns)
+    for (const path of new Bun.Glob(pattern).scanSync({ cwd: root, onlyFiles: true })) {
+      const info = statSync(join(root, path), { throwIfNoEntry: false })
       if (info) rows.push(`${path}:${info.mtimeMs}:${info.size}`)
     }
   return Bun.hash(rows.sort().join("\n")).toString(36)
@@ -55,13 +67,13 @@ async function buildWeb() {
   await run([process.execPath, "x", "--bun", "vite", "build"])
 }
 
-const atStart = printOf(APP_DIR, SERVER)
+const atStart = printNow(APP_DIR, SERVER)
 let cached: { at: number; value: Freshness } | null = null
 
 export async function freshness({ fresh = false } = {}): Promise<Freshness> {
   if (!fresh && cached && Date.now() - cached.at < CACHE_MS) return cached.value
   const [server, web, page, hook, bridge] = await Promise.all([printOf(APP_DIR, SERVER), webState(APP_DIR), printOf(APP_DIR, PAGE), hookState(), bridgeState()])
-  const value = { server: server !== (await atStart), web, page, hook: hook === "outdated", bridge: bridge === "outdated" }
+  const value = { server: server !== atStart, web, page, hook: hook === "outdated", bridge: bridge === "outdated" }
   cached = { at: Date.now(), value }
   return value
 }

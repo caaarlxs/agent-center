@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest"
-import { columnOf, isQueued, nextStage, toFix } from "./pipeline-board"
+import { columnOf, isQueued, nextStage, toFix, waitingStep } from "./pipeline-board"
 
-const at = (stage: "refine" | "plan" | "build" | "review", status: "running" | "needs-info" | "ready" | "failed", findings?: { id: string; severity: string }[]) => ({ stage, status, findings }) as never
+type At = "refine" | "plan" | "build" | "review" | "staging" | "prod"
+const at = (stage: At, status: "running" | "needs-info" | "ready" | "failed", findings?: { id: string; severity: string }[], release?: unknown) => ({ stage, status, findings, release }) as never
 
 describe("columnOf", () => {
   it("puts a ticket in its stage's column while the stage is open", () => {
@@ -19,7 +20,9 @@ describe("columnOf", () => {
     expect(nextStage(at("refine", "ready"))).toBe("plan")
     expect(nextStage(at("plan", "ready"))).toBe("build")
     expect(nextStage(at("build", "ready"))).toBe("review")
-    expect(nextStage(at("review", "ready"))).toBeNull()
+    expect(nextStage(at("review", "ready"))).toBe("staging")
+    expect(nextStage(at("staging", "ready"))).toBe("prod")
+    expect(nextStage(at("prod", "ready"))).toBeNull()
     expect(nextStage(at("plan", "running"))).toBeNull()
   })
 })
@@ -40,6 +43,21 @@ describe("a review", () => {
   })
   it("counts nothing to fix on a ticket at another stage", () => {
     expect(toFix(at("build", "ready", found))).toEqual([])
+  })
+})
+
+describe("a release", () => {
+  it("waits for prod in the Prod column, and stays there once live", () => {
+    expect(columnOf(at("staging", "ready"))).toBe(5)
+    expect(isQueued(at("staging", "ready"))).toBe(true)
+    expect(columnOf(at("prod", "ready"))).toBe(5)
+    expect(isQueued(at("prod", "ready"))).toBe(false)
+  })
+  it("tells the step that waits for you", () => {
+    const release = { env: "staging", steps: [{ id: "R1", status: "done" }, { id: "R2", status: "waiting" }, { id: "R3", status: "pending" }] }
+    expect(waitingStep(at("staging", "running", [], release))?.id).toBe("R2")
+    expect(waitingStep(at("staging", "ready", [], release))).toBeUndefined()
+    expect(waitingStep(at("build", "running"))).toBeUndefined()
   })
 })
 

@@ -18,7 +18,7 @@ import { ago, repoDot } from "@/features/session/state"
 import type { PipelineState, Unit } from "@server/pipeline"
 import { act, useActivity } from "./Pipeline"
 import { PipelineMark, liveLine, startText, startingText } from "./PipelineMark"
-import { BUILT, STAGES, columnOf, costOf, dollars, isQueued, nextStage, toFix } from "./pipeline-board"
+import { BUILT, STAGES, columnOf, costOf, dollars, isQueued, isRelease, nextStage, toFix, waitingStep } from "./pipeline-board"
 
 const openTicket = (key: string) => dialog.set({ kind: "ticket", key })
 const onOpenKey = (key: string) => (e: KeyboardEvent) => e.key === "Enter" && e.target === e.currentTarget && openTicket(key)
@@ -30,6 +30,24 @@ function Repos({ units }: { units: Unit[] }) {
     <span className="flex flex-wrap gap-x-2.5 gap-y-1">
       {repos.map(r => <span key={r} className="inline-flex items-center gap-1.5 text-[11.5px] text-text-muted"><i className="repo-dot size-[7px] rounded-[2px]" style={{ background: repoDot(r) }} />{r}</span>)}
     </span>
+  )
+}
+
+// While a release runs: the step at hand, and the steps done (one segment each).
+function ReleaseLive({ state, card }: { state: PipelineState; card: Card | undefined }) {
+  const steps = state.release?.steps ?? []
+  const isWaiting = !!waitingStep(state)
+  return (
+    <div className="flex flex-col gap-2">
+      {isWaiting ? <p className="m-0 line-clamp-2 text-[12.5px] leading-[1.45] font-semibold text-ask">{liveLine(state, card)}</p>
+        : <Shimmer as="p" duration={2.2} className="m-0 line-clamp-2 text-[12.5px] leading-[1.45] [--color-background:var(--text)] [--color-muted-foreground:var(--text-muted)]">{liveLine(state, card)}</Shimmer>}
+      <span className="flex items-center gap-2">
+        <span className="flex flex-1 gap-[3px]">
+          {steps.map(s => <i key={s.id} title={s.title} className={cn("h-1 flex-1 rounded-full transition-colors duration-300", s.status === "done" || s.status === "skipped" ? "bg-work" : s.status === "waiting" ? "bg-ask" : s.status === "failed" ? "bg-bad" : "bg-line-strong")} />)}
+        </span>
+        <span className="dot-time text-[11px] text-faint tabular-nums">{steps.filter(s => s.status === "done" || s.status === "skipped").length}/{steps.length}</span>
+      </span>
+    </div>
   )
 }
 
@@ -79,7 +97,7 @@ function Live({ state, card }: { state: PipelineState; card: Card | undefined })
 
 function TicketCard({ state, card, now }: { state: PipelineState; card: Card | undefined; now: number }) {
   const isRunning = state.status === "running"
-  const isAsking = state.status === "needs-info" || toFix(state).length > 0
+  const isAsking = state.status === "needs-info" || toFix(state).length > 0 || !!waitingStep(state)
   const isWaiting = isQueued(state)
   // Done with its stage, the next one starts from here (if there is an agent for it).
   const next = nextStage(state)
@@ -103,12 +121,13 @@ function TicketCard({ state, card, now }: { state: PipelineState; card: Card | u
           </span>
         </div>
       </header>
-      {isRunning ? <Live state={state} card={card} />
+      {isRunning && state.release ? <ReleaseLive state={state} card={card} />
+        : isRunning ? <Live state={state} card={card} />
         : <p className={cn("m-0 line-clamp-2 text-[12.5px] leading-[1.45]", isAsking ? "font-semibold text-ask" : state.status === "failed" ? "text-bad" : "text-text-muted")}>{liveLine(state, card)}</p>}
       {state.units?.length ? <Repos units={state.units} /> : null}
       {next && (
         <Button className="h-7 self-start gap-1.5 text-xs"
-          onClick={e => (e.stopPropagation(), void act("/api/pipeline/start", { key: state.key, stage: next }, startingText(next, state.stage)))}>
+          onClick={e => (e.stopPropagation(), isRelease(next) ? openTicket(state.key) : void act("/api/pipeline/start", { key: state.key, stage: next }, startingText(next, state.stage)))}>
           <Play size={12} className="fill-current" />{startText(next, state.stage)}
         </Button>
       )}
@@ -120,7 +139,7 @@ function TicketCard({ state, card, now }: { state: PipelineState; card: Card | u
 // it waits for you), its number and name, and how many tickets it holds.
 function StageHead({ n, name, tickets }: { n: number; name: string; tickets: PipelineState[] }) {
   const isWorking = tickets.some(t => t.status === "running")
-  const isAsking = tickets.some(t => t.status === "needs-info" || toFix(t).length > 0)
+  const isAsking = tickets.some(t => t.status === "needs-info" || toFix(t).length > 0 || !!waitingStep(t))
   return (
     <header className="mx-1.5 mb-3 flex flex-col gap-2.5">
       <i className={cn("block h-[2px] rounded-full", isWorking ? "flow" : isAsking ? "bg-ask" : "bg-line-strong")} />

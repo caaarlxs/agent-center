@@ -2,7 +2,7 @@
 // notes, PR actions, tasks, files sent and dictation.
 
 import { commentOn, connect, disconnect, moveTicket } from "../lib/jira"
-import { answerPipeline, isStage, resetPipeline, startPipeline } from "../lib/pipeline"
+import { answerPipeline, isStage, resetPipeline, startPipeline, stepPipeline } from "../lib/pipeline"
 import { chooseIcon, isIcon } from "../lib/app-icon"
 import { choosePet, openPack } from "../lib/pets"
 import { stat } from "node:fs/promises"
@@ -166,6 +166,9 @@ export async function handleWrite(path: string, body: Record<string, unknown>): 
       return await startPipeline(String(body.key ?? ""), body.take === true, isStage(body.stage) ? body.stage : undefined, body.all === true).then(() => (refreshSoon(), json({ ok: true })), (err: Error) => json({ error: err.message }, 400))
     case "/api/pipeline/answer":
       return await answerPipeline(String(body.key ?? ""), (body.answers ?? {}) as Record<string, string>).then(() => json({ ok: true }), (err: Error) => json({ error: err.message }, 400))
+    // A release's step at hand: go on (with a tag of your own), or past it.
+    case "/api/pipeline/step":
+      return await stepPipeline(String(body.key ?? ""), String(body.step ?? ""), body.action === "skip" ? "skip" : "approve", typeof body.value === "string" ? body.value : undefined).then(() => (refreshSoon(), json({ ok: true })), (err: Error) => json({ error: err.message }, 400))
     case "/api/pipeline/reset":
       return await resetPipeline(String(body.key ?? "")).then(() => json({ ok: true }), (err: Error) => json({ error: err.message }, 400))
     case "/api/jira/disconnect":

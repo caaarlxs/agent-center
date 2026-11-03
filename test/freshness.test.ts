@@ -5,7 +5,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { printOf, webState } from "../lib/freshness"
+import { printNow, printOf, webState } from "../lib/freshness"
 
 let root = ""
 beforeAll(async () => {
@@ -15,6 +15,10 @@ beforeAll(async () => {
   await writeFile(join(root, "notes.md"), "not code\n")
 })
 afterAll(() => rm(root, { recursive: true, force: true }))
+
+test("the print read at once is the same as the one scanned", async () => {
+  expect(printNow(root, ["lib/**/*.ts"])).toBe(await printOf(root, ["lib/**/*.ts"]))
+})
 
 test("a folder's print changes when one of its files does", async () => {
   const before = await printOf(root, ["lib/**/*.ts"])

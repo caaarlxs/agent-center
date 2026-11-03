@@ -3,7 +3,8 @@
 // the person decided.
 
 import { jiraSetup, searchTickets, ticket, transitionsOf } from "../lib/jira"
-import { pipelineActivity, pipelineOf } from "../lib/pipeline"
+import { pipelineActivity, pipelineOf, pipelineReport } from "../lib/pipeline"
+import { reportOf } from "../lib/release"
 import { namedBy, repoPage, sessionCommits, sessionRepos } from "../lib/session-commits"
 import { ICONS, chosenIcon } from "../lib/app-icon"
 import { petsCatalog, petsState } from "../lib/pets"
@@ -312,6 +313,13 @@ export async function handleRead(url: URL): Promise<Response | null> {
   if (path === "/api/jira") return json({ setup: jiraSetup() })
   if (path === "/api/prs/diff") return await prDiff(url.searchParams.get("url") ?? "").then(files => json({ files }), (err: Error) => json({ error: err.message }, 400))
   if (path === "/api/pipeline/activity") return await pipelineActivity(url.searchParams.get("key") ?? "").then(r => json(r), (err: Error) => json({ error: err.message }, 400))
+  // A script's report from a release, to read in the ticket or download.
+  if (path === "/api/pipeline/report") {
+    const file = url.searchParams.get("file") ?? ""
+    return await pipelineReport(url.searchParams.get("key") ?? "", file).then(
+      text => (text === null ? json({ error: "No such report" }, 404) : url.searchParams.has("view") ? json(reportOf(text, 8)) : new Response(text, { headers: { "content-type": "text/csv; charset=utf-8", "content-disposition": `attachment; filename="${file}"` } })),
+      (err: Error) => json({ error: err.message }, 400))
+  }
   if (path === "/api/pipeline") return await pipelineOf(url.searchParams.get("key") ?? "").then(r => json(r), (err: Error) => json({ error: err.message }, 400))
   if (path === "/api/jira/ticket") return await ticket(url.searchParams.get("key") ?? "").then(t => json(t), (err: Error) => json({ error: err.message }, 400))
   if (path === "/api/jira/search") {

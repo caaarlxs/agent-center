@@ -8,8 +8,8 @@ const questions = [
 
 describe("parseResult", () => {
   it("reads the verdict and the questions", () => {
-    expect(parseResult(JSON.stringify({ verdict: "needs-info", questions }), "refine")).toEqual({ verdict: "needs-info", questions, units: [], checklist: [], findings: [], fixed: [], scripts: [] })
-    expect(parseResult(`{"verdict":"ready","questions":[]}`, "refine")).toEqual({ verdict: "ready", questions: [], units: [], checklist: [], findings: [], fixed: [], scripts: [] })
+    expect(parseResult(JSON.stringify({ verdict: "needs-info", questions }), "refine")).toEqual({ verdict: "needs-info", questions, units: [], checklist: [], findings: [], fixed: [], scripts: [], order: [] })
+    expect(parseResult(`{"verdict":"ready","questions":[]}`, "refine")).toEqual({ verdict: "ready", questions: [], units: [], checklist: [], findings: [], fixed: [], scripts: [], order: [] })
   })
   it("numbers questions without an id and drops empty ones", () => {
     const r = parseResult(JSON.stringify({ verdict: "needs-info", questions: [{ question: "¿A?", proposal: "" }, { question: " " }] }), "refine")
@@ -157,6 +157,14 @@ describe("stageToRun", () => {
     expect(() => stageToRun(at("plan", "ready"), "review")).toThrow()
     expect(stageToRun(at("review", "ready"), "build")).toBe("build")
     expect(() => stageToRun(at("review", "running"), "build")).toThrow()
+  })
+  it("deploys to staging after a review with nothing to fix, and to prod after staging", () => {
+    const reviewed = (severity: string) => ({ stage: "review", status: "ready", findings: [{ id: "F1", severity }] }) as never
+    expect(stageToRun(reviewed("minor"), "staging")).toBe("staging")
+    expect(() => stageToRun(reviewed("major"), "staging")).toThrow()
+    expect(stageToRun(at("staging" as never, "ready"), "prod")).toBe("prod")
+    expect(() => stageToRun(at("review", "ready"), "prod")).toThrow()
+    expect(stageToRun(at("staging" as never, "failed"))).toBe("staging")
   })
   it("plans only once the refinement is done", () => {
     expect(stageToRun(at("refine", "ready"), "plan")).toBe("plan")
