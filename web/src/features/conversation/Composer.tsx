@@ -4,8 +4,8 @@
 // and the model change in the session; the effort only shows, as the app
 // sends its own with every message. Under it, what a message would meet now
 // and how full the context is (a ring). In the empty box, grey, the message
-// you would likely write next; Tab, → or its button takes it.
-import { CornerDownLeft, Square } from "lucide-react"
+// you would likely write next; Tab or → writes it, its button sends it.
+import { SendHorizontal, Square } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import type { FileUIPart } from "ai"
 import { toast } from "sonner"
@@ -136,6 +136,33 @@ function Box({ id, card, bridge }: { id: string; card: Card | undefined; bridge:
     textInput.setInput(suggested)
     requestAnimationFrame(cursorAtEnd)
   }
+  // Throws when it did not go, so the box keeps what was typed.
+  const send = async (text: string, files: FileUIPart[]) => {
+    if (!text.trim() && !files.length) return
+    if (bridge?.isArchived) return void toast("Archived in Claude: unarchive it there (Open in Claude), then write")
+    // One at a time: the field keeps the text until the send is answered
+    // (it can take seconds to wake a session), and another Enter meanwhile
+    // would send it again.
+    if (isSending.current) throw new Error("already sending")
+    isSending.current = true
+    try {
+      await sendMessage(id, await messageWith(id, text.trim(), files))
+      sent.play()
+    } catch (err) {
+      toast((err as Error).message || "Could not send")
+      throw err
+    } finally {
+      isSending.current = false
+    }
+  }
+  // The button sends the suggestion as it is (with any files picked); if it
+  // does not go, it stays in the box.
+  const attachments = usePromptInputAttachments()
+  const sendHint = () => {
+    if (!suggested) return
+    composerHint.set(null) // a second click would send it twice
+    send(suggested, attachments.files).then(attachments.clear, fillHint)
+  }
   const takeHint = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (!suggested || (e.key !== "Tab" && e.key !== "ArrowRight") || e.shiftKey || e.metaKey || e.altKey || e.ctrlKey) return
     e.preventDefault()
@@ -180,24 +207,7 @@ function Box({ id, card, bridge }: { id: string; card: Card | undefined; bridge:
       <div className="relative">
       <PromptInput
         multiple maxFiles={MAX_FILES} maxFileSize={MAX_BYTES} onError={fileErrors}
-        onSubmit={async ({ text, files }) => {
-          if (!text.trim() && !files.length) return
-          if (bridge?.isArchived) return void toast("Archived in Claude: unarchive it there (Open in Claude), then write")
-          // One at a time: the field keeps the text until the send is answered
-          // (it can take seconds to wake a session), and another Enter meanwhile
-          // would send it again.
-          if (isSending.current) throw new Error("already sending") // keeps what was typed
-          isSending.current = true
-          try {
-            await sendMessage(id, await messageWith(id, text.trim(), files))
-            sent.play()
-          } catch (err) {
-            toast((err as Error).message || "Could not send")
-            throw err // keeps what was typed
-          } finally {
-            isSending.current = false
-          }
-        }}
+        onSubmit={({ text, files }) => send(text, files)}
       >
         <PickedFiles />
         <PromptInputBody>
@@ -209,9 +219,9 @@ function Box({ id, card, bridge }: { id: string; card: Card | undefined; bridge:
           <MicButton />
           {card && <><span className="mx-1.5 h-[18px] w-px shrink-0 bg-line" /><Settings card={card} bridge={bridge} /></>}
           <span className="flex-1" />
-          {suggested && (
-            <button type="button" className={cn(subtle, "text-brand hover:text-brand")} onClick={fillHint} title="Writes the suggestion in the box (Tab or →)">
-              <CornerDownLeft />Use suggestion
+          {suggested && !bridge?.isArchived && (
+            <button type="button" className={cn(subtle, "text-brand hover:text-brand")} onClick={sendHint} title="Sends the suggestion (Tab or → writes it in the box to change it first)">
+              <SendHorizontal />Send suggestion
             </button>
           )}
           {isWorking && card && (
