@@ -313,7 +313,7 @@ export async function handleRead(url: URL): Promise<Response | null> {
   if (path === "/api/jira/ticket") return await ticket(url.searchParams.get("key") ?? "").then(t => json(t), (err: Error) => json({ error: err.message }, 400))
   if (path === "/api/jira/search") {
     const filter = url.searchParams.get("filter")
-    return await searchTickets(filter === "reported" || filter === "sprint" ? filter : "mine", url.searchParams.get("q") ?? "").then(r => json(r), (err: Error) => json({ error: err.message }, 400))
+    return await searchTickets(filter === "reported" || filter === "sprint" || filter === "all" ? filter : "mine", url.searchParams.get("q") ?? "").then(r => json(r), (err: Error) => json({ error: err.message }, 400))
   }
   if (path === "/api/jira/transitions") return await transitionsOf(url.searchParams.get("key") ?? "").then(t => json({ transitions: t }), (err: Error) => json({ error: err.message }, 400))
   if (path === "/api/app-icon") return json({ icon: chosenIcon(), icons: ICONS })

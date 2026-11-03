@@ -163,7 +163,7 @@ export function TicketView({ ticketKey }: { ticketKey: string }) {
       </header>
       <div className="grid gap-5 @[680px]:grid-cols-[minmax(0,1fr)_240px]">
         <div className="flex min-w-0 flex-col gap-5">
-          <Pipeline ticket={ticket} />
+          <Pipeline ticket={ticket} onTaken={() => void load()} />
           <Section title="Description">
             {ticket.description ? <Markdown className="text-[13.5px]">{ticket.description}</Markdown> : <p className="m-0 text-[13px] text-faint">No description.</p>}
           </Section>

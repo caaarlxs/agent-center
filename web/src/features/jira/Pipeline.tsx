@@ -2,7 +2,8 @@
 // staging, and where this one stands. Refining runs as a session of its own;
 // when it needs a person, its questions show here, each with the agent's
 // proposal, and the answers go to Jira and start the stage again. Start over
-// clears the run and the labels; the comments stay.
+// clears the run and the labels; the comments stay. On a ticket of someone
+// else's it runs only once you take it (two clicks: it is assigned to you).
 import { ChevronDown, Play, RotateCcw } from "lucide-react"
 import { useEffect, useState } from "react"
 import { toast } from "sonner"
@@ -75,7 +76,24 @@ function Questions({ ticketKey, state, onSent }: { ticketKey: string; state: Pip
   )
 }
 
-export function Pipeline({ ticket }: { ticket: Ticket }) {
+// Run, on yours; on someone else's, take it first (a second click confirms).
+function RunButton({ ticket, onStarted }: { ticket: Ticket; onStarted: () => void }) {
+  const [isTaking, setTaking] = useState(false)
+  const run = async () => {
+    if (!ticket.isMine && !isTaking) return void (setTaking(true), setTimeout(() => setTaking(false), 4000))
+    setTaking(false)
+    const done = ticket.isMine ? "Refining: a session starts" : `${ticket.key} is yours: refining`
+    if (await act("/api/pipeline/start", { key: ticket.key, take: !ticket.isMine }, done)) onStarted()
+  }
+  const label = ticket.isMine ? "Run pipeline" : !isTaking ? "Assign to me and run" : ticket.assignee ? `Sure? Take it from ${ticket.assignee}` : "Sure? Assign it to me"
+  return (
+    <Button variant={isTaking ? "destructive" : "default"} className="h-8 self-start gap-1.5 text-xs" onClick={() => void run()}>
+      <Play size={13} className="fill-current" />{label}
+    </Button>
+  )
+}
+
+export function Pipeline({ ticket, onTaken }: { ticket: Ticket; onTaken: () => void }) {
   const now = useNow()
   const [data, setData] = useState<Data | null>(null)
   const [isOpen, setOpen] = useState(false) // the refinement, whole
@@ -87,7 +105,7 @@ export function Pipeline({ ticket }: { ticket: Ticket }) {
     const timer = setInterval(() => void load(), isRunning ? FOLLOW_MS : IDLE_MS)
     return () => clearInterval(timer)
   }, [ticket.key, isRunning])
-  if (!data || (!ticket.isMine && !data.state)) return null
+  if (!data) return null
   const state = data.state
   const start = async () => (await act("/api/pipeline/start", { key: ticket.key }, "Refining: a session starts")) && setTimeout(() => void load(), 800)
   const reset = async () => {
@@ -106,7 +124,7 @@ export function Pipeline({ ticket }: { ticket: Ticket }) {
           </button>
         )}
       </div>
-      {!state && <Button className="h-8 self-start gap-1.5 text-xs" onClick={() => void start()}><Play size={13} className="fill-current" />Run pipeline</Button>}
+      {!state && <RunButton ticket={ticket} onStarted={() => setTimeout(() => (void load(), ticket.isMine || onTaken()), 800)} />}
       {state && status && (
         <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[13px]">
           {isRunning ? <i className="run-dot size-2 rounded-full bg-work" /> : null}

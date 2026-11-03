@@ -20,7 +20,7 @@ import { mkdir, readFile, rename } from "node:fs/promises"
 import { join } from "node:path"
 import { DATA_DIR } from "./config"
 import { writeJsonAtomic } from "./files"
-import { commentOn, labelTicket, ticket, type Ticket, type TicketComment } from "./jira"
+import { assignToMe, commentOn, labelTicket, ticket, type Ticket, type TicketComment } from "./jira"
 import { launch, running } from "./launch"
 import { applyAction } from "./board"
 import { activate } from "./client"
@@ -179,11 +179,13 @@ async function finish(key: string) {
   await save({ ...state, status: "ready", questions: [], endedAt: Date.now() })
 }
 
-// Starts the pipeline on a ticket of yours (or runs the stage again).
-export async function startPipeline(key: string) {
+// Starts the pipeline on a ticket of yours (or runs the stage again); taking
+// it, when you ask, makes it yours first.
+export async function startPipeline(key: string, take = false) {
   if (!isKey(key)) throw new Error("Not a ticket key")
   const state = await stateOf(key)
   if (state?.status === "running") throw new Error("A stage already runs on this ticket")
+  if (take) await assignToMe(key)
   await labelTicket(key, [LABELS.on], []) // also checks that it is yours
   void run(key, (state?.runs ?? 0) + 1)
 }
