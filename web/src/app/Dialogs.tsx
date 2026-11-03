@@ -1,4 +1,4 @@
-// The open dialog, if any. A link can open one (?dialog=new|setup|digest|context|help),
+// The open dialog, if any. A link can open one (?dialog=new|setup|digest|context|pets|help),
 // and Setup opens by itself while a required step is missing, until closed once.
 import { useEffect } from "react"
 import { whenIdle } from "@/lib/cached"
@@ -15,10 +15,11 @@ const DigestDialog = lazyView(() => import("@/features/digest/DigestDialog").the
 const NewSessionDialog = lazyView(() => import("@/features/new-session/NewSessionDialog").then(m => m.NewSessionDialog), { isFloating: true })
 const RunDialog = lazyView(() => import("@/features/run/RunDialog").then(m => m.RunDialog), { isFloating: true })
 const TicketDialog = lazyView(() => import("@/features/jira/TicketDialog").then(m => m.TicketDialog), { isFloating: true })
+const PetsDialog = lazyView(() => import("@/features/pets/PetsDialog").then(m => m.PetsDialog), { isFloating: true })
 const SetupDialog = lazyView(() => import("@/features/setup/SetupDialog").then(m => m.SetupDialog), { isFloating: true })
 
 const setupSeen = persistedStore("setupSeen", false)
-const LINKED = ["new", "setup", "digest", "context", "help"] as const
+const LINKED = ["new", "setup", "digest", "context", "pets", "help"] as const
 
 export function Dialogs() {
   const open = dialog.use()
@@ -48,6 +49,7 @@ export function Dialogs() {
   if (open.kind === "setup") return <SetupDialog onClose={() => (setupSeen.set(true), closeDialog())} />
   if (open.kind === "digest") return <DigestDialog onClose={closeDialog} />
   if (open.kind === "context") return <ContextDialog onClose={closeDialog} />
+  if (open.kind === "pets") return <PetsDialog onClose={closeDialog} />
   if (open.kind === "run") return <RunDialog card={open.card} onClose={closeDialog} />
   if (open.kind === "ticket") return <TicketDialog ticketKey={open.key} onClose={closeDialog} />
   return null // help: the keyboard help dialog draws itself

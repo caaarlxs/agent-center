@@ -133,7 +133,7 @@ echo "{\\"type\\":\\"system\\",\\"session_id\\":\\"$id\\"}"
   server = Bun.spawn(["bun", "server.ts"], {
     cwd: join(import.meta.dir, ".."),
     env: {
-      ...process.env, HOME: home, AGENT_CENTER_HOME: join(home, "state"), AGENT_CENTER_PORT: String(port), AGENT_CENTER_DATA: data, AGENT_CENTER_DRY_RUN: "1",
+      ...process.env, HOME: home, AGENT_CENTER_HOME: join(home, "state"), AGENT_CENTER_PORT: String(port), AGENT_CENTER_DATA: data, AGENT_CENTER_DRY_RUN: "1", AGENT_CENTER_PETS_OFFLINE: "1",
       AGENT_CENTER_CLAUDE: join(home, "fake-claude"),
       // Memory read each second, and a command idle a moment counts as forgotten.
       AGENT_CENTER_MEMORY_EVERY_MS: "1000", AGENT_CENTER_FORGOTTEN_UP_MS: "0", AGENT_CENTER_FORGOTTEN_IDLE_MS: "0",
@@ -779,5 +779,27 @@ describe("suggested tasks", () => {
     expect((await post(`/api/sessions/${SERVER}/suggestion`, { taskId: "task_bbbb2222" })).status).toBe(200)
     const after = await jsonOf(fetch(`${base()}/api/sessions/${SERVER}/messages?after=${page.end}`))
     expect(after.suggestions.task_bbbb2222).toEqual({ state: "dismissed", session: null })
+  })
+})
+
+describe("pets", () => {
+  test("one pack to start, three pets in it, and only a pet you have walks out", async () => {
+    const start = await jsonOf(fetch(`${base()}/api/pets`))
+    expect(start.packs).toBe(1)
+    expect(start).not.toHaveProperty("nextAt") // when the next comes stays a secret
+    expect(start.active).toBeNull()
+
+    const opened = await jsonOf(post("/api/pets/open"))
+    expect(opened.pulls).toHaveLength(3)
+    expect(opened.pulls[2].rarity).not.toBe("common")
+    expect(opened.packs).toBe(0)
+    expect(opened.active).not.toBeNull() // the first pet walks out at once
+    expect((await post("/api/pets/open")).status).toBe(400)
+
+    expect((await post("/api/pets/choose", { id: "dragon:nope" })).status).toBe(400)
+    const missing = start.species.flatMap((s: string) => start.skins.map((k: any) => `${s}:${k.key}`)).find((id: string) => !opened.owned[id])
+    expect((await post("/api/pets/choose", { id: missing })).status).toBe(400)
+    expect((await jsonOf(post("/api/pets/choose", { id: null }))).active).toBeNull()
+    expect((await jsonOf(post("/api/pets/choose", { id: opened.pulls[0].id }))).active).toBe(opened.pulls[0].id)
   })
 })

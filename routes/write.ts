@@ -4,6 +4,7 @@
 import { commentOn, connect, disconnect, moveTicket } from "../lib/jira"
 import { answerPipeline, resetPipeline, startPipeline } from "../lib/pipeline"
 import { chooseIcon, isIcon } from "../lib/app-icon"
+import { choosePet, openPack } from "../lib/pets"
 import { stat } from "node:fs/promises"
 import { applyAction, isTaskId, setNotes, setSuggestion, setZones } from "../lib/board"
 import { requestSettings } from "../lib/bridge"
@@ -174,6 +175,15 @@ export async function handleWrite(path: string, body: Record<string, unknown>): 
     case "/api/app-icon": {
       if (!isIcon(body.icon)) return json({ error: "No such icon" }, 400)
       return json(await chooseIcon(body.icon))
+    }
+    // Pets: a pack opened, the pet that walks the board (null: none).
+    case "/api/pets/open": {
+      const opened = await openPack()
+      return typeof opened === "string" ? json({ error: opened }, 400) : json(opened)
+    }
+    case "/api/pets/choose": {
+      const chosen = await choosePet(body.id ?? null)
+      return typeof chosen === "string" ? json({ error: chosen }, 400) : json(chosen)
     }
     // The commands sessions left running and nobody uses, all stopped.
     case "/api/memory/stopforgotten": {
