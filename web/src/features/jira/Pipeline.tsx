@@ -120,7 +120,7 @@ function Decisions({ ticketKey, state, onSent }: { ticketKey: string; state: Pip
 type Activity = { steps: Step[]; helpers: Helper[]; units: Unit[] }
 const ACTIVITY_MS = 4_000
 
-function useActivity(key: string) {
+export function useActivity(key: string) {
   const [activity, setActivity] = useState<Activity | null>(null)
   useEffect(() => {
     const load = () => get<Activity>(`/api/pipeline/activity?key=${encodeURIComponent(key)}`).then(setActivity, () => {})

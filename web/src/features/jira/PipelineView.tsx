@@ -16,7 +16,7 @@ import { cn } from "@/lib/utils"
 import { dialog } from "@/app/open-dialog"
 import { ago, repoDot } from "@/features/session/state"
 import type { PipelineState, Unit } from "@server/pipeline"
-import { act } from "./Pipeline"
+import { act, useActivity } from "./Pipeline"
 import { PipelineMark, liveLine, startText, startingText } from "./PipelineMark"
 import { BUILT, STAGES, columnOf, costOf, dollars, isQueued, nextStage } from "./pipeline-board"
 
@@ -30,6 +30,44 @@ function Repos({ units }: { units: Unit[] }) {
     <span className="flex flex-wrap gap-x-2.5 gap-y-1">
       {repos.map(r => <span key={r} className="inline-flex items-center gap-1.5 text-[11.5px] text-text-muted"><i className="repo-dot size-[7px] rounded-[2px]" style={{ background: repoDot(r) }} />{r}</span>)}
     </span>
+  )
+}
+
+// While its agent works: what it does now (or each subagent at work, and
+// its step), and how many of the plan's units are built (one segment each).
+function Live({ state, card }: { state: PipelineState; card: Card | undefined }) {
+  const activity = useActivity(state.key)
+  const steps = activity?.steps ?? []
+  const current = steps.findLast(s => s.isOpen) ?? steps.at(-1)
+  const busy = activity?.helpers.filter(h => !h.isDone) ?? []
+  const units = activity?.units.length ? activity.units : (state.units ?? [])
+  const done = units.filter(u => u.status === "done").length
+  const shimmer = "[--color-background:var(--text)] [--color-muted-foreground:var(--text-muted)]"
+  return (
+    <div className="flex flex-col gap-2">
+      {/* With subagents at work the session only waits on them: each says what it does. */}
+      {busy.length > 0 ? (
+        <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
+          {busy.slice(0, 3).map((h, i) => (
+            <li key={i} className="grid min-w-0 grid-cols-[6px_minmax(0,1fr)] items-center gap-x-2 gap-y-0.5">
+              <i className="run-dot size-1.5 rounded-full bg-work" />
+              <span className="truncate text-[12px] font-semibold">{h.description}</span>
+              {h.step && <Shimmer as="span" duration={2.2} className={cn("col-start-2 truncate text-[11.5px]", shimmer)}>{h.step.text}</Shimmer>}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <Shimmer as="p" duration={2.2} className={cn("m-0 line-clamp-2 text-[12.5px] leading-[1.45]", shimmer)}>{current?.text ?? liveLine(state, card)}</Shimmer>
+      )}
+      {units.length > 0 && state.stage === "build" && (
+        <span className="flex items-center gap-2">
+          <span className="flex flex-1 gap-[3px]">
+            {units.map(u => <i key={u.id} title={`${u.id} · ${u.repo}`} className={cn("h-1 flex-1 rounded-full", u.status === "done" ? "bg-work" : u.status === "failed" ? "bg-bad" : "bg-line-strong")} />)}
+          </span>
+          <span className="dot-time text-[11px] text-faint tabular-nums">{done}/{units.length}</span>
+        </span>
+      )}
+    </div>
   )
 }
 
@@ -59,9 +97,8 @@ function TicketCard({ state, card, now }: { state: PipelineState; card: Card | u
           </span>
         </div>
       </header>
-      <p className={cn("m-0 line-clamp-2 text-[12.5px] leading-[1.45]", isAsking ? "font-semibold text-ask" : state.status === "failed" ? "text-bad" : "text-text-muted")}>
-        {isRunning ? <Shimmer as="span" duration={2.2} className="[--color-background:var(--text)] [--color-muted-foreground:var(--text-muted)]">{liveLine(state, card)}</Shimmer> : liveLine(state, card)}
-      </p>
+      {isRunning ? <Live state={state} card={card} />
+        : <p className={cn("m-0 line-clamp-2 text-[12.5px] leading-[1.45]", isAsking ? "font-semibold text-ask" : state.status === "failed" ? "text-bad" : "text-text-muted")}>{liveLine(state, card)}</p>}
       {state.units?.length ? <Repos units={state.units} /> : null}
       {next && (
         <Button className="h-7 self-start gap-1.5 text-xs"
