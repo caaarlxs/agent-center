@@ -4,8 +4,8 @@
 // and the model change in the session; the effort only shows, as the app
 // sends its own with every message. Under it, what a message would meet now
 // and how full the context is (a ring). In the empty box, grey, the message
-// you would likely write next; Tab or → takes it.
-import { Square } from "lucide-react"
+// you would likely write next; Tab, → or its button takes it.
+import { CornerDownLeft, Square } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import type { FileUIPart } from "ai"
 import { toast } from "sonner"
@@ -131,11 +131,15 @@ function Box({ id, card, bridge }: { id: string; card: Card | undefined; bridge:
   useEffect(() => void (focus?.id === id && cursorAtEnd()), [focus, id])
   const hint = composerHint.use()
   const suggested = hint?.id === id && !textInput.value ? hint.text : null
+  const fillHint = () => {
+    if (!suggested) return
+    textInput.setInput(suggested)
+    requestAnimationFrame(cursorAtEnd)
+  }
   const takeHint = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (!suggested || (e.key !== "Tab" && e.key !== "ArrowRight") || e.shiftKey || e.metaKey || e.altKey || e.ctrlKey) return
     e.preventDefault()
-    textInput.setInput(suggested)
-    requestAnimationFrame(cursorAtEnd)
+    fillHint()
   }
   // The draft: kept as you type, and once more when the chat closes.
   const latest = useRef(textInput.value)
@@ -205,6 +209,11 @@ function Box({ id, card, bridge }: { id: string; card: Card | undefined; bridge:
           <MicButton />
           {card && <><span className="mx-1.5 h-[18px] w-px shrink-0 bg-line" /><Settings card={card} bridge={bridge} /></>}
           <span className="flex-1" />
+          {suggested && (
+            <button type="button" className={cn(subtle, "text-brand hover:text-brand")} onClick={fillHint} title="Writes the suggestion in the box (Tab or →)">
+              <CornerDownLeft />Use suggestion
+            </button>
+          )}
           {isWorking && card && (
             <button type="button" className={cn(subtle, "hover:text-bad")} onClick={() => stopTurn(card)} title="Stops the running turn, like Esc in Claude desktop (S)"><Square />Stop</button>
           )}
