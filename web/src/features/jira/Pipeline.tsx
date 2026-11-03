@@ -1,14 +1,17 @@
-// The pipeline on a ticket (lib/pipeline.ts): the stages, from refining to
-// staging, and where this one stands. Refining runs as a session of its own;
-// when it needs a person, its questions show here, each with the agent's
-// proposal, and the answers go to Jira and start the stage again. Each run
-// keeps a line (what it ended in, its log a click away). Start over
-// clears the run and the labels; the comments stay. On a ticket of someone
-// else's it runs only once you take it (two clicks: it is assigned to you).
-import { ChevronDown, Play, RotateCcw } from "lucide-react"
-import { useEffect, useState } from "react"
+// The pipeline on a ticket (lib/pipeline.ts): the stages on a rail, and below
+// it only what this moment asks for. While a stage runs, what its agent does
+// now. When it needs you, its decisions: each a question and the agent's
+// proposal, kept as it is unless you change it; the answers go to Jira and
+// start the stage again. When it fails, why, and running it again. The runs
+// and the refinement wait folded at the foot. Start over clears the run and
+// the labels; the comments stay. On someone else's ticket it runs only once
+// you take it (two clicks: it is assigned to you).
+import { ChevronRight, Play, RotateCcw } from "lucide-react"
+import { useEffect, useState, type ReactNode } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
+import { Shimmer } from "@/components/ai-elements/shimmer"
+import { Kbd } from "@/components/ui/kbd"
 import { get, post } from "@/lib/api"
 import type { Ticket } from "@/lib/api-types"
 import { useLive } from "@/lib/live"
@@ -20,18 +23,12 @@ import { Markdown } from "@/features/conversation/Markdown"
 import { doingText } from "@/features/conversation/session-events"
 import { ago } from "@/features/session/state"
 import type { PipelineState, Run } from "@server/pipeline"
+import { PipelineMark, Rail, liveLine } from "./PipelineMark"
 
 type Data = { state: PipelineState | null; refine: string | null }
-export const STAGES = ["Refine", "Plan", "Build", "Review", "Staging"]
 const FOLLOW_MS = 5_000
 const IDLE_MS = 30_000
-
-export const STATUS: Record<PipelineState["status"], { text: string; tone: string }> = {
-  running: { text: "Refining", tone: "text-work" },
-  "needs-info": { text: "Waiting for answers", tone: "text-ask" },
-  ready: { text: "Ready to plan", tone: "text-work" },
-  failed: { text: "Failed", tone: "text-bad" },
-}
+const CONFIRM_MS = 4_000
 
 async function act(path: string, body: object, done: string) {
   try {
@@ -44,62 +41,130 @@ async function act(path: string, body: object, done: string) {
   }
 }
 
-export function Stages({ state }: { state: PipelineState | null }) {
+// A click that asks once more (it turns red) before it does what it says.
+function useConfirm(): [boolean, (then: () => void) => void] {
+  const [isAsking, setAsking] = useState(false)
+  useEffect(() => {
+    if (!isAsking) return
+    const timer = setTimeout(() => setAsking(false), CONFIRM_MS)
+    return () => clearTimeout(timer)
+  }, [isAsking])
+  return [isAsking, then => (isAsking ? (setAsking(false), then()) : setAsking(true))]
+}
+
+const openLog = (id: string) => (dialog.set(null), openSession(id))
+
+// ---------- the decisions ----------
+
+function Decision({ n, question, proposal, text, onChange }: { n: number; question: string; proposal: string; text: string | undefined; onChange: (text: string | undefined) => void }) {
+  const isChanging = text !== undefined
   return (
-    <ol className="m-0 flex list-none items-center gap-1 p-0 text-[11.5px] font-semibold">
-      {STAGES.map((s, i) => (
-        <li key={s} className="flex items-center gap-1">
-          {i > 0 && <span className="h-px w-3 bg-line" />}
-          <span className={cn("rounded-full px-2 py-0.5", i === 0 && state ? "bg-brand text-brand-text" : "bg-hover text-faint")}>{s}</span>
-        </li>
-      ))}
-    </ol>
+    <li className="flex flex-col gap-2.5 border-t border-line py-4 first:border-t-0 first:pt-1">
+      <p className="m-0 flex gap-2.5 text-[13.5px] leading-[1.5] text-text">
+        <span className="w-4 shrink-0 text-right font-mono text-xs leading-[1.7] text-faint">{n}</span>{question}
+      </p>
+      <div className="ml-[26px] flex flex-col gap-1.5">
+        {isChanging ? (
+          <textarea autoFocus value={text} onChange={e => onChange(e.target.value)} rows={2}
+            className="max-h-[280px] min-h-[60px] resize-none rounded-[8px] border border-brand bg-surface px-3 py-2 text-[13px] leading-[1.55] outline-none [field-sizing:content] focus:shadow-[0_0_0_3px_var(--brand-soft)]" />
+        ) : (
+          <p className="m-0 border-l-2 border-line-strong pl-3 text-[13px] leading-[1.55] text-text-muted">{proposal || "No proposal"}</p>
+        )}
+        <button className="self-start text-xs font-semibold text-faint transition-colors duration-120 hover:text-text"
+          onClick={() => onChange(isChanging ? undefined : proposal)}>
+          {isChanging ? "Keep the proposal" : "Change"}
+        </button>
+      </div>
+    </li>
   )
 }
 
-function Questions({ ticketKey, state, onSent }: { ticketKey: string; state: PipelineState; onSent: () => void }) {
-  const [answers, setAnswers] = useState<Record<string, string>>(() => Object.fromEntries(state.questions.map(q => [q.id, q.proposal])))
+// Each proposal stands unless you change it; ⌘↵ sends them all.
+function Decisions({ ticketKey, state, onSent }: { ticketKey: string; state: PipelineState; onSent: () => void }) {
+  const [changed, setChanged] = useState<Record<string, string>>({})
   const [isBusy, setBusy] = useState(false)
+  const count = state.questions.length
   const send = async () => {
+    if (isBusy) return
     setBusy(true)
-    if (await act("/api/pipeline/answer", { key: ticketKey, answers }, "Answers sent to Jira: refining again")) onSent()
+    if (await act("/api/pipeline/answer", { key: ticketKey, answers: changed }, "Answers sent to Jira: refining again")) onSent()
     setBusy(false)
   }
+  const change = (id: string, text: string | undefined) =>
+    setChanged(c => (text === undefined ? Object.fromEntries(Object.entries(c).filter(([k]) => k !== id)) : { ...c, [id]: text }))
   return (
-    <div className="flex flex-col gap-3">
-      {state.questions.map(q => (
-        <label key={q.id} className="flex flex-col gap-1.5">
-          <span className="text-[13px]"><b className="mr-1 font-mono text-xs text-text-muted">{q.id}</b>{q.question}</span>
-          <textarea value={answers[q.id] ?? ""} onChange={e => setAnswers(a => ({ ...a, [q.id]: e.target.value }))} rows={2}
-            className="max-h-[280px] min-h-[44px] resize-none rounded-[8px] border border-line bg-surface px-2.5 py-2 text-[13px] leading-[1.5] outline-none [field-sizing:content] focus:border-brand" />
-        </label>
-      ))}
-      <Button className="h-8 self-end text-xs" disabled={isBusy} onClick={() => void send()}>Send to Jira and continue</Button>
+    <div className="flex flex-col" onKeyDown={e => e.key === "Enter" && (e.metaKey || e.ctrlKey) && (e.preventDefault(), void send())}>
+      <h3 className="m-0 mb-2 text-[15px] font-semibold tracking-[-0.01em]">{count} decision{count === 1 ? "" : "s"} for you</h3>
+      <ol className="m-0 list-none p-0">
+        {state.questions.map((q, i) => <Decision key={q.id} n={i + 1} question={q.question} proposal={q.proposal} text={changed[q.id]} onChange={t => change(q.id, t)} />)}
+      </ol>
+      <div className="mt-2 flex items-center justify-end gap-2.5">
+        <Kbd>⌘↵</Kbd>
+        <Button className="h-8 text-xs" disabled={isBusy} onClick={() => void send()}>Send to Jira and continue</Button>
+      </div>
     </div>
   )
 }
 
+// ---------- the moment ----------
+
+// While a stage runs: what its agent does now, for how long, and its log.
+function Working({ state, now }: { state: PipelineState; now: number }) {
+  const card = useLive(l => l.snapshot?.cards.find(c => c.id === state.sessionId))
+  return (
+    <div className="flex items-center gap-2.5">
+      <PipelineMark state={state} card={card} size={22} />
+      <Shimmer as="span" duration={2.2} className="min-w-0 truncate text-[13.5px] [--color-background:var(--text)] [--color-muted-foreground:var(--text-muted)]">{liveLine(state, card)}</Shimmer>
+      <span className="ml-auto shrink-0 text-xs text-faint tabular-nums">{ago(state.startedAt, now)}</span>
+      {state.sessionId && <button className="shrink-0 text-xs font-semibold text-text-muted hover:text-text" onClick={() => openLog(state.sessionId!)}>Log</button>}
+    </div>
+  )
+}
+
+function Outcome({ state, onAgain }: { state: PipelineState; onAgain: () => void }) {
+  return (
+    <div className="flex items-center gap-2.5">
+      <PipelineMark state={state} size={22} />
+      <span className={cn("min-w-0 flex-1 text-[13.5px]", state.status === "failed" ? "text-bad" : "font-semibold text-work")}>{liveLine(state, undefined)}</span>
+      {state.status === "failed" && <Button variant="outline" className="h-7 shrink-0 text-xs" onClick={onAgain}>Run again</Button>}
+    </div>
+  )
+}
+
+// Run, on yours; on someone else's, take it first (a second click confirms).
+function RunButton({ ticket, onStarted }: { ticket: Ticket; onStarted: () => void }) {
+  const [isAsking, confirm] = useConfirm()
+  const run = async () => {
+    const done = ticket.isMine ? "Refining: a session starts" : `${ticket.key} is yours: refining`
+    if (await act("/api/pipeline/start", { key: ticket.key, take: !ticket.isMine }, done)) onStarted()
+  }
+  const label = ticket.isMine ? "Run pipeline" : !isAsking ? "Assign to me and run" : ticket.assignee ? `Sure? Take it from ${ticket.assignee}` : "Sure? Assign it to me"
+  return (
+    <Button variant={isAsking ? "destructive" : "default"} className="h-8 self-start gap-1.5 text-xs" onClick={() => (ticket.isMine ? void run() : confirm(() => void run()))}>
+      <Play size={13} className="fill-current" />{label}
+    </Button>
+  )
+}
+
+// ---------- the foot ----------
+
 const minutes = (ms: number) => `${Math.max(1, Math.round(ms / 60_000))} min`
 const sayRun = (r: Run, doing: string | null) =>
-  r.status === "running" ? (doing ?? "Starting") : r.status === "needs-info" ? `Asked ${r.questions} question${r.questions === 1 ? "" : "s"}` : r.status === "failed" ? (r.error ?? "Failed") : "Refined: ready to plan"
+  r.status === "running" ? (doing ?? "Starting") : r.status === "needs-info" ? `Asked ${r.questions} question${r.questions === 1 ? "" : "s"}` : r.status === "failed" ? (r.error ?? "Failed") : "Refined"
 
 // Every run, the latest first: what it ended in (or does now), how long, its log.
 function Runs({ history, now }: { history: Run[]; now: number }) {
   const cards = useLive(l => l.snapshot?.cards)
   return (
-    <ol className="m-0 flex list-none flex-col gap-1 p-0 text-xs">
+    <ol className="m-0 flex list-none flex-col gap-1.5 p-0 text-xs">
       {[...history].reverse().map(r => {
         const card = r.status === "running" ? cards?.find(c => c.id === r.sessionId) : undefined
         return (
-          <li key={r.n} className="flex items-baseline gap-2">
-            <span className="w-6 shrink-0 font-mono text-faint">#{r.n}</span>
-            <span className={cn("min-w-0 flex-1 truncate", r.status === "failed" ? "text-bad" : "text-text-muted")}>
-              {r.status === "running" && <i className="run-dot mr-1.5 inline-block size-1.5 rounded-full bg-work align-middle" />}{sayRun(r, doingText(card?.doing))}
-            </span>
-            <span className="shrink-0 text-faint tabular-nums">{minutes((r.endedAt ?? now) - r.startedAt)} · {ago(r.endedAt ?? r.startedAt, now)} ago</span>
-            {r.sessionId && (
-              <button className="shrink-0 font-semibold text-text-muted underline-offset-2 hover:text-text hover:underline" onClick={() => (dialog.set(null), openSession(r.sessionId))}>Log</button>
-            )}
+          <li key={r.n} className="grid grid-cols-[1.5rem_minmax(0,1fr)_auto_2rem] items-baseline gap-2">
+            <span className="font-mono text-faint">#{r.n}</span>
+            <span className={cn("truncate", r.status === "failed" ? "text-bad" : "text-text-muted")}>{sayRun(r, doingText(card?.doing))}</span>
+            <span className="text-faint tabular-nums">{minutes((r.endedAt ?? now) - r.startedAt)} · {ago(r.endedAt ?? r.startedAt, now)}</span>
+            {r.sessionId ? <button className="text-right font-semibold text-text-muted hover:text-text" onClick={() => openLog(r.sessionId!)}>Log</button> : <span />}
           </li>
         )
       })}
@@ -107,28 +172,21 @@ function Runs({ history, now }: { history: Run[]; now: number }) {
   )
 }
 
-// Run, on yours; on someone else's, take it first (a second click confirms).
-function RunButton({ ticket, onStarted }: { ticket: Ticket; onStarted: () => void }) {
-  const [isTaking, setTaking] = useState(false)
-  const run = async () => {
-    if (!ticket.isMine && !isTaking) return void (setTaking(true), setTimeout(() => setTaking(false), 4000))
-    setTaking(false)
-    const done = ticket.isMine ? "Refining: a session starts" : `${ticket.key} is yours: refining`
-    if (await act("/api/pipeline/start", { key: ticket.key, take: !ticket.isMine }, done)) onStarted()
-  }
-  const label = ticket.isMine ? "Run pipeline" : !isTaking ? "Assign to me and run" : ticket.assignee ? `Sure? Take it from ${ticket.assignee}` : "Sure? Assign it to me"
+function Fold({ label, isOpen, onToggle }: { label: ReactNode; isOpen: boolean; onToggle: () => void }) {
   return (
-    <Button variant={isTaking ? "destructive" : "default"} className="h-8 self-start gap-1.5 text-xs" onClick={() => void run()}>
-      <Play size={13} className="fill-current" />{label}
-    </Button>
+    <button className={cn("inline-flex items-center gap-1 text-xs font-semibold transition-colors duration-120", isOpen ? "text-text" : "text-text-muted hover:text-text")} onClick={onToggle} aria-expanded={isOpen}>
+      <ChevronRight size={13} className={cn("transition-transform duration-150 ease-(--ease-out)", isOpen && "rotate-90")} />{label}
+    </button>
   )
 }
+
+// ---------- the section ----------
 
 export function Pipeline({ ticket, onTaken }: { ticket: Ticket; onTaken: () => void }) {
   const now = useNow()
   const [data, setData] = useState<Data | null>(null)
-  const [isOpen, setOpen] = useState(false) // the refinement, whole
-  const [isConfirming, setConfirming] = useState(false)
+  const [fold, setFold] = useState<"refine" | "runs" | null>(null)
+  const [isResetting, confirmReset] = useConfirm()
   const load = () => get<Data>(`/api/pipeline?key=${encodeURIComponent(ticket.key)}`).then(setData, () => {})
   const isRunning = data?.state?.status === "running"
   useEffect(() => {
@@ -138,39 +196,37 @@ export function Pipeline({ ticket, onTaken }: { ticket: Ticket; onTaken: () => v
   }, [ticket.key, isRunning])
   if (!data) return null
   const state = data.state
-  const start = async () => (await act("/api/pipeline/start", { key: ticket.key }, "Refining: a session starts")) && setTimeout(() => void load(), 800)
-  const reset = async () => {
-    if (!isConfirming) return void (setConfirming(true), setTimeout(() => setConfirming(false), 4000))
-    setConfirming(false)
-    if (await act("/api/pipeline/reset", { key: ticket.key }, "Started over: the comments stay in Jira")) void load()
-  }
-  const status = state && STATUS[state.status]
+  const loadSoon = () => setTimeout(() => void load(), 800)
+  const start = async () => (await act("/api/pipeline/start", { key: ticket.key }, "Refining: a session starts")) && loadSoon()
+  const reset = () => confirmReset(async () => (await act("/api/pipeline/reset", { key: ticket.key }, "Started over: the comments stay in Jira")) && void load())
+  const runs = state?.history ?? []
+  const toggle = (f: "refine" | "runs") => setFold(open => (open === f ? null : f))
   return (
-    <section className="flex flex-col gap-3 rounded-[12px] border border-line bg-side p-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <Stages state={state} />
-        {state && state.status !== "running" && (
-          <button className={cn("inline-flex items-center gap-1 text-xs font-semibold", isConfirming ? "text-bad" : "text-text-muted hover:text-text")} onClick={() => void reset()}>
-            <RotateCcw size={12} />{isConfirming ? "Sure? Start over" : "Start over"}
+    <section className="overflow-hidden rounded-[12px] border border-line bg-side">
+      <header className="flex items-start gap-4 px-4 pt-3.5 pb-3">
+        <Rail state={state} hasLabels className="flex-1" />
+        {state && !isRunning && (
+          <button className={cn("-mt-0.5 inline-flex h-6 shrink-0 items-center gap-1 rounded-md px-1.5 text-xs font-semibold transition-colors duration-120",
+            isResetting ? "bg-bad-soft text-bad" : "text-faint hover:bg-hover hover:text-text")} onClick={reset} title="Start over: clears the runs and the labels">
+            <RotateCcw size={12} />{isResetting && "Start over?"}
           </button>
         )}
+      </header>
+      <div className="px-4 pb-4">
+        {!state && <RunButton ticket={ticket} onStarted={() => (loadSoon(), ticket.isMine || onTaken())} />}
+        {state?.status === "running" && <Working state={state} now={now} />}
+        {state?.status === "needs-info" && <Decisions key={state.askedAt} ticketKey={ticket.key} state={state} onSent={() => void load()} />}
+        {(state?.status === "ready" || state?.status === "failed") && <Outcome state={state} onAgain={() => void start()} />}
       </div>
-      {!state && <RunButton ticket={ticket} onStarted={() => setTimeout(() => (void load(), ticket.isMine || onTaken()), 800)} />}
-      {state && status && (
-        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[13px]">
-          <b className={cn("font-semibold", status.tone)}>{status.text}</b>
-          {state.status === "failed" && <Button variant="outline" className="ml-auto h-7 text-xs" onClick={() => void start()}>Run again</Button>}
-        </div>
-      )}
-      {state?.status === "needs-info" && <Questions key={state.askedAt} ticketKey={ticket.key} state={state} onSent={() => void load()} />}
-      {state?.history?.length ? <Runs history={state.history} now={now} /> : null}
-      {data.refine && (
-        <div className="flex flex-col gap-2">
-          <button className="inline-flex items-center gap-1 self-start text-xs font-semibold text-text-muted hover:text-text" onClick={() => setOpen(v => !v)} aria-expanded={isOpen}>
-            <ChevronDown size={13} className={cn("transition-transform", !isOpen && "-rotate-90")} />Refinement
-          </button>
-          {isOpen && <Markdown className="text-[13px]">{data.refine}</Markdown>}
-        </div>
+      {(data.refine || runs.length > 0) && (
+        <footer className="border-t border-line px-4 py-2.5">
+          <div className="flex gap-5">
+            {data.refine && <Fold label="Refinement" isOpen={fold === "refine"} onToggle={() => toggle("refine")} />}
+            {runs.length > 0 && <Fold label={<>Runs<span className="font-medium text-faint">{runs.length}</span></>} isOpen={fold === "runs"} onToggle={() => toggle("runs")} />}
+          </div>
+          {fold === "refine" && data.refine && <Markdown className="mt-3 text-[13px]">{data.refine}</Markdown>}
+          {fold === "runs" && <div className="mt-3"><Runs history={runs} now={now} /></div>}
+        </footer>
       )}
     </section>
   )
