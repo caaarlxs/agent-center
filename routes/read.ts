@@ -127,6 +127,17 @@ function viewable(path: string, ext: string) {
   return new Response(Bun.file(path), { headers })
 }
 
+// A file to save, under its own name; never shown, never run.
+function saved(path: string) {
+  const name = path.split("/").pop() ?? "file"
+  return new Response(Bun.file(path), {
+    headers: {
+      "content-type": "application/octet-stream", "x-content-type-options": "nosniff", "content-security-policy": "sandbox",
+      "content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(name)}`,
+    },
+  })
+}
+
 async function sessionRead(id: string, what: string, url: URL) {
   if (!groupOf(id)) await latestJson() // right after a restart no snapshot has run yet
   const group = groupOf(id)
@@ -251,13 +262,16 @@ async function sessionRead(id: string, what: string, url: URL) {
     // The "Files" tab: what the session sent, published or wrote.
     case "files":
       return json({ files: await sessionFiles(group?.ids ?? [id]) })
-    // One of its files: what it is (fileinfo), then its bytes (file).
+    // One of its files: what it is (fileinfo), then its bytes (file), or the
+    // file to save, whatever its size (download).
     case "fileinfo":
     case "file":
+    case "download":
     case "filepreview": {
       const file = await sessionFile(group?.ids ?? [id], url.searchParams.get("path") ?? "", group ? [group.lead.cwd, group.root] : [])
       if (!file) return json({ error: "This session does not name that file, or it is gone" }, 404)
       if (what === "fileinfo") return json(file)
+      if (what === "download") return saved(file.path)
       if (!file.isViewable) return json({ error: "Too large to show here: open it on the Mac" }, 413)
       if (what === "file") return viewable(file.path, file.ext)
       // What the browser cannot show itself: a page, tables or a picture.

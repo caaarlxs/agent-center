@@ -23,3 +23,7 @@ export async function get<T>(path: string): Promise<T> {
 export async function post<T = { ok: boolean }>(path: string, body: unknown = {}): Promise<T> {
   return answer<T>(await fetch(path, { method: "POST", headers: { "content-type": "application/json", "x-agent-center": "1" }, body: JSON.stringify(body) }))
 }
+
+// A session's file as the server gives it: what it is (fileinfo), its bytes
+// to show (file, filepreview) or to save (download).
+export const sessionFileUrl = (id: string, what: string, path: string) => `/api/sessions/${encodeURIComponent(id)}/${what}?path=${encodeURIComponent(path)}`
