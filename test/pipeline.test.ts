@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { MARK, answeredAfter, answersComment, parseResult, pipelineKeyOf, stageToRun, withRun, questionsComment, snapshotOf } from "../lib/pipeline"
+import { MARK, answeredAfter, answersComment, argsFor, parseResult, pipelineKeyOf, stageToRun, unbuilt, withRun, questionsComment, snapshotOf } from "../lib/pipeline"
 
 const questions = [
   { id: "Q1", question: "¿Cuál es el copy?", proposal: "El del ticket" },
@@ -20,6 +20,13 @@ describe("parseResult", () => {
     expect(parseResult(JSON.stringify({ verdict: "ready", units }), "plan").units).toEqual([
       { id: "U1", repo: "company-service", subtask: "PP-2", branch: "feat/PP-2-x", title: "Campo", dependsOn: [] },
       { id: "U9", repo: "deale-frontend", subtask: null, branch: "", title: "Aviso", dependsOn: ["U1"] },
+    ])
+  })
+  it("reads what the build left of each unit: its status and its PR", () => {
+    const units = [{ id: "U1", repo: "company-service", title: "Campo", status: "done", pr: "https://github.com/deale-org/company-service/pull/7" }, { id: "U2", repo: "deale-frontend", title: "Aviso", status: "weird" }]
+    expect(parseResult(JSON.stringify({ verdict: "ready", units }), "build").units).toEqual([
+      { id: "U1", repo: "company-service", subtask: null, branch: "", title: "Campo", dependsOn: [], status: "done", pr: "https://github.com/deale-org/company-service/pull/7" },
+      { id: "U2", repo: "deale-frontend", subtask: null, branch: "", title: "Aviso", dependsOn: [], status: "failed", pr: null },
     ])
   })
   it("refuses a ready plan with no units", () => {
@@ -100,14 +107,37 @@ describe("withRun", () => {
 })
 
 describe("stageToRun", () => {
-  const at = (stage: "refine" | "plan", status: "running" | "needs-info" | "ready" | "failed") => ({ stage, status }) as never
+  const at = (stage: "refine" | "plan" | "build", status: "running" | "needs-info" | "ready" | "failed") => ({ stage, status }) as never
   it("runs the ticket's own stage again, or refines a new one", () => {
     expect(stageToRun(null)).toBe("refine")
     expect(stageToRun(at("plan", "failed"))).toBe("plan")
+  })
+  it("builds only once the plan is done", () => {
+    expect(stageToRun(at("plan", "ready"), "build")).toBe("build")
+    expect(() => stageToRun(at("plan", "running"), "build")).toThrow()
+    expect(stageToRun(at("build", "failed"))).toBe("build")
   })
   it("plans only once the refinement is done", () => {
     expect(stageToRun(at("refine", "ready"), "plan")).toBe("plan")
     expect(() => stageToRun(at("refine", "needs-info"), "plan")).toThrow()
     expect(() => stageToRun(null, "plan")).toThrow()
+  })
+})
+
+describe("unbuilt", () => {
+  const unit = (id: string, status: "done" | "failed", pr: string | null) => ({ id, repo: "r", subtask: null, branch: "", title: id, dependsOn: [], status, pr })
+  it("names the units left without a PR", () => {
+    expect(unbuilt([unit("U1", "done", "https://x/pull/1"), unit("U2", "failed", null), unit("U3", "done", null)])).toBe("No PR for U2, U3")
+    expect(unbuilt([unit("U1", "done", "https://x/pull/1")])).toBeNull()
+    expect(unbuilt([])).toBe("The build left no units")
+  })
+})
+
+describe("argsFor", () => {
+  it("runs every stage clean (none of your settings, hooks or connectors) on its model and effort", () => {
+    const args = argsFor("refine", "/data/pipeline")
+    expect(args).toEqual(expect.arrayContaining(["--setting-sources", "project,local", "--strict-mcp-config", "--model", "claude-opus-5-5", "--effort", "high"]))
+    expect(argsFor("plan", "/data/pipeline")).toEqual(expect.arrayContaining(["--effort", "medium"]))
+    expect(argsFor("build", "/data/pipeline")).toEqual(expect.arrayContaining(["--add-dir", "/data/pipeline/repos"]))
   })
 })

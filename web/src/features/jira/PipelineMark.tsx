@@ -14,8 +14,12 @@ import { STAGES, stageAt } from "./pipeline-board"
 export { STAGES, stageAt } from "./pipeline-board"
 
 // The state in two words: what the stage does, or what comes next.
-const DOING: Record<Stage, string> = { refine: "Refining", plan: "Planning" }
-const NEXT: Record<Stage, string> = { refine: "Ready to plan", plan: "Ready to build" }
+const DOING: Record<Stage, string> = { refine: "Refining", plan: "Planning", build: "Building" }
+const NEXT: Record<Stage, string> = { refine: "Ready to plan", plan: "Ready to build", build: "Ready to review" }
+const START: Record<Stage, string> = { refine: "Run refine", plan: "Run plan", build: "Run build" }
+export const startText = (stage: Stage) => START[stage]
+const STARTING: Record<Stage, string> = { refine: "Refining", plan: "Planning", build: "Building" }
+export const startingText = (stage: Stage) => `${STARTING[stage]}: a session starts`
 export const statusText = (state: PipelineState) =>
   state.status === "running" ? DOING[state.stage] : state.status === "ready" ? NEXT[state.stage] : state.status === "needs-info" ? "Waiting for you" : "Failed"
 const TONE: Record<PipelineStatus, { text: string; bar: string }> = {
@@ -31,6 +35,7 @@ export function liveLine(state: PipelineState, card: Card | undefined): string {
   if (state.status === "running") return doingText(card?.doing) ?? "Starting"
   if (state.status === "needs-info") return `${state.questions.length} decision${state.questions.length === 1 ? "" : "s"} for you`
   if (state.status === "failed") return state.error ?? "The run failed"
+  if (state.stage === "build") return `Built: ${state.units?.filter(u => u.pr).length ?? 0} draft PRs open`
   if (state.stage === "plan") return `Planned in ${state.units?.length ?? 0} unit${state.units?.length === 1 ? "" : "s"}: ready to build`
   return "Refined: ready to plan"
 }

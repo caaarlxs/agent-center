@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
-import { columnOf, isQueued } from "./pipeline-board"
+import { columnOf, isQueued, nextStage } from "./pipeline-board"
 
-const at = (stage: "refine" | "plan", status: "running" | "needs-info" | "ready" | "failed") => ({ stage, status }) as never
+const at = (stage: "refine" | "plan" | "build", status: "running" | "needs-info" | "ready" | "failed") => ({ stage, status }) as never
 
 describe("columnOf", () => {
   it("puts a ticket in its stage's column while the stage is open", () => {
@@ -14,6 +14,12 @@ describe("columnOf", () => {
     expect(columnOf(at("plan", "ready"))).toBe(2)
     expect(isQueued(at("plan", "ready"))).toBe(true)
     expect(isQueued(at("plan", "running"))).toBe(false)
+  })
+  it("offers the next stage there is an agent for", () => {
+    expect(nextStage(at("refine", "ready"))).toBe("plan")
+    expect(nextStage(at("plan", "ready"))).toBe("build")
+    expect(nextStage(at("build", "ready"))).toBeNull()
+    expect(nextStage(at("plan", "running"))).toBeNull()
   })
 })
 

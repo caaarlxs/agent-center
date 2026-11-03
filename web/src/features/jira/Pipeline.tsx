@@ -26,11 +26,11 @@ import { ago } from "@/features/session/state"
 import { repoDot } from "@/features/session/state"
 import type { PipelineState, Run, Stage, Unit } from "@server/pipeline"
 import { MODELS } from "@/features/prompt/Settings"
-import { PipelineMark, Rail, liveLine } from "./PipelineMark"
-import { costOf, dollars, tokens } from "./pipeline-board"
+import { PipelineMark, Rail, liveLine, startText, startingText } from "./PipelineMark"
+import { costOf, dollars, nextStage, tokens } from "./pipeline-board"
 
-type Data = { state: PipelineState | null; refine: string | null; plan: string | null }
-type Fold = "refine" | "plan" | "runs"
+type Data = { state: PipelineState | null; refine: string | null; plan: string | null; build: string | null }
+type Fold = Stage | "runs"
 const FOLLOW_MS = 5_000
 const IDLE_MS = 30_000
 const CONFIRM_MS = 4_000
@@ -138,7 +138,9 @@ function Units({ units }: { units: Unit[] }) {
             <span className="inline-flex shrink-0 items-center gap-1.5 text-[13px] font-semibold"><i className="size-2 rounded-[3px]" style={{ background: repoDot(u.repo) }} />{u.repo}</span>
             <span className="min-w-0 truncate text-[13px] text-text-muted">{u.title}</span>
           </span>
-          <span className="font-mono text-[11px] text-faint">{u.subtask ?? ""}</span>
+          {u.pr ? <a href={u.pr} target="_blank" rel="noreferrer" className="font-mono text-[11px] font-semibold text-brand no-underline hover:underline">PR #{u.pr.split("/").pop()}</a>
+            : u.status === "failed" ? <span className="text-[11px] font-semibold text-bad">Failed</span>
+            : <span className="font-mono text-[11px] text-faint">{u.subtask ?? ""}</span>}
           <span />
           <span className="min-w-0 truncate font-mono text-[11px] text-faint">{u.branch}{u.dependsOn.length > 0 && <span className="font-sans"> · after {u.dependsOn.map(d => units.findIndex(x => x.id === d) + 1 || d).join(", ")}</span>}</span>
         </li>
@@ -150,15 +152,16 @@ function Units({ units }: { units: Unit[] }) {
 // A stage that ended: what it left, and the next step (or running it again).
 function Outcome({ state, onRun }: { state: PipelineState; onRun: (stage?: Stage) => void }) {
   const isFailed = state.status === "failed"
+  const next = nextStage(state)
   return (
     <div className="flex flex-col">
       <div className="flex items-center gap-2.5">
         <PipelineMark state={state} size={22} />
         <span className={cn("min-w-0 flex-1 text-[13.5px]", isFailed ? "text-bad" : "font-semibold text-work")}>{liveLine(state, undefined)}</span>
         {isFailed && <Button variant="outline" className="h-7 shrink-0 text-xs" onClick={() => onRun()}>Run again</Button>}
-        {!isFailed && state.stage === "refine" && <Button className="h-8 shrink-0 gap-1.5 text-xs" onClick={() => onRun("plan")}><Play size={13} className="fill-current" />Run plan</Button>}
+        {next && <Button className="h-8 shrink-0 gap-1.5 text-xs" onClick={() => onRun(next)}><Play size={13} className="fill-current" />{startText(next)}</Button>}
       </div>
-      {!isFailed && state.stage === "plan" && state.units?.length ? <Units units={state.units} /> : null}
+      {state.stage !== "refine" && state.units?.length ? <Units units={state.units} /> : null}
     </div>
   )
 }
@@ -181,7 +184,7 @@ function RunButton({ ticket, onStarted }: { ticket: Ticket; onStarted: () => voi
 // ---------- the foot ----------
 
 const minutes = (ms: number) => `${Math.max(1, Math.round(ms / 60_000))} min`
-const DONE: Record<Stage, (r: Run) => string> = { refine: () => "Refined", plan: r => `Planned in ${r.units} unit${r.units === 1 ? "" : "s"}` }
+const DONE: Record<Stage, (r: Run) => string> = { refine: () => "Refined", plan: r => `Planned in ${r.units} unit${r.units === 1 ? "" : "s"}`, build: r => `Built ${r.units} unit${r.units === 1 ? "" : "s"}` }
 const sayRun = (r: Run, doing: string | null) =>
   r.status === "running" ? (doing ?? "Starting") : r.status === "needs-info" ? `Asked ${r.questions} question${r.questions === 1 ? "" : "s"}` : r.status === "failed" ? (r.error ?? "Failed") : DONE[r.stage ?? "refine"](r)
 
@@ -237,11 +240,11 @@ export function Pipeline({ ticket, onTaken }: { ticket: Ticket; onTaken: () => v
   if (!data) return null
   const state = data.state
   const loadSoon = () => setTimeout(() => void load(), 800)
-  const start = async (stage?: Stage) => (await act("/api/pipeline/start", { key: ticket.key, stage }, stage === "plan" ? "Planning: a session starts" : "A session starts")) && loadSoon()
+  const start = async (stage?: Stage) => (await act("/api/pipeline/start", { key: ticket.key, stage }, stage ? startingText(stage) : "A session starts")) && loadSoon()
   const reset = () => confirmReset(async () => (await act("/api/pipeline/reset", { key: ticket.key }, "Started over: the comments stay in Jira")) && void load())
   const runs = state?.history ?? []
   const toggle = (f: Fold) => setFold(open => (open === f ? null : f))
-  const docs = ([["refine", "Refinement", data.refine], ["plan", "Plan", data.plan]] as const).filter(([, , text]) => text)
+  const docs = ([["refine", "Refinement", data.refine], ["plan", "Plan", data.plan], ["build", "Build", data.build]] as const).filter(([, , text]) => text)
   return (
     <section className="overflow-hidden rounded-[12px] border border-line bg-side">
       <header className="flex items-start gap-4 px-4 pt-3.5 pb-3">

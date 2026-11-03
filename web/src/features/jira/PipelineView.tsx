@@ -17,8 +17,8 @@ import { dialog } from "@/app/open-dialog"
 import { ago, repoDot } from "@/features/session/state"
 import type { PipelineState, Unit } from "@server/pipeline"
 import { act } from "./Pipeline"
-import { PipelineMark, liveLine } from "./PipelineMark"
-import { BUILT, STAGES, columnOf, costOf, dollars, isQueued } from "./pipeline-board"
+import { PipelineMark, liveLine, startText, startingText } from "./PipelineMark"
+import { BUILT, STAGES, columnOf, costOf, dollars, isQueued, nextStage } from "./pipeline-board"
 
 const openTicket = (key: string) => dialog.set({ kind: "ticket", key })
 const onOpenKey = (key: string) => (e: KeyboardEvent) => e.key === "Enter" && e.target === e.currentTarget && openTicket(key)
@@ -37,8 +37,8 @@ function TicketCard({ state, card, now }: { state: PipelineState; card: Card | u
   const isRunning = state.status === "running"
   const isAsking = state.status === "needs-info"
   const isWaiting = isQueued(state)
-  // Refined, it may be planned from here; there is no agent past Plan yet.
-  const next = isWaiting && state.stage === "refine" ? "plan" : null
+  // Done with its stage, the next one starts from here (if there is an agent for it).
+  const next = nextStage(state)
   const time = ago(isRunning ? state.startedAt : (state.endedAt ?? state.startedAt), now)
   return (
     <article tabIndex={0} onClick={() => openTicket(state.key)} onKeyDown={onOpenKey(state.key)} data-edge={isAsking ? "waiting" : undefined}
@@ -65,8 +65,8 @@ function TicketCard({ state, card, now }: { state: PipelineState; card: Card | u
       {state.units?.length ? <Repos units={state.units} /> : null}
       {next && (
         <Button className="h-7 self-start gap-1.5 text-xs"
-          onClick={e => (e.stopPropagation(), void act("/api/pipeline/start", { key: state.key, stage: next }, "Planning: a session starts"))}>
-          <Play size={12} className="fill-current" />Run plan
+          onClick={e => (e.stopPropagation(), void act("/api/pipeline/start", { key: state.key, stage: next }, startingText(next)))}>
+          <Play size={12} className="fill-current" />{startText(next)}
         </Button>
       )}
     </article>
