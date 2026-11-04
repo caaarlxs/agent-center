@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { columnOf, isQueued, journeyOf, nextStage, toFix, waitingStep } from "./pipeline-board"
 
-type At = "refine" | "plan" | "build" | "review" | "staging" | "prod"
+type At = "refine" | "plan" | "build" | "review" | "staging" | "test" | "prod" | "smoke"
 const at = (stage: At, status: "running" | "needs-info" | "ready" | "failed", findings?: { id: string; severity: string }[], release?: unknown) => ({ stage, status, findings, release }) as never
 
 describe("columnOf", () => {
@@ -21,8 +21,10 @@ describe("columnOf", () => {
     expect(nextStage(at("plan", "ready"))).toBe("build")
     expect(nextStage(at("build", "ready"))).toBe("review")
     expect(nextStage(at("review", "ready"))).toBe("staging")
-    expect(nextStage(at("staging", "ready"))).toBe("prod")
-    expect(nextStage(at("prod", "ready"))).toBeNull()
+    expect(nextStage(at("staging", "ready"))).toBe("test")
+    expect(nextStage(at("test", "ready"))).toBe("prod")
+    expect(nextStage(at("prod", "ready"))).toBe("smoke")
+    expect(nextStage(at("smoke", "ready"))).toBeNull()
     expect(nextStage(at("plan", "running"))).toBeNull()
   })
 })
@@ -47,11 +49,20 @@ describe("a review", () => {
 })
 
 describe("a release", () => {
-  it("waits for prod in the Prod column, and stays there once live", () => {
-    expect(columnOf(at("staging", "ready"))).toBe(5)
+  it("tests in the Staging column and checks in the Prod one; once checked in prod, it waits for nothing", () => {
+    expect(columnOf(at("staging", "ready"))).toBe(4)
     expect(isQueued(at("staging", "ready"))).toBe(true)
+    expect(columnOf(at("test", "running"))).toBe(4)
+    expect(columnOf(at("test", "ready"))).toBe(5)
     expect(columnOf(at("prod", "ready"))).toBe(5)
-    expect(isQueued(at("prod", "ready"))).toBe(false)
+    expect(columnOf(at("smoke", "ready"))).toBe(5)
+    expect(isQueued(at("smoke", "ready"))).toBe(false)
+  })
+  it("keeps a ticket whose test failed in Staging, waiting for you", () => {
+    const failed = { stage: "test", status: "ready", results: [{ id: "T1", status: "fail" }, { id: "T2", status: "pass" }] } as never
+    expect(nextStage(failed)).toBeNull()
+    expect(columnOf(failed)).toBe(4)
+    expect(journeyOf(failed, null)[4]).toEqual({ stage: "staging", tone: "ask", fact: "1/2 pass" })
   })
   it("tells the step that waits for you", () => {
     const release = { env: "staging", steps: [{ id: "R1", status: "done" }, { id: "R2", status: "waiting" }, { id: "R3", status: "pending" }] }

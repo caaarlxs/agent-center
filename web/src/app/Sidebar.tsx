@@ -147,6 +147,8 @@ export function Sidebar() {
   const isDrawerOpen = sideOpen.use()
   const isSlim = isSlimChosen && !isDrawerOpen // the drawer always shows words
   const hasJira = !!jiraSetup.use()
+  // The pipeline shows only where a team set it up (its stages' instructions).
+  const hasPipeline = useLive(l => l.snapshot?.features?.pipeline === true)
   useEffect(() => void loadJira(), [])
   const repos = useLive(l => l.snapshot?.repos) ?? []
   const cards = yours(useLive(l => l.snapshot?.cards) ?? [])
@@ -197,7 +199,7 @@ export function Sidebar() {
           </Button>
         </div>
         <nav className="flex flex-col gap-px">
-          {VIEWS.filter(v => (v.key !== "tickets" && v.key !== "pipeline") || hasJira).map(v => (
+          {VIEWS.filter(v => (v.key === "tickets" ? hasJira : v.key === "pipeline" ? hasJira && hasPipeline : true)).map(v => (
             <button key={v.key} className={navRow(shown === v.key, isSlim)} onClick={() => chooseView(v.key)} title={v.title}>
               {v.icon}{!isSlim && v.label}
               {v.key === "inbox" && (unread > 0 || asking > 0) && (

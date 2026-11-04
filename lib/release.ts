@@ -1,19 +1,21 @@
 // A ticket's release: the steps that take its PRs to staging, and then to
 // prod, run by the board itself (no agent: the same commands every time, and
 // nothing to pay). Each step is a merge, a tag, a branch promoted, a script
-// on the data, something only a person does, or the check at the end. Every
+// on the data, or something only a person does. Every
 // script is simulated first of all, before anything deploys (on the code of
 // its PR), and waits for you to look at its report: that is your yes to the
 // release. Then the deploys, and each script for real in its place. In
 // staging the board merges, and runs a script you approved, on its own; what
-// only a person does and the check wait for you. In prod everything but a
+// only a person does waits for you. In prod everything but a
 // simulation waits for you, with what it is about to do (the tag it would
 // push and what goes with it, the simulation's report).
 //
 // How each repo deploys comes from the team's <data>/pipeline/stages/deploy.json
 // (DeployConfig): "merge" (a merge to the default branch deploys), "tag" (a
 // version tag deploys), "promote:<branch>" (a PR from the default branch to
-// that one), or "manual:<what to do>".
+// that one), "manual:<what to do>", or "skip" (nothing to deploy there: a
+// repo of documents that goes to prod only). Testing a release is a stage of
+// its own after it (an agent's), not a step of it.
 //
 // A step moves on each tick (advanceRelease): pending → waiting for you (when
 // it is gated and not approved yet) → running → done, or failed. It follows a
@@ -55,6 +57,7 @@ export type DeployConfig = {
   repos: Record<string, Partial<Record<Env, string>>>
   tag: { bump: "major" | "minor" | "patch" }
   setup: Record<string, string> // a repo's command that readies a checkout to run its scripts
+  contextRepo?: string // the team's context for agents: changed only when a ticket makes a rule of it untrue
 }
 export const DEFAULT_CONFIG: DeployConfig = { mergeMethod: "merge", default: { staging: "merge", prod: "tag" }, repos: {}, tag: { bump: "minor" }, setup: {} }
 
@@ -65,9 +68,10 @@ const blank = (kind: StepKind, title: string, extra: Partial<ReleaseStep> = {}):
 })
 const prNumber = (url: string | null | undefined) => url?.split("/").pop() ?? ""
 
-// How a unit gets to an environment, by its repo's way of deploying.
-function deployStep(u: Unit, env: Env, config: DeployConfig): Omit<ReleaseStep, "id"> {
+// How a unit gets to an environment, by its repo's way of deploying (none, for "skip").
+function deployStep(u: Unit, env: Env, config: DeployConfig): Omit<ReleaseStep, "id"> | null {
   const how = config.repos[u.repo]?.[env] ?? config.default[env]
+  if (how === "skip") return null
   const base = { unit: u.id, repo: u.repo, links: u.pr ? [{ label: `PR #${prNumber(u.pr)}`, url: u.pr }] : [] }
   if (how.startsWith("manual:")) return blank("manual", `${u.repo}: ${how.slice(7).trim()}`, base)
   if (how.startsWith("promote:")) return blank("promote", `${u.repo}: release to ${how.slice(8)}`, { ...base, value: how.slice(8) })
@@ -77,7 +81,7 @@ function deployStep(u: Unit, env: Env, config: DeployConfig): Omit<ReleaseStep, 
 
 // The steps of a release to an environment: its scripts simulated first;
 // then the plan's order (else its units, then its scripts), each script for
-// real in its place, a repo released to prod once; and a check at the end.
+// real in its place, a repo released to prod once.
 export function releaseSteps(state: PipelineState, env: Env, config: DeployConfig): ReleaseStep[] {
   const units = state.units ?? []
   const scripts = state.scripts ?? []
@@ -92,7 +96,7 @@ export function releaseSteps(state: PipelineState, env: Env, config: DeployConfi
     const u = item.kind === "unit" ? units.find(x => x.id === item.id) : undefined
     if (u) {
       const step = deployStep(u, env, config)
-      if (step.kind === "merge" || !released.has(u.repo)) steps.push(step)
+      if (step && (step.kind === "merge" || !released.has(u.repo))) steps.push(step)
       released.add(u.repo)
     }
     const x = item.kind === "script" ? scripts.find(s => s.id === item.id) : undefined
@@ -102,7 +106,6 @@ export function releaseSteps(state: PipelineState, env: Env, config: DeployConfi
       steps.push(blank("execute", `${x.title}: run for real`, { unit: x.unit, repo, script: x.id }))
     }
   }
-  steps.push(blank("check", env === "staging" ? "Test it in staging" : "Check it in prod"))
   return [...simulations, ...steps].map((s, i) => ({ ...s, id: `R${i + 1}` }))
 }
 

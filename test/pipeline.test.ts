@@ -8,8 +8,8 @@ const questions = [
 
 describe("parseResult", () => {
   it("reads the verdict and the questions", () => {
-    expect(parseResult(JSON.stringify({ verdict: "needs-info", questions }), "refine")).toEqual({ verdict: "needs-info", questions, units: [], checklist: [], findings: [], fixed: [], scripts: [], order: [] })
-    expect(parseResult(`{"verdict":"ready","questions":[]}`, "refine")).toEqual({ verdict: "ready", questions: [], units: [], checklist: [], findings: [], fixed: [], scripts: [], order: [] })
+    expect(parseResult(JSON.stringify({ verdict: "needs-info", questions }), "refine")).toEqual({ verdict: "needs-info", questions, units: [], checklist: [], findings: [], fixed: [], scripts: [], order: [], results: [], contextImpact: [] })
+    expect(parseResult(`{"verdict":"ready","questions":[]}`, "refine")).toEqual({ verdict: "ready", questions: [], units: [], checklist: [], findings: [], fixed: [], scripts: [], order: [], results: [], contextImpact: [] })
   })
   it("numbers questions without an id and drops empty ones", () => {
     const r = parseResult(JSON.stringify({ verdict: "needs-info", questions: [{ question: "¿A?", proposal: "" }, { question: " " }] }), "refine")
@@ -58,6 +58,17 @@ describe("parseResult", () => {
       { id: "F1", unit: "U1", severity: "blocker", file: "src/a.ts", line: 12, title: "El campo no se guarda", detail: "save() lo ignora", fix: "Añadirlo a save()" },
       { id: "F7", unit: null, severity: "minor", file: null, line: null, title: "Nombre confuso", detail: "", fix: "" },
     ])
+  })
+  it("reads what a test found of each criterion, a failure when it says nothing else", () => {
+    const results = [{ criterion: "El aviso sale", status: "pass", evidence: "GET /home → 200" }, { id: "T9", criterion: "El modal", status: "?" }, { criterion: " " }]
+    expect(parseResult(JSON.stringify({ verdict: "ready", results }), "test").results).toEqual([
+      { id: "T1", criterion: "El aviso sale", status: "pass", evidence: "GET /home → 200" },
+      { id: "T9", criterion: "El modal", status: "fail", evidence: "" },
+    ])
+  })
+  it("reads a change to the team's context only with the words it makes untrue", () => {
+    const contextImpact = [{ file: "glossary/publicacion.md", quote: "Una empresa se publica si…", why: "Ahora también cuenta la facturación" }, { file: "x.md", why: "sin cita" }]
+    expect(parseResult(JSON.stringify({ verdict: "ready", contextImpact }), "refine").contextImpact).toEqual([contextImpact[0] as never])
   })
   it("reads the findings a build fixed", () => {
     const units = [{ id: "U1", repo: "api-service", title: "Campo", status: "done", pr: "https://x/pull/1" }]
@@ -162,9 +173,16 @@ describe("stageToRun", () => {
     const reviewed = (severity: string) => ({ stage: "review", status: "ready", findings: [{ id: "F1", severity }] }) as never
     expect(stageToRun(reviewed("minor"), "staging")).toBe("staging")
     expect(() => stageToRun(reviewed("major"), "staging")).toThrow()
-    expect(stageToRun(at("staging" as never, "ready"), "prod")).toBe("prod")
+    expect(stageToRun(at("staging" as never, "ready"), "test")).toBe("test")
+    expect(() => stageToRun(at("staging" as never, "ready"), "prod")).toThrow()
     expect(() => stageToRun(at("review", "ready"), "prod")).toThrow()
     expect(stageToRun(at("staging" as never, "failed"))).toBe("staging")
+  })
+  it("deploys to prod only once staging is tested with nothing failing, and checks prod after", () => {
+    const tested = (status: string) => ({ stage: "test", status: "ready", results: [{ id: "T1", criterion: "c", status, evidence: "" }] }) as never
+    expect(stageToRun(tested("pass"), "prod")).toBe("prod")
+    expect(() => stageToRun(tested("fail"), "prod")).toThrow()
+    expect(stageToRun(at("prod" as never, "ready"), "smoke")).toBe("smoke")
   })
   it("plans only once the refinement is done", () => {
     expect(stageToRun(at("refine", "ready"), "plan")).toBe("plan")
@@ -189,6 +207,26 @@ describe("argsFor", () => {
     expect(argsFor("plan", "/data/pipeline")).toEqual(expect.arrayContaining(["--effort", "medium"]))
     expect(argsFor("build", "/data/pipeline")).toEqual(expect.arrayContaining(["--add-dir", "/data/pipeline/repos"]))
     expect(argsFor("review", "/data/pipeline")).not.toContain("--add-dir")
+  })
+})
+
+describe("what each stage may not do", () => {
+  const denied = (stage: Parameters<typeof argsFor>[0]) => {
+    const args = argsFor(stage, "/data/pipeline")
+    return args.slice(args.indexOf("--disallowedTools") + 1)
+  }
+  it("never lets an agent merge, force a push, push to the default branch or run a script for real", () => {
+    for (const stage of ["refine", "plan", "build", "review", "test", "smoke"] as const)
+      expect(denied(stage)).toEqual(expect.arrayContaining(["Bash(gh pr merge:*)", "Bash(git push --force:*)", "Bash(git push origin master:*)", "Bash(EXECUTE=true:*)", "Bash(STAGE=prod:*)"]))
+  })
+  it("keeps the stages that only read out of the repos", () => {
+    for (const stage of ["refine", "plan", "review", "test", "smoke"] as const)
+      expect(denied(stage)).toEqual(expect.arrayContaining(["Bash(git push:*)", "Bash(git commit:*)", "Edit(//data/pipeline/repos/**)", "Write(//data/pipeline/repos/**)"]))
+    expect(denied("build")).not.toContain("Bash(git push:*)")
+  })
+  it("keeps AWS for the test in staging only", () => {
+    for (const stage of ["refine", "plan", "build", "review", "smoke"] as const) expect(denied(stage)).toContain("Bash(aws:*)")
+    expect(denied("test")).not.toContain("Bash(aws:*)")
   })
 })
 

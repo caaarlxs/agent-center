@@ -42,13 +42,15 @@ import { sessionSpend, type Spend } from "./usage"
 import { activityOf } from "./activity"
 import { existsSync } from "node:fs"
 import { exec } from "./proc"
+import { overLimits, prChecks, reposClean, type Check } from "./checks"
+import { readdir } from "node:fs/promises"
 import { DEFAULT_CONFIG, advanceRelease, approveStep, releaseSteps, retryStep, skipStep, type DeployConfig, type OrderItem, type Ops, type Release } from "./release"
 
-export type Stage = "refine" | "plan" | "build" | "review" | "staging" | "prod"
-const STAGE_NAMES: Stage[] = ["refine", "plan", "build", "review", "staging", "prod"]
+export type Stage = "refine" | "plan" | "build" | "review" | "staging" | "test" | "prod" | "smoke"
+const STAGE_NAMES: Stage[] = ["refine", "plan", "build", "review", "staging", "test", "prod", "smoke"]
 export const isStage = (v: unknown): v is Stage => STAGE_NAMES.includes(v as Stage)
 // The stages the board runs itself: a release to an environment.
-type AgentStage = Exclude<Stage, Env>
+export type AgentStage = Exclude<Stage, Env>
 const isRelease = (stage: Stage): stage is Env => stage === "staging" || stage === "prod"
 export type Question = { id: string; question: string; proposal: string }
 // A unit of work: one repo, one PR.
@@ -63,7 +65,11 @@ export type PlanScript = { id: string; unit: string | null; title: string; comma
 // What a review found in a unit's PR: how bad, where, and how to fix it.
 export type Severity = "blocker" | "major" | "minor"
 export type Finding = { id: string; unit: string | null; severity: Severity; file: string | null; line: number | null; title: string; detail: string; fix: string }
-export type Result = { verdict: "ready" | "needs-info"; questions: Question[]; units: Unit[]; checklist: ChecklistItem[]; findings: Finding[]; fixed: string[]; scripts: PlanScript[]; order: OrderItem[] }
+// What a test (in staging) or a smoke check (in prod) found of each criterion.
+export type TestResult = { id: string; criterion: string; status: "pass" | "fail"; evidence: string }
+// A rule of the team's context (its repo) that the ticket makes untrue: the file and the words.
+export type ContextImpact = { file: string; quote: string; why: string }
+export type Result = { verdict: "ready" | "needs-info"; questions: Question[]; units: Unit[]; checklist: ChecklistItem[]; findings: Finding[]; fixed: string[]; scripts: PlanScript[]; order: OrderItem[]; results: TestResult[]; contextImpact: ContextImpact[] }
 export type PipelineStatus = "running" | "needs-info" | "ready" | "failed"
 export type Run = { n: number; stage: Stage; sessionId: string | null; startedAt: number; endedAt: number | null; status: PipelineStatus; questions: number; units: number; findings?: number; error: string | null; spend?: Spend | null }
 export type PipelineState = {
@@ -83,6 +89,9 @@ export type PipelineState = {
   scripts?: PlanScript[] // the plan's scripts on the data
   order?: OrderItem[] // the plan's order for a release
   release?: Release | null // the release at hand (staging, then prod)
+  results?: TestResult[] // the last test's (or smoke check's), criterion by criterion
+  contextImpact?: ContextImpact[] // the refinement's: what of the team's context the ticket changes
+  checks?: Check[] // what the board checked of the last run, by itself
   checked?: string[] // the items of it the build marked done
   findings?: Finding[] // the last review's
   fixed?: string[] // the findings a build fixed since
@@ -94,7 +103,7 @@ export const MARK = "🤖 Agent Center"
 // The first words of a stage's prompt: they tell its session from yours.
 const TAG = "[Pipeline]"
 export const pipelineKeyOf = (prompt?: string | null) => (prompt?.startsWith(`${TAG} `) ? (prompt.slice(TAG.length + 1).match(/^[A-Z][A-Z0-9]+-\d+/)?.[0] ?? null) : null)
-export const LABELS = { on: "agent", needsInfo: "agent-needs-info", ready: "agent-ready", planned: "agent-planned", built: "agent-built", reviewed: "agent-reviewed", staging: "agent-staging", prod: "agent-prod" }
+export const LABELS = { on: "agent", needsInfo: "agent-needs-info", ready: "agent-ready", planned: "agent-planned", built: "agent-built", reviewed: "agent-reviewed", staging: "agent-staging", tested: "agent-tested", prod: "agent-prod", live: "agent-live" }
 const ROOT = join(DATA_DIR, "pipeline")
 export const STAGES_DIR = join(ROOT, "stages")
 const POLL_MS = 3 * 60_000
@@ -149,17 +158,49 @@ const STAGE: Record<AgentStage, StageDef> = {
 
 1. Lee ${join(STAGES_DIR, "review.md")} y ${join(STAGES_DIR, "environment.md")}, y síguelos. Si plan.json tiene \`scripts\`, lee también ${join(STAGES_DIR, "scripts.md")}.
 2. Las PRs están en ${join(dir, "build.json")}; el plan, en ${join(dir, "plan.md")}; el refinamiento y sus criterios de aceptación, en ${join(dir, "refine.md")}; el ticket, en ${join(dir, "ticket.md")}. El código de cada unidad está en su worktree de ${join(dir, "work")}: léelo, no lo cambies.
-3. Si existe ${join(dir, "review.json.prev")}, es la revisión anterior: comprueba primero que sus hallazgos están arreglados.
+3. Si existe ${join(dir, "review.json.prev")}, es la revisión anterior: comprueba primero que sus hallazgos están arreglados. Lo que el board ya ha comprobado de cada PR (borrador, rama, base, checks de CI, tests borrados o desactivados) está en ${join(dir, "checks.json")}: no lo repitas; cada aviso que tenga es un hallazgo que confirmas o descartas.
 4. Escribe los hallazgos en ${join(dir, "review.md")} y el resumen en ${join(dir, "review.summary.md")}.
 5. Escribe al final ${join(dir, "review.json")}: {"verdict": "ready" | "needs-info", "questions": [...], "findings": [{"id": "F1", "unit": "U1", "severity": "blocker" | "major" | "minor", "file": "ruta", "line": 12, "title": "...", "detail": "...", "fix": "..."}]}.`,
+  },
+  test: {
+    verb: "probar", title: "Prueba en staging", done: "probado en staging", label: LABELS.tested, unlabel: [], model: "claude-opus-5-5", effort: "high", writes: false,
+    brief: (key, dir) => `Eres la etapa de prueba del pipeline: probar el ticket ${key} en staging, ya desplegado.
+
+1. Lee ${join(STAGES_DIR, "test.md")} y ${join(STAGES_DIR, "environment.md")}, y síguelos.
+2. Los criterios de aceptación y el plan de verificación están en ${join(dir, "refine.md")}; el plan, en ${join(dir, "plan.md")}; lo desplegado, en ${join(dir, "build.json")}.
+3. Solo staging. Nunca prod: ni con STAGE=prod, ni con sus tablas, ni con sus URLs.
+4. Escribe el informe en ${join(dir, "test.md")} y el resumen en ${join(dir, "test.summary.md")}.
+5. Escribe al final ${join(dir, "test.json")}: {"verdict": "ready" | "needs-info", "questions": [...], "results": [{"id": "T1", "criterion": "...", "status": "pass" | "fail", "evidence": "..."}]}.`,
+  },
+  smoke: {
+    verb: "comprobar", title: "Comprobación en prod", done: "comprobado en prod", label: LABELS.live, unlabel: [], model: "claude-opus-5-5", effort: "medium", writes: false,
+    brief: (key, dir) => `Eres la última etapa del pipeline: comprobar el ticket ${key} en prod, ya desplegado.
+
+1. Lee ${join(STAGES_DIR, "smoke.md")} y ${join(STAGES_DIR, "environment.md")}, y síguelos.
+2. Los criterios de aceptación están en ${join(dir, "refine.md")}; la prueba de staging, en ${join(dir, "test.md")}.
+3. Solo lectura: en prod no creas, cambias ni borras nada.
+4. Escribe el informe en ${join(dir, "smoke.md")} y el resumen en ${join(dir, "smoke.summary.md")}.
+5. Escribe al final ${join(dir, "smoke.json")}: {"verdict": "ready" | "needs-info", "questions": [...], "results": [{"id": "P1", "criterion": "...", "status": "pass" | "fail", "evidence": "..."}]}.`,
   },
 }
 // Clean: no user settings (your model, effort, hooks, plugins and CLAUDE.md
 // come from there), no connectors; its model and effort; and, for a stage
 // that writes, the repos' folder too.
+// What no agent may do, enforced by Claude Code itself (the rest is checked
+// after the run, and only warned of: an agent always gets to finish): merge,
+// force a push, push to a default branch, or run anything for real or on
+// prod. The stages that only read keep out of the repos; only the test in
+// staging may reach AWS.
+const NEVER = ["Bash(gh pr merge:*)", "Bash(git push --force:*)", "Bash(git push -f:*)", "Bash(git push origin master:*)", "Bash(git push origin main:*)",
+  "Bash(git push origin HEAD:master:*)", "Bash(git push origin HEAD:main:*)", "Bash(EXECUTE=true:*)", "Bash(STAGE=prod:*)"]
+const deniedFor = (stage: AgentStage, root: string) => [
+  ...NEVER,
+  ...(STAGE[stage].writes ? [] : ["Bash(git push:*)", "Bash(git commit:*)", "Bash(gh pr create:*)", `Edit(/${join(root, "repos")}/**)`, `Write(/${join(root, "repos")}/**)`]),
+  ...(stage === "test" ? [] : ["Bash(aws:*)"]),
+]
 export const argsFor = (stage: AgentStage, root = ROOT) => {
   const s = STAGE[stage]
-  return ["--setting-sources", "project,local", "--strict-mcp-config", "--model", s.model, "--effort", s.effort, ...(s.writes ? ["--add-dir", join(root, "repos")] : [])]
+  return ["--setting-sources", "project,local", "--strict-mcp-config", "--model", s.model, "--effort", s.effort, ...(s.writes ? ["--add-dir", join(root, "repos")] : []), "--disallowedTools", ...deniedFor(stage, root)]
 }
 
 const listOf = (v: unknown): any[] => (Array.isArray(v) ? v : [])
@@ -188,6 +229,15 @@ const orderIn = (v: unknown): OrderItem[] =>
   listOf(v)
     .filter(x => ["unit", "script", "manual"].includes(x?.step) && (x.step === "manual" ? textOf(x.text) : textOf(x.id)))
     .map(x => ({ kind: x.step, id: textOf(x.id) || null, text: textOf(x.text) || null, envs: ENVS.filter(e => listOf(x.envs).includes(e)) }))
+const resultsIn = (v: unknown): TestResult[] =>
+  listOf(v)
+    .filter(r => textOf(r?.criterion))
+    .map((r, i) => ({ id: String(r.id ?? `T${i + 1}`), criterion: textOf(r.criterion), status: r.status === "pass" ? ("pass" as const) : ("fail" as const), evidence: textOf(r.evidence) }))
+// Only with the words it makes untrue: else it is no impact at all.
+const impactIn = (v: unknown): ContextImpact[] =>
+  listOf(v).filter(x => textOf(x?.file) && textOf(x?.quote)).map(x => ({ file: textOf(x.file), quote: textOf(x.quote), why: textOf(x.why) }))
+// The criteria a test (or a smoke check) found failing.
+export const failing = (results: TestResult[] | undefined) => (results ?? []).filter(r => r.status === "fail")
 // The findings that stop a ticket: they go back to Build.
 export const blocking = (findings: Finding[] | undefined) => (findings ?? []).filter(f => f.severity !== "minor")
 // The findings a build after a review fixes: the ones you chose, else the
@@ -226,7 +276,7 @@ export function parseResult(text: string, stage: Stage): Result {
     .filter(c => typeof c?.text === "string" && c.text.trim())
     .map((c, i) => ({ id: String(c.id ?? `C${i + 1}`), text: c.text.trim(), unit: typeof c.unit === "string" && c.unit ? c.unit : null }))
   if (stage === "plan" && data.verdict === "ready" && !units.length) throw new Error("plan.json is ready but has no units")
-  return { verdict: data.verdict, questions, units, checklist, findings: findingsIn(data.findings), fixed: listOf(data.fixed).map(String), scripts: scriptsIn(data.scripts), order: orderIn(data.release) }
+  return { verdict: data.verdict, questions, units, checklist, findings: findingsIn(data.findings), fixed: listOf(data.fixed).map(String), scripts: scriptsIn(data.scripts), order: orderIn(data.release), results: resultsIn(data.results), contextImpact: impactIn(data.contextImpact) }
 }
 
 export const questionsComment = (key: string, questions: Question[], stage: AgentStage) =>
@@ -292,7 +342,7 @@ export async function pipelineOf(key: string) {
   }
   // A stage's document; the build has only its summary.
   const doc = async (stage: Stage) => (state ? ((await readText(join(dirOf(key), `${stage}.md`))) ?? readText(join(dirOf(key), `${stage}.summary.md`))) : null)
-  return { state: state && (await withSpend(state)), refine: await doc("refine"), plan: await doc("plan"), build: await doc("build"), review: await doc("review"), preview: await previewOf(state) }
+  return { state: state && (await withSpend(state)), refine: await doc("refine"), plan: await doc("plan"), build: await doc("build"), review: await doc("review"), test: await doc("test"), smoke: await doc("smoke"), preview: await previewOf(state) }
 }
 
 // What the running stage does now: its session's steps and subagents, and,
@@ -329,7 +379,7 @@ const EMPTY = (key: string, runs: number, stage: Stage): PipelineState =>
 const fresh = async (key: string, runs: number, stage: Stage): Promise<PipelineState> => {
   const prev = await stateOf(key)
   // The plan's units and to-do list, and the review's findings, stay with the ticket for the stages after it.
-  return { ...EMPTY(key, runs, stage), summary: prev?.summary, history: prev?.history ?? [], units: prev?.units, checklist: prev?.checklist, checked: prev?.checked, scripts: prev?.scripts,
+  return { ...EMPTY(key, runs, stage), summary: prev?.summary, history: prev?.history ?? [], units: prev?.units, checklist: prev?.checklist, checked: prev?.checked, scripts: prev?.scripts, contextImpact: prev?.contextImpact,
     ...(stage === "review" ? {} : { findings: prev?.findings, fixed: stage === "build" ? [] : prev?.fixed }) }
 }
 // A stage's session is the pipeline's, not yours: once it ends it leaves the
@@ -405,9 +455,11 @@ async function finish(key: string) {
     await save({ ...state, status: "needs-info", questions: result.questions, askedAt: Date.now(), endedAt: Date.now() })
     return
   }
+  const checks = await checksAfter(state, result)
+  await writeJsonAtomic(join(dir, "checks.json"), { stage: state.stage, checks }, { pretty: true })
   // A build is done only with a PR for every unit; else it shows what it did and failed.
   const left = state.stage === "build" ? unbuilt(result.units) : null
-  if (left) return void (await save({ ...state, status: "failed", error: left, units: result.units, endedAt: Date.now() }))
+  if (left) return void (await save({ ...state, status: "failed", error: left, units: result.units, checks, endedAt: Date.now() }))
   // Jira gets the summary for people; the whole document, cut, only when there is none.
   const md = (await readText(join(dir, `${state.stage}.summary.md`))) ?? (await readText(join(dir, `${state.stage}.md`))) ?? ""
   const prs = result.units.filter(u => u.pr).map(u => `- ${u.repo}: ${u.pr}`).join("\n")
@@ -416,10 +468,33 @@ async function finish(key: string) {
   const checklist = state.stage === "plan" ? result.checklist : state.checklist
   const scripts = state.stage === "plan" ? result.scripts : state.scripts
   const checked = state.stage === "build" ? checkedIn(await readText(join(dir, "build.checklist.json"))) : state.checked
-  // A review keeps the build's units (it has none of its own) and leaves its findings.
-  const units = state.stage === "review" ? state.units : result.units
+  // Only a plan and a build leave units; the stages after them keep theirs.
+  const units = state.stage === "plan" || state.stage === "build" ? result.units : state.units
   const found = state.stage === "review" ? { findings: result.findings, fixed: [] } : state.stage === "build" ? { fixed: result.fixed } : {}
-  await save({ ...state, status: "ready", questions: [], units, checklist, checked, scripts, ...found, endedAt: Date.now() })
+  const tested = state.stage === "test" || state.stage === "smoke" ? { results: result.results } : {}
+  const context = state.stage === "refine" ? { contextImpact: result.contextImpact } : {}
+  await save({ ...state, status: "ready", questions: [], units, checklist, checked, scripts, ...found, ...tested, ...context, checks, endedAt: Date.now() })
+}
+
+// What the board checks of a run by itself (lib/checks.ts): the repos left
+// as they were by the stages that only read; each PR of a build; the team's
+// context changed only where the refinement said; the run's time and cost.
+async function checksAfter(state: PipelineState, result: Result): Promise<Check[]> {
+  const repos = join(ROOT, "repos")
+  const dirs = (await readdir(repos, { withFileTypes: true }).catch(() => [])).filter(d => d.isDirectory()).map(d => join(repos, d.name))
+  const contextRepo = (await deployConfig()).contextRepo
+  const spend = state.sessionId ? await sessionSpend(state.sessionId) : null
+  const checks: Check[] = []
+  if (state.stage !== "build") checks.push(...(await reposClean(dirs, releaseOps.sh)))
+  if (state.stage === "build") for (const u of result.units) checks.push(...(await prChecks(u, releaseOps.sh)))
+  if (state.stage === "plan" && contextRepo) {
+    const hasUnit = result.units.some(u => u.repo === contextRepo)
+    const isAsked = (state.contextImpact ?? []).length > 0
+    checks.push(hasUnit === isAsked ? { id: "context", label: hasUnit ? `${contextRepo} changes, as the refinement asked` : `${contextRepo} stays as it is`, status: "ok", detail: null }
+      : { id: "context", label: hasUnit ? `${contextRepo} changes, but the refinement found no rule it makes untrue` : `The refinement found rules of ${contextRepo} to change, and the plan has no unit for them`, status: "warn", detail: null })
+  }
+  checks.push(...overLimits(Date.now() - state.startedAt, spend?.cost ?? 0))
+  return checks
 }
 
 // The stage a start runs: the one asked for, else the ticket's own (again).
@@ -431,12 +506,15 @@ const NEEDS: Partial<Record<Stage, [Stage[], string]>> = {
   build: [["plan", "review"], "Build needs the plan done first"],
   review: [["build"], "Review needs the build done first"],
   staging: [["review"], "Staging needs a review with nothing to fix"],
-  prod: [["staging"], "Prod needs staging done first"],
+  test: [["staging"], "The test needs staging deployed first"],
+  prod: [["test"], "Prod needs staging tested first"],
+  smoke: [["prod"], "The check in prod needs prod deployed first"],
 }
 export function stageToRun(state: PipelineState | null, asked?: Stage): Stage {
   const stage = asked ?? state?.stage ?? "refine"
   const need = NEEDS[stage]
-  const isAfter = (prev: Stage) => state?.stage === prev && state.status === "ready" && !(stage === "staging" && blocking(state.findings).length)
+  const isBlocked = (state: PipelineState) => (stage === "staging" && blocking(state.findings).length > 0) || (stage === "prod" && failing(state.results).length > 0)
+  const isAfter = (prev: Stage) => state?.stage === prev && state.status === "ready" && !isBlocked(state)
   if (need && state?.stage !== stage && !need[0].some(isAfter)) throw new Error(need[1])
   return stage
 }
@@ -538,10 +616,13 @@ export async function pipelineReport(key: string, file: string) {
   return readText(join(dirOf(key), "scripts", file))
 }
 
+// The pipeline is on only where a team set it up: its stages' instructions.
+export const isPipelineOn = () => existsSync(join(STAGES_DIR, "refine.md"))
+
 // The steps a release would take, before you start it.
 async function previewOf(state: PipelineState | null) {
   if (!state || state.status !== "ready") return null
-  const env: Env | null = state.stage === "review" && !blocking(state.findings).length ? "staging" : state.stage === "staging" ? "prod" : null
+  const env: Env | null = state.stage === "review" && !blocking(state.findings).length ? "staging" : state.stage === "test" && !failing(state.results).length ? "prod" : null
   return env ? { env, steps: releaseSteps(state, env, await deployConfig()) } : null
 }
 

@@ -12,18 +12,23 @@ describe("releaseSteps", () => {
     const order = [{ kind: "manual", id: null, text: "Tell QA", envs: ["staging"] }, { kind: "unit", id: "U2", text: null, envs: [] }, { kind: "unit", id: "U1", text: null, envs: [] }, { kind: "script", id: "S1", text: null, envs: [] }, { kind: "unit", id: "U3", text: null, envs: [] }]
     const steps = releaseSteps(state({ order }), "staging", config)
     expect(steps.map(s => [s.id, s.kind, s.script ?? s.repo])).toEqual([
-      ["R1", "simulate", "S1"], ["R2", "manual", null], ["R3", "merge", "web-app"], ["R4", "merge", "api-service"], ["R5", "execute", "S1"], ["R6", "manual", "mobile-app"], ["R7", "check", null],
+      ["R1", "simulate", "S1"], ["R2", "manual", null], ["R3", "merge", "web-app"], ["R4", "merge", "api-service"], ["R5", "execute", "S1"], ["R6", "manual", "mobile-app"],
     ])
     expect(steps[5]!.title).toBe("mobile-app: Publish the app")
     expect(steps.every(s => s.status === "pending")).toBe(true)
   })
   it("without an order, takes the units in order and then the scripts", () => {
-    expect(releaseSteps(state(), "staging", config).map(s => s.kind)).toEqual(["simulate", "merge", "merge", "manual", "execute", "check"])
+    expect(releaseSteps(state(), "staging", config).map(s => s.kind)).toEqual(["simulate", "merge", "merge", "manual", "execute"])
+  })
+  it("leaves out a repo whose way to an environment is to skip it", () => {
+    const skips = { ...config, repos: { ...config.repos, "web-app": { staging: "skip", prod: "merge" } } }
+    expect(releaseSteps(state({ scripts: [] }), "staging", skips).map(s => s.repo)).toEqual(["api-service", "mobile-app"])
+    expect(releaseSteps(state({ scripts: [] }), "prod", skips).map(s => [s.kind, s.repo])).toEqual([["tag", "api-service"], ["merge", "web-app"], ["manual", "mobile-app"]])
   })
   it("takes prod by a tag, or by the repo's own way, each repo once", () => {
     const twice = [...units, unit("U4", "api-service", 10)]
     const steps = releaseSteps(state({ units: twice, scripts: [{ ...script, envs: ["staging"] }] }), "prod", config)
-    expect(steps.map(s => [s.kind, s.repo])).toEqual([["tag", "api-service"], ["promote", "web-app"], ["manual", "mobile-app"], ["check", null]])
+    expect(steps.map(s => [s.kind, s.repo])).toEqual([["tag", "api-service"], ["promote", "web-app"], ["manual", "mobile-app"]])
     expect(steps[1]!.value).toBe("prod")
   })
 })
@@ -33,7 +38,7 @@ describe("isGated", () => {
     const steps = releaseSteps(state(), "staging", config)
     const [merge, simulate, execute] = ["merge", "simulate", "execute"].map(k => steps.find(s => s.kind === k))
     expect([isGated(merge!, "staging"), isGated(simulate!, "staging"), isGated(execute!, "staging")]).toEqual([false, false, false])
-    expect(steps.filter(s => s.kind === "manual" || s.kind === "check").every(s => isGated(s, "staging"))).toBe(true)
+    expect(steps.filter(s => s.kind === "manual").every(s => isGated(s, "staging"))).toBe(true)
     expect(releaseSteps(state(), "prod", config).every(s => s.kind === "simulate" || isGated(s, "prod"))).toBe(true)
   })
 })
@@ -111,9 +116,10 @@ describe("advanceRelease", () => {
   })
   it("stops at a step that waits for you, and goes on once you approve it", async () => {
     const { ops } = fake({})
-    let release: Release = { env: "staging", steps: releaseSteps(state({ units: [], scripts: [], checklist: [{ id: "C1", text: "Ver el aviso", unit: null }] }), "staging", config) }
-    let r = await advanceRelease(release, { ...ctx, checklist: [{ id: "C1", text: "Ver el aviso", unit: null }] }, ops)
-    expect(r.release.steps[0]).toMatchObject({ kind: "check", status: "waiting", items: ["Ver el aviso"] })
+    const order = [{ kind: "manual", id: null, text: "Tell QA", envs: [] }]
+    let release: Release = { env: "staging", steps: releaseSteps(state({ units: [], scripts: [], order }), "staging", config) }
+    let r = await advanceRelease(release, ctx, ops)
+    expect(r.release.steps[0]).toMatchObject({ kind: "manual", status: "waiting", title: "Tell QA" })
     expect(r.isDone).toBe(false)
     r = await advanceRelease(approveStep(r.release, "R1"), ctx, ops)
     expect(r.release.steps[0]!.status).toBe("done")

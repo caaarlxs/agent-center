@@ -11,7 +11,7 @@
 // and start the stage again. Start over clears the run and the labels; the
 // comments stay. On someone else's ticket it runs only once you take it
 // (two clicks: it is assigned to you).
-import { Check, ChevronRight, Database, FlaskConical, ListChecks, Play, RotateCcw, Route } from "lucide-react"
+import { AlertTriangle, Check, ChevronRight, Database, FlaskConical, ListChecks, Play, RotateCcw, Route, ShieldCheck } from "lucide-react"
 import { useEffect, useState, type ReactNode } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -29,7 +29,8 @@ import { doingText } from "@/features/conversation/session-events"
 import { ago } from "@/features/session/state"
 import { repoDot } from "@/features/session/state"
 import type { Helper, Step } from "@server/activity"
-import type { ChecklistItem, Finding, PipelineState, PlanScript, Run, Severity, Stage, Unit } from "@server/pipeline"
+import type { ChecklistItem, Finding, PipelineState, PlanScript, Run, Severity, Stage, TestResult, Unit } from "@server/pipeline"
+import type { Check as BoardCheck } from "@server/checks"
 import { MODELS } from "@/features/prompt/Settings"
 import { PipelineMark, liveLine, startText, startingText, statusText } from "./PipelineMark"
 import { STAGE_KEYS, STAGES, costOf, dollars, isRelease, journeyOf, nextStage, stageAt, toFix, tokens } from "./pipeline-board"
@@ -37,7 +38,7 @@ import { ReleaseRail, ReleaseSteps, SkipFailed, StepAtHand } from "./Release"
 import { Journey } from "./Journey"
 import type { Release } from "@server/release"
 
-type Data = { state: PipelineState | null; refine: string | null; plan: string | null; build: string | null; review: string | null; preview: Release | null }
+type Data = { state: PipelineState | null; refine: string | null; plan: string | null; build: string | null; review: string | null; test: string | null; smoke: string | null; preview: Release | null }
 type OnStep = (step: string, action: "approve" | "skip", value?: string) => void
 type Fold = Stage | "runs"
 const FOLLOW_MS = 5_000
@@ -256,8 +257,9 @@ function FindingRow({ finding: f, unit, isFixed, isChosen, onChoose }: { finding
       <div className="min-w-0 flex-1">
       <button className="grid w-full grid-cols-[14px_minmax(0,1fr)_auto] items-baseline gap-x-2.5 gap-y-0.5 py-2 text-left" onClick={() => setOpen(o => !o)} aria-expanded={isOpen}>
         {isFixed ? <Check size={12} className="text-work" /> : <i className={cn("size-2 translate-y-[-1px] rounded-full", SEVERITY[f.severity].dot)} title={f.severity} />}
-        <span className={cn("text-[13px] leading-[1.45]", isFixed ? "text-text-muted line-through decoration-line-strong" : "text-text")}>{f.title}</span>
-        <span className="text-[11px] text-faint">{f.severity}</span>
+        <span className={cn("text-[13px] leading-[1.45]", isFixed ? "text-text-muted" : "text-text")}>{f.title}</span>
+        {/* The build says it fixed it: only the next review confirms it. */}
+        <span className={cn("text-[11px]", isFixed ? "font-semibold text-ask" : "text-faint")}>{isFixed ? "fixed · to confirm" : f.severity}</span>
         <span className="col-start-2 flex min-w-0 items-baseline gap-2 text-[11.5px] text-faint">
           {unit && <span className="inline-flex shrink-0 items-center gap-1.5"><i className="size-[7px] rounded-[2px]" style={{ background: repoDot(unit.repo) }} />{unit.repo}</span>}
         </span>
@@ -330,7 +332,7 @@ function RunButton({ ticket, onStarted }: { ticket: Ticket; onStarted: () => voi
 // ---------- the foot ----------
 
 const minutes = (ms: number) => `${Math.max(1, Math.round(ms / 60_000))} min`
-const DONE: Record<Stage, (r: Run) => string> = { refine: () => "Refined", plan: r => `Planned in ${r.units} unit${r.units === 1 ? "" : "s"}`, build: r => `Built ${r.units} unit${r.units === 1 ? "" : "s"}`, review: r => `Reviewed: ${r.findings ?? 0} finding${r.findings === 1 ? "" : "s"}`, staging: () => "Deployed to staging", prod: () => "Deployed to prod" }
+const DONE: Record<Stage, (r: Run) => string> = { refine: () => "Refined", plan: r => `Planned in ${r.units} unit${r.units === 1 ? "" : "s"}`, build: r => `Built ${r.units} unit${r.units === 1 ? "" : "s"}`, review: r => `Reviewed: ${r.findings ?? 0} finding${r.findings === 1 ? "" : "s"}`, staging: () => "Deployed to staging", test: () => "Tested in staging", prod: () => "Deployed to prod", smoke: () => "Checked in prod" }
 const sayRun = (r: Run, doing: string | null) =>
   r.status === "running" ? (doing ?? "Starting") : r.status === "needs-info" ? `Asked ${r.questions} question${r.questions === 1 ? "" : "s"}` : r.status === "failed" ? (r.error ?? "Failed") : DONE[r.stage ?? "refine"](r)
 
@@ -493,10 +495,73 @@ function ReleasePanel({ ticketKey, release, isLive, isPreview, onStep }: { ticke
   )
 }
 
+// What a test (in staging) or a check (in prod) found: how many criteria
+// pass and fail, then each one (its evidence a click away).
+function ResultRow({ result: r }: { result: TestResult }) {
+  const [isOpen, setOpen] = useState(false)
+  return (
+    <li className="border-t border-line first:border-t-0">
+      <button className="flex w-full items-baseline gap-2.5 py-2 text-left" onClick={() => setOpen(o => !o)} aria-expanded={isOpen}>
+        {r.status === "pass" ? <Check size={13} strokeWidth={2.6} className="shrink-0 translate-y-[2px] text-work" /> : <AlertTriangle size={13} className="shrink-0 translate-y-[2px] text-bad" />}
+        <span className="text-[13px] leading-[1.45]">{r.criterion}</span>
+      </button>
+      {isOpen && r.evidence && <p className="m-0 ml-6 pb-3 font-mono text-[11.5px] leading-[1.55] break-words whitespace-pre-wrap text-text-muted">{r.evidence}</p>}
+    </li>
+  )
+}
+
+function TestPanel({ state, release }: { state: PipelineState; release: Release | null }) {
+  const results = state.results ?? []
+  const pass = results.filter(r => r.status === "pass").length
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="grid grid-cols-2 gap-2">
+        <Tile><span className="text-[11.5px] text-faint">Pass</span><span className={cn("text-[20px] leading-none font-semibold tabular-nums", pass ? "text-work" : "text-faint")}>{pass}</span></Tile>
+        <Tile><span className="text-[11.5px] text-faint">Fail</span><span className={cn("text-[20px] leading-none font-semibold tabular-nums", results.length - pass ? "text-bad" : "text-faint")}>{results.length - pass}</span></Tile>
+      </div>
+      {results.length > 0 && <ol className="m-0 list-none p-0">{[...results].sort((a, b) => (a.status === b.status ? 0 : a.status === "fail" ? -1 : 1)).map(r => <ResultRow key={r.id} result={r} />)}</ol>}
+      {release && <Details label="The deploy"><ReleaseSteps ticketKey={state.key} release={release} /></Details>}
+    </div>
+  )
+}
+
+// What the board checked of the last run by itself: a line (how many hold,
+// how many warn), each one a click away.
+function Checks({ checks }: { checks: BoardCheck[] }) {
+  const [isOpen, setOpen] = useState(false)
+  const warns = checks.filter(c => c.status === "warn")
+  return (
+    <div className="flex flex-col gap-1.5">
+      <button className="inline-flex items-center gap-2 self-start text-xs text-text-muted hover:text-text" onClick={() => setOpen(o => !o)} aria-expanded={isOpen}>
+        <ShieldCheck size={13} className={warns.length ? "text-ask" : "text-work"} />
+        <span className="font-semibold">Checks</span>
+        <span className="text-faint tabular-nums">{checks.length - warns.length} ok{warns.length ? ` · ${warns.length} to look at` : ""}</span>
+        <ChevronRight size={12} className={cn("transition-transform duration-150", isOpen && "rotate-90")} />
+      </button>
+      {isOpen && (
+        <ul className="m-0 flex list-none flex-col gap-1 p-0 pl-5">
+          {[...warns, ...checks.filter(c => c.status === "ok")].map(c => (
+            <li key={c.id} className="flex items-baseline gap-2 text-xs">
+              {c.status === "ok" ? <Check size={11} strokeWidth={2.6} className="shrink-0 text-work" /> : <AlertTriangle size={11} className="shrink-0 text-ask" />}
+              <span className={c.status === "ok" ? "text-text-muted" : "text-text"}>{c.label}</span>
+              {c.detail && <span className="min-w-0 truncate text-faint">{c.detail}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+// The column a stage is shown in: the test in staging's, the check in prod's.
+const nodeOf = (stage: Stage): Stage => (stage === "test" ? "staging" : stage === "smoke" ? "prod" : stage)
+
 function StagePanel({ stage, state, preview, onRun, onStep }: { stage: Stage; state: PipelineState; preview: Release | null; onRun: (stage?: Stage, fix?: string[]) => void; onStep: OnStep }) {
   const at = stageAt(state)
   const i = STAGE_KEYS.indexOf(stage)
   const release = state.release?.env === stage ? state.release : preview?.env === stage ? preview : null
+  // The column's agent stage at work, or done: its findings, the deploy folded.
+  if (nodeOf(state.stage) === stage && state.stage !== stage) return state.status === "running" ? <AtWork state={state} /> : <TestPanel state={state} release={release} />
   if (isRelease(stage) && release) return <ReleasePanel ticketKey={state.key} release={release} isLive={release === state.release && state.status === "running"} isPreview={release === preview} onStep={onStep} />
   if (i > at) return <p className="m-0 text-[13px] text-faint">Starts after {STAGES[i - 1]}.</p>
   if (i === at && state.status === "running") return <AtWork state={state} />
@@ -553,7 +618,7 @@ function NowActions({ state, onRun, onStep }: { state: PipelineState; onRun: (st
 // The stage the section opens on: a release about to start, else the stage at hand.
 const focusOf = (state: PipelineState) => {
   const next = nextStage(state)
-  return next && isRelease(next) ? next : state.stage
+  return nodeOf(next && isRelease(next) ? next : state.stage)
 }
 const AHEAD = STAGE_KEYS.map(stage => ({ stage, tone: "todo" as const, fact: null }))
 const span = (runs: Run[], now: number) => (runs.length ? Math.max(...runs.map(r => r.endedAt ?? now)) - Math.min(...runs.map(r => r.startedAt)) : 0)
@@ -582,7 +647,7 @@ export function Pipeline({ ticket, onTaken }: { ticket: Ticket; onTaken: () => v
   const reset = () => confirmReset(async () => (await act("/api/pipeline/reset", { key: ticket.key }, "Started over: the comments stay in Jira")) && void load())
   const runs = state?.history ?? []
   const toggle = (f: Fold) => setFold(open => (open === f ? null : f))
-  const docs = ([["refine", "Refinement", data.refine], ["plan", "Plan", data.plan], ["build", "Build", data.build], ["review", "Review", data.review]] as const).filter(([, , text]) => text)
+  const docs = ([["refine", "Refinement", data.refine], ["plan", "Plan", data.plan], ["build", "Build", data.build], ["review", "Review", data.review], ["test", "Test", data.test], ["smoke", "Prod check", data.smoke]] as const).filter(([, , text]) => text)
   const shown = picked ?? (state ? focusOf(state) : "refine")
   return (
     <section className="overflow-hidden rounded-[12px] border border-line bg-side">
@@ -598,6 +663,7 @@ export function Pipeline({ ticket, onTaken }: { ticket: Ticket; onTaken: () => v
       <div className="flex flex-col gap-3 px-4 pb-4">
         {!state && <RunButton ticket={ticket} onStarted={() => (loadSoon(), ticket.isMine || onTaken())} />}
         {state && <Now state={state} now={now} onRun={stage => void start(stage)} onStep={step} />}
+        {state?.checks?.length && state.status !== "running" ? <Checks checks={state.checks} /> : null}
         {state?.status === "needs-info" ? <Decisions key={state.askedAt} ticketKey={ticket.key} state={state} onSent={() => void load()} />
           : state && <StagePanel key={shown} stage={shown} state={state} preview={data.preview} onRun={(stage, fix) => void start(stage, fix)} onStep={step} />}
       </div>

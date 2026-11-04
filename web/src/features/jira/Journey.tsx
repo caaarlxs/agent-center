@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils"
 import type { Stage } from "@server/pipeline"
 import { STAGES, type JourneyNode, type Tone } from "./pipeline-board"
 
-const ICON: Record<Stage, LucideIcon> = { refine: Lightbulb, plan: ListTree, build: Hammer, review: Eye, staging: Server, prod: Rocket }
+const ICON: Record<Stage, LucideIcon> = { refine: Lightbulb, plan: ListTree, build: Hammer, review: Eye, staging: Server, test: Server, prod: Rocket, smoke: Rocket }
 const DOT: Record<Tone, string> = {
   done: "bg-work-soft text-work",
   work: "bg-work-soft text-work ring-1 ring-work",

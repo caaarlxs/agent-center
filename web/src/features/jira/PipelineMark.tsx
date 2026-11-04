@@ -9,20 +9,20 @@ import { useIsDots } from "@/lib/board-style"
 import { cn } from "@/lib/utils"
 import { doingText, orbOf } from "@/features/conversation/session-events"
 import type { PipelineState, PipelineStatus, Stage } from "@server/pipeline"
-import { STAGES, stageAt, toFix, waitingStep } from "./pipeline-board"
+import { STAGES, failed, stageAt, toFix, waitingStep } from "./pipeline-board"
 
 export { STAGES, stageAt } from "./pipeline-board"
 
 // The state in two words: what the stage does, or what comes next.
-const DOING: Record<Stage, string> = { refine: "Refining", plan: "Planning", build: "Building", review: "Reviewing", staging: "Deploying to staging", prod: "Deploying to prod" }
-const NEXT: Record<Stage, string> = { refine: "Ready to plan", plan: "Ready to build", build: "Ready to review", review: "Ready for staging", staging: "Ready for prod", prod: "Live in prod" }
-const START: Record<Stage, string> = { refine: "Run refine", plan: "Run plan", build: "Run build", review: "Run review", staging: "Deploy to staging", prod: "Deploy to prod" }
+const DOING: Record<Stage, string> = { refine: "Refining", plan: "Planning", build: "Building", review: "Reviewing", staging: "Deploying to staging", test: "Testing in staging", prod: "Deploying to prod", smoke: "Checking prod" }
+const NEXT: Record<Stage, string> = { refine: "Ready to plan", plan: "Ready to build", build: "Ready to review", review: "Ready for staging", staging: "Ready to test", test: "Ready for prod", prod: "Ready to check", smoke: "Live in prod" }
+const START: Record<Stage, string> = { refine: "Run refine", plan: "Run plan", build: "Run build", review: "Run review", staging: "Deploy to staging", test: "Test in staging", prod: "Deploy to prod", smoke: "Check prod" }
 // Building after a review fixes what it found.
 const isFix = (stage: Stage, from?: Stage) => stage === "build" && from === "review"
 export const startText = (stage: Stage, from?: Stage) => (isFix(stage, from) ? "Fix with build" : START[stage])
 export const startingText = (stage: Stage, from?: Stage) => `${isFix(stage, from) ? "Fixing" : DOING[stage]}: a session starts`
 // A review with something to fix, or a release step, waits for you like a question does.
-const lookOf = (state: PipelineState): PipelineStatus => (toFix(state).length || waitingStep(state) ? "needs-info" : state.status)
+const lookOf = (state: PipelineState): PipelineStatus => (toFix(state).length || failed(state).length || waitingStep(state) ? "needs-info" : state.status)
 export const statusText = (state: PipelineState) =>
   toFix(state).length ? "To fix" : waitingStep(state) ? "Waiting for you" : state.status === "running" ? DOING[state.stage] : state.status === "ready" ? NEXT[state.stage] : state.status === "needs-info" ? "Waiting for you" : "Failed"
 const TONE: Record<PipelineStatus, { text: string; bar: string }> = {
@@ -41,10 +41,28 @@ function reviewLine(state: PipelineState) {
   return fix ? `${plural(fix, "finding")} to fix` : minor ? `Reviewed: ${minor} minor` : "Reviewed: nothing to fix"
 }
 
+// A test (or a check in prod) done: what failed, else that all passed.
+function testLine(state: PipelineState) {
+  const results = state.results ?? []
+  const fail = failed(state).length
+  return fail ? `${fail} ${fail === 1 ? "criterion" : "criteria"} failed` : state.stage === "test" ? `Tested: ${results.length} pass` : `Live in prod: ${results.length} checks pass`
+}
+
 // A release at work: its step at hand.
 function releaseLine(state: PipelineState) {
   const step = state.release?.steps.find(s => s.status !== "done" && s.status !== "skipped")
   return step ? `${step.title}${step.status === "waiting" ? ": waiting for you" : ""}` : "Finishing"
+}
+
+// What a stage that ended well says, by stage (the rest is above).
+const DONE_LINE: Partial<Record<Stage, (state: PipelineState) => string>> = {
+  review: reviewLine,
+  staging: () => "In staging: ready to test",
+  test: testLine,
+  prod: () => "In prod: ready to check",
+  smoke: testLine,
+  build: s => (s.fixed?.length ? `Fixed ${plural(s.fixed.length, "finding")}: ready to review` : `Built: ${s.units?.filter(u => u.pr).length ?? 0} draft PRs open`),
+  plan: s => `Planned in ${s.units?.length ?? 0} unit${s.units?.length === 1 ? "" : "s"}: ready to build`,
 }
 
 // The line a ticket says now: what its agent does, the decisions it waits
@@ -54,13 +72,7 @@ export function liveLine(state: PipelineState, card: Card | undefined): string {
   if (state.status === "running") return doingText(card?.doing) ?? "Starting"
   if (state.status === "needs-info") return `${state.questions.length} decision${state.questions.length === 1 ? "" : "s"} for you`
   if (state.status === "failed") return state.error ?? "The run failed"
-  if (state.stage === "review") return reviewLine(state)
-  if (state.stage === "staging") return "In staging: ready for prod"
-  if (state.stage === "prod") return "Live in prod"
-  if (state.stage === "build" && state.fixed?.length) return `Fixed ${plural(state.fixed.length, "finding")}: ready to review`
-  if (state.stage === "build") return `Built: ${state.units?.filter(u => u.pr).length ?? 0} draft PRs open`
-  if (state.stage === "plan") return `Planned in ${state.units?.length ?? 0} unit${state.units?.length === 1 ? "" : "s"}: ready to build`
-  return "Refined: ready to plan"
+  return DONE_LINE[state.stage]?.(state) ?? "Refined: ready to plan"
 }
 
 export function PipelineMark({ state, card, size = 24 }: { state: PipelineState; card?: Card; size?: number }) {

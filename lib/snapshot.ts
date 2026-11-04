@@ -16,7 +16,7 @@ import { readDesktop, type DesktopIndex } from "./desktop"
 import { PR_LIMIT, lookup as prLookup, type Pr } from "./github"
 import { running } from "./launch"
 import { readTasks } from "./organizer"
-import { pipelineKeyOf, pipelines } from "./pipeline"
+import { isPipelineOn, pipelineKeyOf, pipelines } from "./pipeline"
 import { progressOf } from "./plan"
 import { prUrlsIn } from "./prs"
 import { repoInfo } from "./repo"
@@ -310,7 +310,7 @@ export async function snapshot() {
     uploadsBytes: await folderSize(),
     canRunCommands: canRunCommands(),
     memory: { total: visible.reduce((sum, c) => sum + (c.memory?.total ?? 0), 0), pressure: memory.pressure },
-    features: { organizer },
+    features: { organizer, pipeline: isPipelineOn() },
     pipelines: await pipelines(),
     update: await freshness(),
     version,
