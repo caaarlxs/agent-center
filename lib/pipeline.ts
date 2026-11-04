@@ -35,8 +35,10 @@ import { mkdir, readFile, rename } from "node:fs/promises"
 import { join } from "node:path"
 import { DATA_DIR } from "./config"
 import { writeJsonAtomic } from "./files"
-import { assignToMe, commentOn, createSubtask, issueState, labelTicket, moveToStatus, openStatuses, ticket, type Ticket, type TicketComment } from "./jira"
+import { assignToMe, attachTo, commentOn, confluenceIds, confluencePage, createSubtask, issueState, remoteLinks, type ConfluencePage, labelTicket, moveToStatus, openStatuses, ticket, type Ticket, type TicketComment } from "./jira"
 import { flowOf, followInJira, type Event as JiraEvent } from "./jira-flow"
+import { childrenIn, deliverablesOf, toStart, waitsFor, type Child } from "./coordinator"
+import { evidenceType, filesIn, keptFiles, type EvidenceFile } from "./evidence"
 import { claudeBinary, running } from "./launch"
 import { claudeEnv } from "./proc"
 import { applyAction } from "./board"
@@ -69,10 +71,10 @@ export type PlanScript = { id: string; unit: string | null; title: string; comma
 export type Severity = "blocker" | "major" | "minor"
 export type Finding = { id: string; unit: string | null; severity: Severity; file: string | null; line: number | null; title: string; detail: string; fix: string }
 // What a test (in staging) or a smoke check (in prod) found of each criterion.
-export type TestResult = { id: string; criterion: string; status: "pass" | "fail"; evidence: string }
+export type TestResult = { id: string; criterion: string; status: "pass" | "fail"; evidence: string; files?: EvidenceFile[] }
 // A rule of the team's context (its repo) that the ticket makes untrue: the file and the words.
 export type ContextImpact = { file: string; quote: string; why: string }
-export type Result = { verdict: "ready" | "needs-info"; questions: Question[]; units: Unit[]; checklist: ChecklistItem[]; findings: Finding[]; fixed: string[]; scripts: PlanScript[]; order: OrderItem[]; results: TestResult[]; contextImpact: ContextImpact[] }
+export type Result = { verdict: "ready" | "needs-info"; questions: Question[]; units: Unit[]; checklist: ChecklistItem[]; findings: Finding[]; fixed: string[]; scripts: PlanScript[]; order: OrderItem[]; results: TestResult[]; contextImpact: ContextImpact[]; children?: unknown }
 export type PipelineStatus = "running" | "needs-info" | "ready" | "failed"
 export type Run = { n: number; stage: Stage; sessionId: string | null; startedAt: number; endedAt: number | null; status: PipelineStatus; questions: number; units: number; findings?: number; error: string | null; spend?: Spend | null }
 export type PipelineState = {
@@ -100,6 +102,8 @@ export type PipelineState = {
   findings?: Finding[] // the last review's
   fixed?: string[] // the findings a build fixed since
   fixes?: string[] // the [Fix] sub-tasks a failed test opened in Jira
+  children?: Child[] // a coordinator's children, in the order they go (coordinator.ts)
+  parent?: string | null // the coordinator a child's pipeline belongs to
   error: string | null
   history?: Run[] // every run since the last start over, the latest last
 }
@@ -113,6 +117,8 @@ const ROOT = join(DATA_DIR, "pipeline")
 export const STAGES_DIR = join(ROOT, "stages")
 const POLL_MS = 3 * 60_000
 const COMMENT_CHARS = 9_500
+const PAGE_CHARS = 40_000 // a Confluence page, in the snapshot
+const MAX_PAGES = 5
 
 const dirOf = (key: string) => join(ROOT, key)
 const isKey = (key: string) => /^[A-Z][A-Z0-9]+-\d+$/.test(key)
@@ -175,7 +181,7 @@ const STAGE: Record<AgentStage, StageDef> = {
 2. Los criterios de aceptación y el plan de verificación están en ${join(dir, "refine.md")}; el plan, en ${join(dir, "plan.md")}; lo desplegado, en ${join(dir, "build.json")}.
 3. Solo staging. Nunca prod: ni con STAGE=prod, ni con sus tablas, ni con sus URLs.
 4. Escribe el informe en ${join(dir, "test.md")} y el resumen en ${join(dir, "test.summary.md")}.
-5. Escribe al final ${join(dir, "test.json")}: {"verdict": "ready" | "needs-info", "questions": [...], "results": [{"id": "T1", "criterion": "...", "status": "pass" | "fail", "evidence": "..."}]}.`,
+5. Escribe al final ${join(dir, "test.json")}: {"verdict": "ready" | "needs-info", "questions": [...], "results": [{"id": "T1", "criterion": "...", "status": "pass" | "fail", "evidence": "...", "files": [{"path": "evidence/T1-desktop.png", "caption": "..."}]}]}. Guarda la evidencia de cada criterio en ${join(dir, "evidence")}.`,
   },
   smoke: {
     verb: "comprobar", title: "Comprobación en prod", done: "comprobado en prod", label: LABELS.live, unlabel: [], model: "claude-opus-5-5", effort: "medium", writes: false,
@@ -185,7 +191,7 @@ const STAGE: Record<AgentStage, StageDef> = {
 2. Los criterios de aceptación están en ${join(dir, "refine.md")}; la prueba de staging, en ${join(dir, "test.md")}.
 3. Solo lectura: en prod no creas, cambias ni borras nada.
 4. Escribe el informe en ${join(dir, "smoke.md")} y el resumen en ${join(dir, "smoke.summary.md")}.
-5. Escribe al final ${join(dir, "smoke.json")}: {"verdict": "ready" | "needs-info", "questions": [...], "results": [{"id": "P1", "criterion": "...", "status": "pass" | "fail", "evidence": "..."}]}.`,
+5. Escribe al final ${join(dir, "smoke.json")}: {"verdict": "ready" | "needs-info", "questions": [...], "results": [{"id": "P1", "criterion": "...", "status": "pass" | "fail", "evidence": "...", "files": [{"path": "evidence/P1-desktop.png", "caption": "..."}]}]}. Guarda la evidencia de cada criterio en ${join(dir, "evidence")}.`,
   },
 }
 // Clean: no user settings (your model, effort, hooks, plugins and CLAUDE.md
@@ -237,7 +243,7 @@ const orderIn = (v: unknown): OrderItem[] =>
 const resultsIn = (v: unknown): TestResult[] =>
   listOf(v)
     .filter(r => textOf(r?.criterion))
-    .map((r, i) => ({ id: String(r.id ?? `T${i + 1}`), criterion: textOf(r.criterion), status: r.status === "pass" ? ("pass" as const) : ("fail" as const), evidence: textOf(r.evidence) }))
+    .map((r, i) => ({ id: String(r.id ?? `T${i + 1}`), criterion: textOf(r.criterion), status: r.status === "pass" ? ("pass" as const) : ("fail" as const), evidence: textOf(r.evidence), files: filesIn(r.files) }))
 // Only with the words it makes untrue: else it is no impact at all.
 const impactIn = (v: unknown): ContextImpact[] =>
   listOf(v).filter(x => textOf(x?.file) && textOf(x?.quote)).map(x => ({ file: textOf(x.file), quote: textOf(x.quote), why: textOf(x.why) }))
@@ -281,7 +287,7 @@ export function parseResult(text: string, stage: Stage): Result {
     .filter(c => typeof c?.text === "string" && c.text.trim())
     .map((c, i) => ({ id: String(c.id ?? `C${i + 1}`), text: c.text.trim(), unit: typeof c.unit === "string" && c.unit ? c.unit : null }))
   if (stage === "plan" && data.verdict === "ready" && !units.length) throw new Error("plan.json is ready but has no units")
-  return { verdict: data.verdict, questions, units, checklist, findings: findingsIn(data.findings), fixed: listOf(data.fixed).map(String), scripts: scriptsIn(data.scripts), order: orderIn(data.release), results: resultsIn(data.results), contextImpact: impactIn(data.contextImpact) }
+  return { verdict: data.verdict, questions, units, checklist, findings: findingsIn(data.findings), fixed: listOf(data.fixed).map(String), scripts: scriptsIn(data.scripts), order: orderIn(data.release), results: resultsIn(data.results), contextImpact: impactIn(data.contextImpact), children: data.children }
 }
 
 export const questionsComment = (key: string, questions: Question[], stage: AgentStage) =>
@@ -301,7 +307,8 @@ const date = (at: number) => (at ? new Date(at).toISOString().slice(0, 10) : "�
 
 // The ticket as the agent reads it: all of it, its parent, its sub-tasks
 // (each whole) and its links.
-export function snapshotOf(t: Ticket, parent: Ticket | null, children: Ticket[]): string {
+const subtasksLine = (c: Ticket) => (c.children?.length ? `\n\nSubtareas:\n${c.children.map(g => `- ${g.key} · ${g.summary} (${g.status})`).join("\n")}` : "")
+export function snapshotOf(t: Ticket, parent: Ticket | null, children: Ticket[], pages: ConfluencePage[] = []): string {
   const parts = [
     `# ${t.key} · ${t.summary}`,
     `Tipo: ${t.type ?? "—"} · Estado: ${t.status} · Prioridad: ${t.priority ?? "—"} · Asignado: ${t.assignee ?? "nadie"} · Reporter: ${t.reporter ?? "—"}`,
@@ -309,8 +316,9 @@ export function snapshotOf(t: Ticket, parent: Ticket | null, children: Ticket[])
     `## Comentarios\n\n${t.comments.length ? t.comments.map(c => `**${c.author} · ${date(c.at)}**\n\n${c.body}`).join("\n\n---\n\n") : "(ninguno)"}`,
   ]
   if (t.parent) parts.push(`## Padre: ${t.parent.key} · ${t.parent.summary}\n\n${parent?.description || "(sin descripción)"}`)
-  if (children.length) parts.push(`## Hijos\n\n${children.map(c => `### ${c.key} · ${c.summary} (${c.status})\n\n${c.description || "(sin descripción)"}`).join("\n\n")}`)
+  if (children.length) parts.push(`## Hijos\n\n${children.map(c => `### ${c.key} · ${c.summary} (${c.status})\n\n${c.description || "(sin descripción)"}${subtasksLine(c)}`).join("\n\n")}`)
   if (t.links.length) parts.push(`## Links\n\n${t.links.map(l => `- ${l.how} ${l.ticket.key} · ${l.ticket.summary} (${l.ticket.status})`).join("\n")}`)
+  for (const p of pages) parts.push(`## Confluence: ${p.title} (versión ${p.version})\n\n${p.url}\n\n${p.md.slice(0, PAGE_CHARS)}${p.md.length > PAGE_CHARS ? "\n\n(…recortado)" : ""}`)
   return parts.join("\n\n") + "\n"
 }
 
@@ -330,6 +338,13 @@ export function withRun(s: PipelineState): PipelineState {
 }
 const save = (s: PipelineState) => writeJsonAtomic(join(dirOf(s.key), "state.json"), withRun(s), { pretty: true })
 const readText = (path: string) => readFile(path, "utf8").catch(() => null)
+const jsonOf = (text: string | null): any => {
+  try {
+    return text ? JSON.parse(text) : null
+  } catch {
+    return null
+  }
+}
 // Each run with what its session spent, read from its transcript (only what
 // was added since the last look): never saved, so it is always the session's own.
 const withSpend = async (s: PipelineState): Promise<PipelineState> =>
@@ -367,9 +382,12 @@ export async function pipelineActivity(key: string) {
 
 // ---------- the stage ----------
 
-const promptFor = (key: string, dir: string, stage: AgentStage) => `${TAG} ${key} · ${STAGE[stage].verb}
+// A coordinator's refinement follows epic.md: the whole, not one delivery.
+const asParent = (children: Child[] = []) =>
+  children.length ? `\n\nEste ticket coordina a sus hijos entregables (${children.map(c => c.key).join(", ")}): sigue ${join(STAGES_DIR, "epic.md")} en lugar de refine.md, y escribe los mismos ficheros.` : ""
+const promptFor = (key: string, dir: string, stage: AgentStage, children: Child[] = []) => `${TAG} ${key} · ${STAGE[stage].verb}
 
-${STAGE[stage].brief(key, dir)}
+${STAGE[stage].brief(key, dir)}${stage === "refine" ? asParent(children) : ""}
 
 ${AS_AGENT}
 
@@ -385,12 +403,32 @@ const fresh = async (key: string, runs: number, stage: Stage): Promise<PipelineS
   const prev = await stateOf(key)
   // The plan's units and to-do list, and the review's findings, stay with the ticket for the stages after it.
   return { ...EMPTY(key, runs, stage), summary: prev?.summary, history: prev?.history ?? [], units: prev?.units, checklist: prev?.checklist, checked: prev?.checked, scripts: prev?.scripts, contextImpact: prev?.contextImpact,
-    release: prev?.release, deployed: prev?.deployed, fixes: prev?.fixes,
+    release: prev?.release, deployed: prev?.deployed, fixes: prev?.fixes, children: prev?.children, parent: prev?.parent,
     ...(stage === "review" ? {} : { findings: prev?.findings, fixed: stage === "build" ? [] : prev?.fixed }) }
 }
 // A stage's session is the pipeline's, not yours: once it ends it leaves the
 // board (its log stays a click away in the ticket), and never goes to Claude desktop.
 const putAway = (id: string) => void applyAction(id, [id], "archive", {}).catch(() => {})
+
+// The Confluence pages the ticket and its parent link to (in their text or as
+// Jira's remote links), as they are now: the first few.
+async function linkedPages(t: Ticket, parent: Ticket | null): Promise<ConfluencePage[]> {
+  const remote = await remoteLinks(t.key).catch(() => [])
+  const ids = confluenceIds([t.description, ...t.comments.map(c => c.body), parent?.description, ...remote]).slice(0, MAX_PAGES)
+  return (await Promise.all(ids.map(id => confluencePage(id).catch(() => null)))).filter(Boolean) as ConfluencePage[]
+}
+
+// The team's pages every stage reads (jira.json's contextPages: the system's
+// map), into the ticket's context/ folder, as they are now.
+async function writeContextPages(dir: string) {
+  const ids = jsonOf(await readText(join(STAGES_DIR, "jira.json")))?.contextPages
+  if (!Array.isArray(ids)) return
+  await mkdir(join(dir, "context"), { recursive: true })
+  for (const id of ids.slice(0, MAX_PAGES)) {
+    const page = await confluencePage(String(id)).catch(() => null)
+    if (page) await Bun.write(join(dir, "context", `${page.title.replace(/[^\p{L}\p{N}]+/gu, "-").toLowerCase()}.md`), `# ${page.title} (versión ${page.version})\n\n${page.url}\n\n${page.md}\n`)
+  }
+}
 
 async function runStage(key: string, runs: number, stage: AgentStage) {
   const dir = dirOf(key)
@@ -399,14 +437,21 @@ async function runStage(key: string, runs: number, stage: AgentStage) {
   const t = await ticket(key)
   const [parent, children] = await Promise.all([
     t.parent ? ticket(t.parent.key).catch(() => null) : null,
-    Promise.all(t.children.slice(0, 15).map(c => ticket(c.key).catch(() => null))).then(all => all.filter(Boolean) as Ticket[]),
+    Promise.all(t.children.slice(0, 30).map(c => ticket(c.key).catch(() => null))).then(all => all.filter(Boolean) as Ticket[]),
   ])
-  await Bun.write(join(dir, "ticket.md"), snapshotOf(t, parent, children))
-  const started = { ...(await fresh(key, runs, stage)), summary: t.summary }
+  // A child of a coordinator reads what its parent decided for all of them.
+  const coordinator = t.parent ? await stateOf(t.parent.key) : null
+  const isChild = !!coordinator?.children?.some(c => c.key === key)
+  const decided = isChild ? await readText(join(dirOf(t.parent!.key), "refine.md")) : null
+  await Bun.write(join(dir, "ticket.md"), snapshotOf(t, parent, children, await linkedPages(t, parent)) + (decided ? `\n## Decisiones del padre (${t.parent!.key})\n\n${decided}\n` : ""))
+  await writeContextPages(dir)
+  const kids = stage === "refine" ? deliverablesOf(t) : []
+  const base = { ...(await fresh(key, runs, stage)), summary: t.summary, ...(isChild ? { parent: t.parent!.key } : {}) }
+  const started = kids.length ? { ...base, children: childrenIn(base.children, kids) } : base
   const state = stage === "build" ? { ...started, ...(await inJira("build-started", started)) } : started
   await save(state)
   const id = randomUUID()
-  const pid = await spawnStage(dir, id, promptFor(key, dir, stage), stage, () => void watch())
+  const pid = await spawnStage(dir, id, promptFor(key, dir, stage, state.children), stage, () => void watch())
   await save({ ...state, sessionId: id, pid })
   await applyAction(id, [id], "tickets", { started: [key] })
 }
@@ -457,7 +502,9 @@ async function finish(key: string) {
   if (!text) throw new Error(`The agent left no ${state.stage}.json`)
   const result = parseResult(text, state.stage)
   if (result.verdict === "needs-info") {
-    await commentOn(key, questionsComment(key, result.questions, state.stage))
+    // The questions are the reporter's to answer: Jira tells them.
+    const reporter = await ticket(key).then(t => t.reporterId, () => null)
+    await commentOn(key, questionsComment(key, result.questions, state.stage), reporter ? [reporter] : [])
     await labelTicket(key, [LABELS.needsInfo], [stage.label])
     await save({ ...state, status: "needs-info", questions: result.questions, askedAt: Date.now(), endedAt: Date.now() })
     return
@@ -470,7 +517,10 @@ async function finish(key: string) {
   // Jira gets the summary for people; the whole document, cut, only when there is none.
   const md = (await readText(join(dir, `${state.stage}.summary.md`))) ?? (await readText(join(dir, `${state.stage}.md`))) ?? ""
   const prs = result.units.filter(u => u.pr).map(u => `- ${u.repo}: ${u.pr}`).join("\n")
-  await commentOn(key, `${MARK} · ${key} ${stage.done}\n\n${prs ? `${prs}\n\n` : ""}${md.slice(0, COMMENT_CHARS)}${md.length > COMMENT_CHARS ? "\n\n(…recortado)" : ""}`)
+  // A test's files stay only where they are; they go to Jira with its comment, for QA.
+  const shown = { ...result, results: result.results.map(r => ({ ...r, files: keptFiles(dir, r.files ?? []) })) }
+  const attached = state.stage === "test" || state.stage === "smoke" ? await attachEvidence(key, dir, shown.results) : { line: "", checks: [] }
+  await commentOn(key, `${MARK} · ${key} ${stage.done}\n\n${prodWarning(state.stage, result)}${attached.line}${prs ? `${prs}\n\n` : ""}${md.slice(0, COMMENT_CHARS)}${md.length > COMMENT_CHARS ? "\n\n(…recortado)" : ""}`)
   await labelTicket(key, [stage.label], [LABELS.needsInfo, ...stage.unlabel])
   const checklist = state.stage === "plan" ? result.checklist : state.checklist
   const scripts = state.stage === "plan" ? result.scripts : state.scripts
@@ -478,11 +528,73 @@ async function finish(key: string) {
   // Only a plan and a build leave units; the stages after them keep theirs.
   const units = state.stage === "plan" || state.stage === "build" ? result.units : state.units
   const found = state.stage === "review" ? { findings: result.findings, fixed: [] } : state.stage === "build" ? { fixed: result.fixed } : {}
-  const tested = state.stage === "test" || state.stage === "smoke" ? { results: result.results } : {}
+  const tested = state.stage === "test" || state.stage === "smoke" ? { results: shown.results } : {}
   const context = state.stage === "refine" ? { contextImpact: result.contextImpact } : {}
-  const done: PipelineState = { ...state, status: "ready", questions: [], units, checklist, checked, scripts, ...found, ...tested, ...context, checks: withJira(checks, state.checks), endedAt: Date.now() }
+  const done: PipelineState = { ...state, status: "ready", questions: [], units, checklist, checked, scripts, ...found, ...tested, ...context, checks: withJira([...checks, ...attached.checks], state.checks), endedAt: Date.now() }
   const event = state.stage === "build" ? "built" : state.stage === "test" ? "tested" : null
-  await save(event ? { ...done, ...(await inJira(event, done)) } : done)
+  // A coordinator keeps the order its refinement gave, and starts its children.
+  const ordered = state.stage === "refine" && state.children?.length ? { children: childrenIn(result.children, state.children.map(c => c.key)) } : {}
+  await save(event ? { ...done, ...(await inJira(event, done)) } : { ...done, ...ordered })
+  if (ordered.children) void coordinate(key)
+}
+
+// ---------- a coordinator's children (coordinator.ts) ----------
+
+const coordinating = new Set<string>()
+const childStates = async (children: Child[]) => Object.fromEntries(await Promise.all(children.map(async c => [c.key, await stateOf(c.key)] as const)))
+// Starts the children it can now; one that will not start (not yours) is a
+// warning in the coordinator's checks, and is not tried again.
+async function coordinate(key: string) {
+  if (coordinating.has(key)) return
+  coordinating.add(key)
+  try {
+    const parent = await stateOf(key)
+    if (!parent?.children?.length || parent.stage !== "refine" || parent.status !== "ready") return
+    const refused = new Set((parent.checks ?? []).filter(c => c.id.startsWith("child-")).map(c => c.id.slice(6)))
+    const children = parent.children.filter(c => !refused.has(c.key))
+    const failed: Check[] = []
+    for (const child of toStart(children, await childStates(children)))
+      await startPipeline(child).catch((err: Error) => failed.push({ id: `child-${child}`, label: `${child} did not start`, status: "warn", detail: err.message }))
+    if (failed.length) await save({ ...parent, checks: [...(parent.checks ?? []), ...failed] })
+  } finally {
+    coordinating.delete(key)
+  }
+}
+
+// A child goes to staging once what it depends on is there.
+async function stagingWaits(state: PipelineState) {
+  const coordinator = state.parent ? await stateOf(state.parent) : null
+  if (!coordinator?.children) return
+  const waits = waitsFor(state.key, coordinator.children, await childStates(coordinator.children))
+  if (waits.length) throw new Error(`Staging waits for ${waits.join(", ")} in staging first`)
+}
+
+// A test's files, attached to the ticket (the first few, as Jira takes them):
+// the line that names them in the comment, and a warning if Jira refused.
+const MAX_ATTACHED = 20
+async function attachEvidence(key: string, dir: string, results: TestResult[]) {
+  const names = results.flatMap(r => (r.files ?? []).map(f => f.name)).slice(0, MAX_ATTACHED)
+  if (!names.length) return { line: "", checks: [] as Check[] }
+  try {
+    await attachTo(key, names.map(n => join(dir, "evidence", n)))
+    return { line: `Evidencia adjunta: ${names.join(", ")}\n\n`, checks: [] as Check[] }
+  } catch (err) {
+    return { line: "", checks: [{ id: "evidence", label: "The evidence did not go to Jira", status: "warn" as const, detail: String((err as Error)?.message ?? err) }] }
+  }
+}
+
+// One file of a test's evidence, as what it is.
+export async function pipelineEvidence(key: string, name: string) {
+  const type = evidenceType(name)
+  if (!isKey(key) || !type) throw new Error("Not a file of the evidence")
+  const file = Bun.file(join(dirOf(key), "evidence", name))
+  return (await file.exists()) ? { body: await file.arrayBuffer(), type } : null
+}
+
+// A check in prod that failed, on top of its comment: the story is already done in Jira.
+export const prodWarning = (stage: Stage, result: Pick<Result, "results">) => {
+  const failed = stage === "smoke" ? failing(result.results) : []
+  return failed.length ? `⚠️ El check de prod ha fallado (${failed.map(r => r.id).join(", ")}). La Historia ya está en Finalizada: decide si hay que deshacer el release a prod.\n\n` : ""
 }
 
 // ---------- the ticket's status in Jira (lib/jira-flow.ts) ----------
@@ -556,6 +668,7 @@ export async function startPipeline(key: string, take = false, asked?: Stage, ch
   const stage = stageToRun(state, asked)
   if (take) await assignToMe(key)
   await labelTicket(key, [LABELS.on], []) // also checks that it is yours
+  if (stage === "staging") await stagingWaits(state!)
   if (isRelease(stage)) return startRelease(state!, stage)
   if (stage === "build" && state?.stage === "review") await writeJsonAtomic(join(dirOf(key), "review.fix.json"), { fix: toFixNow(state.findings, chosen) }, { pretty: true })
   else if (stage !== "build") await rename(join(dirOf(key), "review.fix.json"), join(dirOf(key), "review.fix.json.prev")).catch(() => {})
@@ -740,6 +853,7 @@ export async function pipelines(): Promise<PipelineState[]> {
 // Answers written in Jira (by you or anyone): the stage runs again.
 async function poll() {
   for (const state of await pipelines()) {
+    if (state.children?.length && state.stage === "refine" && state.status === "ready") void coordinate(state.key)
     if (state.status !== "needs-info" || !state.askedAt || isRelease(state.stage)) continue
     try {
       const t = await ticket(state.key)

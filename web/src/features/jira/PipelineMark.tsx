@@ -23,7 +23,7 @@ export const startingText = (stage: Stage, from?: Stage) => `${isFix(stage, from
 // A review with something to fix, or a release step, waits for you like a question does.
 const lookOf = (state: PipelineState): PipelineStatus => (toFix(state).length || failed(state).length || waitingStep(state) ? "needs-info" : state.status)
 export const statusText = (state: PipelineState) =>
-  state.status === "running" && state.release?.rollback ? `Rolling back ${state.release.env}` : toFix(state).length ? "To fix" : waitingStep(state) ? "Waiting for you" : state.status === "running" ? DOING[state.stage] : state.status === "ready" ? NEXT[state.stage] : state.status === "needs-info" ? "Waiting for you" : "Failed"
+  state.status === "running" && state.release?.rollback ? `Rolling back ${state.release.env}` : toFix(state).length ? "To fix" : waitingStep(state) ? "Waiting for you" : state.status === "running" ? DOING[state.stage] : state.status === "ready" ? (state.children?.length ? `Coordinating ${state.children.length} tickets` : NEXT[state.stage]) : state.status === "needs-info" ? "Waiting for you" : "Failed"
 const TONE: Record<PipelineStatus, { text: string; bar: string }> = {
   running: { text: "text-work", bar: "bg-[linear-gradient(90deg,var(--work),color-mix(in_srgb,var(--work)_35%,transparent),var(--work))] bg-[length:200%_100%] animate-shimmer" },
   "needs-info": { text: "text-ask", bar: "bg-ask" },
@@ -71,6 +71,7 @@ export function liveLine(state: PipelineState, card: Card | undefined): string {
   if (state.status === "running") return doingText(card?.doing) ?? "Starting"
   if (state.status === "needs-info") return `${state.questions.length} decision${state.questions.length === 1 ? "" : "s"} for you`
   if (state.status === "failed") return state.error ?? "The run failed"
+  if (state.children?.length) return `Refined as a whole: ${state.children.length} tickets, in order`
   return DONE_LINE[state.stage]?.(state) ?? "Refined: ready to plan"
 }
 

@@ -45,6 +45,7 @@ export type Ticket = TicketBrief & {
   type: string | null
   priority: string | null
   reporter: string | null
+  reporterId: string | null // to mention them
   sprint: string | null
   created: number
   updated: number
@@ -311,6 +312,7 @@ export function ticketOf(raw: any, site: string, me: string | null = null, sprin
     type: f.issuetype?.name ?? null,
     priority: f.priority?.name ?? null,
     reporter: f.reporter?.displayName ?? null,
+    reporterId: f.reporter?.accountId ?? null,
     sprint: sprintField ? sprintOf(f[sprintField]) : null,
     created: Date.parse(f.created ?? "") || 0,
     updated: Date.parse(f.updated ?? "") || 0,
@@ -337,7 +339,7 @@ async function request(setup: JiraSetup, path: string, init: RequestInit = {}, t
   if (!secret) throw new Error("No Jira token in the keychain: set Jira up again in Settings")
   const res = await fetch(`${setup.site}${path}`, {
     ...init,
-    headers: { Accept: "application/json", "Content-Type": "application/json", Authorization: `Basic ${Buffer.from(`${setup.email}:${secret}`).toString("base64")}`, ...init.headers },
+    headers: { Accept: "application/json", ...(init.body instanceof FormData ? {} : { "Content-Type": "application/json" }), Authorization: `Basic ${Buffer.from(`${setup.email}:${secret}`).toString("base64")}`, ...init.headers },
     signal: AbortSignal.timeout(15_000),
   })
   if (res.status === 401 || res.status === 403) throw new Error("Jira did not accept the email and token")
@@ -538,12 +540,23 @@ export async function moveTicket(key: string, transitionId: string) {
   briefs.delete(key)
 }
 
-export async function commentOn(key: string, text: string) {
+// A comment that opens with a mention of each person (Jira tells them).
+export const docWith = (text: string, mentions: string[]) => {
+  const doc = docOf(text)
+  if (!mentions.length) return doc
+  const tags = mentions.flatMap(id => [{ type: "mention", attrs: { id } }, { type: "text", text: " " }])
+  return { ...doc, content: [{ type: "paragraph", content: tags }, ...doc.content] }
+}
+
+// A comment on a ticket of yours; it can mention people (never you).
+export async function commentOn(key: string, text: string, mentions: string[] = []) {
   const setup = setupOrThrow()
   const body = text.trim()
   if (!body) throw new Error("Write something first")
   await mineOrThrow(setup, key)
-  await call(setup, `/rest/api/3/issue/${key}/comment`, { method: "POST", body: JSON.stringify({ body: docOf(body.slice(0, 10_000)) }) })
+  const me = await myId(setup)
+  const others = [...new Set(mentions)].filter(id => id && id !== me)
+  await call(setup, `/rest/api/3/issue/${key}/comment`, { method: "POST", body: JSON.stringify({ body: docWith(body.slice(0, 10_000), others) }) })
 }
 
 // The ticket, now yours: only when you ask for it (to run the pipeline on it).
@@ -590,4 +603,41 @@ export async function createSubtask(parent: string, summary: string, typeId: str
   const r = await call(setup, "/rest/api/3/issue", { method: "POST", body: JSON.stringify({ fields }) })
   briefs.delete(parent)
   return String(r?.key ?? "")
+}
+
+// ---------- Confluence (the same site and token) ----------
+
+// The Confluence pages some texts link to, each once, in order.
+export function confluenceIds(texts: (string | null | undefined)[]): string[] {
+  const ids = texts.flatMap(t => [...(t ?? "").matchAll(/\/wiki\/(?:spaces\/[^/\s)]+\/pages\/|pages\/viewpage\.action\?pageId=)(\d+)/g)].map(m => m[1]!))
+  return [...new Set(ids)]
+}
+
+export type ConfluencePage = { id: string; title: string; version: number; url: string; md: string }
+
+// A page as it is now: its title, version and body in Markdown (struck lines stay struck).
+export async function confluencePage(id: string): Promise<ConfluencePage | null> {
+  if (!/^\d{1,15}$/.test(id)) return null
+  const setup = setupOrThrow()
+  const r = await call(setup, `/wiki/api/v2/pages/${id}?body-format=atlas_doc_format`).catch(() => null)
+  if (!r?.id) return null
+  const body = (() => { try { return JSON.parse(r.body?.atlas_doc_format?.value ?? "null") } catch { return null } })()
+  return { id: String(r.id), title: String(r.title ?? ""), version: Number(r.version?.number ?? 0), url: `${setup.site}/wiki${r._links?.webui ?? ""}`, md: markdownOf(body) }
+}
+
+// What a ticket links to outside Jira (Confluence's "mentioned in", web links): their addresses.
+export async function remoteLinks(key: string): Promise<string[]> {
+  const setup = setupOrThrow()
+  const r = await call(setup, `/rest/api/3/issue/${keyOrThrow(key)}/remotelink`).catch(() => [])
+  return (Array.isArray(r) ? r : []).map((l: any) => String(l?.object?.url ?? "")).filter(Boolean)
+}
+
+// Files attached to a ticket of yours (a test's evidence).
+export async function attachTo(key: string, paths: string[]) {
+  const setup = setupOrThrow()
+  await mineOrThrow(setup, key)
+  const form = new FormData()
+  for (const path of paths) form.append("file", Bun.file(path), path.split("/").pop())
+  await request(setup, `/rest/api/3/issue/${key}/attachments`, { method: "POST", body: form, headers: { "X-Atlassian-Token": "no-check" } })
+  briefs.delete(key)
 }

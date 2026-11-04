@@ -3,7 +3,7 @@
 // the person decided.
 
 import { jiraSetup, searchTickets, ticket, ticketRows, transitionsOf } from "../lib/jira"
-import { pipelineActivity, pipelineOf, pipelineReport } from "../lib/pipeline"
+import { pipelineActivity, pipelineEvidence, pipelineOf, pipelineReport } from "../lib/pipeline"
 import { reportOf } from "../lib/release"
 import { namedBy, repoPage, sessionCommits, sessionRepos } from "../lib/session-commits"
 import { ICONS, chosenIcon } from "../lib/app-icon"
@@ -314,6 +314,12 @@ export async function handleRead(url: URL): Promise<Response | null> {
   if (path === "/api/prs/diff") return await prDiff(url.searchParams.get("url") ?? "").then(files => json({ files }), (err: Error) => json({ error: err.message }, 400))
   if (path === "/api/pipeline/activity") return await pipelineActivity(url.searchParams.get("key") ?? "").then(r => json(r), (err: Error) => json({ error: err.message }, 400))
   // A script's report from a release, to read in the ticket or download.
+  // A test's evidence: only as what it is, and never sniffed as anything else.
+  if (path === "/api/pipeline/evidence") {
+    return await pipelineEvidence(url.searchParams.get("key") ?? "", url.searchParams.get("file") ?? "").then(
+      f => (f ? new Response(f.body, { headers: { "content-type": f.type, "x-content-type-options": "nosniff", ...(f.type === "application/pdf" ? {} : { "content-security-policy": "default-src 'none'" }), "cache-control": "private, max-age=300" } }) : json({ error: "No such file" }, 404)),
+      (err: Error) => json({ error: err.message }, 400))
+  }
   if (path === "/api/pipeline/report") {
     const file = url.searchParams.get("file") ?? ""
     return await pipelineReport(url.searchParams.get("key") ?? "", file).then(

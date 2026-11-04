@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { blocking, checkedIn, toFixNow, MARK, answeredAfter, answersComment, argsFor, parseResult, pipelineKeyOf, stageToRun, unbuilt, withRun, questionsComment, snapshotOf } from "../lib/pipeline"
+import { blocking, checkedIn, toFixNow, MARK, answeredAfter, answersComment, argsFor, parseResult, pipelineKeyOf, stageToRun, unbuilt, withRun, questionsComment, snapshotOf, prodWarning } from "../lib/pipeline"
 
 const questions = [
   { id: "Q1", question: "¿Cuál es el copy?", proposal: "El del ticket" },
@@ -60,10 +60,10 @@ describe("parseResult", () => {
     ])
   })
   it("reads what a test found of each criterion, a failure when it says nothing else", () => {
-    const results = [{ criterion: "El aviso sale", status: "pass", evidence: "GET /home → 200" }, { id: "T9", criterion: "El modal", status: "?" }, { criterion: " " }]
+    const results = [{ criterion: "El aviso sale", status: "pass", evidence: "GET /home → 200", files: [{ path: "evidence/T1-desktop.png", caption: "Escritorio" }] }, { id: "T9", criterion: "El modal", status: "?" }, { criterion: " " }]
     expect(parseResult(JSON.stringify({ verdict: "ready", results }), "test").results).toEqual([
-      { id: "T1", criterion: "El aviso sale", status: "pass", evidence: "GET /home → 200" },
-      { id: "T9", criterion: "El modal", status: "fail", evidence: "" },
+      { id: "T1", criterion: "El aviso sale", status: "pass", evidence: "GET /home → 200", files: [{ name: "T1-desktop.png", caption: "Escritorio" }] },
+      { id: "T9", criterion: "El modal", status: "fail", evidence: "", files: [] },
     ])
   })
   it("reads a change to the team's context only with the words it makes untrue", () => {
@@ -125,6 +125,15 @@ describe("snapshotOf", () => {
     expect(md).toContain("## Padre: PP-0 · Épica\n\nDe la épica.")
     expect(md).toContain("### PP-3 · [BE] Campo (Backlog)\n\nHacer el campo.")
     expect(md).toContain("- relates to PP-2 · Regla (Backlog)")
+  })
+  it("holds the whole tree: each child's own children, by key, title and status", () => {
+    const child = { ...ref("PP-3", "Historia"), description: "Entrega.", children: [{ ...ref("PP-4", "[BE] deal-service"), status: "In Progress" }] }
+    const md = snapshotOf(ticket as never, null, [child] as never)
+    expect(md).toContain("### PP-3 · Historia (Backlog)\n\nEntrega.\n\nSubtareas:\n- PP-4 · [BE] deal-service (In Progress)")
+  })
+  it("holds the Confluence pages it links to, each with its title, version and address", () => {
+    const md = snapshotOf(ticket as never, null, [], [{ id: "9", title: "Funcional: avisos", version: 7, url: "https://x/wiki/9", md: "Regla ~~vieja~~ nueva." }])
+    expect(md).toContain("## Confluence: Funcional: avisos (versión 7)\n\nhttps://x/wiki/9\n\nRegla ~~vieja~~ nueva.")
   })
 })
 
@@ -254,5 +263,14 @@ describe("toFixNow", () => {
     expect(toFixNow(found)).toEqual(["F2"])
     expect(toFixNow(found, ["F3", "F1", "F9"])).toEqual(["F1", "F3"])
     expect(toFixNow(undefined, ["F1"])).toEqual([])
+  })
+})
+
+describe("prodWarning", () => {
+  it("warns on top of a check in prod that failed, and only there", () => {
+    const failed = { results: [{ id: "P1", criterion: "x", status: "fail" as const, evidence: "" }] }
+    expect(prodWarning("smoke", failed)).toContain("El check de prod ha fallado (P1)")
+    expect(prodWarning("test", failed)).toBe("")
+    expect(prodWarning("smoke", { results: [] })).toBe("")
   })
 })

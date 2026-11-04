@@ -37,6 +37,7 @@ import { PipelineMark, liveLine, startText, startingText, statusText } from "./P
 import { STAGE_KEYS, STAGES, costOf, dollars, isRelease, journeyOf, nextStage, stageAt, toFix, tokens } from "./pipeline-board"
 import { ReleaseRail, ReleaseSteps, SkipFailed, StepAtHand, type After } from "./Release"
 import { Journey } from "./Journey"
+import { Evidence } from "./Evidence"
 import type { Release } from "@server/release"
 
 type Data = { state: PipelineState | null; refine: string | null; plan: string | null; build: string | null; review: string | null; test: string | null; smoke: string | null; preview: Release | null }
@@ -541,7 +542,7 @@ function ReleasePanel({ ticketKey, release, after, isLive, isPreview, onStep }: 
 
 // What a test (in staging) or a check (in prod) found: how many criteria
 // pass and fail, then each one (its evidence a click away).
-function ResultRow({ result: r }: { result: TestResult }) {
+function ResultRow({ result: r, ticketKey }: { result: TestResult; ticketKey: string }) {
   const [isOpen, setOpen] = useState(false)
   return (
     <li className="border-t border-line first:border-t-0">
@@ -550,6 +551,7 @@ function ResultRow({ result: r }: { result: TestResult }) {
         <span className="text-[13px] leading-[1.45]">{r.criterion}</span>
       </button>
       {isOpen && r.evidence && <p className="m-0 ml-6 pb-3 font-mono text-[11.5px] leading-[1.55] break-words whitespace-pre-wrap text-text-muted">{r.evidence}</p>}
+      <Evidence ticketKey={ticketKey} files={r.files ?? []} />
     </li>
   )
 }
@@ -564,7 +566,7 @@ function TestPanel({ state, release }: { state: PipelineState; release: Release 
         <Tile><span className="text-[11.5px] text-faint">Pass</span><span className={cn("text-[20px] leading-none font-semibold tabular-nums", pass ? "text-work" : "text-faint")}>{pass}</span></Tile>
         <Tile><span className="text-[11.5px] text-faint">Fail</span><span className={cn("text-[20px] leading-none font-semibold tabular-nums", results.length - pass ? "text-bad" : "text-faint")}>{results.length - pass}</span></Tile>
       </div>
-      {results.length > 0 && <ol className="m-0 list-none p-0">{[...results].sort((a, b) => (a.status === b.status ? 0 : a.status === "fail" ? -1 : 1)).map(r => <ResultRow key={r.id} result={r} />)}</ol>}
+      {results.length > 0 && <ol className="m-0 list-none p-0">{[...results].sort((a, b) => (a.status === b.status ? 0 : a.status === "fail" ? -1 : 1)).map(r => <ResultRow key={r.id} result={r} ticketKey={state.key} />)}</ol>}
       {release && <Details label="The deploy"><ReleaseSteps ticketKey={state.key} release={release} after={afterOf(release.env, state)} /></Details>}
     </div>
   )

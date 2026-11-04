@@ -16,7 +16,27 @@ export const failed = (state: PipelineState): TestResult[] =>
 // something to fix, the build again; after a test with a failure, none (you look first).
 const AFTER: Partial<Record<Stage, Stage>> = { refine: "plan", plan: "build", build: "review", review: "staging", staging: "test", test: "prod", prod: "smoke" }
 export const nextStage = (state: PipelineState): Stage | null =>
-  state.status !== "ready" || failed(state).length ? null : toFix(state).length ? "build" : (AFTER[state.stage] ?? null)
+  state.status !== "ready" || failed(state).length || state.children?.length ? null : toFix(state).length ? "build" : (AFTER[state.stage] ?? null)
+
+// A coordinator (lib/coordinator.ts) has no stages of its own after its
+// refinement: it sits in the column of its child furthest behind, and says
+// how many children are at each stage.
+const ofChildren = (parent: PipelineState, states: PipelineState[]) =>
+  (parent.children ?? []).map(c => states.find(s => s.key === c.key) ?? null)
+export function parentColumn(parent: PipelineState, states: PipelineState[]): number {
+  const started = ofChildren(parent, states).filter(Boolean) as PipelineState[]
+  return started.length ? Math.min(...started.map(columnOf)) : 0
+}
+// The column a ticket sits in on the board: a coordinator's, its children's.
+export const isCoordinating = (state: PipelineState) => !!state.children?.length && state.status === "ready"
+export const boardColumn = (state: PipelineState, states: PipelineState[]) => (isCoordinating(state) ? parentColumn(state, states) : columnOf(state))
+export function childrenLine(parent: PipelineState, states: PipelineState[]): string {
+  const kids = ofChildren(parent, states)
+  const counts = new Map<string, number>()
+  for (const k of kids) counts.set(k ? k.stage : "to start", (counts.get(k ? k.stage : "to start") ?? 0) + 1)
+  const order = [...STAGE_KEYS, "test", "smoke", "to start"]
+  return `${kids.length} tickets: ${[...counts].sort(([a], [b]) => order.indexOf(a) - order.indexOf(b)).map(([s, n]) => `${n} ${s}`).join(" · ")}`
+}
 export const stageAt = (state: PipelineState) => AT[state.stage]
 // The step of a release at work that waits for you.
 export const waitingStep = (state: PipelineState): ReleaseStep | undefined =>
