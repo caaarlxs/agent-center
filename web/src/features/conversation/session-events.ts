@@ -60,21 +60,32 @@ export type Live = { turnId: string; step: number; text: string; done: boolean; 
 const KEEP_DONE_MS = 2500
 const STALE_MS = 60_000
 
-// The text to show: none for a stream long stopped, nor once the transcript
-// grew past where it stood when the step ended.
-export function shownLive(live: Live | null, itemCount: number, countAtDone: number | null, now: number) {
-  if (!live?.text || now - live.at > STALE_MS) return null
-  if (live.done && countAtDone !== null && itemCount > countAtDone) return null
-  return live.text
+// What of the step being written the conversation does not show yet: the
+// stream holds all its blocks so far, the transcript each one once it ends.
+// `answered`: the conversation's last answers, oldest first.
+export function unseenOf(text: string, answered: string[]) {
+  let rest = text
+  for (const a of answered) if (a && rest.startsWith(a)) rest = rest.slice(a.length).replace(/^\s+/, "")
+  return rest
 }
 
-export function useLiveAnswer(id: string, itemCount: number) {
+// The text to show: none for a stream long stopped, nor once the transcript
+// grew past where it stood when the step ended; never what the conversation
+// already shows.
+export function shownLive(live: Live | null, itemCount: number, countAtDone: number | null, now: number, answered: string[] = []) {
+  if (!live?.text || now - live.at > STALE_MS) return null
+  if (live.done && countAtDone !== null && itemCount > countAtDone) return null
+  return unseenOf(live.text, answered) || null
+}
+
+export function useLiveAnswer(id: string, itemCount: number, answered: string[] = []) {
   const [live, setLive] = useState<Live | null>(null)
   const countAtDone = useRef<number | null>(null)
   const count = useRef(itemCount)
   count.current = itemCount
   useEffect(() => {
     setLive(null)
+    let isFirst = true
     const link = join(id, (kind, data) => {
       if (kind !== "stream") return
       const next = (() => {
@@ -84,8 +95,12 @@ export function useLiveAnswer(id: string, itemCount: number) {
           return null
         }
       })()
+      // A step that had ended when the conversation opened is not news: its
+      // text is (or is about to be) in the conversation; the turn's line stays.
+      const isOld = isFirst && !!next?.done
+      isFirst = false
       countAtDone.current = next?.done ? count.current : null
-      setLive(next)
+      setLive(next && isOld ? { ...next, text: "" } : next)
     })
     return () => link.leave()
   }, [id])
@@ -95,7 +110,7 @@ export function useLiveAnswer(id: string, itemCount: number) {
     const timer = setTimeout(() => setLive(l => (l && l.text ? { ...l, text: "" } : l)), KEEP_DONE_MS)
     return () => clearTimeout(timer)
   }, [live])
-  return { text: shownLive(live, itemCount, countAtDone.current, Date.now()), live }
+  return { text: shownLive(live, itemCount, countAtDone.current, Date.now(), answered), live }
 }
 
 // The line the app shows while a turn runs: "5s · 29 tokens" and what it

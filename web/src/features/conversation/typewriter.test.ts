@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { nextLength, speedFor } from "./typewriter"
+import { nextLength, speedFor, startOf } from "./typewriter"
 
 describe("the letters of the answer being written", () => {
   it("type a big piece in within the catch-up time, not at once", () => {
@@ -16,4 +16,12 @@ describe("the letters of the answer being written", () => {
     expect(nextLength(0, 120, 33, speedFor(0, 120))).toBeGreaterThan(0)
   })
   it("never go past what arrived", () => expect(nextLength(119, 120, 500, speedFor(119, 120))).toBe(120))
+})
+
+describe("startOf: where the next text starts typing", () => {
+  it("goes on where it was when the text grows", () => expect(startOf("Hello", 3, "Hello world")).toBe(3))
+  it("keeps its place when the first block moves into the conversation", () => {
+    expect(startOf("First block.\n\nSecond, half", 20, "Second, half and more")).toBe(6)
+  })
+  it("starts over for another text", () => expect(startOf("Old step", 8, "New step")).toBe(0))
 })

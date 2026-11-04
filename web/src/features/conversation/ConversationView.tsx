@@ -633,7 +633,9 @@ export function ConversationView({ sessionId, card: session, bridge }: { session
   const { shown, suggestions, markDismissed, isLoaded, error, hasMore, loadEarlier, refresh } = useConversation(sessionId)
   // The answer being written now (mod v10), until the transcript has it,
   // its letters appearing one after another.
-  const stream = useLiveAnswer(sessionId, shown.length)
+  // The last answers shown, oldest first: the stream shows only what follows them.
+  const answered = useMemo(() => shown.flatMap(i => (i.kind === "assistant" ? [i.text] : [])).slice(-6), [shown])
+  const stream = useLiveAnswer(sessionId, shown.length, answered)
   const writing = useTypewriter(stream.text)
   const mine = usePending(sessionId)
   const gone = takenBack.use()

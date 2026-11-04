@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { type Live, doingPhrase, doingText, orbOf, shownLive, turnLine } from "./session-events"
+import { type Live, doingPhrase, doingText, orbOf, shownLive, turnLine, unseenOf } from "./session-events"
 
 const now = 1_000_000
 const live = (over: Partial<Live> = {}): Live => ({ turnId: "t", step: 0, text: "Writing…", done: false, at: now - 100, ...over })
@@ -91,5 +91,16 @@ describe("doingPhrase with a raw command", () => {
     expect(doingPhrase({ kind: "tool", tool: "Bash", label: "cd ~/organizer/agent-center/web && bun x vitest run" })).toBe("Running bun")
     expect(doingPhrase({ kind: "tool", tool: "Bash", label: "git status --short" })).toBe("Running git")
     expect(doingPhrase({ kind: "tool", tool: "Bash", label: "STAGE=prod .venv/bin/python x.py" })).toBe("Running python")
+  })
+})
+
+describe("the answer being written, beside the conversation", () => {
+  it("shows only what the conversation does not have yet", () => {
+    expect(unseenOf("First block.\n\nSecond, being wri", ["Earlier answer.", "First block."])).toBe("Second, being wri")
+    expect(unseenOf("Only block", ["Earlier answer."])).toBe("Only block")
+  })
+  it("nothing once the conversation has all of it (no copy beside it)", () => {
+    expect(unseenOf("First block.\n\nSecond.", ["First block.", "Second."])).toBe("")
+    expect(shownLive(live({ text: "Done answer.", done: true }), 10, 10, now, ["Done answer."])).toBeNull()
   })
 })
