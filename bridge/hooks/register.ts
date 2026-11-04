@@ -134,6 +134,8 @@ function approvalFor(tool: string, key: string) {
   const same = [...asking.values()].filter(a => a.tool === tool)
   return same.length === 1 ? same[0]! : null
 }
+// Tools that ask you something themselves (their own dialog on the board).
+const ASKS_YOU = new Set(['AskUserQuestion', 'ExitPlanMode'])
 // An approval the board already allowed for this call (or the only one for
 // that tool): taken, so it answers this one ask.
 function takeAllowed(tool: string, key: string) {
@@ -484,7 +486,8 @@ export const register: Register = on => {
   // the board allowed is allowed here.
   on('tool.check', async ($, e, next) => {
     const b = bridge
-    if (!b || e.agentId !== undefined || !e.tool_use_id) return next(e)
+    // A question or a plan always waits for you: its own dialog, not an approval.
+    if (!b || e.agentId !== undefined || !e.tool_use_id || ASKS_YOU.has(e.tool)) return next(e)
     const key = callKey(e.tool, e.input)
     if (takeAllowed(e.tool, key)) return { decision: 'allow' }
     const verdict = await next(e)
