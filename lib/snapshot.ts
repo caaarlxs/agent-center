@@ -8,6 +8,7 @@ import { HOME } from "./config"
 import { backgroundOf } from "./background"
 import { board, itemOf, keepAcrossAccounts, type BoardItem } from "./board"
 import { doingOf, status as bridgeStatus, type Permission } from "./bridge"
+import { retryingOf } from "./retrying"
 import { accountLimits } from "./limits"
 import { canRunCommands } from "./commands"
 import { freshness } from "./freshness"
@@ -224,7 +225,7 @@ async function cardOf(
     // The current turn's task list, while Claude works through it.
     progress: column === "working" ? await progressOf(id).catch(() => null) : null,
     // What that turn does now (the card's orb).
-    doing: column === "working" ? await doingOf(id) : null,
+    doing: column === "working" ? ((await retryingOf(id)) ?? (await doingOf(id))) : null,
     // Since when the session waits for the person (the moment it asked).
     waitingSince: column === "asking" ? s.updated_at : null,
     updatedAt: Math.max(s.updated_at, app?.lastActivityAt ?? 0),

@@ -105,6 +105,8 @@ const SAYS_ITSELF = new Set(["Bash", "Agent", "Task"])
 const toolName = (name: string) => (name.startsWith("mcp__") ? name.split("__").slice(2).join("__") : name)
 export function doingText(d: Doing | null | undefined) {
   if (!d) return null
+  if (d.kind === "compacting") return "Compacting the conversation"
+  if (d.kind === "retrying") return `The API failed: retrying (${d.max ? `${d.attempt} of ${d.max}` : `attempt ${d.attempt}`})`
   if (d.kind !== "tool") return d.kind === "thinking" ? "Thinking" : "Writing"
   const name = toolName(d.tool ?? "tool")
   if (!d.label) return name
@@ -124,7 +126,8 @@ export function turnLine(live: Live | null, now: number) {
 // The orb (@yogesharc/thinking-orbs) a turn shows, by what it does:
 // thinking reasons, a tool that reads or looks something up searches (the
 // web, with a lighthouse), a command works (a gyro), an agent runs in the
-// background, the browser is used by what it does there; the rest works.
+// background, the browser is used by what it does there; compacting the
+// conversation squeezes, retrying the API surges; the rest works.
 export type Orb = { [S in OrbState]: { state: S; variant: OrbVariant<S> } }[OrbState]
 const LOOKS = /^(Read|Grep|Glob|LS|NotebookRead)$/
 const LOOKS_UP = /search|get|list|read|fetch|find|query/i
@@ -133,6 +136,8 @@ const BROWSER = /^mcp__(Claude_Browser|claude-in-chrome|computer-use)__/
 const IN_BROWSER: [RegExp, OrbVariant<"using">][] = [[/computer|click/, "tap"], [/form_input|type/, "type"], [/scroll/, "scroll"], [/zoom/, "zoom"], [/screenshot|read_page|get_page_text|find/, "snap"], [/gif|record/, "record"]]
 const orb = <S extends OrbState>(state: S, variant: OrbVariant<S> = "default" as OrbVariant<S>) => ({ state, variant }) as Orb
 export function orbOf(d: Doing | null | undefined): Orb {
+  if (d?.kind === "compacting") return orb("compacting", "squeeze")
+  if (d?.kind === "retrying") return orb("retrying", "surge")
   if (!d || d.kind === "writing") return orb("working")
   if (d.kind === "thinking") return orb("reasoning")
   const tool = d.tool ?? ""

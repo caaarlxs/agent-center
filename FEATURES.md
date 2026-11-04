@@ -51,6 +51,7 @@ Lucide's names, and must be in `web/src/features/guide/icons.ts`.
 - {map} **Map**: in a long conversation, the rail on the right marks your messages, questions and failures; a click goes there.
 - {circle-arrow-right} **Next steps**: when a session waits, chips offer the obvious step: review, commit, push, open the PR.
 - {download} **Download files**: a file chip opens the file in Files; its arrow downloads it. · 2026-11-03
+- {refresh-cw} **Compacting and retries**: while a session compacts its conversation, or tries a failed call to the API again, its orb and its line say so (with the attempt): it is not stuck. · 2026-11-04
 - {gauge} **Context**: the ring under the box shows how full the context is; hover it for the tokens and the cost.
 
 ## {panel-right} Session tabs

@@ -195,13 +195,16 @@ export async function stop(sessionId: string) {
 // Also deletes the messages the mod has acknowledged.
 // What the running turn does now, as the mod (v12) writes it in its stream:
 // thinking, writing, or a tool with what it acts on. Null without it.
-export type Doing = { kind: "thinking" | "writing" | "tool"; tool?: string; label?: string }
+// What a running turn does now: the mod's (thinking, writing, a tool,
+// compacting the conversation, v13), or the server's (retrying the API,
+// lib/retrying.ts: which attempt, of how many).
+export type Doing = { kind: "thinking" | "writing" | "tool" | "compacting" | "retrying"; tool?: string; label?: string; attempt?: number; max?: number | null }
 export async function doingOf(sessionId: string): Promise<Doing | null> {
   if (!isId(sessionId)) return null
   try {
     const live = await readJson(join(BASE, "stream", `${sessionId}.json`))
     const d = live.since ? live.doing : null
-    return d && ["thinking", "writing", "tool"].includes(d.kind) ? { kind: d.kind, ...(d.tool ? { tool: String(d.tool) } : {}), ...(d.label ? { label: String(d.label) } : {}) } : null
+    return d && ["thinking", "writing", "tool", "compacting"].includes(d.kind) ? { kind: d.kind, ...(d.tool ? { tool: String(d.tool) } : {}), ...(d.label ? { label: String(d.label) } : {}) } : null
   } catch {
     return null
   }

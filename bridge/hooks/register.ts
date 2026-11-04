@@ -24,7 +24,8 @@
 //   stream/<session>.json        { turnId, step, text, done, at, since, tokens, doing }
 //                                this mod (v10): the answer as the model writes it, for
 //                                the board to show live; v12: when the turn began, the
-//                                tokens written so far and what it does now
+//                                tokens written so far and what it does now; v14:
+//                                doing "compacting" while the conversation compacts
 //   overrides/<session>.json     { effort, at }            the server: the effort picked on
 //                                the board, put on every request to the model (v11)
 //
@@ -50,7 +51,7 @@ async function pickedEffort($: EngineInterface, b: Bridge) {
   }
 }
 const KEEP_ACKS = 100
-const VERSION = 13
+const VERSION = 14
 const ANSWER_POLL_MS = 1000
 
 type Message = { id: string; text: string; notBefore?: number }
@@ -70,7 +71,7 @@ let turnId: string | null = null // the main loop's running turn
 // The running turn as the app's spinner shows it: since when, the tokens the
 // model wrote (the finished responses' exact count, the one streaming
 // guessed at 4 characters a token), and what it does now.
-type Doing = { kind: 'thinking' | 'writing' | 'tool'; tool?: string; label?: string }
+type Doing = { kind: 'thinking' | 'writing' | 'tool' | 'compacting'; tool?: string; label?: string }
 let turnSince = 0
 let turnTokens = 0
 let doing: Doing | null = null
@@ -353,6 +354,25 @@ export const register: Register = on => {
     limitsAskedAt = 0 // the turn moved the plan's limits
     void poll($) // a message that waited goes now
     return result
+  })
+
+  // While the conversation compacts (on its own, or /compact), the board
+  // shows it so: a long wait that is not a stuck session.
+  on('session.compact', async ($, e, next) => {
+    const b = bridge
+    if (!b || e.agentId !== undefined) return next(e)
+    const path = `${b.base}/stream/${b.id}.json`
+    const say = (now: Doing | null) => {
+      doing = now
+      const at = Date.now()
+      return $.fs.write(path, JSON.stringify({ turnId, step: -1, text: '', done: false, at, since: turnSince || at, tokens: turnTokens, doing })).catch(() => {})
+    }
+    await say({ kind: 'compacting' })
+    try {
+      return await next(e)
+    } finally {
+      await say(null)
+    }
   })
 
   // The answer as the model writes it, for the board to show live: its text

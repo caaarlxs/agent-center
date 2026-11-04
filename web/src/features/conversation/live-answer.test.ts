@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { type Live, orbOf, shownLive, turnLine } from "./session-events"
+import { type Live, doingText, orbOf, shownLive, turnLine } from "./session-events"
 
 const now = 1_000_000
 const live = (over: Partial<Live> = {}): Live => ({ turnId: "t", step: 0, text: "Writing…", done: false, at: now - 100, ...over })
@@ -51,5 +51,17 @@ describe("the orb's state, from what the turn does", () => {
     expect(orb({ kind: "tool", tool: "mcp__claude-in-chrome__form_input" })).toEqual({ state: "using", variant: "type" })
     expect(orb({ kind: "tool", tool: "mcp__Claude_Browser__navigate" })).toEqual({ state: "using", variant: "default" })
     expect(orb({ kind: "tool", tool: "mcp__claude-in-chrome__gif_creator" })).toEqual({ state: "using", variant: "record" })
+  })
+})
+
+describe("compacting and retrying", () => {
+  it("squeezes while it compacts, surges while it retries the API", () => {
+    expect(orbOf({ kind: "compacting" })).toEqual({ state: "compacting", variant: "squeeze" })
+    expect(orbOf({ kind: "retrying", attempt: 2, max: 10 })).toEqual({ state: "retrying", variant: "surge" })
+  })
+  it("says so in words, with the attempt", () => {
+    expect(doingText({ kind: "compacting" })).toBe("Compacting the conversation")
+    expect(doingText({ kind: "retrying", attempt: 2, max: 10 })).toBe("The API failed: retrying (2 of 10)")
+    expect(doingText({ kind: "retrying", attempt: 3, max: null })).toBe("The API failed: retrying (attempt 3)")
   })
 })
