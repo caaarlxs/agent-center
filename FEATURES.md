@@ -47,6 +47,7 @@ Lucide's names, and must be in `web/src/features/guide/icons.ts`.
 - {sliders-horizontal} **Mode and model**: the pills under the box change them in the session.
 - {wand-sparkles} **Suggested reply**: after a turn it shows grey in the box; `Tab` or `→` writes it, "Send suggestion" sends it. · 2026-11-03
 - {terminal} **Run a command**: a command block has Run, in the session's folder; one that touches prod or deletes asks for a second click. · 2026-11-03
+- {messages-square} **Selected text**: select text in a conversation for Side chat (a new session that knows the whole conversation, to ask about it) or Reply (it goes quoted into the box). · 2026-11-04
 - {git-fork} **Fork**: the link under one of your messages starts a new session from that point.
 - {map} **Map**: in a long conversation, the rail on the right marks your messages, questions and failures; a click goes there.
 - {circle-arrow-right} **Next steps**: when a session waits, chips offer the obvious step: review, commit, push, open the PR.

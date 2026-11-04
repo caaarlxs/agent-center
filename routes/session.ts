@@ -38,13 +38,15 @@ async function send(id: string, body: Record<string, unknown>) {
   }
 }
 
-// "Fork": a new session with the conversation up to before one message.
+// "Fork": a new session with the conversation up to before one message;
+// with messageId null, all of it (a side chat).
 async function fork(id: string, body: Record<string, unknown>) {
   const prompt = String(body.prompt ?? "").trim()
   const group = groupOf(id)
   if (!prompt || !group) return json({ error: "missing message or session" }, 400)
-  const point = await forkPoint([id, ...group.ids.filter(x => x !== id)], String(body.messageId ?? ""))
-  if (!point) return json({ error: "Cannot find that message in the conversation" }, 404)
+  const messageId = body.messageId === null ? null : String(body.messageId ?? "")
+  const point = await forkPoint([id, ...group.ids.filter(x => x !== id)], messageId)
+  if (!point) return json({ error: messageId === null ? "This conversation has no answer to start from yet" : "Cannot find that message in the conversation" }, 404)
   const resume = point.answerId ? ["--resume", point.sessionId, "--fork-session", "--resume-session-at", point.answerId] : []
   // The copy keeps the original's permission mode: one in plan or ask mode
   // must not start editing on its own.

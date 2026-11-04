@@ -104,3 +104,7 @@ export function riskOf(command: string): string | null {
   }
   return null
 }
+
+// Some text quoted, as Markdown quotes it ("> " on each line): what Reply on
+// a selection puts in the reply box, and a side chat's prompt starts with.
+export const quoteOf = (text: string) => text.trim().split("\n").map(l => (l.trim() ? `> ${l.trimEnd()}` : ">")).join("\n")

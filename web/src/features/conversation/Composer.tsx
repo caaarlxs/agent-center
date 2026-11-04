@@ -25,7 +25,7 @@ import { MAX_BYTES, MAX_FILES, messageWith } from "@/features/prompt/files"
 import { launch, sleep, stopTurn, wake } from "@/features/session/actions"
 import { UsageMeter } from "@/features/session/UsageMeter"
 import { isBusyNow, isStuckNow, reachOf } from "./reach"
-import { composerFill, composerFocus, composerHint, sendMessage } from "./send"
+import { composerFill, composerFocus, composerHint, composerQuote, sendMessage } from "./send"
 import { Anim } from "@/components/icons/animated"
 import { SendMark, useSendMoment } from "@/components/icona/marks"
 
@@ -129,6 +129,19 @@ function Box({ id, card, bridge }: { id: string; card: Card | undefined; bridge:
     requestAnimationFrame(cursorAtEnd)
   }, [fill, id, textInput])
   useEffect(() => void (focus?.id === id && cursorAtEnd()), [focus, id])
+  // A quote (Reply on a selection): on top, the cursor on the line under it.
+  const quote = composerQuote.use()
+  useEffect(() => {
+    if (quote?.id !== id) return
+    composerQuote.set(null)
+    const rest = textInput.value.trim()
+    textInput.setInput(`${quote.text}\n\n${rest}`)
+    requestAnimationFrame(() => {
+      const el = box.current?.querySelector("textarea")
+      const at = quote.text.length + 2
+      if (el) (el.focus({ preventScroll: true }), el.setSelectionRange(at, at))
+    })
+  }, [quote, id, textInput])
   const hint = composerHint.use()
   const suggested = hint?.id === id && !textInput.value ? hint.text : null
   const fillHint = () => {

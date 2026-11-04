@@ -33,14 +33,15 @@ import { ConversationMap } from "./ConversationMap"
 import { dayBreaks } from "./days"
 import { type Step, type WorkState, nextSteps } from "./next-steps"
 import { ForkDialog } from "./ForkDialog"
+import { SelectionMenu } from "./SelectionMenu"
 import type { EditsItem, Shown, SuggestionItem } from "./items"
 import { Markdown, SessionOf } from "./Markdown"
 import { type Live, orbOf, turnLine, useLiveAnswer } from "./session-events"
 import { useTypewriter } from "./typewriter"
 import { WidgetView } from "./Widget"
 import { type Pending, deliveredOf, dropPending, stampOf, takenBack, usePending, waitingOf } from "./pending"
-import { composerHint, reply, takeBack } from "./send"
-import { dialogAnswer, linesText, nameOf, partsOf } from "./text"
+import { composerHint, composerQuote, reply, takeBack } from "./send"
+import { dialogAnswer, linesText, nameOf, partsOf, quoteOf } from "./text"
 import { type Suggestions, useConversation } from "./useConversation"
 import { Anim } from "@/components/icons/animated"
 import { useIsDots } from "@/lib/board-style"
@@ -637,7 +638,7 @@ export function ConversationView({ sessionId, card: session, bridge }: { session
   const mine = usePending(sessionId)
   const gone = takenBack.use()
   const waiting = useMemo(() => waitingOf(mine, bridge?.queued ?? [], gone), [mine, bridge?.queued, gone])
-  const [forking, setForking] = useState<Extract<Shown, { kind: "user" }> | null>(null)
+  const [forking, setForking] = useState<{ key: string | null; text: string } | null>(null) // a message to fork before, or (key null) a side chat
   const today = new Date(useNow()).toDateString()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const breaks = useMemo(() => dayBreaks(shown as { key: string; at?: string | null }[], Date.now()), [shown, today])
@@ -747,6 +748,7 @@ export function ConversationView({ sessionId, card: session, bridge }: { session
     <SessionOf.Provider value={sessionId}>
       <div className="relative flex min-h-0 flex-1 flex-col">
       <ConversationMap box={box} />
+      <SelectionMenu box={box} onSideChat={text => setForking({ key: null, text: `${quoteOf(text)}\n\n` })} onReply={text => composerQuote.set({ id: sessionId, text: quoteOf(text) })} />
       <div ref={box} onScroll={onScroll} className="relative flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto px-5 pt-[18px] pb-3 max-[860px]:px-3.5 max-[860px]:pt-3.5 max-[860px]:pb-2.5">
         {!isLoaded && !error && (
           <div className="flex flex-col gap-3">

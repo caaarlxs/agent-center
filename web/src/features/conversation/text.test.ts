@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { dialogAnswer, endOf, familyOf, isShellLike, isTemplate, partsOf, pathInCode, pathInLink, riskOf } from "./text"
+import { dialogAnswer, endOf, familyOf, isShellLike, isTemplate, partsOf, pathInCode, pathInLink, quoteOf, riskOf } from "./text"
 
 describe("partsOf", () => {
   it("folds pasted blocks away from what was typed", () => {
@@ -93,5 +93,12 @@ describe("riskOf", () => {
     expect(riskOf("git status")).toBeNull()
     expect(riskOf("bun x vitest run")).toBeNull()
     expect(riskOf("cat products.json")).toBeNull()
+  })
+})
+
+describe("quoteOf", () => {
+  it("quotes each line, as Markdown does, without the blank ones around it", () => {
+    expect(quoteOf("  one line \n")).toBe("> one line")
+    expect(quoteOf("first\n\nsecond")).toBe("> first\n>\n> second")
   })
 })
