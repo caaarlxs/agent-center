@@ -3,7 +3,7 @@
 import type { LucideIcon } from "lucide-react"
 import {
   Activity, BellRing, BookText, Bot, CircleArrowRight, CircleCheck, Clock, Code, Columns3, Command, CopyX,
-  Download, Eye, FileDiff, FileText, FlaskConical, Folder, Frame, Gauge, GitCommitHorizontal, GitFork,
+  Download, Eye, FastForward, FileDiff, FileText, FlaskConical, Folder, Frame, Gauge, GitCommitHorizontal, GitFork,
   GitPullRequest, Hammer, HeartPulse, Inbox, Kanban, Keyboard, LayoutGrid, Lightbulb, Link, ListChecks,
   ListTodo, ListTree, Lock, Map as MapIcon, MessageCircleQuestion, MessageSquare, MessagesSquare, MousePointerClick, Move,
   Orbit, Palette, PanelLeft, PanelRight, PawPrint, Play, Plus, RefreshCw, Reply, Rocket, Rows3, Scale, Search, Server,
@@ -25,6 +25,7 @@ export const ICONS: Record<string, LucideIcon | undefined> = {
   "copy-x": CopyX,
   "download": Download,
   "eye": Eye,
+  "fast-forward": FastForward,
   "file-diff": FileDiff,
   "file-text": FileText,
   "flask-conical": FlaskConical,

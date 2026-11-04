@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { blocking, checkedIn, toFixNow, MARK, answeredAfter, answersComment, argsFor, parseResult, pipelineKeyOf, stageToRun, unbuilt, withRun, questionsComment, snapshotOf, prodWarning } from "../lib/pipeline"
+import { blocking, checkedIn, toFixNow, MARK, answeredAfter, answersComment, argsFor, parseResult, pipelineKeyOf, stageToRun, unbuilt, withRun, questionsComment, snapshotOf, prodWarning, autoNext } from "../lib/pipeline"
 
 const questions = [
   { id: "Q1", question: "¿Cuál es el copy?", proposal: "El del ticket" },
@@ -210,6 +210,10 @@ describe("unbuilt", () => {
 })
 
 describe("argsFor", () => {
+  it("lets only the test in staging load and clean its test data (fixtures.py), nothing else", () => {
+    expect(argsFor("test", "/data/pipeline")).toEqual(expect.arrayContaining(["--allowedTools", "Bash(python3 fixtures.py:*)"]))
+    for (const stage of ["refine", "plan", "build", "review", "smoke"] as const) expect(argsFor(stage, "/data/pipeline")).not.toContain("Bash(python3 fixtures.py:*)")
+  })
   it("runs every stage clean (none of your settings, hooks or connectors) on its model and effort", () => {
     const args = argsFor("refine", "/data/pipeline")
     expect(args).toEqual(expect.arrayContaining(["--setting-sources", "project,local", "--strict-mcp-config", "--model", "claude-opus-5-5", "--effort", "high"]))
@@ -272,5 +276,26 @@ describe("prodWarning", () => {
     expect(prodWarning("smoke", failed)).toContain("El check de prod ha fallado (P1)")
     expect(prodWarning("test", failed)).toBe("")
     expect(prodWarning("smoke", { results: [] })).toBe("")
+  })
+})
+
+describe("autoNext", () => {
+  const at = (stage: string, status: string, extra = {}) => ({ key: "PP-1", stage, status, auto: true, ...extra }) as never
+  it("runs on by itself, refine to plan to build to review", () => {
+    expect(autoNext(at("refine", "ready"))).toBe("plan")
+    expect(autoNext(at("plan", "ready"))).toBe("build")
+    expect(autoNext(at("build", "ready"))).toBe("review")
+  })
+  it("stops at the review, with the PRs done: staging stays a person's", () => {
+    expect(autoNext(at("review", "ready"))).toBeNull()
+  })
+  it("waits while a stage asks, failed or runs, and does nothing unless it was asked to run on its own", () => {
+    expect(autoNext(at("plan", "needs-info"))).toBeNull()
+    expect(autoNext(at("build", "failed"))).toBeNull()
+    expect(autoNext(at("refine", "running"))).toBeNull()
+    expect(autoNext(at("refine", "ready", { auto: false }))).toBeNull()
+  })
+  it("leaves a coordinator to its children", () => {
+    expect(autoNext(at("refine", "ready", { children: [{ key: "PP-2", dependsOn: [] }] }))).toBeNull()
   })
 })

@@ -11,7 +11,7 @@
 // and start the stage again. Start over clears the run and the labels; the
 // comments stay. On someone else's ticket it runs only once you take it
 // (two clicks: it is assigned to you).
-import { AlertTriangle, Check, ChevronRight, Database, FlaskConical, ListChecks, Play, RotateCcw, Route, ShieldCheck } from "lucide-react"
+import { AlertTriangle, Check, ChevronRight, Database, FastForward, FlaskConical, ListChecks, Play, RotateCcw, Route, ShieldCheck } from "lucide-react"
 import { useEffect, useState, type ReactNode } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -350,16 +350,21 @@ function Reminders({ isOpen, label, reminders, onClose, onGo }: { isOpen: boolea
 }
 
 // Run, on yours; on someone else's, take it first (a second click confirms).
-function RunButton({ ticket, onStarted }: { ticket: Ticket; onStarted: () => void }) {
+// Run the pipeline, or run it on its own until the review (the PRs done, before
+// any release); on someone else's ticket, take it first (a second click confirms).
+function RunButton({ ticket, onStarted, auto = false }: { ticket: Ticket; onStarted: () => void; auto?: boolean }) {
   const [isAsking, confirm] = useConfirm()
   const run = async () => {
-    const done = ticket.isMine ? "Refining: a session starts" : `${ticket.key} is yours: refining`
-    if (await act("/api/pipeline/start", { key: ticket.key, take: !ticket.isMine }, done)) onStarted()
+    const done = `${ticket.isMine ? "" : `${ticket.key} is yours: `}refining${auto ? ", then on its own until the review" : ""}`
+    if (await act("/api/pipeline/start", { key: ticket.key, take: !ticket.isMine, auto }, done.charAt(0).toUpperCase() + done.slice(1))) onStarted()
   }
-  const label = ticket.isMine ? "Run pipeline" : !isAsking ? "Assign to me and run" : ticket.assignee ? `Sure? Take it from ${ticket.assignee}` : "Sure? Assign it to me"
+  const plain = auto ? "Run to review" : "Run pipeline"
+  const label = ticket.isMine ? plain : !isAsking ? `Assign to me and ${plain.toLowerCase()}` : ticket.assignee ? `Sure? Take it from ${ticket.assignee}` : "Sure? Assign it to me"
+  const Icon = auto ? FastForward : Play
   return (
-    <Button variant={isAsking ? "destructive" : "default"} className="h-8 self-start gap-1.5 text-xs" onClick={() => (ticket.isMine ? void run() : confirm(() => void run()))}>
-      <Play size={13} className="fill-current" />{label}
+    <Button variant={isAsking ? "destructive" : auto ? "outline" : "default"} className="h-8 gap-1.5 text-xs" title={auto ? "Refine, plan, build and review on their own; it stops before staging" : undefined}
+      onClick={() => (ticket.isMine ? void run() : confirm(() => void run()))}>
+      <Icon size={13} className="fill-current" />{label}
     </Button>
   )
 }
@@ -641,7 +646,7 @@ function Now({ state, preview, now, onRun, onStep }: { state: PipelineState; pre
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         {isRunning ? <Shimmer as="span" duration={2.2} className="truncate text-[13.5px] font-semibold [--color-background:var(--text)] [--color-muted-foreground:var(--text-muted)]">{line}</Shimmer>
           : <span className={cn("truncate text-[13.5px] font-semibold", isFailed ? "text-bad" : isAsking ? "text-ask" : "text-text")}>{line}</span>}
-        <span className="text-[11.5px] text-faint tabular-nums">{STAGES[stageAt(state)]} · {ago(isRunning ? state.startedAt : (state.endedAt ?? state.startedAt), now)}</span>
+        <span className="text-[11.5px] text-faint tabular-nums">{STAGES[stageAt(state)]} · {ago(isRunning ? state.startedAt : (state.endedAt ?? state.startedAt), now)}{isAuto(state) ? " · on its own until the review" : ""}</span>
       </div>
       <NowActions state={state} preview={preview} onRun={onRun} onStep={onStep} />
     </div>
@@ -653,7 +658,12 @@ function Now({ state, preview, now, onRun, onStep }: { state: PipelineState; pre
 function NowActions({ state, preview, onRun, onStep }: { state: PipelineState; preview: Release | null; onRun: (stage?: Stage) => void; onStep: OnStep }) {
   const release = isRelease(state.stage) ? state.release : null
   const next = nextStage(state)
-  if (state.status === "running") return state.sessionId ? <button className="shrink-0 text-xs font-semibold text-text-muted hover:text-text" onClick={() => openLog(state.sessionId!)}>Log</button> : null
+  if (state.status === "running") return (
+    <>
+      {isAuto(state) && <StopAuto ticketKey={state.key} />}
+      {state.sessionId && <button className="shrink-0 text-xs font-semibold text-text-muted hover:text-text" onClick={() => openLog(state.sessionId!)}>Log</button>}
+    </>
+  )
   const isRolledBack = !!release?.rollback && release.steps.every(s => s.status === "done" || s.status === "skipped")
   if (state.status === "failed") return (
     <>
@@ -669,6 +679,12 @@ function NowActions({ state, preview, onRun, onStep }: { state: PipelineState; p
       {next && !(state.stage === "review" && next === "build") ? <StartButton stage={next} from={state.stage} reminders={preview?.env === next ? preview.reminders : undefined} onRun={onRun} /> : null}
     </>
   )
+}
+
+// Running on its own, until the review (lib/pipeline.ts autoNext); a click stops it there.
+const isAuto = (state: PipelineState) => !!state.auto && ["refine", "plan", "build"].includes(state.stage) && state.status !== "failed"
+function StopAuto({ ticketKey }: { ticketKey: string }) {
+  return <button className="shrink-0 text-xs font-semibold text-faint hover:text-text" onClick={() => void act("/api/pipeline/auto", { key: ticketKey }, "It stops after this stage")}>Stop auto</button>
 }
 
 // Undoing a release, where one ended in this column: quiet, and it asks twice.
@@ -731,7 +747,12 @@ export function Pipeline({ ticket, onTaken }: { ticket: Ticket; onTaken: () => v
         )}
       </header>
       <div className="flex flex-col gap-3 px-4 pb-4">
-        {!state && <RunButton ticket={ticket} onStarted={() => (loadSoon(), ticket.isMine || onTaken())} />}
+        {!state && (
+          <div className="flex flex-wrap gap-2">
+            <RunButton ticket={ticket} onStarted={() => (loadSoon(), ticket.isMine || onTaken())} />
+            <RunButton ticket={ticket} auto onStarted={() => (loadSoon(), ticket.isMine || onTaken())} />
+          </div>
+        )}
         {state && <Now state={state} preview={data.preview} now={now} onRun={stage => void start(stage)} onStep={step} />}
         {state?.checks?.length && state.status !== "running" ? <Checks checks={state.checks} /> : null}
         {state?.status === "needs-info" ? <Decisions key={state.askedAt} ticketKey={ticket.key} state={state} onSent={() => void load()} />

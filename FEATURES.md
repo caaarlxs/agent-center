@@ -81,6 +81,7 @@ Lucide's names, and must be in `web/src/features/guide/icons.ts`.
 - {play} **Run pipeline**: in a ticket, Run pipeline starts the refinement; on someone else's ticket, Assign to me and run takes it first, with a second click to confirm.
 - {kanban} **The board**: Pipeline in the sidebar shows a column per stage and a card per ticket, all the same size: its orb, the one line that matters now, its key, cost and time; a click opens the ticket. · 2026-11-04
 - {orbit} **Stage effects**: a card's right part shows its stage at work (Refine's steps falling, the plan's graph, code raining in Build, Review's scan, packets to staging, Test's grid, rings in Prod, Smoke's heartbeat); it stops in amber when it waits for you, red when it failed, grey when done. · 2026-11-04
+- {fast-forward} **Run to review**: next to Run pipeline, Run to review refines, plans, builds and reviews on its own, stage after stage, and stops before staging with the PRs done; a stage that asks waits for your answers, then goes on. Stop auto stops it after the stage at work. · 2026-11-04
 - {message-circle-question} **Refine**: the agent reads the ticket and the code and asks only what it cannot decide, each question with its proposal; change what you want and Send to Jira and continue (`⌘↵`).
 - {list-tree} **Plan**: it splits the work into units, one per repo, with a to-do list, the scripts to run on the data and the order of the release.
 - {hammer} **Build**: it writes the code and opens a draft PR per unit; the to-do list ticks itself as it goes.

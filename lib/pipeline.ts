@@ -104,6 +104,7 @@ export type PipelineState = {
   fixes?: string[] // the [Fix] sub-tasks a failed test opened in Jira
   children?: Child[] // a coordinator's children, in the order they go (coordinator.ts)
   parent?: string | null // the coordinator a child's pipeline belongs to
+  auto?: boolean // runs on by itself, stage after stage, until the review (autoNext)
   error: string | null
   history?: Run[] // every run since the last start over, the latest last
 }
@@ -209,9 +210,12 @@ const deniedFor = (stage: AgentStage, root: string) => [
   ...(STAGE[stage].writes ? [] : ["Bash(git push:*)", "Bash(git commit:*)", "Bash(gh pr create:*)", `Edit(/${join(root, "repos")}/**)`, `Write(/${join(root, "repos")}/**)`]),
   ...(stage === "test" ? [] : ["Bash(aws:*)"]),
 ]
+// The test in staging loads its test data and cleans it up with this script
+// (<data>/pipeline/fixtures), run from its folder; its IAM user can write only that data.
+const FIXTURES = "Bash(python3 fixtures.py:*)"
 export const argsFor = (stage: AgentStage, root = ROOT) => {
   const s = STAGE[stage]
-  return ["--setting-sources", "project,local", "--strict-mcp-config", "--model", s.model, "--effort", s.effort, ...(s.writes ? ["--add-dir", join(root, "repos")] : []), "--disallowedTools", ...deniedFor(stage, root)]
+  return ["--setting-sources", "project,local", "--strict-mcp-config", "--model", s.model, "--effort", s.effort, ...(s.writes ? ["--add-dir", join(root, "repos")] : []), "--disallowedTools", ...deniedFor(stage, root), ...(stage === "test" ? ["--allowedTools", FIXTURES] : [])]
 }
 
 const listOf = (v: unknown): any[] => (Array.isArray(v) ? v : [])
@@ -394,8 +398,15 @@ ${AS_AGENT}
 No escribas en Jira${STAGE[stage].writes ? "" : " ni en los repos"}: el board publica lo que dejas en tus ficheros.`
 
 // Runs a stage; whatever fails before the session starts leaves a failed state.
-const run = (key: string, runs: number, stage: AgentStage) =>
-  runStage(key, runs, stage).catch(async err => save({ ...(await fresh(key, runs, stage)), status: "failed", error: String(err?.message ?? err), endedAt: Date.now() }))
+// Run on its own: each stage, once done, starts the next, until the review (the
+// PRs done). A stage that asks waits for the answers, then goes on; a release is
+// always started by a person.
+const AUTO_NEXT: Partial<Record<Stage, AgentStage>> = { refine: "plan", plan: "build", build: "review" }
+export const autoNext = (state: PipelineState): AgentStage | null =>
+  state.auto && state.status === "ready" && !state.children?.length ? (AUTO_NEXT[state.stage] ?? null) : null
+
+const run = (key: string, runs: number, stage: AgentStage, auto?: boolean) =>
+  runStage(key, runs, stage, auto).catch(async err => save({ ...(await fresh(key, runs, stage)), status: "failed", error: String(err?.message ?? err), endedAt: Date.now() }))
 const EMPTY = (key: string, runs: number, stage: Stage): PipelineState =>
   ({ key, stage, status: "running", sessionId: null, runs, startedAt: Date.now(), endedAt: null, askedAt: null, questions: [], error: null })
 // A new run, with the ticket's history so far.
@@ -403,7 +414,7 @@ const fresh = async (key: string, runs: number, stage: Stage): Promise<PipelineS
   const prev = await stateOf(key)
   // The plan's units and to-do list, and the review's findings, stay with the ticket for the stages after it.
   return { ...EMPTY(key, runs, stage), summary: prev?.summary, history: prev?.history ?? [], units: prev?.units, checklist: prev?.checklist, checked: prev?.checked, scripts: prev?.scripts, contextImpact: prev?.contextImpact,
-    release: prev?.release, deployed: prev?.deployed, fixes: prev?.fixes, children: prev?.children, parent: prev?.parent,
+    release: prev?.release, deployed: prev?.deployed, fixes: prev?.fixes, children: prev?.children, parent: prev?.parent, auto: prev?.auto,
     ...(stage === "review" ? {} : { findings: prev?.findings, fixed: stage === "build" ? [] : prev?.fixed }) }
 }
 // A stage's session is the pipeline's, not yours: once it ends it leaves the
@@ -430,7 +441,7 @@ async function writeContextPages(dir: string) {
   }
 }
 
-async function runStage(key: string, runs: number, stage: AgentStage) {
+async function runStage(key: string, runs: number, stage: AgentStage, auto?: boolean) {
   const dir = dirOf(key)
   await mkdir(dir, { recursive: true })
   for (const f of [`${stage}.json`, `${stage}.md`, `${stage}.summary.md`]) await rename(join(dir, f), join(dir, `${f}.prev`)).catch(() => {})
@@ -446,7 +457,7 @@ async function runStage(key: string, runs: number, stage: AgentStage) {
   await Bun.write(join(dir, "ticket.md"), snapshotOf(t, parent, children, await linkedPages(t, parent)) + (decided ? `\n## Decisiones del padre (${t.parent!.key})\n\n${decided}\n` : ""))
   await writeContextPages(dir)
   const kids = stage === "refine" ? deliverablesOf(t) : []
-  const base = { ...(await fresh(key, runs, stage)), summary: t.summary, ...(isChild ? { parent: t.parent!.key } : {}) }
+  const base = { ...(await fresh(key, runs, stage)), summary: t.summary, ...(isChild ? { parent: t.parent!.key } : {}), ...(auto === undefined ? {} : { auto }) }
   const started = kids.length ? { ...base, children: childrenIn(base.children, kids) } : base
   const state = stage === "build" ? { ...started, ...(await inJira("build-started", started)) } : started
   await save(state)
@@ -531,11 +542,19 @@ async function finish(key: string) {
   const tested = state.stage === "test" || state.stage === "smoke" ? { results: shown.results } : {}
   const context = state.stage === "refine" ? { contextImpact: result.contextImpact } : {}
   const done: PipelineState = { ...state, status: "ready", questions: [], units, checklist, checked, scripts, ...found, ...tested, ...context, checks: withJira([...checks, ...attached.checks], state.checks), endedAt: Date.now() }
-  const event = state.stage === "build" ? "built" : state.stage === "test" ? "tested" : null
-  // A coordinator keeps the order its refinement gave, and starts its children.
-  const ordered = state.stage === "refine" && state.children?.length ? { children: childrenIn(result.children, state.children.map(c => c.key)) } : {}
-  await save(event ? { ...done, ...(await inJira(event, done)) } : { ...done, ...ordered })
-  if (ordered.children) void coordinate(key)
+  await settle(done, result)
+}
+
+// A stage done: Jira follows it, a coordinator keeps its children's order and
+// starts them, and a pipeline that runs on its own starts the next stage.
+async function settle(done: PipelineState, result: Result) {
+  const event = done.stage === "build" ? "built" : done.stage === "test" ? "tested" : null
+  const ordered = done.stage === "refine" && done.children?.length ? { children: childrenIn(result.children, done.children.map(c => c.key)) } : {}
+  const saved: PipelineState = event ? { ...done, ...(await inJira(event, done)) } : { ...done, ...ordered }
+  await save(saved)
+  if (ordered.children) void coordinate(done.key)
+  const next = autoNext(saved)
+  if (next) void startPipeline(done.key, false, next).catch(err => console.error(`auto ${done.key} → ${next}:`, err))
 }
 
 // ---------- a coordinator's children (coordinator.ts) ----------
@@ -554,7 +573,7 @@ async function coordinate(key: string) {
     const children = parent.children.filter(c => !refused.has(c.key))
     const failed: Check[] = []
     for (const child of toStart(children, await childStates(children)))
-      await startPipeline(child).catch((err: Error) => failed.push({ id: `child-${child}`, label: `${child} did not start`, status: "warn", detail: err.message }))
+      await startPipeline(child, false, undefined, undefined, parent.auto).catch((err: Error) => failed.push({ id: `child-${child}`, label: `${child} did not start`, status: "warn", detail: err.message }))
     if (failed.length) await save({ ...parent, checks: [...(parent.checks ?? []), ...failed] })
   } finally {
     coordinating.delete(key)
@@ -661,7 +680,7 @@ export function stageToRun(state: PipelineState | null, asked?: Stage): Stage {
 // Starts the pipeline on a ticket of yours (or runs a stage again); taking
 // it, when you ask, makes it yours first. A build after a review fixes what
 // it found (review.fix.json): the findings you chose, else what stops the ticket.
-export async function startPipeline(key: string, take = false, asked?: Stage, chosen?: string[]) {
+export async function startPipeline(key: string, take = false, asked?: Stage, chosen?: string[], auto?: boolean) {
   if (!isKey(key)) throw new Error("Not a ticket key")
   const state = await stateOf(key)
   if (state?.status === "running") throw new Error("A stage already runs on this ticket")
@@ -672,7 +691,13 @@ export async function startPipeline(key: string, take = false, asked?: Stage, ch
   if (isRelease(stage)) return startRelease(state!, stage)
   if (stage === "build" && state?.stage === "review") await writeJsonAtomic(join(dirOf(key), "review.fix.json"), { fix: toFixNow(state.findings, chosen) }, { pretty: true })
   else if (stage !== "build") await rename(join(dirOf(key), "review.fix.json"), join(dirOf(key), "review.fix.json.prev")).catch(() => {})
-  void run(key, (state?.runs ?? 0) + 1, stage)
+  void run(key, (state?.runs ?? 0) + 1, stage, auto)
+}
+
+// Stop running on its own: the stage at work ends, and the next waits for you.
+export async function stopAuto(key: string) {
+  const state = await stateOf(key)
+  if (state) await save({ ...state, auto: false })
 }
 
 // ---------- the release ----------
