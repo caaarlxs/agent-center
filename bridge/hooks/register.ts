@@ -51,7 +51,7 @@ async function pickedEffort($: EngineInterface, b: Bridge) {
   }
 }
 const KEEP_ACKS = 100
-const VERSION = 14
+const VERSION = 15
 const ANSWER_POLL_MS = 1000
 
 type Message = { id: string; text: string; notBefore?: number }
@@ -134,6 +134,22 @@ function approvalFor(tool: string, key: string) {
   const same = [...asking.values()].filter(a => a.tool === tool)
   return same.length === 1 ? same[0]! : null
 }
+// An approval the board already allowed for this call (or the only one for
+// that tool): taken, so it answers this one ask.
+function takeAllowed(tool: string, key: string) {
+  const same = [...allowed].filter(k => k.startsWith(`${tool}:`))
+  const pass = allowed.has(key) ? key : same.length === 1 ? same[0]! : null
+  if (pass) allowed.delete(pass)
+  return !!pass
+}
+// An approval the client is about to ask you for: noted for the board.
+async function noteAsk($: EngineInterface, b: Bridge, tool: string, input: unknown, key: string) {
+  if (asking.has(key)) return
+  const approval = { id: crypto.randomUUID(), tool, key }
+  asking.set(key, approval)
+  await $.fs.write(`${b.base}/permissions/${b.id}.json`, JSON.stringify({ id: approval.id, tool, input, at: await $.clock.now() }))
+}
+
 // The tool's arguments, without the engine's own keys around them.
 function argsOf(e: Record<string, unknown>) {
   const { tool, tool_use_id, agentId, requestMeta, consent, ...args } = e as any
@@ -456,14 +472,24 @@ export const register: Register = on => {
   on('classic.PermissionRequest', async ($, e, next) => {
     const b = bridge
     const key = callKey(e.tool_name, e.tool_input)
-    const pass = allowed.has(key) ? key : [...allowed].filter(k => k.startsWith(`${e.tool_name}:`)).length === 1 ? [...allowed].find(k => k.startsWith(`${e.tool_name}:`))! : null
-    if (pass) return allowed.delete(pass), { decision: { behavior: 'allow' } }
-    if (b && !(e as any).agent_id) {
-      const approval = { id: crypto.randomUUID(), tool: e.tool_name, key }
-      asking.set(key, approval)
-      await $.fs.write(`${b.base}/permissions/${b.id}.json`, JSON.stringify({ id: approval.id, tool: e.tool_name, input: e.tool_input, at: await $.clock.now() }))
-    }
+    if (takeAllowed(e.tool_name, key)) return { decision: { behavior: 'allow' } }
+    if (b && !(e as any).agent_id) await noteAsk($, b, e.tool_name, e.tool_input, key)
     return next(e)
+  })
+
+  // The same, from the engine's own verdict (v15): another plugin's
+  // PermissionRequest hook can pass the event on past this one (a security
+  // plugin that runs first), and the board would neither see the ask nor
+  // answer the call it allowed. An ask that goes to a person is noted; one
+  // the board allowed is allowed here.
+  on('tool.check', async ($, e, next) => {
+    const b = bridge
+    if (!b || e.agentId !== undefined || !e.tool_use_id) return next(e)
+    const key = callKey(e.tool, e.input)
+    if (takeAllowed(e.tool, key)) return { decision: 'allow' }
+    const verdict = await next(e)
+    if (verdict.decision === 'ask' && e.approver === 'person') await noteAsk($, b, e.tool, e.input, key).catch(() => {})
+    return verdict
   })
 
   // Each tool call is also a chance to honour a stop request that came while
