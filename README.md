@@ -267,7 +267,7 @@ for them to stay in Auto once they move into the app, set it in `~/.claude/setti
 | `N` | New session |
 | `D` | Catch me up |
 | `+` `−` `0`, `Space` + drag | Canvas: zoom in, out, fit; move the view |
-| `?` | All shortcuts |
+| `?` | The guide: what the app does, and all shortcuts |
 | `Esc` | Close |
 
 ## Development
@@ -290,6 +290,10 @@ sessions; the screenshots above come from it.
 
 The tests use `AGENT_CENTER_DATA` (another data folder) and `AGENT_CENTER_DRY_RUN` (no
 `claude://` link is opened); both work for a manual test server too.
+
+[FEATURES.md](FEATURES.md) is what the app does, one line a feature; the page shows it as its
+guide (`?`), and its lines dated ` · YYYY-MM-DD` as "What's new". A change that adds or changes
+a feature adds or changes its line, dated the day it lands.
 
 `/design` shows every component the page uses, with made-up data. The bridge mod
 is checked with `claude plugin validate bridge`; after changing it, bump its version in

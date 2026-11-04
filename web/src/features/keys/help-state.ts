@@ -1,4 +1,4 @@
-// Whether the keyboard help (?) is open: one of the board's dialogs, so the
+// Whether the guide (?) is open: one of the board's dialogs, so the
 // sidebar's button, a link (?dialog=help) and the key open the same one.
 import { closeDialog, dialog, openDialog } from "@/app/open-dialog"
 

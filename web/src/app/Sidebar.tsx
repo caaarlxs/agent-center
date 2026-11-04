@@ -1,11 +1,11 @@
 // The left column (sidebar.js): new session and "Catch me up", the views, the
 // repos to filter by, the plan's limits, what the sessions take in memory,
 // the folder of sent files, and the live connection, alerts, Setup and the
-// keyboard help at the foot. It folds to icons (slim), and in a narrow window
+// guide at the foot. It folds to icons (slim), and in a narrow window
 // it is a drawer over the page.
 import { appIcon } from "@/lib/app-icon"
 import { jiraSetup, loadJira } from "@/features/jira/jira"
-import { BellOff, BookText, Ticket, Columns3, Inbox, List, PanelLeft, Paperclip, Volume2, VolumeX, Workflow } from "lucide-react"
+import { BellOff, BookText, CircleHelp, Ticket, Columns3, Inbox, List, PanelLeft, Paperclip, Volume2, VolumeX, Workflow } from "lucide-react"
 import { useEffect, useState, type ReactNode } from "react"
 import { yours } from "@/features/board/state"
 import { toast } from "sonner"
@@ -269,8 +269,8 @@ export function Sidebar() {
           )}
           <button className={footBtn()} onClick={() => openDialog({ kind: "setup" })} title="Settings: setup, alerts, look"><Anim.Settings size={15} /></button>
           {!isSlim && (
-            <button className={footBtn()} onClick={() => openDialog({ kind: "help" })} title="Keyboard shortcuts (?)">
-              <Anim.Keyboard size={15} /><Kbd>?</Kbd>
+            <button className={footBtn()} onClick={() => openDialog({ kind: "help" })} title="Guide: what the app does, and its shortcuts (?)">
+              <CircleHelp className="size-[15px]" /><Kbd>?</Kbd>
             </button>
           )}
         </footer>

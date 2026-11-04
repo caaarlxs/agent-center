@@ -52,5 +52,5 @@ export function Dialogs() {
   if (open.kind === "pets") return <PetsDialog onClose={closeDialog} />
   if (open.kind === "run") return <RunDialog card={open.card} onClose={closeDialog} />
   if (open.kind === "ticket") return <TicketDialog ticketKey={open.key} onClose={closeDialog} />
-  return null // help: the keyboard help dialog draws itself
+  return null // help: the guide draws itself
 }

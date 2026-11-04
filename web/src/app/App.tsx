@@ -27,7 +27,8 @@ import { useAlerts } from "@/features/alerts/useAlerts"
 import { Dialogs } from "./Dialogs"
 import { PetLayer } from "@/features/pets/PetLayer"
 import { pets } from "@/features/pets/pets"
-import { HelpDialog } from "@/features/keys/HelpDialog"
+import { GuideDialog } from "@/features/guide/GuideDialog"
+import { WhatsNew } from "@/features/guide/WhatsNew"
 import { useBoardKeys } from "@/features/keys/useBoardKeys"
 import { useHistoryWalk } from "./history-walk"
 import { openDialog } from "./open-dialog"
@@ -296,7 +297,8 @@ function Board() {
       <PanelSlot open={open} />
       <SearchPalette open={isSearching} onOpenChange={setSearching} />
       <Dialogs />
-      <HelpDialog />
+      <GuideDialog />
+      <WhatsNew />
       <PetLayer />
     </div>
   )
