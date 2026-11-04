@@ -17,6 +17,7 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Shimmer } from "@/components/ai-elements/shimmer"
 import { Kbd } from "@/components/ui/kbd"
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { get, post } from "@/lib/api"
 import type { Ticket } from "@/lib/api-types"
 import { useLive } from "@/lib/live"
@@ -303,14 +304,46 @@ function Findings({ state, onFix }: { state: PipelineState; onFix: (ids: string[
 
 // A stage that ended: what it left, and the next step (or running it again).
 // Starting a release changes the world: it asks once more.
-function StartButton({ stage, from, onRun }: { stage: Stage; from: Stage; onRun: (stage: Stage) => void }) {
+// With things a person must have done first (a store build in review), a
+// release asks for each of them in a dialog instead.
+function StartButton({ stage, from, reminders = [], onRun }: { stage: Stage; from: Stage; reminders?: string[]; onRun: (stage: Stage) => void }) {
   const [isAsking, confirm] = useConfirm()
+  const [isOpen, setOpen] = useState(false)
   const label = startText(stage, from)
-  const press = () => (isRelease(stage) ? confirm(() => onRun(stage)) : onRun(stage))
+  const press = () => (reminders.length ? setOpen(true) : isRelease(stage) ? confirm(() => onRun(stage)) : onRun(stage))
   return (
-    <Button variant={isAsking ? "destructive" : "default"} className="h-8 shrink-0 gap-1.5 text-xs" onClick={press}>
-      <Play size={13} className="fill-current" />{isAsking ? `Sure? ${label}` : label}
-    </Button>
+    <>
+      <Button variant={isAsking ? "destructive" : "default"} className="h-8 shrink-0 gap-1.5 text-xs" onClick={press}>
+        <Play size={13} className="fill-current" />{isAsking ? `Sure? ${label}` : label}
+      </Button>
+      {reminders.length > 0 && <Reminders isOpen={isOpen} label={label} reminders={reminders} onClose={() => setOpen(false)} onGo={() => (setOpen(false), onRun(stage))} />}
+    </>
+  )
+}
+
+function Reminders({ isOpen, label, reminders, onClose, onGo }: { isOpen: boolean; label: string; reminders: string[]; onClose: () => void; onGo: () => void }) {
+  const [done, setDone] = useState<Set<number>>(new Set())
+  const toggle = (i: number) => setDone(d => (d.has(i) ? new Set([...d].filter(x => x !== i)) : new Set([...d, i])))
+  const go = () => (done.size === reminders.length ? onGo() : toast("Tick each one first"))
+  return (
+    <Dialog open={isOpen} onOpenChange={open => !open && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogTitle className="text-[15px]">Before you {label.toLowerCase()}</DialogTitle>
+        <ul className="m-0 flex list-none flex-col gap-2.5 p-0">
+          {reminders.map((r, i) => (
+            <li key={i}>
+              <label className="flex cursor-pointer items-start gap-2.5 text-[13px] leading-[1.5]">
+                <input type="checkbox" checked={done.has(i)} onChange={() => toggle(i)} className="mt-[3px] size-3.5 shrink-0 accent-(--brand)" />{r}
+              </label>
+            </li>
+          ))}
+        </ul>
+        <div className="mt-2 flex justify-end gap-2">
+          <Button variant="outline" className="h-8 text-xs" onClick={onClose}>Not yet</Button>
+          <Button className="h-8 gap-1.5 text-xs" onClick={go}><Play size={13} className="fill-current" />Done: {label.toLowerCase()}</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -589,7 +622,7 @@ function StagePanel({ stage, state, preview, onRun, onStep }: { stage: Stage; st
 
 // What happens or what the ticket waits for, in a line, and the one button
 // that moves it on (Retry and Skip when a release failed; the log of an agent at work).
-function Now({ state, now, onRun, onStep }: { state: PipelineState; now: number; onRun: (stage?: Stage) => void; onStep: OnStep }) {
+function Now({ state, preview, now, onRun, onStep }: { state: PipelineState; preview: Release | null; now: number; onRun: (stage?: Stage) => void; onStep: OnStep }) {
   const card = useLive(l => l.snapshot?.cards.find(c => c.id === state.sessionId))
   const activity = useActivity(state.key)
   const isRunning = state.status === "running"
@@ -607,14 +640,14 @@ function Now({ state, now, onRun, onStep }: { state: PipelineState; now: number;
           : <span className={cn("truncate text-[13.5px] font-semibold", isFailed ? "text-bad" : isAsking ? "text-ask" : "text-text")}>{line}</span>}
         <span className="text-[11.5px] text-faint tabular-nums">{STAGES[stageAt(state)]} · {ago(isRunning ? state.startedAt : (state.endedAt ?? state.startedAt), now)}</span>
       </div>
-      <NowActions state={state} onRun={onRun} onStep={onStep} />
+      <NowActions state={state} preview={preview} onRun={onRun} onStep={onStep} />
     </div>
   )
 }
 
 // The log of an agent at work; Retry (and Skip, in a release) when it failed;
 // else the button that starts what comes next.
-function NowActions({ state, onRun, onStep }: { state: PipelineState; onRun: (stage?: Stage) => void; onStep: OnStep }) {
+function NowActions({ state, preview, onRun, onStep }: { state: PipelineState; preview: Release | null; onRun: (stage?: Stage) => void; onStep: OnStep }) {
   const release = isRelease(state.stage) ? state.release : null
   const next = nextStage(state)
   if (state.status === "running") return state.sessionId ? <button className="shrink-0 text-xs font-semibold text-text-muted hover:text-text" onClick={() => openLog(state.sessionId!)}>Log</button> : null
@@ -625,7 +658,7 @@ function NowActions({ state, onRun, onStep }: { state: PipelineState; onRun: (st
     </>
   )
   // Fixing what the review found starts from its findings.
-  return next && !(state.stage === "review" && next === "build") ? <StartButton stage={next} from={state.stage} onRun={onRun} /> : null
+  return next && !(state.stage === "review" && next === "build") ? <StartButton stage={next} from={state.stage} reminders={preview?.env === next ? preview.reminders : undefined} onRun={onRun} /> : null
 }
 
 // The stage the section opens on: a release about to start, else the stage at hand.
@@ -675,7 +708,7 @@ export function Pipeline({ ticket, onTaken }: { ticket: Ticket; onTaken: () => v
       </header>
       <div className="flex flex-col gap-3 px-4 pb-4">
         {!state && <RunButton ticket={ticket} onStarted={() => (loadSoon(), ticket.isMine || onTaken())} />}
-        {state && <Now state={state} now={now} onRun={stage => void start(stage)} onStep={step} />}
+        {state && <Now state={state} preview={data.preview} now={now} onRun={stage => void start(stage)} onStep={step} />}
         {state?.checks?.length && state.status !== "running" ? <Checks checks={state.checks} /> : null}
         {state?.status === "needs-info" ? <Decisions key={state.askedAt} ticketKey={ticket.key} state={state} onSent={() => void load()} />
           : state && <StagePanel key={shown} stage={shown} state={state} preview={data.preview} onRun={(stage, fix) => void start(stage, fix)} onStep={step} />}

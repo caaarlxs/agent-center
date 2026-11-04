@@ -43,8 +43,9 @@ import { activityOf } from "./activity"
 import { existsSync } from "node:fs"
 import { exec } from "./proc"
 import { overLimits, prChecks, reposClean, type Check } from "./checks"
+import { canJudge, gatePrompt, parseAdvice } from "./gate"
 import { readdir } from "node:fs/promises"
-import { DEFAULT_CONFIG, advanceRelease, approveStep, releaseSteps, retryStep, skipStep, type DeployConfig, type OrderItem, type Ops, type Release } from "./release"
+import { DEFAULT_CONFIG, advanceRelease, approveStep, releaseSteps, retryStep, skipStep, type DeployConfig, type OrderItem, type Ops, type Release, type ReleaseStep } from "./release"
 
 export type Stage = "refine" | "plan" | "build" | "review" | "staging" | "test" | "prod" | "smoke"
 const STAGE_NAMES: Stage[] = ["refine", "plan", "build", "review", "staging", "test", "prod", "smoke"]
@@ -573,6 +574,7 @@ const releaseOps: Ops = {
   isAlive,
   readText,
   exists: existsSync,
+  secret: async name => (await exec(["security", "find-generic-password", "-s", name, "-w"])).stdout.trim() || null,
 }
 
 // Takes a ticket's release as far as it goes now; done, it goes to Jira.
@@ -584,7 +586,9 @@ async function tickRelease(key: string) {
     const state = await stateOf(key)
     if (!state?.release || state.status !== "running" || !isRelease(state.stage)) return
     const ctx = { key, summary: state.summary ?? key, dir: dirOf(key), repos: join(ROOT, "repos"), config: await deployConfig(), units: state.units ?? [], scripts: state.scripts ?? [], checklist: state.checklist ?? [] }
-    const { release, isDone, failed } = await advanceRelease(state.release, ctx, releaseOps)
+    const advanced = await advanceRelease(state.release, ctx, releaseOps)
+    const { isDone, failed } = advanced
+    const release = await judged(state, advanced.release, ctx.config)
     const step = failed ? release.steps.find(s => s.id === failed) : undefined
     if (!isDone) return void (await save({ ...state, release, ...(step ? { status: "failed", error: `${step.title}: ${step.error ?? step.detail ?? "failed"}`, endedAt: Date.now() } : {}) }))
     await commentOn(key, releaseComment(key, release))
@@ -595,6 +599,39 @@ async function tickRelease(key: string) {
   } finally {
     ticking.delete(key)
   }
+}
+
+// The step that waits, looked at by an agent (lib/gate.ts) once: started,
+// then read when it answers. Where the team lets it decide (gates), its go
+// is the yes; its hold, or a person's gate, waits for you.
+async function judged(state: PipelineState, release: Release, config: DeployConfig): Promise<Release> {
+  const step = release.steps.find(s => s.status === "waiting")
+  if (!step || !config.gateAgent || !canJudge(step)) return release
+  const dir = dirOf(state.key)
+  const answer = join(dir, "gates", `${state.runs}-${step.id}.json`)
+  const set = (advice: ReleaseStep["advice"]) => ({ ...release, steps: release.steps.map(s => (s.id === step.id ? { ...s, advice } : s)) })
+  if (!step.advice) {
+    await mkdir(join(dir, "gates"), { recursive: true })
+    const pid = await spawnGate(dir, gatePrompt(state.key, dir, release.env, step, answer), join(dir, "gates", `${state.runs}-${step.id}.log`))
+    return set({ verdict: "running", reason: null, pid })
+  }
+  if (step.advice.verdict !== "running") return release
+  const text = await readText(answer)
+  if (text === null) return isAlive(step.advice.pid ?? 0) ? release : set({ verdict: "hold", reason: "The agent stopped without an answer" })
+  const advice = parseAdvice(text)
+  const next = set(advice)
+  return advice.verdict === "go" && config.gates?.[release.env] === "agent" ? approveStep(next, step.id, step.value ?? undefined) : next
+}
+
+// The agent that looks at a step: clean like a stage, only reads, on its own process.
+async function spawnGate(dir: string, prompt: string, logPath: string): Promise<number> {
+  const log = openSync(logPath, "a")
+  const args = ["-p", "--permission-mode", "auto", "--setting-sources", "project,local", "--strict-mcp-config", "--model", "claude-opus-5-5", "--effort", "low",
+    "--disallowedTools", ...NEVER, "Bash(git push:*)", "Bash(git commit:*)", "Bash(gh pr create:*)", "Bash(aws:*)", `Edit(/${join(ROOT, "repos")}/**)`, `Write(/${join(ROOT, "repos")}/**)`, "--", prompt]
+  const proc = spawn(await claudeBinary(), args, { cwd: dir, env: claudeEnv({ AGENT_CENTER_LAUNCH: "1" }), detached: true, stdio: ["ignore", log, log] })
+  if (!proc.pid) throw new Error("Claude Code did not start")
+  proc.unref()
+  return proc.pid
 }
 
 const MARKS = { done: "✓", skipped: "–", failed: "✗", pending: "·", waiting: "·", running: "·" }
@@ -612,7 +649,7 @@ export async function stepPipeline(key: string, id: string, action: "approve" | 
 
 // A script's report (or its log), as it left it.
 export async function pipelineReport(key: string, file: string) {
-  if (!isKey(key) || !/^S\w*-(staging|prod)-(simulate|execute)\.(csv|log)$/.test(file)) throw new Error("Not a report")
+  if (!isKey(key) || !/^[\w.-]+-(staging|prod)-(simulate|execute)\.(csv|log)$/.test(file) || file.includes("..")) throw new Error("Not a report")
   return readText(join(dirOf(key), "scripts", file))
 }
 
@@ -623,7 +660,11 @@ export const isPipelineOn = () => existsSync(join(STAGES_DIR, "refine.md"))
 async function previewOf(state: PipelineState | null) {
   if (!state || state.status !== "ready") return null
   const env: Env | null = state.stage === "review" && !blocking(state.findings).length ? "staging" : state.stage === "test" && !failing(state.results).length ? "prod" : null
-  return env ? { env, steps: releaseSteps(state, env, await deployConfig()) } : null
+  if (!env) return null
+  const config = await deployConfig()
+  // What a person must have done first, for the repos this release takes there.
+  const reminders = [...new Set((state.units ?? []).map(u => config.remind?.[u.repo]?.[env]).filter((r): r is string => !!r))]
+  return { env, steps: releaseSteps(state, env, config), reminders }
 }
 
 // Your answers, written here: to Jira, and the stage again.

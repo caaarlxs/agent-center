@@ -25,6 +25,16 @@ describe("releaseSteps", () => {
     expect(releaseSteps(state({ scripts: [] }), "staging", skips).map(s => s.repo)).toEqual(["api-service", "mobile-app"])
     expect(releaseSteps(state({ scripts: [] }), "prod", skips).map(s => [s.kind, s.repo])).toEqual([["tag", "api-service"], ["merge", "web-app"], ["manual", "mobile-app"]])
   })
+  it("runs a repo's own command after its merge: rehearsed first (a dry run that waits for a look), then for real", () => {
+    const ota = { ...config, repos: { ...config.repos, "mobile-app": { staging: ["merge-only", 'command:pnpm update:preview --message "{key}: {summary}"'] } } }
+    const steps = releaseSteps(state({ units: [units[2]], scripts: [], summary: 'Un "aviso" $nuevo' }), "staging", ota as never)
+    expect(steps.map(s => [s.kind, s.repo, s.value])).toEqual([
+      ["merge", "mobile-app", "no-deploy"],
+      ["simulate", "mobile-app", 'pnpm update:preview --message "PP-1: Un aviso nuevo" --dry-run'],
+      ["execute", "mobile-app", 'pnpm update:preview --message "PP-1: Un aviso nuevo"'],
+    ])
+    expect(steps[1]!.title).toBe("mobile-app: pnpm update:preview (dry run)")
+  })
   it("takes prod by a tag, or by the repo's own way, each repo once", () => {
     const twice = [...units, unit("U4", "api-service", 10)]
     const steps = releaseSteps(state({ units: twice, scripts: [{ ...script, envs: ["staging"] }] }), "prod", config)
@@ -98,6 +108,7 @@ function fake(answers: Record<string, string>) {
     isAlive: () => true,
     readText: async () => null,
     exists: () => true,
+    secret: async () => null,
   }
   return { calls, ops }
 }
@@ -152,6 +163,30 @@ describe("advanceRelease", () => {
     r = await advanceRelease(approveStep(r.release, "R1"), ctx, ops)
     expect(r.release.steps[0]).toMatchObject({ status: "done", detail: "1 records: 1 write" })
     expect(calls.some(c => c.includes("pr merge"))).toBe(true)
+  })
+  it("rehearses a repo's command on its default branch, with its secrets, and waits for a look", async () => {
+    const { calls, ops } = fake({})
+    let spawned: { cwd: string; line: string; env: Record<string, string> } | null = null
+    ops.spawn = async (cwd, line, env) => ((spawned = { cwd, line, env }), 7)
+    ops.secret = async name => (name === "agent-center-expo" ? "tok" : null)
+    const files: Record<string, string> = { "/d/PP-1/scripts/mobile-app-staging-simulate.exit": "0\n", "/d/PP-1/scripts/mobile-app-staging-simulate.log": "checks ok\nwould publish preview\n" }
+    ops.readText = async path => files[path] ?? null
+    const ota = { ...config, repos: { "mobile-app": { staging: ["command:pnpm update:preview"] } }, secrets: { "mobile-app": { EXPO_TOKEN: "keychain:agent-center-expo" } } }
+    const release: Release = { env: "staging", steps: releaseSteps(state({ units: [units[2]], scripts: [] }), "staging", ota as never) }
+    let r = await advanceRelease(release, { ...ctx, config: ota as never }, ops)
+    expect(calls).toContain("git -C /d/repos/mobile-app checkout -q master")
+    expect(spawned).toMatchObject({ cwd: "/d/repos/mobile-app", env: { EXPO_TOKEN: "tok" } })
+    expect(spawned!.line.endsWith("pnpm update:preview --dry-run")).toBe(true)
+    r = await advanceRelease(r.release, { ...ctx, config: ota as never }, ops)
+    expect(r.release.steps[0]).toMatchObject({ status: "waiting", detail: "would publish preview" })
+  })
+  it("merges a repo whose merge deploys nothing, and goes on without waiting for a deploy", async () => {
+    const { ops } = fake({ "pr view": JSON.stringify({ state: "MERGED", mergeCommit: { oid: "abc" }, mergedAt: "2026-11-04T10:00:00Z" }) })
+    const only = { ...config, repos: { "mobile-app": { staging: "merge-only" } } }
+    const release: Release = { env: "staging", steps: releaseSteps(state({ units: [units[2]], scripts: [] }), "staging", only as never) }
+    const r = await advanceRelease(release, { ...ctx, config: only as never }, ops)
+    expect(r.release.steps[0]).toMatchObject({ status: "done", detail: "Merged" })
+    expect(r.isDone).toBe(true)
   })
   it("fails a step whose command fails, and lets you skip it", async () => {
     const { ops } = fake({ "pr view": JSON.stringify({ state: "OPEN", isDraft: false }), "pr merge": "!not mergeable" })

@@ -13,7 +13,9 @@
 // How each repo deploys comes from the team's <data>/pipeline/stages/deploy.json
 // (DeployConfig): "merge" (a merge to the default branch deploys), "tag" (a
 // version tag deploys), "promote:<branch>" (a PR from the default branch to
-// that one), "manual:<what to do>", or "skip" (nothing to deploy there: a
+// that one), "merge-only" (a merge that deploys nothing by itself),
+// "command:<the repo's own command>" (rehearsed with --dry-run first; {key}
+// and {summary} say the ticket), "manual:<what to do>", or "skip" (nothing to deploy there: a
 // repo of documents that goes to prod only). Testing a release is a stage of
 // its own after it (an agent's), not a step of it.
 //
@@ -22,6 +24,7 @@
 // deploy by what GitHub says of its commit: the Actions runs and the
 // deployments created since it started.
 
+import type { Advice } from "./gate"
 import type { ChecklistItem, Env, PipelineState, PlanScript, Unit } from "./pipeline"
 
 export type StepKind = "merge" | "promote" | "tag" | "simulate" | "execute" | "manual" | "check"
@@ -46,15 +49,22 @@ export type ReleaseStep = {
   pid: number | null
   report: string | null // a script's report, in <ticket>/scripts
   error: string | null
+  advice?: Advice | null // what the agent that looks at a waiting step says (lib/gate.ts)
 }
-export type Release = { env: Env; steps: ReleaseStep[] }
+export type Release = { env: Env; steps: ReleaseStep[]; reminders?: string[] }
 // The plan's order for a release: a unit, a script, or something a person does.
 export type OrderItem = { kind: "unit" | "script" | "manual"; id: string | null; text: string | null; envs: Env[] }
 
+// A repo's way to an environment: one way, or several in a row (a merge, then its own command).
+type Way = string | string[]
 export type DeployConfig = {
   mergeMethod: "merge" | "squash" | "rebase"
   default: Record<Env, string>
-  repos: Record<string, Partial<Record<Env, string>>>
+  repos: Record<string, Partial<Record<Env, Way>>>
+  secrets?: Record<string, Record<string, string>> // a repo's commands' variables: "keychain:<service>", read when they run
+  remind?: Record<string, Partial<Record<Env, string>>> // what a person must have done before a release to an environment starts
+  gates?: Partial<Record<Env, "person" | "agent">> // who answers a step that waits: you (the agent only advises), or the agent
+  gateAgent?: boolean // whether an agent looks at each step that waits, and says go on or hold
   tag: { bump: "major" | "minor" | "patch" }
   setup: Record<string, string> // a repo's command that readies a checkout to run its scripts
   contextRepo?: string // the team's context for agents: changed only when a ticket makes a rule of it untrue
@@ -68,15 +78,37 @@ const blank = (kind: StepKind, title: string, extra: Partial<ReleaseStep> = {}):
 })
 const prNumber = (url: string | null | undefined) => url?.split("/").pop() ?? ""
 
-// How a unit gets to an environment, by its repo's way of deploying (none, for "skip").
-function deployStep(u: Unit, env: Env, config: DeployConfig): Omit<ReleaseStep, "id"> | null {
-  const how = config.repos[u.repo]?.[env] ?? config.default[env]
-  if (how === "skip") return null
+// What a command may say of the ticket: its key, and its title without what a shell reads.
+const filled = (command: string, key: string, summary: string) =>
+  command.replaceAll("{key}", key).replaceAll("{summary}", summary.replace(/["'`$\\]/g, "").replace(/\s+/g, " ").trim())
+// A repo's own command (an OTA, a publish): rehearsed first with --dry-run, then for real.
+const commandSteps = (command: string, base: Partial<ReleaseStep>, repo: string): Omit<ReleaseStep, "id">[] => {
+  const name = command.split(" --")[0]!.trim()
+  return [blank("simulate", `${repo}: ${name} (dry run)`, { ...base, value: `${command} --dry-run` }), blank("execute", `${repo}: ${name}`, { ...base, value: command })]
+}
+
+// How a unit gets to an environment, by its repo's way (or ways, in a row) of deploying; none for "skip".
+function deploySteps(u: Unit, env: Env, config: DeployConfig, key: string, summary: string): Omit<ReleaseStep, "id">[] {
+  const ways = [config.repos[u.repo]?.[env] ?? config.default[env]].flat()
   const base = { unit: u.id, repo: u.repo, links: u.pr ? [{ label: `PR #${prNumber(u.pr)}`, url: u.pr }] : [] }
-  if (how.startsWith("manual:")) return blank("manual", `${u.repo}: ${how.slice(7).trim()}`, base)
-  if (how.startsWith("promote:")) return blank("promote", `${u.repo}: release to ${how.slice(8)}`, { ...base, value: how.slice(8) })
-  if (how === "tag") return blank("tag", `${u.repo}: tag and deploy`, base)
-  return blank("merge", `${u.repo}: merge PR #${prNumber(u.pr)} and deploy`, base)
+  return ways.flatMap(how => {
+    if (how === "skip") return []
+    if (how.startsWith("command:")) return commandSteps(filled(how.slice(8).trim(), key, summary), base, u.repo)
+    if (how.startsWith("manual:")) return [blank("manual", `${u.repo}: ${how.slice(7).trim()}`, base)]
+    if (how.startsWith("promote:")) return [blank("promote", `${u.repo}: release to ${how.slice(8)}`, { ...base, value: how.slice(8) })]
+    if (how === "tag") return [blank("tag", `${u.repo}: tag and deploy`, base)]
+    if (how === "merge-only") return [blank("merge", `${u.repo}: merge PR #${prNumber(u.pr)}`, { ...base, value: "no-deploy" })]
+    return [blank("merge", `${u.repo}: merge PR #${prNumber(u.pr)} and deploy`, base)]
+  })
+}
+
+// A unit's steps to an environment. A repo goes to prod once (by a tag or a
+// branch): a unit whose repo already went keeps only its merges and commands.
+function unitSteps(u: Unit, env: Env, config: DeployConfig, state: PipelineState, released: Set<string>) {
+  const isOnce = (kind: StepKind) => kind !== "merge" && kind !== "simulate" && kind !== "execute"
+  const steps = deploySteps(u, env, config, state.key, state.summary ?? "").filter(s => !isOnce(s.kind) || !released.has(u.repo))
+  released.add(u.repo)
+  return steps
 }
 
 // The steps of a release to an environment: its scripts simulated first;
@@ -94,11 +126,7 @@ export function releaseSteps(state: PipelineState, env: Env, config: DeployConfi
     if (item.envs.length && !item.envs.includes(env)) continue
     if (item.kind === "manual" && item.text) steps.push(blank("manual", item.text))
     const u = item.kind === "unit" ? units.find(x => x.id === item.id) : undefined
-    if (u) {
-      const step = deployStep(u, env, config)
-      if (step && (step.kind === "merge" || !released.has(u.repo))) steps.push(step)
-      released.add(u.repo)
-    }
+    if (u) steps.push(...unitSteps(u, env, config, state, released))
     const x = item.kind === "script" ? scripts.find(s => s.id === item.id) : undefined
     if (x && (!x.envs.length || x.envs.includes(env))) {
       const repo = units.find(v => v.id === x.unit)?.repo ?? null
@@ -199,6 +227,7 @@ export type Ops = {
   isAlive: (pid: number) => boolean
   readText: (path: string) => Promise<string | null>
   exists: (path: string) => boolean
+  secret: (name: string) => Promise<string | null> // from the keychain
 }
 export type Ctx = { key: string; summary: string; dir: string; repos: string; config: DeployConfig; units: Unit[]; scripts: PlanScript[]; checklist: ChecklistItem[] }
 type Patch = Partial<ReleaseStep>
@@ -266,7 +295,28 @@ async function checkout(step: ReleaseStep, release: Release, ctx: Ctx, ops: Ops)
 // Readies a checkout for its scripts (once): the repo's own way, else its venv or its packages.
 const SETUP = `if [ -f requirements.txt ] && [ ! -x .venv/bin/python ]; then python$(cat .python-version 2>/dev/null || echo 3) -m venv .venv && .venv/bin/pip install -q -r requirements.txt; fi; if [ -f package.json ] && [ ! -d node_modules ]; then if [ -f pnpm-lock.yaml ]; then pnpm install --frozen-lockfile; else npm ci; fi; fi`
 
+// A repo's own command runs in its clone, on its default branch, up to date
+// (its own checks may refuse anything else), with its secrets.
+async function startCommand(step: ReleaseStep, release: Release, ctx: Ctx, ops: Ops): Promise<Patch> {
+  const clone = cloneOf(step, ctx)
+  const slug = slugOf(prOf(step, ctx))
+  const branch = slug ? await defaultBranch(slug, ops) : "master"
+  await must(ops, ["git", "-C", clone, "checkout", "-q", branch])
+  await must(ops, ["git", "-C", clone, "pull", "-q", "--ff-only"], { timeoutMs: 60_000 })
+  const env: Record<string, string> = { STAGE: release.env }
+  for (const [name, from] of Object.entries(ctx.config.secrets?.[step.repo!] ?? {})) {
+    const value = from.startsWith("keychain:") ? await ops.secret(from.slice(9)) : from
+    if (!value) throw new Error(`${name} is not in the keychain (${from.slice(9)}): add it, then retry`)
+    env[name] = value
+  }
+  const mode = step.kind === "execute" ? "execute" : "simulate"
+  const base = `${ctx.dir}/scripts/${step.repo}-${release.env}-${mode}`
+  const pid = await ops.spawn(clone, `${ctx.config.setup[step.repo!] ?? SETUP} && ${step.value}`, env, `${base}.log`, `${base}.exit`)
+  return { status: "running", phase: "script", pid, report: `${step.repo}-${release.env}-${mode}.csv`, since: ops.now(), detail: mode === "execute" ? "Running" : "Dry run" }
+}
+
 async function startScript(step: ReleaseStep, release: Release, ctx: Ctx, ops: Ops): Promise<Patch> {
+  if (!step.script && step.value) return startCommand(step, release, ctx, ops)
   const script = ctx.scripts.find(x => x.id === step.script)
   if (!script || !step.repo) throw new Error("The plan has no such script, or no repo for it")
   const cwd = await checkout(step, release, ctx, ops)
@@ -283,7 +333,9 @@ async function checkScript(step: ReleaseStep, ctx: Ctx, ops: Ops): Promise<Patch
   const exit = await ops.readText(`${base}.exit`)
   if (exit === null) return ops.isAlive(step.pid ?? 0) ? {} : { status: "failed", error: "The script stopped before it ended" }
   const report = await ops.readText(`${ctx.dir}/scripts/${step.report}`)
-  const detail = report ? reportOf(report).text : "No report: the script does not follow scripts.md"
+  // A command leaves no report: its last line says what it did.
+  const last = lines((await ops.readText(`${base}.log`)) ?? "").at(-1) ?? "Done"
+  const detail = !step.script ? last : report ? reportOf(report).text : "No report: the script does not follow scripts.md"
   // A simulation waits for you to look at it; that is your yes to the release.
   if (exit.trim() === "0") return { status: step.kind === "simulate" ? "waiting" : "done", detail }
   const log = lines((await ops.readText(`${base}.log`)) ?? "").slice(-3).join(" · ")
@@ -312,6 +364,8 @@ async function merge(step: ReleaseStep, ctx: Ctx, ops: Ops): Promise<Patch> {
     await must(ops, ["gh", "pr", "merge", url, `--${ctx.config.mergeMethod}`], { timeoutMs: 60_000 })
     pr = await view()
   }
+  // A merge that deploys nothing (the repo's own command does) is done once merged.
+  if (step.value === "no-deploy") return { status: "done", sha: pr.mergeCommit?.oid ?? null, detail: "Merged" }
   return { status: "running", phase: "deploy", sha: pr.mergeCommit?.oid ?? null, since: pr.mergedAt ? Date.parse(pr.mergedAt) : ops.now(), detail: "Merged: waiting for the deploy" }
 }
 
@@ -405,7 +459,7 @@ export function approveStep(release: Release, id: string, value?: string): Relea
 }
 export function retryStep(release: Release, id: string): Release {
   if (!current(release, id) || release.steps.find(s => s.id === id)!.status !== "failed") throw new Error("That step has not failed")
-  return withStep(release, id, { status: "pending", error: null, phase: null, pid: null })
+  return withStep(release, id, { status: "pending", error: null, phase: null, pid: null, advice: null })
 }
 export function skipStep(release: Release, id: string): Release {
   if (!current(release, id)) throw new Error("Only the step at hand can be skipped")

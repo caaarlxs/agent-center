@@ -6,7 +6,7 @@
 // started yet show what it will do. Each step's icon tells its kind: a merge,
 // a tag, a release PR, a script on the data, something only a person does,
 // the check at the end.
-import { AlertTriangle, Bot, Check, ChevronRight, ClipboardCheck, Database, Download, GitMerge, GitPullRequestArrow, Hand, Tag, type LucideIcon } from "lucide-react"
+import { AlertTriangle, Bot, Check, SquareTerminal, ChevronRight, ClipboardCheck, Database, Download, GitMerge, GitPullRequestArrow, Hand, Tag, type LucideIcon } from "lucide-react"
 import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Shimmer } from "@/components/ai-elements/shimmer"
@@ -62,6 +62,9 @@ function Items({ items, isOpen: startsOpen }: { items: string[]; isOpen: boolean
 
 // The button of the step that waits for you; the ones that change the world ask twice.
 const GO: Record<StepKind, string> = { merge: "Merge and deploy", promote: "Open the release PR and merge it", tag: "Push the tag", simulate: "Looks right", execute: "Run for real", manual: "Mark done", check: "It works" }
+// A step's kind as an icon and a word; a repo's own command (a dry run, then the run) has its own.
+const COMMAND = { icon: SquareTerminal, name: "Command" }
+const kindOf = (step: ReleaseStep) => ((step.kind === "simulate" || step.kind === "execute") && !step.script && step.value ? COMMAND : KIND[step.kind])
 const KIND: Record<StepKind, { icon: LucideIcon; name: string }> = {
   merge: { icon: GitMerge, name: "Merge" }, promote: { icon: GitPullRequestArrow, name: "Release PR" }, tag: { icon: Tag, name: "Tag" },
   simulate: { icon: Database, name: "Script" }, execute: { icon: Database, name: "Script" }, manual: { icon: Hand, name: "By you" }, check: { icon: ClipboardCheck, name: "Check" },
@@ -80,6 +83,8 @@ function Waiting({ step, onAct }: { step: ReleaseStep; onAct: (action: "approve"
   // A deploy that never showed up: you checked it.
   const label = step.phase === "deploy" ? "Go on" : GO[step.kind]
   return (
+    <div className="flex flex-col gap-2">
+    {step.advice && <AdviceLine advice={step.advice} />}
     <div className="flex flex-wrap items-center gap-2">
       {step.kind === "tag" && step.phase !== "deploy" && (
         <input value={value} onChange={e => setValue(e.target.value)} spellCheck={false} aria-label="Tag"
@@ -88,6 +93,19 @@ function Waiting({ step, onAct }: { step: ReleaseStep; onAct: (action: "approve"
       <Button variant={asking === "approve" ? "destructive" : "default"} className="h-7 text-xs" onClick={() => press("approve")}>{asking === "approve" ? `Sure? ${label}` : label}</Button>
       <button className={cn("text-xs font-semibold transition-colors duration-120", asking === "skip" ? "text-bad" : "text-faint hover:text-text")} onClick={() => press("skip")}>{asking === "skip" ? "Sure? Skip it" : "Skip"}</button>
     </div>
+    </div>
+  )
+}
+
+// What the agent that looks at a waiting step says: still looking, go on, or hold, and why.
+function AdviceLine({ advice }: { advice: NonNullable<ReleaseStep["advice"]> }) {
+  if (advice.verdict === "running") return <Shimmer as="span" duration={2.2} className="inline-flex items-center gap-1.5 text-xs [--color-background:var(--text)] [--color-muted-foreground:var(--text-muted)]">The agent is looking at it</Shimmer>
+  const isGo = advice.verdict === "go"
+  return (
+    <span className={cn("flex items-start gap-1.5 text-xs leading-[1.45]", isGo ? "text-work" : "text-ask")}>
+      <Bot size={13} className="mt-px shrink-0" />
+      <span><span className="font-semibold">{isGo ? "Agent: go on" : "Agent: hold"}</span>{advice.reason ? <span className="text-text-muted"> · {advice.reason}</span> : null}</span>
+    </span>
   )
 }
 
@@ -116,7 +134,7 @@ function StepDetail({ step, ticketKey }: { step: ReleaseStep; ticketKey: string 
 
 function StepRow({ step, ticketKey, isAtHand, onAct }: { step: ReleaseStep; ticketKey: string; isAtHand: boolean; onAct: (action: "approve" | "skip", value?: string) => void }) {
   const isFaint = step.status === "pending" || step.status === "skipped"
-  const { icon: Icon, name } = KIND[step.kind]
+  const { icon: Icon, name } = kindOf(step)
   return (
     <li className="grid grid-cols-[15px_minmax(0,1fr)] gap-x-2.5 gap-y-1.5 border-t border-line py-2.5 first:border-t-0">
       <span className="mt-[2px]"><Mark step={step} /></span>
@@ -170,12 +188,12 @@ const RAIL: Record<ReleaseStep["status"], string> = {
 // staging, the check in prod): dashed until it starts, so the whole way shows.
 export type After = { title: string; status: ReleaseStep["status"] }
 export function ReleaseRail({ release, after }: { release: Release; after?: After }) {
-  const kinds = [...new Set(release.steps.map(s => KIND[s.kind].name)), ...(after ? ["Agent"] : [])]
+  const kinds = [...new Set(release.steps.map(s => kindOf(s).name)), ...(after ? ["Agent"] : [])]
   return (
     <div className="flex flex-col gap-2.5">
       <ol className="m-0 flex list-none items-center p-0">
         {release.steps.map((s, i) => {
-          const { icon: Icon, name } = KIND[s.kind]
+          const { icon: Icon, name } = kindOf(s)
           return (
             <li key={s.id} className="flex min-w-0 flex-1 items-center last:flex-none">
               <span title={`${s.title}${s.detail ? ` · ${s.detail}` : ""}`} aria-label={`${name}: ${s.title}, ${s.status}`}
@@ -197,7 +215,7 @@ export function ReleaseRail({ release, after }: { release: Release; after?: Afte
       </ol>
       <span className="flex flex-wrap gap-x-3.5 gap-y-1 text-[11.5px] text-faint">
         {kinds.map(k => {
-          const Icon = k === "Agent" ? Bot : Object.values(KIND).find(x => x.name === k)!.icon
+          const Icon = k === "Agent" ? Bot : k === COMMAND.name ? COMMAND.icon : Object.values(KIND).find(x => x.name === k)!.icon
           return <span key={k} className="inline-flex items-center gap-1"><Icon size={12} />{k}</span>
         })}
       </span>
