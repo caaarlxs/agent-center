@@ -1,61 +1,76 @@
 import { describe, expect, test } from "vitest"
-import { catalogueOf, findIn, newSince } from "./guide"
+import { catalogueOf, findIn, newSince, piecesOf } from "./guide"
+import { ICONS } from "./icons"
 
 const MD = `# Title
 
 Intro that is not a feature.
 
-## Views
+## {layout-grid} Views
 
-- Inbox: one list.
-- Search (/ or ⌘K): every conversation. · 2026-11-03
+- {inbox} **Inbox**: one list.
+- {search} **Search**: \`/\` or \`⌘K\`, every conversation. · 2026-11-03
 
-## Canvas
+## {shapes} Canvas
 
-- Notes: tick the box. · 2026-11-04
+- {sticky-note} **Notes**: tick the box. · 2026-11-04
 `
 
 describe("catalogueOf", () => {
-  test("reads each group and its lines, with the day a line is new from", () => {
+  test("reads each section, its icon and its features: icon, title, text and the day it is new from", () => {
     expect(catalogueOf(MD)).toEqual([
-      { name: "Views", items: [{ text: "Inbox: one list.", since: null }, { text: "Search (/ or ⌘K): every conversation.", since: "2026-11-03" }] },
-      { name: "Canvas", items: [{ text: "Notes: tick the box.", since: "2026-11-04" }] },
+      { name: "Views", icon: "layout-grid", items: [
+        { icon: "inbox", title: "Inbox", text: "One list.", since: null },
+        { icon: "search", title: "Search", text: "`/` or `⌘K`, every conversation.", since: "2026-11-03" },
+      ] },
+      { name: "Canvas", icon: "shapes", items: [{ icon: "sticky-note", title: "Notes", text: "Tick the box.", since: "2026-11-04" }] },
     ])
   })
 })
 
+describe("piecesOf", () => {
+  test("splits a text into words and keys", () => {
+    expect(piecesOf("`/` or `⌘K`, all")).toEqual([{ key: "/" }, { text: " or " }, { key: "⌘K" }, { text: ", all" }])
+  })
+})
+
 describe("findIn", () => {
-  const groups = catalogueOf(MD)
-  test("keeps the lines with every word, in any case, and the groups that have some", () => {
-    expect(findIn(groups, "SEARCH conversation")).toEqual([{ name: "Views", items: [groups[0]!.items[1]] }])
+  const sections = catalogueOf(MD)
+  test("keeps the features with every word, in the title or the text, and the sections that have some", () => {
+    expect(findIn(sections, "SEARCH conversation")).toEqual([{ ...sections[0]!, items: [sections[0]!.items[1]] }])
   })
-  test("a word matches the start of a word: \"pr\" finds PRs, not \"compress\"", () => {
-    const g = catalogueOf("## Tabs\n- PRs: the pull requests.\n- Compress the files.\n")
-    expect(findIn(g, "pr")[0]!.items.map(i => i.text)).toEqual(["PRs: the pull requests."])
+  test("a word matches the start of a word: \"con\" finds conversation, not \"icon\"", () => {
+    const s = catalogueOf("## {x} Tabs\n- {x} **A**: conversation.\n- {x} **B**: an icon.\n")
+    expect(findIn(s, "con")[0]!.items.map(i => i.title)).toEqual(["A"])
   })
-  test("a group's name matches all its lines", () => {
-    expect(findIn(groups, "canvas")).toEqual([groups[1]])
-  })
-  test("no words: everything", () => expect(findIn(groups, "  ")).toEqual(groups))
+  test("a section's name matches all its features", () => expect(findIn(sections, "canvas")).toEqual([sections[1]]))
+  test("no words: everything", () => expect(findIn(sections, "  ")).toEqual(sections))
 })
 
 describe("newSince", () => {
-  const groups = catalogueOf(MD)
-  test("the lines dated after the day given, newest first", () => {
-    expect(newSince(groups, "2026-11-02").map(i => i.text)).toEqual(["Notes: tick the box.", "Search (/ or ⌘K): every conversation."])
-    expect(newSince(groups, "2026-11-04")).toEqual([])
+  const sections = catalogueOf(MD)
+  test("the features dated after the day given, newest first, with their section", () => {
+    expect(newSince(sections, "2026-11-02").map(f => `${f.section}/${f.title}`)).toEqual(["Canvas/Notes", "Views/Search"])
+    expect(newSince(sections, "2026-11-04")).toEqual([])
   })
 })
 
 describe("FEATURES.md", () => {
-  test("has groups, each with lines, and only well-formed days", async () => {
+  test("every section has features; every line parsed whole, with a known icon and a well-formed day", async () => {
     const md = (await import("../../../../FEATURES.md?raw")).default
-    const groups = catalogueOf(md)
-    expect(groups.length).toBeGreaterThan(3)
-    for (const g of groups) expect(g.items.length).toBeGreaterThan(0)
-    for (const i of groups.flatMap(g => g.items)) {
-      expect(i.text).not.toMatch(/·\s*\d/) // a day the parser did not take
-      if (i.since) expect(Number.isNaN(Date.parse(i.since))).toBe(false)
+    const sections = catalogueOf(md)
+    expect(sections.length).toBeGreaterThan(3)
+    for (const s of sections) {
+      expect(s.items.length).toBeGreaterThan(0)
+      expect(ICONS[s.icon], s.icon).toBeDefined()
     }
+    for (const f of sections.flatMap(s => s.items)) {
+      expect(f.title, f.text).not.toBe("")
+      expect(ICONS[f.icon], `${f.title}: ${f.icon}`).toBeDefined()
+      expect(f.text).not.toMatch(/·\s*\d/)
+      if (f.since) expect(Number.isNaN(Date.parse(f.since))).toBe(false)
+    }
+    const lines = md.split("\n").filter(l => l.startsWith("- ")).length
+    expect(sections.flatMap(s => s.items).length).toBe(lines)
   })
 })

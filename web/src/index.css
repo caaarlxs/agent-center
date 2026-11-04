@@ -630,3 +630,8 @@ html[data-theme-switch]::view-transition-new(root) { animation: theme-curtain 60
 .coll-legend { background-image: linear-gradient(115deg, transparent 30%, rgb(255 214 92 / 0.25) 45%, transparent 60%); background-size: 250% 100%; animation: coll-shine 2.8s linear infinite; }
 @keyframes coll-shine { from { background-position: 120% 0; } to { background-position: -120% 0; } }
 @media (prefers-reduced-motion: reduce) { .pet-spot, .pet-spot *, .pack-telling, .pack-tell i { animation-duration: 0.01s !important; animation-iteration-count: 1 !important; } }
+
+/* The guide (features/guide): its cards come in softly when a page opens. */
+.guide-in { animation: guide-in 180ms var(--ease-out) both; }
+@keyframes guide-in { from { opacity: 0; transform: translateY(4px); } }
+@media (prefers-reduced-motion: reduce) { .guide-in { animation: none; } }
