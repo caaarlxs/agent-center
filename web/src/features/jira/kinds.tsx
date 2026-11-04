@@ -8,12 +8,20 @@ import { openDialog } from "@/app/open-dialog"
 import { prefetchTicket } from "./jira"
 
 const KIND = {
-  epic: { icon: Zap, color: "bg-[#8b5cf6]", label: "Epic" },
-  story: { icon: Bookmark, color: "bg-[#22a06b]", label: "Story" },
-  task: { icon: Check, color: "bg-[#3b82f6]", label: "Task" },
-  subtask: { icon: CornerDownRight, color: "bg-[#38bdf8]", label: "Sub-task" },
-  bug: { icon: Bug, color: "bg-[#e5484d]", label: "Bug" },
+  epic: { icon: Zap, color: "bg-[#8b5cf6]", hex: "#8b5cf6", label: "Epic" },
+  story: { icon: Bookmark, color: "bg-[#22a06b]", hex: "#22a06b", label: "Story" },
+  task: { icon: Check, color: "bg-[#3b82f6]", hex: "#3b82f6", label: "Task" },
+  subtask: { icon: CornerDownRight, color: "bg-[#38bdf8]", hex: "#38bdf8", label: "Sub-task" },
+  bug: { icon: Bug, color: "bg-[#e5484d]", hex: "#e5484d", label: "Bug" },
 } as const
+
+export const kindLabel = (kind: TicketKind) => (KIND[kind] ?? KIND.task).label
+
+// The kind in words, in its colour: "Epic", "Story", "Sub-task".
+export function KindName({ kind }: { kind: TicketKind }) {
+  const { hex, label } = KIND[kind] ?? KIND.task
+  return <span className="shrink-0 rounded px-1.5 py-px text-[10.5px] font-semibold" style={{ color: hex, background: `color-mix(in srgb, ${hex} 15%, transparent)` }}>{label}</span>
+}
 
 export const TONE = { todo: "bg-hover text-text-muted", doing: "bg-review-soft text-review", done: "bg-work-soft text-work" } as const
 

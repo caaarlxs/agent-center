@@ -6,7 +6,7 @@
 // no agent for yet stay dim. A click opens the ticket; the stages' sessions
 // show only here.
 import { Play } from "lucide-react"
-import { type KeyboardEvent, useMemo } from "react"
+import { type KeyboardEvent, useLayoutEffect, useMemo, useRef } from "react"
 import { Shimmer } from "@/components/ai-elements/shimmer"
 import { Button } from "@/components/ui/button"
 import type { Card } from "@/lib/api-types"
@@ -17,6 +17,8 @@ import { dialog } from "@/app/open-dialog"
 import { ago, repoDot } from "@/features/session/state"
 import type { PipelineState, Unit } from "@server/pipeline"
 import { act, useActivity } from "./Pipeline"
+import { StageEffect } from "./StageEffect"
+import { effectOf, sceneOf } from "./stage-effects"
 import { PipelineMark, liveLine, startText, startingText } from "./PipelineMark"
 import { BUILT, STAGES, columnOf, costOf, dollars, isQueued, isRelease, nextStage, toFix, waitingStep } from "./pipeline-board"
 
@@ -54,8 +56,7 @@ function ReleaseLive({ state, card }: { state: PipelineState; card: Card | undef
 // While its agent works: what it does now (or each subagent at work, and
 // its step), and how far it got: the to-do list ticked, else the units built
 // (one segment each).
-function Live({ state, card }: { state: PipelineState; card: Card | undefined }) {
-  const activity = useActivity(state.key)
+function Live({ state, card, activity }: { state: PipelineState; card: Card | undefined; activity: ReturnType<typeof useActivity> }) {
   const steps = activity?.steps ?? []
   const current = steps.findLast(s => s.isOpen) ?? steps.at(-1)
   const busy = activity?.helpers.filter(h => !h.isDone) ?? []
@@ -102,13 +103,20 @@ function TicketCard({ state, card, now }: { state: PipelineState; card: Card | u
   // Done with its stage, the next one starts from here (if there is an agent for it).
   const next = nextStage(state)
   const time = ago(isRunning ? state.startedAt : (state.endedAt ?? state.startedAt), now)
+  const activity = useActivity(state.key, isRunning && !state.release)
+  const effect = effectOf(state)
+  // A card shows an effect from the moment it has one; once done, it fades out.
+  const hasHadEffect = useRef(false)
+  hasHadEffect.current ||= effect !== "off"
   return (
-    <article tabIndex={0} onClick={() => openTicket(state.key)} onKeyDown={onOpenKey(state.key)} data-edge={isAsking ? "waiting" : undefined}
+    <article tabIndex={0} data-card={state.key} data-col={columnOf(state)} onClick={() => openTicket(state.key)} onKeyDown={onOpenKey(state.key)} data-edge={isAsking ? "waiting" : undefined}
       className={cn("group/card relative flex cursor-pointer flex-col gap-2.5 rounded-[10px] border px-3 pt-3 pb-2.5 transition-[border-color,box-shadow] duration-100 hover:shadow-card",
         isRunning && "beam",
         isAsking ? "border-[color-mix(in_srgb,var(--ask)_50%,var(--line))] bg-surface shadow-[0_0_0_3px_var(--ask-soft),0_0_24px_var(--ask-soft)]"
           : isWaiting ? "border-dashed border-line-strong bg-[color-mix(in_srgb,var(--surface)_55%,transparent)] hover:border-text-muted"
           : "border-line bg-surface hover:border-line-strong")}>
+      {hasHadEffect.current && <StageEffect stage={state.stage} effect={effect} scene={sceneOf(state, activity)} />}
+      <div className="relative flex flex-col gap-2.5">
       <header className="flex min-w-0 items-start gap-2.5">
         <PipelineMark state={state} card={card} size={40} />
         <div className="flex min-w-0 flex-1 flex-col gap-[3px]">
@@ -122,7 +130,7 @@ function TicketCard({ state, card, now }: { state: PipelineState; card: Card | u
         </div>
       </header>
       {isRunning && state.release ? <ReleaseLive state={state} card={card} />
-        : isRunning ? <Live state={state} card={card} />
+        : isRunning ? <Live state={state} card={card} activity={activity} />
         : <p className={cn("m-0 line-clamp-2 text-[12.5px] leading-[1.45]", isAsking ? "font-semibold text-ask" : state.status === "failed" ? "text-bad" : "text-text-muted")}>{liveLine(state, card)}</p>}
       {state.units?.length ? <Repos units={state.units} /> : null}
       {next && (
@@ -131,6 +139,7 @@ function TicketCard({ state, card, now }: { state: PipelineState; card: Card | u
           <Play size={12} className="fill-current" />{startText(next, state.stage)}
         </Button>
       )}
+      </div>
     </article>
   )
 }
@@ -151,13 +160,34 @@ function StageHead({ n, name, tickets }: { n: number; name: string; tickets: Pip
   )
 }
 
+// A card that moves to another column glides there from where it was.
+const GLIDE = { duration: 450, easing: "cubic-bezier(0.77, 0, 0.175, 1)" }
+function useGlide(deps: unknown) {
+  const board = useRef<HTMLDivElement>(null)
+  const was = useRef(new Map<string, { col: string; box: DOMRect }>())
+  useLayoutEffect(() => {
+    const isStill = matchMedia("(prefers-reduced-motion: reduce)").matches
+    const now = new Map<string, { col: string; box: DOMRect }>()
+    for (const el of board.current?.querySelectorAll<HTMLElement>("[data-card]") ?? []) {
+      const at = { col: el.dataset.col!, box: el.getBoundingClientRect() }
+      const before = was.current.get(el.dataset.card!)
+      if (before && before.col !== at.col && !isStill)
+        el.animate([{ transform: `translate(${before.box.left - at.box.left}px, ${before.box.top - at.box.top}px)` }, { transform: "none" }], GLIDE)
+      now.set(el.dataset.card!, at)
+    }
+    was.current = now
+  }, [deps])
+  return board
+}
+
 export function PipelineView() {
   const now = useNow()
   const states = useLive(l => l.snapshot?.pipelines) ?? []
   const cards = useLive(l => l.snapshot?.cards)
   const byId = useMemo(() => new Map((cards ?? []).map(c => [c.id, c])), [cards])
+  const board = useGlide(states.map(s => `${s.key}:${columnOf(s)}`).join())
   return (
-    <div className="grid h-full min-w-min auto-cols-[minmax(250px,1fr)] grid-flow-col gap-3 px-5 pt-3.5 pb-5">
+    <div ref={board} className="grid h-full min-w-min auto-cols-[minmax(250px,1fr)] grid-flow-col gap-3 px-5 pt-3.5 pb-5">
       {STAGES.map((name, i) => {
         const here = states.filter(s => columnOf(s) === i)
         return (

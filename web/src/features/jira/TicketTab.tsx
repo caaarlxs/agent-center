@@ -28,6 +28,7 @@ import { Anim } from "@/components/icons/animated"
 import { WHY, keptTicket, loadTicket, sessionsOf, startFrom } from "./jira"
 import { KindMark, TONE, TicketRefRow } from "./kinds"
 import { Pipeline } from "./Pipeline"
+import { TicketTree } from "./TicketTree"
 import { readComment } from "./comment"
 
 const day = (at: number) => (at ? new Date(at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—")
@@ -301,29 +302,13 @@ function LinkTicket({ card }: { card: Card }) {
 
 export function TicketTab({ card }: { card: Card }) {
   const tickets = card.tickets ?? []
-  const [open, setOpen] = useState<string | null>(tickets[0]?.key ?? null)
-  const shown = tickets.some(t => t.key === open) ? open : (tickets[0]?.key ?? null)
-  const unlink = (key: string) => void linkTo(card, { unlink: key })
+  const [open, setOpen] = useState<string | null>(null) // any ticket of the tree; null: the first linked
+  const shown = open ?? tickets[0]?.key ?? null
+  const unlink = (key: string) => (key === open && setOpen(null), void linkTo(card, { unlink: key }))
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto px-5 py-4">
-      <div className="flex flex-col gap-1">
-        {tickets.map(t => (
-          <div key={t.key} className={cn("group flex min-w-0 items-center gap-2 rounded-[8px] px-2 py-1.5", t.key === shown ? "bg-select" : "hover:bg-hover")}>
-            <button className="flex min-w-0 flex-1 items-center gap-2 text-left text-[13px]" onClick={() => setOpen(t.key)}>
-              <KindMark kind={t.kind} size={15} />
-              <span className="shrink-0 font-mono text-xs font-semibold text-text-muted">{t.key}</span>
-              <span className="min-w-0 flex-1 truncate">{t.summary}</span>
-              <span className="shrink-0 text-xs text-faint">{WHY[t.why]}</span>
-            </button>
-            <button className="grid size-5 shrink-0 place-items-center rounded text-faint opacity-0 group-hover:opacity-100 hover:bg-press hover:text-text focus-visible:opacity-100" title={`Unlink ${t.key}`} onClick={() => unlink(t.key)}>
-              <X size={13} />
-            </button>
-          </div>
-        ))}
-        {!tickets.length && <p className="m-0 text-[13px] text-text-muted">No ticket linked yet.</p>}
-        <div className="mt-1.5"><LinkTicket card={card} /></div>
-      </div>
-      {shown && <div className="border-t border-line pt-4"><TicketView key={shown} ticketKey={shown} /></div>}
+    <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-auto px-5 py-4">
+      <TicketTree card={card} shown={shown} onPick={setOpen} onUnlink={unlink} footer={<LinkTicket card={card} />} />
+      {shown && <TicketView key={shown} ticketKey={shown} />}
     </div>
   )
 }

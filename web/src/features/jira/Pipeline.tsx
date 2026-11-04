@@ -130,14 +130,15 @@ function Decisions({ ticketKey, state, onSent }: { ticketKey: string; state: Pip
 type Activity = { steps: Step[]; helpers: Helper[]; units: Unit[]; checked?: string[] }
 const ACTIVITY_MS = 4_000
 
-export function useActivity(key: string) {
+export function useActivity(key: string, isOn = true) {
   const [activity, setActivity] = useState<Activity | null>(null)
   useEffect(() => {
+    if (!isOn) return
     const load = () => get<Activity>(`/api/pipeline/activity?key=${encodeURIComponent(key)}`).then(setActivity, () => {})
     void load()
     const timer = setInterval(load, ACTIVITY_MS)
     return () => clearInterval(timer)
-  }, [key])
+  }, [key, isOn])
   return activity
 }
 

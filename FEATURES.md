@@ -59,7 +59,7 @@ Lucide's names, and must be in `web/src/features/guide/icons.ts`.
 - {git-commit-horizontal} **Commits**: the history of every repo the session touched, as a graph.
 - {code} **Code**: the repository in an editor; `⌘P` opens a file, `⌘⇧F` searches, `⌘S` saves.
 - {git-pull-request} **PRs**: the session's pull requests, their checks and reviews, merge and close, and the files changed.
-- {ticket} **Tickets**: the Jira tickets linked to the session.
+- {ticket} **Tickets**: the Jira tickets linked to the session, as a tree from the epic down to its sub-tasks, each with its kind in words; a click shows one below. · 2026-11-04
 - {activity} **Trace**: a turn on a timeline, with its model calls, tools, subagents and slowest step.
 - {file-text} **Files**: what the session sent or wrote, shown here (Markdown, PDF, Word, Excel…); Download saves it. · 2026-11-03
 - {list-checks} **Tasks**: the organizer tasks made in this conversation, to tick off.

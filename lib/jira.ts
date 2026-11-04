@@ -484,6 +484,26 @@ async function epicsAbove(setup: JiraSetup, issues: any[]): Promise<Map<string, 
   return out
 }
 
+// Some tickets as rows, with what each sits in (its parent, the epic above):
+// a session's tickets, drawn as a tree. Kept a minute per set of keys.
+const rowsKept = new Map<string, { at: number; rows: Promise<TicketRow[]> }>()
+export function ticketRows(keys: string[]): Promise<TicketRow[]> {
+  const setup = setupOrThrow()
+  const wanted = [...new Set(keys)].filter(k => /^[A-Z][A-Z0-9]{1,9}-\d{1,6}$/.test(k)).slice(0, 50)
+  if (!wanted.length) return Promise.resolve([])
+  const id = wanted.slice().sort().join(",")
+  const had = rowsKept.get(id)
+  if (had && Date.now() - had.at < 60_000) return had.rows
+  const rows = (async () => {
+    const issues = await search(setup, `key in (${wanted.join(",")})`, [...BRIEF_FIELDS, "parent"])
+    const epics = await epicsAbove(setup, issues)
+    return issues.map(i => rowOf(i, setup.site, null, epics))
+  })()
+  rowsKept.set(id, { at: Date.now(), rows })
+  rows.catch(() => rowsKept.delete(id))
+  return rows
+}
+
 export async function searchTickets(filter: TicketFilter, text = ""): Promise<{ tickets: TicketRow[]; columns: BoardColumn[] }> {
   const setup = setupOrThrow()
   const sprint = await sprintFieldOf(setup)
