@@ -91,6 +91,7 @@ Lucide's names, and must be in `web/src/features/guide/icons.ts`.
 - {rocket} **Prod**: every step asks first, and the riskiest (merge, tag, run for real) ask twice; where the team set one, a dialog first reminds you what must be done outside the board, like a mobile build sent to the store.
 - {heart-pulse} **Check prod**: after the release, an agent checks in prod that what the ticket asked for works.
 - {undo-2} **Roll back**: Roll back staging or Roll back prod undoes the release the other way round (a revert PR for each merge, the previous tag deployed again); it asks twice.
+- {ticket-check} **Jira status**: the board moves the ticket as the team does: sub-tasks to In progress when the build starts and to In review with their PR, to Done in staging; the story to Ready for prod when the test passes, or reopened with a [Fix] sub-task per failure, and to Done in prod. Only what is yours moves; the rest is a warning in Checks. · 2026-11-04
 - {lock} **Limits**: agents never merge, push to main or touch prod: only the board does, step by step. Start over clears the runs and the labels; the comments stay in Jira.
 
 ## {panel-left} Sidebar

@@ -14,9 +14,10 @@
 // answers (here or in Jira) start the stage again, with them in the snapshot.
 //
 // The agent only reads and leaves its result in files; the board does the
-// writing in Jira (comments, labels), and only on tickets assigned to you.
+// writing in Jira (comments, labels, and the statuses of jira.json: see
+// jira-flow.ts), and only on tickets assigned to you.
 // The stages' instructions are not here: they belong to the team, in
-// <data>/pipeline/stages (refine.md, plan.md, build.md, review.md, environment.md).
+// <data>/pipeline/stages (refine.md, plan.md, build.md, review.md, environment.md, jira.md).
 //
 // The agents run clean: none of your settings, hooks, CLAUDE.md or
 // connectors (they would cost tokens on every call, and the Jira one could
@@ -34,7 +35,8 @@ import { mkdir, readFile, rename } from "node:fs/promises"
 import { join } from "node:path"
 import { DATA_DIR } from "./config"
 import { writeJsonAtomic } from "./files"
-import { assignToMe, commentOn, labelTicket, ticket, type Ticket, type TicketComment } from "./jira"
+import { assignToMe, commentOn, createSubtask, issueState, labelTicket, moveToStatus, openStatuses, ticket, type Ticket, type TicketComment } from "./jira"
+import { flowOf, followInJira, type Event as JiraEvent } from "./jira-flow"
 import { claudeBinary, running } from "./launch"
 import { claudeEnv } from "./proc"
 import { applyAction } from "./board"
@@ -97,6 +99,7 @@ export type PipelineState = {
   checked?: string[] // the items of it the build marked done
   findings?: Finding[] // the last review's
   fixed?: string[] // the findings a build fixed since
+  fixes?: string[] // the [Fix] sub-tasks a failed test opened in Jira
   error: string | null
   history?: Run[] // every run since the last start over, the latest last
 }
@@ -382,7 +385,7 @@ const fresh = async (key: string, runs: number, stage: Stage): Promise<PipelineS
   const prev = await stateOf(key)
   // The plan's units and to-do list, and the review's findings, stay with the ticket for the stages after it.
   return { ...EMPTY(key, runs, stage), summary: prev?.summary, history: prev?.history ?? [], units: prev?.units, checklist: prev?.checklist, checked: prev?.checked, scripts: prev?.scripts, contextImpact: prev?.contextImpact,
-    release: prev?.release, deployed: prev?.deployed,
+    release: prev?.release, deployed: prev?.deployed, fixes: prev?.fixes,
     ...(stage === "review" ? {} : { findings: prev?.findings, fixed: stage === "build" ? [] : prev?.fixed }) }
 }
 // A stage's session is the pipeline's, not yours: once it ends it leaves the
@@ -399,7 +402,8 @@ async function runStage(key: string, runs: number, stage: AgentStage) {
     Promise.all(t.children.slice(0, 15).map(c => ticket(c.key).catch(() => null))).then(all => all.filter(Boolean) as Ticket[]),
   ])
   await Bun.write(join(dir, "ticket.md"), snapshotOf(t, parent, children))
-  const state = { ...(await fresh(key, runs, stage)), summary: t.summary }
+  const started = { ...(await fresh(key, runs, stage)), summary: t.summary }
+  const state = stage === "build" ? { ...started, ...(await inJira("build-started", started)) } : started
   await save(state)
   const id = randomUUID()
   const pid = await spawnStage(dir, id, promptFor(key, dir, stage), stage, () => void watch())
@@ -476,7 +480,27 @@ async function finish(key: string) {
   const found = state.stage === "review" ? { findings: result.findings, fixed: [] } : state.stage === "build" ? { fixed: result.fixed } : {}
   const tested = state.stage === "test" || state.stage === "smoke" ? { results: result.results } : {}
   const context = state.stage === "refine" ? { contextImpact: result.contextImpact } : {}
-  await save({ ...state, status: "ready", questions: [], units, checklist, checked, scripts, ...found, ...tested, ...context, checks, endedAt: Date.now() })
+  const done: PipelineState = { ...state, status: "ready", questions: [], units, checklist, checked, scripts, ...found, ...tested, ...context, checks: withJira(checks, state.checks), endedAt: Date.now() }
+  const event = state.stage === "build" ? "built" : state.stage === "test" ? "tested" : null
+  await save(event ? { ...done, ...(await inJira(event, done)) } : done)
+}
+
+// ---------- the ticket's status in Jira (lib/jira-flow.ts) ----------
+
+const JIRA = { issue: issueState, open: openStatuses, move: moveToStatus, comment: commentOn, createSubtask }
+// The Jira warnings of before, kept under the new checks unless a new one replaces them.
+const withJira = (checks: Check[], before: Check[] = [], jira: Check[] = before.filter(c => c.id.startsWith("jira-"))) => {
+  const ids = new Set(checks.map(c => c.id))
+  return [...checks, ...jira.filter(c => !ids.has(c.id))]
+}
+// After what just happened, the statuses it moves (with jira.json; none without):
+// what it could not move is a warning in the ticket's checks.
+async function inJira(event: JiraEvent, state: PipelineState): Promise<Partial<PipelineState>> {
+  const flow = flowOf(await readText(join(STAGES_DIR, "jira.json")))
+  if (!flow) return {}
+  const out = await followInJira(event, state, flow, JIRA).catch(err => ({ checks: [{ id: "jira-flow", label: "Jira did not answer", status: "warn" as const, detail: String(err?.message ?? err) }], fixes: undefined }))
+  const kept = (state.checks ?? []).filter(c => !c.id.startsWith("jira-"))
+  return { checks: withJira([...kept, ...out.checks], state.checks), ...(out.fixes ? { fixes: out.fixes } : {}) }
 }
 
 // What the board checks of a run by itself (lib/checks.ts): the repos left
@@ -600,7 +624,8 @@ async function tickRelease(key: string) {
       return void (await save({ ...state, release, status: "failed", error: `Rolled back: ${release.env} runs the code from before ${key}`, endedAt: Date.now() }))
     }
     await labelTicket(key, [LABELS[release.env]], [LABELS.needsInfo, LABELS.ready, LABELS.planned, LABELS.built, LABELS.reviewed, ...(release.env === "prod" ? [LABELS.staging] : [])])
-    await save({ ...state, release, deployed: { ...state.deployed, [release.env]: release }, status: "ready", endedAt: Date.now() })
+    const live: PipelineState = { ...state, release, deployed: { ...state.deployed, [release.env]: release }, status: "ready", endedAt: Date.now() }
+    await save({ ...live, ...(await inJira(release.env === "staging" ? "in-staging" : "in-prod", live)) })
   } catch (err) {
     console.error(`release ${key}:`, err)
   } finally {

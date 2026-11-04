@@ -561,3 +561,33 @@ export async function labelTicket(key: string, add: string[], remove: string[]) 
   if (labels.length) await request(setup, `/rest/api/3/issue/${key}`, { method: "PUT", body: JSON.stringify({ update: { labels } }) }) // no body back (204)
   briefs.delete(key)
 }
+
+// ---------- the pipeline's status moves (lib/jira-flow.ts) ----------
+
+// A ticket's status and whether it is yours: what a move needs to know first.
+export async function issueState(key: string): Promise<{ status: string; mine: boolean } | null> {
+  const setup = setupOrThrow()
+  const raw = await call(setup, `/rest/api/3/issue/${keyOrThrow(key)}?fields=status,assignee`).catch(() => null)
+  if (!raw?.fields) return null
+  return { status: String(raw.fields.status?.id ?? ""), mine: raw.fields.assignee?.accountId === (await myId(setup)) }
+}
+
+// The statuses a ticket's workflow lets it move to now.
+export const openStatuses = async (key: string) => (await transitionsOf(key)).map(t => t.toId)
+
+// A ticket of yours to a status, by the move that leads there now.
+export async function moveToStatus(key: string, statusId: string) {
+  const move = (await transitionsOf(key)).find(t => t.toId === statusId)
+  if (!move) throw new Error("That move is not open for this ticket now")
+  await moveTicket(key, move.id)
+}
+
+// A sub-task under a ticket of yours, assigned to you: its key.
+export async function createSubtask(parent: string, summary: string, typeId: string): Promise<string> {
+  const setup = setupOrThrow()
+  await mineOrThrow(setup, parent)
+  const fields = { project: { key: parent.split("-")[0] }, parent: { key: parent }, summary: summary.slice(0, 250), issuetype: { id: typeId }, assignee: { accountId: await myId(setup) } }
+  const r = await call(setup, "/rest/api/3/issue", { method: "POST", body: JSON.stringify({ fields }) })
+  briefs.delete(parent)
+  return String(r?.key ?? "")
+}
