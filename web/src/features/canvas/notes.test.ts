@@ -1,7 +1,7 @@
 import { expect, test } from "vitest"
 import type { Note } from "@/lib/api-types"
 import { CARD_W } from "./geometry"
-import { attachTo, continueList, linesOf, nextSize, noteAt, piecesOf, placeNote, tally, toggleBox, toggleItem, toggleMark } from "./notes"
+import { attachTo, continueList, lineEnd, linesOf, nextSize, noteAt, piecesOf, placeNote, tally, toggleBox, toggleItem, toggleMark } from "./notes"
 
 const note = (extra: Partial<Note> = {}): Note => ({ id: "n", text: "", x: 10, y: 20, w: 200, h: 100, color: "yellow", cardId: null, ...extra })
 const cardAt = (key: string) => (key === "c" ? { x: 480, y: 240 } : null)
@@ -70,4 +70,12 @@ test("the box button turns the caret's line into a box, and back", () => {
   expect(toggleBox("buy milk\ncall Ana", 12)).toEqual({ text: "buy milk\n- [ ] call Ana", caret: 18 })
   expect(toggleBox("buy milk\n- [ ] call Ana", 18)).toEqual({ text: "buy milk\ncall Ana", caret: 12 })
   expect(toggleBox("", 0)).toEqual({ text: "- [ ] ", caret: 6 })
+})
+
+test("lineEnd is where line i ends in the text", () => {
+  const text = "To do\n- [ ] one\n- [x] two"
+  expect(lineEnd(text, 0)).toBe(5)
+  expect(lineEnd(text, 1)).toBe(15)
+  expect(lineEnd(text, 2)).toBe(text.length)
+  expect(lineEnd(text, 9)).toBe(text.length)
 })

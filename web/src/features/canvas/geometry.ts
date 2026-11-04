@@ -46,6 +46,15 @@ export function membersOf<C extends { id: string }>(zone: Zone, cards: C[], at: 
   return cards.filter(c => at[c.id] && isInZone(zone, at[c.id]!))
 }
 
+// The free notes a zone holds, as its cards: those inside it; when it is
+// folded, the ones it folded (a zone folded before it kept its notes holds
+// the ones inside it).
+export function notesOf<N extends Point & { id: string; cardId?: string | null }>(zone: Zone, notes: N[]): N[] {
+  const free = notes.filter(n => !n.cardId)
+  if (zone.collapsed && zone.heldNotes) return free.filter(n => zone.heldNotes!.includes(n.id))
+  return free.filter(n => isInZone(zone, n))
+}
+
 // A place under a zone for the i-th card in its way when it unfolds: three per row.
 export const belowZone = (zone: Zone, i: number): Point => ({
   x: snap(zone.x + (i % 3) * (CARD_W + GRID)),

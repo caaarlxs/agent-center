@@ -51,6 +51,12 @@ export function linesOf(text: string): ({ kind: "text"; text: string } | { kind:
   })
 }
 
+// Where line `i` ends in the text: the caret for a click on that line.
+export function lineEnd(text: string, i: number): number {
+  const lines = text.split("\n")
+  return lines.slice(0, Math.min(i, lines.length - 1) + 1).join("\n").length
+}
+
 // Ticks or unticks the box on line `i`.
 export function toggleItem(text: string, i: number): string {
   return text.split("\n").map((line, k) => (k === i ? line.replace(ITEM, (_, a, mark, b, rest) => `${a}${mark === " " ? "x" : " "}${b}${rest}`) : line)).join("\n")

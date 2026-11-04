@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest"
 import type { Card, Zone } from "@/lib/api-types"
-import { belowZone, CARD_H, CARD_W, ENTRY, GRID, isInZone, membersOf, onCanvas, placeCards, snap } from "./geometry"
+import { belowZone, CARD_H, CARD_W, ENTRY, GRID, isInZone, membersOf, notesOf, onCanvas, placeCards, snap } from "./geometry"
 
 const card = (id: string, extra: Partial<Card> = {}) => ({ id, column: "review", pos: null, ...extra }) as Card
 
@@ -56,5 +56,19 @@ describe("belowZone", () => {
     expect(belowZone(zone, 0)).toEqual({ x: 48, y: 96 + 408 + GRID })
     expect(belowZone(zone, 2)).toEqual({ x: 48 + 2 * (CARD_W + GRID), y: 96 + 408 + GRID })
     expect(belowZone(zone, 3)).toEqual({ x: 48, y: 96 + 408 + GRID + CARD_H })
+  })
+})
+
+describe("notesOf", () => {
+  const zone: Zone = { id: "z", name: "Z", x: 0, y: 0, w: 700, h: 400 }
+  const notes = [{ id: "n1", x: 24, y: 48 }, { id: "n2", x: 360, y: 48 }, { id: "n3", x: 900, y: 48 }, { id: "n4", x: 24, y: 48, cardId: "k" }]
+  test("an open zone holds the free notes inside it", () => {
+    expect(notesOf(zone, notes).map(n => n.id)).toEqual(["n1", "n2"])
+  })
+  test("a folded zone holds the notes it folded, not those put on its place since", () => {
+    expect(notesOf({ ...zone, collapsed: true, heldNotes: ["n1"] }, notes).map(n => n.id)).toEqual(["n1"])
+  })
+  test("a zone folded before it kept them holds the notes inside it", () => {
+    expect(notesOf({ ...zone, collapsed: true }, notes).map(n => n.id)).toEqual(["n1", "n2"])
   })
 })

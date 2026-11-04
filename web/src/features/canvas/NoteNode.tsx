@@ -8,11 +8,11 @@
 // and turns the caret's line into a box to tick, or back.
 import { type Node, type NodeProps, NodeResizeControl, useStore } from "@xyflow/react"
 import { Bold, Link, ListChecks, Strikethrough, Underline } from "lucide-react"
-import { type CSSProperties, useRef, useState } from "react"
+import { type CSSProperties, useEffect, useRef, useState } from "react"
 import type { Note } from "@/lib/api-types"
 import { cn } from "@/lib/utils"
 import { GRID } from "./geometry"
-import { type Mark, NOTE_COLORS, TEXT_SIZE, TEXT_SIZES, continueList, linesOf, nextSize, piecesOf, tally, toggleBox, toggleItem, toggleMark } from "./notes"
+import { type Mark, NOTE_COLORS, TEXT_SIZE, TEXT_SIZES, continueList, lineEnd, linesOf, nextSize, piecesOf, tally, toggleBox, toggleItem, toggleMark } from "./notes"
 import { useFocusWhenShown } from "./useFocusWhenShown"
 import { Anim } from "@/components/icons/animated"
 
@@ -42,8 +42,21 @@ export function NoteNode({ data, selected, dragging }: NodeProps<Node<NoteNodeDa
   const { note } = data
   const unscale = useStore(s => 1 / s.transform[2])
   const [isEditing, setEditing] = useState(data.isNew)
+  const [caret, setCaret] = useState<number | null>(null) // where a click on a line puts it
   const area = useRef<HTMLTextAreaElement>(null)
   useFocusWhenShown(area, isEditing)
+  useEffect(() => {
+    if (!isEditing || caret === null) return
+    let frame = 0
+    const place = () => {
+      const ta = area.current
+      if (ta && document.activeElement === ta) ta.setSelectionRange(caret, caret)
+      else frame = requestAnimationFrame(place)
+    }
+    place()
+    return () => cancelAnimationFrame(frame)
+  }, [isEditing, caret])
+  const edit = (line: number | null) => (setCaret(line === null ? null : lineEnd(note.text, line)), setEditing(true))
   const nextColor = NOTE_COLORS[(NOTE_COLORS.indexOf(note.color as (typeof NOTE_COLORS)[number]) + 1) % NOTE_COLORS.length]
   const count = tally(note.text)
   const size = note.size ?? TEXT_SIZE
@@ -113,15 +126,16 @@ export function NoteNode({ data, selected, dragging }: NodeProps<Node<NoteNodeDa
           className="nodrag nowheel min-h-0 flex-1 resize-none border-0 bg-transparent px-2.5 pt-[7px] pb-3 leading-[1.45] text-text outline-none placeholder:text-faint" style={{ fontSize: size }}
           onChange={e => data.onText(note, e.target.value)} onBlur={() => setEditing(false)} onKeyDown={onKeyDown} />
       ) : (
-        <div className="nodrag nowheel min-h-0 flex-1 cursor-text overflow-auto px-2.5 pt-[7px] pb-3 leading-[1.45] [overflow-wrap:anywhere]" style={{ fontSize: size }} onClick={() => setEditing(true)}>
+        <div className="nodrag nowheel min-h-0 flex-1 cursor-text overflow-auto px-2.5 pt-[7px] pb-3 leading-[1.45] [overflow-wrap:anywhere]" style={{ fontSize: size }} onClick={() => edit(null)}>
           {!note.text.trim() ? <span className="text-faint">Write a note… (- [ ] for a checkbox)</span> : linesOf(note.text).map((l, i) =>
             l.kind === "item" ? (
-              <label key={i} className="flex items-start gap-[7px] py-px" onClick={e => e.stopPropagation()}>
+              // Only the box ticks; a click on the text writes on that line.
+              <div key={i} className="flex items-start gap-[7px] py-px" onClick={e => (e.stopPropagation(), edit(i))}>
                 <input type="checkbox" checked={l.done} className="mt-[0.2em] flex-none cursor-pointer" style={{ accentColor: mix(80, "var(--text)"), width: "1em", height: "1em" }}
-                  onChange={() => data.onText(note, toggleItem(note.text, i))} />
-                <span className={cn(l.done && "text-faint line-through")}><Marked text={l.text} /></span>
-              </label>
-            ) : <div key={i} className="whitespace-pre-wrap">{l.text ? <Marked text={l.text} /> : " "}</div>,
+                  onClick={e => e.stopPropagation()} onChange={() => data.onText(note, toggleItem(note.text, i))} />
+                <span className={cn("min-w-0 flex-1", l.done && "text-faint line-through")}><Marked text={l.text} /></span>
+              </div>
+            ) : <div key={i} className="whitespace-pre-wrap" onClick={e => (e.stopPropagation(), edit(i))}>{l.text ? <Marked text={l.text} /> : " "}</div>,
           )}
         </div>
       )}

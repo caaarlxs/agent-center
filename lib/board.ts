@@ -28,9 +28,9 @@ export type BoardItem = {
 
 // A named rectangle on the canvas; cards inside it belong to it by position.
 // collapsed: folded into a folder tile on the canvas (its cards keep their places).
-// held: while folded, the cards it folded (their ids); a card put on its
-// empty place meanwhile is not one of them.
-export type Zone = { id: string; name: string; x: number; y: number; w: number; h: number; collapsed?: boolean; held?: string[] }
+// held: while folded, the cards it folded (their ids), and heldNotes its free
+// notes; a card or note put on its empty place meanwhile is not one of them.
+export type Zone = { id: string; name: string; x: number; y: number; w: number; h: number; collapsed?: boolean; held?: string[]; heldNotes?: string[] }
 // A note attached to a card (cardId: the card's desktop id, or its session id)
 // keeps x, y relative to that card, and moves with it.
 // size: its text, in px (one of NOTE_TEXT_SIZES; 13 when missing).
@@ -239,6 +239,7 @@ export async function setZones(raw: unknown[]) {
       h: Math.max(120, Math.round(Number(z?.h) || 220)),
       ...(z?.collapsed === true ? { collapsed: true } : {}),
       ...(z?.collapsed === true && Array.isArray(z?.held) ? { held: z.held.filter((id: unknown) => typeof id === "string").map((id: string) => id.slice(0, 80)).slice(0, 200) } : {}),
+      ...(z?.collapsed === true && Array.isArray(z?.heldNotes) ? { heldNotes: z.heldNotes.filter((id: unknown) => typeof id === "string").map((id: string) => id.slice(0, 80)).slice(0, 200) } : {}),
     }))
     .slice(0, 50)
   await saveBoard()
