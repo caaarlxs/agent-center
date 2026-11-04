@@ -533,7 +533,7 @@ function ReleasePanel({ ticketKey, release, after, isLive, isPreview, onStep }: 
     <div className="flex flex-col gap-3">
       <ReleaseRail release={release} after={after} />
       {isLive && <StepAtHand ticketKey={ticketKey} release={release} onAct={onStep} />}
-      <Details label="Every step"><ReleaseSteps ticketKey={ticketKey} release={release} isPreview={isPreview} /></Details>
+      <Details label="Every step"><ReleaseSteps ticketKey={ticketKey} release={release} after={after} isPreview={isPreview} /></Details>
     </div>
   )
 }
@@ -564,7 +564,7 @@ function TestPanel({ state, release }: { state: PipelineState; release: Release 
         <Tile><span className="text-[11.5px] text-faint">Fail</span><span className={cn("text-[20px] leading-none font-semibold tabular-nums", results.length - pass ? "text-bad" : "text-faint")}>{results.length - pass}</span></Tile>
       </div>
       {results.length > 0 && <ol className="m-0 list-none p-0">{[...results].sort((a, b) => (a.status === b.status ? 0 : a.status === "fail" ? -1 : 1)).map(r => <ResultRow key={r.id} result={r} />)}</ol>}
-      {release && <Details label="The deploy"><ReleaseSteps ticketKey={state.key} release={release} /></Details>}
+      {release && <Details label="The deploy"><ReleaseSteps ticketKey={state.key} release={release} after={afterOf(release.env, state)} /></Details>}
     </div>
   )
 }

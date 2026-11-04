@@ -158,7 +158,7 @@ function StepRow({ step, ticketKey, isAtHand, onAct }: { step: ReleaseStep; tick
 
 // The steps of a release, the one at hand with its button; a release not
 // started yet (a preview) shows only what it will do.
-export function ReleaseSteps({ ticketKey, release, isPreview = false, onAct }: { ticketKey: string; release: Release; isPreview?: boolean; onAct?: (step: string, action: "approve" | "skip", value?: string) => void }) {
+export function ReleaseSteps({ ticketKey, release, after, isPreview = false, onAct }: { ticketKey: string; release: Release; after?: After; isPreview?: boolean; onAct?: (step: string, action: "approve" | "skip", value?: string) => void }) {
   const atHand = isPreview ? undefined : release.steps.find(s => s.status !== "done" && s.status !== "skipped")
   return (
     <div className="flex flex-col gap-1">
@@ -168,6 +168,7 @@ export function ReleaseSteps({ ticketKey, release, isPreview = false, onAct }: {
       </h3>
       <ol className="m-0 list-none p-0">
         {release.steps.map(s => <StepRow key={s.id} step={s} ticketKey={ticketKey} isAtHand={s.id === atHand?.id} onAct={(action, value) => onAct?.(s.id, action, value)} />)}
+        {after && <AfterRow after={after} />}
       </ol>
     </div>
   )
@@ -228,6 +229,20 @@ export function StepAtHand({ ticketKey, release, onAct }: { ticketKey: string; r
   const step = release.steps.find(s => s.status !== "done" && s.status !== "skipped")
   if (!step) return null
   return <ol className="m-0 list-none rounded-[10px] border border-line bg-surface px-3"><StepRow step={step} ticketKey={ticketKey} isAtHand onAct={(action, value) => onAct(step.id, action, value)} /></ol>
+}
+
+// The agent stage after the release, as the list's last row: the same as the rail's last node.
+function AfterRow({ after }: { after: After }) {
+  const step = { status: after.status } as ReleaseStep
+  return (
+    <li className="grid grid-cols-[15px_minmax(0,1fr)] gap-x-2.5 border-t border-line py-2.5">
+      <span className="mt-[2px]"><Mark step={step} /></span>
+      <span className={cn("flex items-baseline gap-2 text-[13px] leading-[1.45]", after.status === "pending" ? "text-text-muted" : "text-text")}>
+        <Bot size={13} className="shrink-0 translate-y-[2px] text-faint" aria-label="Agent" />
+        <span className="min-w-0">{after.title}</span>
+      </span>
+    </li>
+  )
 }
 
 // Skipping the step that failed (you did it some other way).
