@@ -10,6 +10,8 @@
 //   whisper    dictation on this Mac: whisper-cpp, ffmpeg and the model
 //   organizer  tasks: ~/organizer/organizer.py and a note in ~/.claude/CLAUDE.md
 //   github     the gh CLI, signed in, for PRs                 (checked only)
+//   account    the terminal's Claude account is Claude desktop's (checked
+//              only; shown only when they differ)
 //
 // settings.json is backed up once before the first change, and every change
 // can be undone (undoAll, for uninstall.sh).
@@ -17,6 +19,7 @@
 import { copyFile, mkdir, readFile, rename, stat, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { APP_DIR, CLAUDE_DIR, HOME, MODELS_DIR, SETTINGS_PATH, settings, type Settings } from "./config"
+import { desktopAccount } from "./desktop"
 import { readJson, writeJsonAtomic } from "./files"
 import { claudeBinary } from "./launch"
 import { exec } from "./proc"
@@ -219,6 +222,20 @@ export async function saveSettings(change: Partial<Settings>) {
 
 // ---------- status and actions ----------
 
+// The terminal (~/.claude.json) and Claude desktop signed in with different
+// accounts: a session started in one opens in the other as a separate copy.
+// Shown only then: the fix is to sign in with the same one (/login).
+export function accountStep(cli: string | null, desktop: string | null): Step | null {
+  return cli && desktop && cli !== desktop ? { id: "account", state: "missing" } : null
+}
+async function cliAccount() {
+  try {
+    return String((await readJson(join(HOME, ".claude.json"))).oauthAccount?.accountUuid ?? "") || null
+  } catch {
+    return null
+  }
+}
+
 export async function setupStatus(): Promise<{ steps: Step[]; isReady: boolean; voiceLanguage: string; organizerNote: string }> {
   const s = await readClaudeSettings().catch(() => ({}) as ClaudeSettings)
   const { installed } = await pluginVersions()
@@ -235,7 +252,8 @@ export async function setupStatus(): Promise<{ steps: Step[]; isReady: boolean; 
     { id: "organizer", state: (await isOrganizerOn()) ? "done" : "missing", detail: (await exists(ORGANIZER)) ? "found" : undefined },
     { id: "commands", state: settings.runCommands === true ? "done" : "missing" },
     { id: "github", state: ghAuth ? "done" : which("gh") ? "missing" : "unavailable", detail: ghAuth ? undefined : which("gh") ? "signed-out" : "not-installed" },
-  ]
+    accountStep(await cliAccount(), await desktopAccount()),
+  ].filter((x): x is Step => !!x)
   const isReady = steps.filter(x => ["hook", "bridge"].includes(x.id)).every(x => x.state === "done")
   const organizerNote = ORGANIZER_NOTE.replace(NOTE_START, "").replace(NOTE_END, "").trim()
   return { steps, isReady, voiceLanguage: settings.voiceLanguage ?? "auto", organizerNote }

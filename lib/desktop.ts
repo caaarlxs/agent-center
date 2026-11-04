@@ -48,7 +48,8 @@ export function appHostOf(cliId: string, hookHost: string | null, desktop: Deskt
   return candidates.find(h => desktop.byHost.get(h)?.account === desktop.activeAccount) ?? null
 }
 
-async function activeAccount() {
+// The account Claude desktop is signed in with now (also lib/setup.ts).
+export async function desktopAccount() {
   try {
     return String((await readJson(join(DESKTOP_DIR, "config.json"))).lastKnownAccountUuid ?? "") || null
   } catch {
@@ -139,7 +140,7 @@ export async function readDesktop(): Promise<DesktopIndex> {
   for (const { session } of copies) if (session.cliId) byCli.set(session.cliId, byHost.get(session.hostId)!)
   for (const { session } of copies) if (session.cliId) hostsByCli.set(session.cliId, (hostsByCli.get(session.cliId) ?? new Set()).add(session.hostId))
   for (const path of [...cache.keys()]) if (!seen.has(path)) cache.delete(path)
-  return { ok: true, byCli, byHost, hostsByCli, activeAccount: await activeAccount() }
+  return { ok: true, byCli, byHost, hostsByCli, activeAccount: await desktopAccount() }
 }
 
 // Archived in the app: it starts no session there until it is unarchived

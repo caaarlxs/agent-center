@@ -59,6 +59,10 @@ const STEPS: Record<string, Meta> = {
     title: "Run commands", need: "Optional", action: "Turn on", canTurnOff: true,
     text: "Adds Run to the shell blocks Claude writes in a conversation, as in Claude desktop: a click runs that command on this Mac, in the session's folder, with your shell (no terminal opens). The output shows under the block, with Stop. It runs exactly what the block says.",
   },
+  account: {
+    title: "Same Claude account", need: "Recommended",
+    text: "The terminal and Claude desktop are signed in with different accounts. A session started in the terminal opens in Claude desktop as a separate copy: what you write in one does not reach the other.",
+  },
   github: {
     title: "GitHub PRs", need: "Optional",
     text: "With the gh CLI signed in, each card shows its PRs and the conversation lets you review and merge them.",
@@ -270,6 +274,7 @@ function SetupStep({ step, status, busy, language, setLanguage, run }: StepProps
           <pre className="mt-1.5 rounded-lg border border-line bg-side px-2.5 py-2 font-mono text-xs whitespace-pre-wrap">{status.organizerNote}</pre>
         </details>
       )}
+      {step.id === "account" && <p className={text}>Sign in with the same account in both: in the terminal, <code>claude</code> then <code>/login</code>; or in Claude desktop, your account menu.</p>}
       {step.id === "github" && step.state !== "done" && <p className={text}>In the terminal: <code>{step.detail === "not-installed" ? "brew install gh && gh auth login" : "gh auth login"}</code></p>}
     </Row>
   )

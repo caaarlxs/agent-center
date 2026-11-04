@@ -2,6 +2,7 @@
 // (routes/session.ts). Each one throws ApiError with the server's reason.
 import { toast } from "sonner"
 import { post } from "@/lib/api"
+import { live } from "@/lib/live"
 import { addPending, dropPending } from "@/features/conversation/pending"
 
 const at = (id: string, action: string) => `/api/sessions/${encodeURIComponent(id)}/${action}`
@@ -41,7 +42,19 @@ export type BoardAction = "pin" | "unpin" | "park" | "unpark" | "done" | "undone
 export const act = (id: string, action: BoardAction, body: Record<string, unknown> = {}) => post(at(id, action), body)
 
 // Opens it in Claude desktop.
-export const launch = (id: string) => post(at(id, "open")).catch((err: Error) => toast(err.message || "Could not open the session"))
+const open = (id: string) => post(at(id, "open")).catch((err: Error) => toast(err.message || "Could not open the session"))
+// Opens the session in Claude desktop. One that runs in a terminal now asks
+// first: Claude desktop would start a second process on it, a copy that does
+// not see the terminal's turns (nor the terminal its).
+export function launch(id: string) {
+  const card = live().snapshot?.cards.find(c => c.id === id)
+  if (!card?.bridge.inTerminal && !card?.bridge.isDoubled) return open(id)
+  toast("This session runs in a terminal", {
+    description: "Claude desktop would open a separate copy: what you write there does not reach the terminal. Close the terminal first, or write from here.",
+    action: { label: "Open anyway", onClick: () => void open(id) },
+    duration: 10_000,
+  })
+}
 
 // Ends its running turn, like Esc in the app.
 export const stopTurn = (card: { id: string; title: string }) =>

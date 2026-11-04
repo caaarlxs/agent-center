@@ -1,10 +1,10 @@
 // The small pieces every view draws on a session (components.js): the line
 // that says why it is where it is, the replies, the "New" badge, its tags
-// (overlaps, background work, memory, run, PRs, tasks, messages waiting,
-// context used) and its action buttons with the Later and Colour menus.
+// (where its process runs, overlaps, background work, memory, run, PRs,
+// tasks, messages waiting, context used) and its action buttons with the Later and Colour menus.
 // The canvas card, the board card and the inbox row all build on these.
 import {
-  ListChecks, Mail, Moon, Palette, Play, Square, Star, TriangleAlert,
+  CopyX, ListChecks, Mail, Moon, Palette, Play, Square, SquareTerminal, Star, TriangleAlert,
 } from "lucide-react"
 import { motion } from "motion/react"
 import { type ReactNode, useEffect, useRef } from "react"
@@ -171,6 +171,21 @@ function OverlapChip({ card, isCompact }: { card: Card; isCompact?: boolean }) {
   )
 }
 
+// Where its process runs, when it matters: in a terminal (Open in Claude
+// would start a second one), or in two places at once, which do not see
+// each other's turns (lib/processes.ts).
+function ProcessChip({ card, isCompact }: { card: Card; isCompact?: boolean }) {
+  if (card.bridge.isDoubled)
+    return (
+      <Tag tone="bg-bad-soft text-bad" isCompact={isCompact} title={"Open in two places at once (a terminal and Claude desktop, say): each one runs its own copy and does not see what you write in the other.\n\nClose one of them."}>
+        <CopyX />{!isCompact && "open twice"}
+      </Tag>
+    )
+  if (card.bridge.inTerminal)
+    return <Tag isCompact={isCompact} title="It runs in a terminal: write to it from here or there. Claude desktop would open a separate copy."><SquareTerminal />{!isCompact && "terminal"}</Tag>
+  return null
+}
+
 const BG_LABEL: Record<string, string> = { shell: "in the background", subagent: "subagent", monitor: "monitor", workflow: "workflow", current: "in progress" }
 
 // A dot that beats while something runs in the background.
@@ -276,9 +291,10 @@ export function UsageMeter({ usage, barW = 28 }: { usage: Card["usage"]; barW?: 
 // the overlap stays.
 export function Signals({ card, now, isMid }: { card: Card; now: number; isMid?: boolean }) {
   const prs = card.prs ?? []
-  if (isMid) return card.overlaps?.length ? <span className="ml-auto flex flex-none items-center gap-1"><OverlapChip card={card} isCompact /></span> : null
+  if (isMid) return card.overlaps?.length || card.bridge.isDoubled ? <span className="ml-auto flex flex-none items-center gap-1"><ProcessChip card={card} isCompact /><OverlapChip card={card} isCompact /></span> : null
   return (
     <span className="ml-auto flex flex-none items-center gap-1 empty:hidden">
+      <ProcessChip card={card} isCompact />
       <OverlapChip card={card} isCompact />
       <BackgroundChip card={card} now={now} isCompact />
       <MemoryChip card={card} now={now} isCompact />
@@ -301,6 +317,7 @@ export function Meta({ card, now, className }: { card: Card; now: number; classN
     <div className={cn("flex min-w-0 flex-wrap items-center gap-[5px]", className)}>
       {card.isLaunching && <Tag tone="bg-work-soft text-work" title="A turn runs here, headless (a new session's first one, or messages Claude desktop did not start the session for); open it in Claude when it ends">headless</Tag>}
       {card.state === "permission" && card.column === "asking" && <Tag tone="bg-bad-soft text-bad">needs approval</Tag>}
+      <ProcessChip card={card} />
       <OverlapChip card={card} />
       <BackgroundChip card={card} now={now} />
       <MemoryChip card={card} now={now} />

@@ -28,6 +28,8 @@ Lucide's names, and must be in `web/src/features/guide/icons.ts`.
 - {palette} **Colour and pin**: `C` gives a session a colour, `P` keeps it on top.
 - {command} **Quick keys**: `E` marks done, `Z` undoes, `T` renames, `O` opens in Claude, `S` stops the running turn.
 - {play} **Run**: start a session's project in its folder, see where it listens and read its output.
+- {square-terminal} **Terminal sessions**: a session that runs in a terminal says so; Open in Claude asks first, as Claude desktop would open a separate copy. · 2026-11-04
+- {copy-x} **Open twice**: a session open in two places at once (a terminal and Claude desktop) is marked in red: neither sees the other's messages. · 2026-11-04
 
 ## {shapes} Canvas
 
@@ -76,4 +78,4 @@ Lucide's names, and must be in `web/src/features/guide/icons.ts`.
 - {timer} **Limits**: your 5-hour and weekly use, when each resets, and where your pace gets you.
 - {book-text} **General context**: read and edit CLAUDE.md and what each project remembers.
 - {paw-print} **Pets**: open packs and send a pet out on the board to keep you company. · 2026-11-03
-- {settings} **Settings**: setup steps for this Mac, alerts (notifications, chime, reading aloud) and the look.
+- {settings} **Settings**: setup steps for this Mac, alerts (notifications, chime, reading aloud) and the look; it warns when the terminal and Claude desktop use different accounts. · 2026-11-04

@@ -10,8 +10,10 @@
 //                                from the board
 //   acks/<session>.json          { delivered, failed, stopped, settings }  this mod
 //                                (failed: messages the session refused, with why)
-//   alive/<session>.json         { at, busy, v, limits }   this mod (heartbeat; limits:
-//                                the account's 5-hour and weekly windows)
+//   alive/<session>.json         { at, busy, v, limits, proc, surfaces }   this mod
+//                                (heartbeat; limits: the account's 5-hour and weekly
+//                                windows; v13: proc, this process's token, and
+//                                surfaces, where it draws: "terminal" for the REPL)
 //   questions/<session>.json     { id, questions, at }     this mod: the question the
 //                                session is asking (AskUserQuestion), while it waits
 //   answers/<session>.json       { id, answers }           the server: the board's answer
@@ -48,7 +50,7 @@ async function pickedEffort($: EngineInterface, b: Bridge) {
   }
 }
 const KEEP_ACKS = 100
-const VERSION = 12
+const VERSION = 13
 const ANSWER_POLL_MS = 1000
 
 type Message = { id: string; text: string; notBefore?: number }
@@ -221,6 +223,11 @@ async function applySettings($: EngineInterface, b: Bridge) {
   await writeAcks($, b)
 }
 
+// This process, among those that may run the same session: two at once (a
+// terminal still open while Claude desktop opens it too) each write the
+// heartbeat in turn, which tells the board.
+const PROC = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+
 async function beat($: EngineInterface, b: Bridge) {
   const now = await $.clock.now()
   // Asked again once a minute, and right after a turn (when they move); until
@@ -231,7 +238,8 @@ async function beat($: EngineInterface, b: Bridge) {
       if (rateLimits.length) (limits = { at: now, windows: rateLimits }), (limitsAskedAt = now)
     } catch {}
   }
-  await $.fs.write(`${b.base}/alive/${b.id}.json`, JSON.stringify({ at: now, busy: !!turnId, v: VERSION, limits }))
+  const surfaces = await $.session.surfaces().catch(() => [])
+  await $.fs.write(`${b.base}/alive/${b.id}.json`, JSON.stringify({ at: now, busy: !!turnId, v: VERSION, limits, proc: PROC, surfaces }))
 }
 
 // A stop request the mod has not handled yet: end the running turn. A fresh

@@ -20,6 +20,10 @@ import { readdir, unlink } from "node:fs/promises"
 import { join } from "node:path"
 import { CENTER_DIR } from "./config"
 import { readJson, writeJsonAtomic } from "./files"
+import { type ProcessState, type Tracks, processOf } from "./processes"
+
+// Which process wrote each session's heartbeat, and when it changed.
+const tracks: Tracks = new Map()
 
 const BASE = CENTER_DIR
 const ALIVE_MS = 10_000
@@ -50,6 +54,8 @@ export type BridgeStatus = {
   permission: Permission | null // the tool approval the client asks for now (mod v7)
   effort: string | null // the effort picked on the board (mod v11 applies it), null: the app's
   model: { value: string; at: number } | null // the last model the mod switched to (/model), and when
+  inTerminal: boolean // its process is a terminal's (mod v13), while it is open
+  isDoubled: boolean // two processes run it at once (mod v13; lib/processes.ts)
 }
 
 export type Permission = { id: string; tool: string; input: Record<string, unknown> }
@@ -202,14 +208,16 @@ export async function doingOf(sessionId: string): Promise<Doing | null> {
 }
 
 export async function status(sessionId: string): Promise<BridgeStatus> {
-  if (!isId(sessionId)) return { isOpen: false, pending: 0, lastSeen: null, busy: null, version: 0, limits: null, settings: null, stuck: [], failed: [], queued: [], question: null, permission: null, effort: null, model: null }
+  if (!isId(sessionId)) return { isOpen: false, pending: 0, lastSeen: null, busy: null, version: 0, limits: null, settings: null, stuck: [], failed: [], queued: [], question: null, permission: null, effort: null, model: null, inTerminal: false, isDoubled: false }
   let lastSeen: number | null = null
   let busy: boolean | null = null
   let version = 0
   let limits: Limits | null = null
   let hasProcess: boolean | null = null
+  let process: ProcessState = { inTerminal: false, isDoubled: false }
   try {
     const alive = await readJson(join(BASE, "alive", `${sessionId}.json`))
+    process = processOf(tracks, sessionId, alive, Date.now())
     lastSeen = alive.at ?? null
     hasProcess = lastSeen === null ? null : hasProcessSince(sessionId, lastSeen)
     busy = busyNow(typeof alive.busy === "boolean" ? alive.busy : null, hasProcess)
@@ -217,6 +225,8 @@ export async function status(sessionId: string): Promise<BridgeStatus> {
     limits = alive.limits?.windows?.length ? alive.limits : null
   } catch {}
   const isOpen = openNow(lastSeen, hasProcess)
+  const inTerminal = isOpen && process.inTerminal
+  const isDoubled = isOpen && process.isDoubled
   let delivered = new Set<string>()
   let refused = new Map<string, string>()
   let settings: BridgeStatus["settings"] = null
@@ -271,5 +281,5 @@ export async function status(sessionId: string): Promise<BridgeStatus> {
   // The model asked last, once the mod says it switched.
   const asked = await readJson(join(BASE, "settings", `${sessionId}.json`)).catch(() => null)
   const model = asked?.model && settings?.id === asked.id && settings?.results.model === "ok" ? { value: String(asked.model), at: Number(asked.at) || 0 } : null
-  return { isOpen, pending, lastSeen, busy, version, limits, settings, stuck, failed, queued, question, permission, effort, model }
+  return { isOpen, pending, lastSeen, busy, version, limits, settings, stuck, failed, queued, question, permission, effort, model, inTerminal, isDoubled }
 }

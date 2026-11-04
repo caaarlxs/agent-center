@@ -2,11 +2,11 @@
 // section's and a feature's. One not here fails the guide's test.
 import type { LucideIcon } from "lucide-react"
 import {
-  Activity, BellRing, BookText, Bot, CircleArrowRight, CircleCheck, Clock, Code, Columns3, Command,
+  Activity, BellRing, BookText, Bot, CircleArrowRight, CircleCheck, Clock, Code, Columns3, Command, CopyX,
   Download, FileDiff, FileText, Folder, Frame, Gauge, GitCommitHorizontal, GitFork, GitPullRequest,
   Inbox, Kanban, Keyboard, LayoutGrid, Lightbulb, Link, ListChecks, ListTodo, Map as MapIcon, MessageSquare,
   MousePointerClick, Move, Palette, PanelLeft, PanelRight, PawPrint, Play, Plus, Reply, Rows3,
-  Search, Settings, Shapes, SlidersHorizontal, Sparkles, SquareCheck, StickyNote, Terminal, Ticket,
+  Search, Settings, Shapes, SlidersHorizontal, Sparkles, SquareTerminal, SquareCheck, StickyNote, Terminal, Ticket,
   TicketCheck, Timer, WandSparkles, Workflow,
 } from "lucide-react"
 
@@ -21,6 +21,7 @@ export const ICONS: Record<string, LucideIcon | undefined> = {
   "code": Code,
   "columns-3": Columns3,
   "command": Command,
+  "copy-x": CopyX,
   "download": Download,
   "file-diff": FileDiff,
   "file-text": FileText,
@@ -56,6 +57,7 @@ export const ICONS: Record<string, LucideIcon | undefined> = {
   "sliders-horizontal": SlidersHorizontal,
   "sparkles": Sparkles,
   "square-check": SquareCheck,
+  "square-terminal": SquareTerminal,
   "sticky-note": StickyNote,
   "terminal": Terminal,
   "ticket": Ticket,
