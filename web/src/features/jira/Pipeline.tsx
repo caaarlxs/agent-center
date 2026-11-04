@@ -34,7 +34,7 @@ import type { Check as BoardCheck } from "@server/checks"
 import { MODELS } from "@/features/prompt/Settings"
 import { PipelineMark, liveLine, startText, startingText, statusText } from "./PipelineMark"
 import { STAGE_KEYS, STAGES, costOf, dollars, isRelease, journeyOf, nextStage, stageAt, toFix, tokens } from "./pipeline-board"
-import { ReleaseRail, ReleaseSteps, SkipFailed, StepAtHand } from "./Release"
+import { ReleaseRail, ReleaseSteps, SkipFailed, StepAtHand, type After } from "./Release"
 import { Journey } from "./Journey"
 import type { Release } from "@server/release"
 
@@ -485,10 +485,20 @@ function ReviewPanel({ state, onFix }: { state: PipelineState; onFix: (ids: stri
 }
 
 // A release: its steps as a row, the one at hand with its button; every step, folded.
-function ReleasePanel({ ticketKey, release, isLive, isPreview, onStep }: { ticketKey: string; release: Release; isLive: boolean; isPreview: boolean; onStep: OnStep }) {
+// The agent stage after a release, as the rail's last node: the test in staging, the check in prod.
+const afterOf = (env: Stage, state: PipelineState): After => {
+  const agent = env === "staging" ? "test" : "smoke"
+  const title = env === "staging" ? "Test in staging" : "Check prod"
+  if (state.stage !== agent) return { title, status: "pending" }
+  const status = state.status === "running" ? "running" : state.status === "failed" || failing(state.results).length ? "failed" : state.status === "needs-info" ? "waiting" : "done"
+  return { title, status }
+}
+const failing = (results: TestResult[] | undefined) => (results ?? []).filter(r => r.status === "fail")
+
+function ReleasePanel({ ticketKey, release, after, isLive, isPreview, onStep }: { ticketKey: string; release: Release; after: After; isLive: boolean; isPreview: boolean; onStep: OnStep }) {
   return (
     <div className="flex flex-col gap-3">
-      <ReleaseRail release={release} />
+      <ReleaseRail release={release} after={after} />
       {isLive && <StepAtHand ticketKey={ticketKey} release={release} onAct={onStep} />}
       <Details label="Every step"><ReleaseSteps ticketKey={ticketKey} release={release} isPreview={isPreview} /></Details>
     </div>
@@ -515,6 +525,7 @@ function TestPanel({ state, release }: { state: PipelineState; release: Release 
   const pass = results.filter(r => r.status === "pass").length
   return (
     <div className="flex flex-col gap-3">
+      {release && <ReleaseRail release={release} after={afterOf(release.env, state)} />}
       <div className="grid grid-cols-2 gap-2">
         <Tile><span className="text-[11.5px] text-faint">Pass</span><span className={cn("text-[20px] leading-none font-semibold tabular-nums", pass ? "text-work" : "text-faint")}>{pass}</span></Tile>
         <Tile><span className="text-[11.5px] text-faint">Fail</span><span className={cn("text-[20px] leading-none font-semibold tabular-nums", results.length - pass ? "text-bad" : "text-faint")}>{results.length - pass}</span></Tile>
@@ -561,8 +572,10 @@ function StagePanel({ stage, state, preview, onRun, onStep }: { stage: Stage; st
   const i = STAGE_KEYS.indexOf(stage)
   const release = state.release?.env === stage ? state.release : preview?.env === stage ? preview : null
   // The column's agent stage at work, or done: its findings, the deploy folded.
-  if (nodeOf(state.stage) === stage && state.stage !== stage) return state.status === "running" ? <AtWork state={state} /> : <TestPanel state={state} release={release} />
-  if (isRelease(stage) && release) return <ReleasePanel ticketKey={state.key} release={release} isLive={release === state.release && state.status === "running"} isPreview={release === preview} onStep={onStep} />
+  if (nodeOf(state.stage) === stage && state.stage !== stage) return state.status === "running"
+    ? <div className="flex flex-col gap-3">{release && <ReleaseRail release={release} after={afterOf(stage, state)} />}<AtWork state={state} /></div>
+    : <TestPanel state={state} release={release} />
+  if (isRelease(stage) && release) return <ReleasePanel ticketKey={state.key} release={release} after={afterOf(stage, state)} isLive={release === state.release && state.status === "running"} isPreview={release === preview} onStep={onStep} />
   if (i > at) return <p className="m-0 text-[13px] text-faint">Starts after {STAGES[i - 1]}.</p>
   if (i === at && state.status === "running") return <AtWork state={state} />
   if (stage === "refine") return <RefinePanel state={state} />

@@ -6,7 +6,7 @@
 // started yet show what it will do. Each step's icon tells its kind: a merge,
 // a tag, a release PR, a script on the data, something only a person does,
 // the check at the end.
-import { AlertTriangle, Check, ChevronRight, ClipboardCheck, Database, Download, GitMerge, GitPullRequestArrow, Hand, Tag, type LucideIcon } from "lucide-react"
+import { AlertTriangle, Bot, Check, ChevronRight, ClipboardCheck, Database, Download, GitMerge, GitPullRequestArrow, Hand, Tag, type LucideIcon } from "lucide-react"
 import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Shimmer } from "@/components/ai-elements/shimmer"
@@ -166,8 +166,11 @@ const RAIL: Record<ReleaseStep["status"], string> = {
   failed: "bg-bad-soft text-bad border-bad",
   pending: "border-line-strong text-faint",
 }
-export function ReleaseRail({ release }: { release: Release }) {
-  const kinds = [...new Set(release.steps.map(s => KIND[s.kind].name))]
+// After its steps, the agent stage that follows the release (the test in
+// staging, the check in prod): dashed until it starts, so the whole way shows.
+export type After = { title: string; status: ReleaseStep["status"] }
+export function ReleaseRail({ release, after }: { release: Release; after?: After }) {
+  const kinds = [...new Set(release.steps.map(s => KIND[s.kind].name)), ...(after ? ["Agent"] : [])]
   return (
     <div className="flex flex-col gap-2.5">
       <ol className="m-0 flex list-none items-center p-0">
@@ -179,14 +182,22 @@ export function ReleaseRail({ release }: { release: Release }) {
                 className={cn("grid size-8 shrink-0 place-items-center rounded-[8px] border", RAIL[s.status])}>
                 {s.status === "done" ? <Check size={14} strokeWidth={2.6} /> : <Icon size={15} />}
               </span>
-              {i < release.steps.length - 1 && <i className={cn("h-px min-w-1 flex-1", s.status === "done" || s.status === "skipped" ? "bg-work" : "bg-line-strong")} />}
+              {(i < release.steps.length - 1 || after) && <i className={cn("h-px min-w-1 flex-1", s.status === "done" || s.status === "skipped" ? "bg-work" : "bg-line-strong")} />}
             </li>
           )
         })}
+        {after && (
+          <li className="flex flex-none items-center">
+            <span title={after.title} aria-label={`Agent: ${after.title}, ${after.status}`}
+              className={cn("grid size-8 shrink-0 place-items-center rounded-full border", after.status === "pending" ? "border-dashed border-text-muted text-text-muted" : RAIL[after.status])}>
+              {after.status === "done" ? <Check size={14} strokeWidth={2.6} /> : <Bot size={15} />}
+            </span>
+          </li>
+        )}
       </ol>
       <span className="flex flex-wrap gap-x-3.5 gap-y-1 text-[11.5px] text-faint">
         {kinds.map(k => {
-          const Icon = Object.values(KIND).find(x => x.name === k)!.icon
+          const Icon = k === "Agent" ? Bot : Object.values(KIND).find(x => x.name === k)!.icon
           return <span key={k} className="inline-flex items-center gap-1"><Icon size={12} />{k}</span>
         })}
       </span>
