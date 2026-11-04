@@ -71,7 +71,25 @@ Lucide's names, and must be in `web/src/features/guide/icons.ts`.
 - {ticket-check} **Status and comments**: on a ticket assigned to you, change its status and comment.
 - {plus} **Sessions from tickets**: tick one or more tickets to start a session about them, or link one to a session that exists.
 - {lightbulb} **Sync hints**: a hint shows when a ticket's PR is ahead of its status in Jira.
-- {workflow} **Pipeline**: agents take tickets from refinement to plan, build, review and release, stage by stage. · 2026-11-03
+
+## {workflow} Pipeline
+
+- {workflow} **Pipeline**: agents take a Jira ticket through Refine, Plan, Build, Review, Staging, Test, Prod and Smoke, and stop wherever a person must decide. · 2026-11-03
+- {play} **Run pipeline**: in a ticket, Run pipeline starts the refinement; on someone else's ticket, Assign to me and run takes it first, with a second click to confirm.
+- {kanban} **The board**: Pipeline in the sidebar shows a column per stage and a card per ticket, all the same size: its orb, the one line that matters now, its key, cost and time; a click opens the ticket. · 2026-11-04
+- {orbit} **Stage effects**: a card's right part shows its stage at work (Refine's steps falling, the plan's graph, code raining in Build, Review's scan, packets to staging, Test's grid, rings in Prod, Smoke's heartbeat); it stops in amber when it waits for you, red when it failed, grey when done. · 2026-11-04
+- {message-circle-question} **Refine**: the agent reads the ticket and the code and asks only what it cannot decide, each question with its proposal; change what you want and Send to Jira and continue (`⌘↵`).
+- {list-tree} **Plan**: it splits the work into units, one per repo, with a to-do list, the scripts to run on the data and the order of the release.
+- {hammer} **Build**: it writes the code and opens a draft PR per unit; the to-do list ticks itself as it goes.
+- {eye} **Review**: it reads the PRs and lists findings, blocking or minor; tick the ones to fix and Fix with build sends them back. A blocking one stops the release.
+- {shield-check} **Checks**: after every stage the board checks by itself that the repos are clean, the PRs are drafts on the plan's branch, CI passes and no test was deleted, switched off or lost assertions; a check that fails warns, it never stops the agent.
+- {server} **Staging**: the board merges and deploys each repo in the plan's order; a script on the data first runs as a simulation, with a CSV report to read before Run for real.
+- {scale} **Gate agent**: an agent looks at each step that waits for you (a simulation's report, a tag, a release PR) and says go or hold, and why; the yes is still yours.
+- {flask-conical} **Test in staging**: an agent checks each acceptance criterion in staging and marks it pass or fail, with its evidence; a failure stops the way to prod.
+- {rocket} **Prod**: every step asks first, and the riskiest (merge, tag, run for real) ask twice; where the team set one, a dialog first reminds you what must be done outside the board, like a mobile build sent to the store.
+- {heart-pulse} **Check prod**: after the release, an agent checks in prod that what the ticket asked for works.
+- {undo-2} **Roll back**: Roll back staging or Roll back prod undoes the release the other way round (a revert PR for each merge, the previous tag deployed again); it asks twice.
+- {lock} **Limits**: agents never merge, push to main or touch prod: only the board does, step by step. Start over clears the runs and the labels; the comments stay in Jira.
 
 ## {panel-left} Sidebar
 

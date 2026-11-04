@@ -635,3 +635,9 @@ html[data-theme-switch]::view-transition-new(root) { animation: theme-curtain 60
 .guide-in { animation: guide-in 180ms var(--ease-out) both; }
 @keyframes guide-in { from { opacity: 0; transform: translateY(4px); } }
 @media (prefers-reduced-motion: reduce) { .guide-in { animation: none; } }
+
+/* A refinement's steps falling down its card (StageEffect.tsx): each goes to
+   its row (--y, --o); a new one comes in from above, the oldest leaves below. */
+.fall-step { transform: translateY(var(--y)); opacity: var(--o); transition: transform 700ms cubic-bezier(0.77, 0, 0.175, 1), opacity 700ms ease; }
+@starting-style { .fall-step { transform: translateY(-16px); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .fall-step { transition: none; } }

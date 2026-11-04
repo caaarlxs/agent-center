@@ -11,8 +11,8 @@ describe("effectOf", () => {
     expect(effectOf(state({ stage: "staging", release: { steps: [{ id: "R1", status: "waiting" }] } }))).toBe("wait")
     expect(effectOf(state({ status: "failed" }))).toBe("fail")
   })
-  it("goes away once the stage is done", () => {
-    expect(effectOf(state({ status: "ready" }))).toBe("off")
+  it("stays, still and grey, once the stage is done: every card keeps the same shape", () => {
+    expect(effectOf(state({ status: "ready" }))).toBe("done")
   })
 })
 
@@ -33,6 +33,12 @@ describe("sceneOf", () => {
   it("runs a track a repo the release touches", () => {
     const scene = sceneOf(state({ stage: "staging", release: { steps: [{ repo: "deal-service" }, { repo: "web" }, { repo: "web" }, { repo: null }] } }), null)
     expect(scene.tracks).toBe(2)
+  })
+  it("lets the agent's steps fall, the latest first, the last eight", () => {
+    const steps = Array.from({ length: 10 }, (_, i) => ({ text: `Step ${i}`, isOpen: i === 9 }))
+    const scene = sceneOf(state({ stage: "refine" }), { steps, helpers: [], units: [] } as never)
+    expect(scene.steps).toEqual(["Step 9", "Step 8", "Step 7", "Step 6", "Step 5", "Step 4", "Step 3", "Step 2"])
+    expect(sceneOf(state({}), null).steps).toEqual([])
   })
   it("rains what its agent works on now", () => {
     const scene = sceneOf(state({}), { steps: [{ text: "Read lib/a.ts", isOpen: false }, { text: "Edit deal/ebitda.py", isOpen: true }], helpers: [], units: [] } as never)

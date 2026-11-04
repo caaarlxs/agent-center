@@ -1,12 +1,13 @@
-// A stage's effect in the right third of a ticket's card (stage-effects.ts):
+// A stage's effect in the right part of a ticket's card (stage-effects.ts):
 // a canvas that fades into the card from the left. It draws only while the
 // card is on screen and the tab is visible; with reduced motion, one still frame.
+// While a refinement has steps, they fall down the card instead, the latest on top.
 import { useEffect, useRef } from "react"
 import { cn } from "@/lib/utils"
 import type { Stage } from "@server/pipeline"
 import { DRAW, type Effect, type Scene } from "./stage-effects"
 
-const TONE: Record<Effect, string> = { run: "var(--work)", wait: "var(--ask)", fail: "var(--bad)", off: "var(--work)" }
+const TONE: Record<Effect, string> = { run: "var(--work)", wait: "var(--ask)", fail: "var(--bad)", done: "var(--faint)" }
 const GLITCH_MS = 220
 const STILL_AT = 1.5
 
@@ -48,7 +49,24 @@ function paint(canvas: HTMLCanvasElement, live: Live, mem: Record<string, unknow
   if (live.effect === "fail" && now - live.failAt < GLITCH_MS) shake(canvas, x)
 }
 
+// The agent's steps, the latest on top; each new one pushes the rest down and
+// the oldest out of the card (index.css .fall-step).
+function StepFall({ steps, effect }: { steps: string[]; effect: Effect }) {
+  return (
+    <ol aria-hidden className={cn("pointer-events-none absolute inset-y-0 right-0 m-0 w-[42%] list-none overflow-hidden p-0 pl-4 [mask-image:linear-gradient(90deg,transparent,#000_14%),linear-gradient(transparent,#000_12%,#000_70%,transparent)] [mask-composite:intersect]", effect === "wait" ? "text-ask" : "text-text-muted")}>
+      {steps.map((text, i) => (
+        <li key={text} className="fall-step absolute top-0 right-3 left-4 truncate text-[11.5px] leading-[18px]" style={{ ["--y" as string]: `${10 + i * 19}px`, ["--o" as string]: String(Math.max(0, 1 - i * 0.15)) }}>{text}</li>
+      ))}
+    </ol>
+  )
+}
+
 export function StageEffect({ stage, effect, scene }: Props) {
+  if (stage === "refine" && scene.steps.length && (effect === "run" || effect === "wait")) return <StepFall steps={scene.steps} effect={effect} />
+  return <CanvasEffect stage={stage} effect={effect} scene={scene} />
+}
+
+function CanvasEffect({ stage, effect, scene }: Props) {
   const canvas = useRef<HTMLCanvasElement>(null)
   const live = useRef<Live>({ stage, effect, scene, t: STILL_AT, failAt: 0 })
   const kick = useRef<() => void>(() => {})
@@ -86,7 +104,7 @@ export function StageEffect({ stage, effect, scene }: Props) {
   return (
     <span aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit]">
       <canvas ref={canvas}
-        className={cn("absolute top-0 right-0 h-full w-[42%] transition-opacity duration-300 ease-out [mask-image:linear-gradient(90deg,transparent,#000_55%)]", effect === "off" ? "opacity-0" : effect === "run" ? "opacity-75" : "opacity-50")}
+        className={cn("absolute top-0 right-0 h-full w-[42%] transition-opacity duration-300 ease-out [mask-image:linear-gradient(90deg,transparent,#000_22%)]", effect === "run" ? "opacity-80" : effect === "done" ? "opacity-50" : "opacity-60")}
         style={{ ["--ink" as string]: TONE[effect], ["--mark" as string]: "var(--ask)" }} />
     </span>
   )

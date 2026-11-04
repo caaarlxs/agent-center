@@ -1,9 +1,8 @@
 // What a ticket's pipeline looks like at a glance, the same in the Pipeline
-// view and in the ticket: a mark for its state (the session orbs: one that
-// works, one that waits for you; a check, an alert) and a rail, one segment a
+// view and in the ticket: a mark for its state (an orb: one that works, one
+// that waits for you, one at rest, one blinking) and a rail, one segment a
 // stage, the current one in the state's colour (it runs while it works).
 import { Orb as OrbView } from "@yogesharc/thinking-orbs"
-import { AlertTriangle, Check } from "lucide-react"
 import type { Card } from "@/lib/api-types"
 import { useIsDots } from "@/lib/board-style"
 import { cn } from "@/lib/utils"
@@ -75,24 +74,19 @@ export function liveLine(state: PipelineState, card: Card | undefined): string {
   return DONE_LINE[state.stage]?.(state) ?? "Refined: ready to plan"
 }
 
+// The orb by state: the session's while its agent works, waiting while it
+// waits for you, at rest once done, blinking once it failed (two looks no
+// session uses, so a ticket never reads as a session).
+const ORB_OF = { ready: { state: "idle", variant: "default" }, failed: { state: "idle", variant: "blink" }, "needs-info": { state: "waiting", variant: "default" } } as const
+
 export function PipelineMark({ state, card, size = 24 }: { state: PipelineState; card?: Card; size?: number }) {
   const isDots = useIsDots()
   const look = lookOf(state)
-  const tone = TONE[look].text
-  const box = { width: size, height: size }
   const title = statusText(state)
-  if (look === "ready" || look === "failed") {
-    const Icon = look === "ready" ? Check : AlertTriangle
-    return (
-      <span className={cn("inline-flex flex-none items-center justify-center rounded-full", tone, look === "ready" ? "bg-work-soft" : "bg-bad-soft")} style={box} role="img" aria-label={title} title={title}>
-        <Icon style={{ width: size * 0.55, height: size * 0.55 }} />
-      </span>
-    )
-  }
-  const orb = state.status === "running" ? orbOf(card?.doing) : ({ state: "waiting", variant: "default" } as const)
+  const orb = look === "running" ? orbOf(card?.doing) : ORB_OF[look]
   return (
-    <span className={cn("inline-flex flex-none items-center justify-center", tone)} style={box} role="img" aria-label={title} title={title}>
-      {isDots ? <OrbView {...orb} size={Math.round(size * 0.86)} /> : <i className={cn("size-2 rounded-full bg-current", state.status === "running" && "run-dot")} />}
+    <span className={cn("inline-flex flex-none items-center justify-center", TONE[look].text)} style={{ width: size, height: size }} role="img" aria-label={title} title={title}>
+      {isDots ? <OrbView {...orb} size={Math.round(size * 0.86)} /> : <i className={cn("size-2 rounded-full bg-current", look === "running" && "run-dot")} />}
     </span>
   )
 }

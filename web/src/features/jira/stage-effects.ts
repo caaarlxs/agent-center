@@ -1,22 +1,24 @@
-// What a ticket's card shows in its right third while a stage is at work: an
-// effect a stage, drawn from the ticket's own data where there is some (a node
-// a unit, a line a finding, a cell a criterion, a track a repo, the file its
-// agent works on falling as code). It moves while the agent works, holds still
-// in amber while it waits for you, in red once it failed, and goes once done.
+// What a ticket's card shows in its right part: an effect a stage, drawn from
+// the ticket's own data where there is some (the refinement's steps falling, a
+// node a unit, the file its agent works on falling as code, a line a finding,
+// a track a repo, a cell a criterion). It moves while the agent works, holds
+// still in amber while it waits for you, in red once it failed, and in grey
+// once done, so that every card, in every column, keeps the same shape.
 import type { PipelineState, Stage } from "@server/pipeline"
 import { toFix, waitingStep } from "./pipeline-board"
 
-export type Effect = "run" | "wait" | "fail" | "off"
-export type Scene = { nodes: number; marks: number; cells: ("pass" | "fail")[]; tracks: number; glyphs: string }
+export type Effect = "run" | "wait" | "fail" | "done"
+export type Scene = { nodes: number; marks: number; cells: ("pass" | "fail")[]; tracks: number; glyphs: string; steps: string[] }
 type Activity = { steps: { text: string; isOpen?: boolean }[] } | null
 
 export function effectOf(state: PipelineState): Effect {
   if (state.status === "failed") return "fail"
   if (state.status === "needs-info" || toFix(state).length > 0 || waitingStep(state)) return "wait"
-  return state.status === "running" ? "run" : "off"
+  return state.status === "running" ? "run" : "done"
 }
 
 const CODE = "{}()[];=<>/+*_.:01"
+const STEPS = 8
 export function sceneOf(state: PipelineState, activity: Activity): Scene {
   const repos = new Set((state.release?.steps ?? []).map(s => s.repo).filter(Boolean))
   const step = activity?.steps.findLast(s => s.isOpen) ?? activity?.steps.at(-1)
@@ -27,6 +29,7 @@ export function sceneOf(state: PipelineState, activity: Activity): Scene {
     cells: (state.results ?? []).map(r => r.status),
     tracks: repos.size || 3,
     glyphs: words ? `${words}${CODE}` : CODE,
+    steps: (activity?.steps ?? []).slice(-STEPS).reverse().map(s => s.text),
   }
 }
 
