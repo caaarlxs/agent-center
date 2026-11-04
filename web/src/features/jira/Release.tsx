@@ -6,7 +6,7 @@
 // started yet show what it will do. Each step's icon tells its kind: a merge,
 // a tag, a release PR, a script on the data, something only a person does,
 // the check at the end.
-import { AlertTriangle, Bot, Check, SquareTerminal, ChevronRight, ClipboardCheck, Database, Download, GitMerge, GitPullRequestArrow, Hand, Tag, type LucideIcon } from "lucide-react"
+import { AlertTriangle, Bot, Check, History, SquareTerminal, Undo2, ChevronRight, ClipboardCheck, Database, Download, GitMerge, GitPullRequestArrow, Hand, Tag, type LucideIcon } from "lucide-react"
 import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Shimmer } from "@/components/ai-elements/shimmer"
@@ -61,15 +61,16 @@ function Items({ items, isOpen: startsOpen }: { items: string[]; isOpen: boolean
 }
 
 // The button of the step that waits for you; the ones that change the world ask twice.
-const GO: Record<StepKind, string> = { merge: "Merge and deploy", promote: "Open the release PR and merge it", tag: "Push the tag", simulate: "Looks right", execute: "Run for real", manual: "Mark done", check: "It works" }
+const GO: Record<StepKind, string> = { merge: "Merge and deploy", promote: "Open the release PR and merge it", tag: "Push the tag", simulate: "Looks right", execute: "Run for real", manual: "Mark done", check: "It works", revert: "Revert and deploy", redeploy: "Deploy it again" }
 // A step's kind as an icon and a word; a repo's own command (a dry run, then the run) has its own.
 const COMMAND = { icon: SquareTerminal, name: "Command" }
 const kindOf = (step: ReleaseStep) => ((step.kind === "simulate" || step.kind === "execute") && !step.script && step.value ? COMMAND : KIND[step.kind])
 const KIND: Record<StepKind, { icon: LucideIcon; name: string }> = {
   merge: { icon: GitMerge, name: "Merge" }, promote: { icon: GitPullRequestArrow, name: "Release PR" }, tag: { icon: Tag, name: "Tag" },
   simulate: { icon: Database, name: "Script" }, execute: { icon: Database, name: "Script" }, manual: { icon: Hand, name: "By you" }, check: { icon: ClipboardCheck, name: "Check" },
+  revert: { icon: Undo2, name: "Revert" }, redeploy: { icon: History, name: "Deploy again" },
 }
-const ASKS_TWICE: StepKind[] = ["merge", "promote", "tag", "execute"]
+const ASKS_TWICE: StepKind[] = ["merge", "promote", "tag", "execute", "revert", "redeploy"]
 
 function Waiting({ step, onAct }: { step: ReleaseStep; onAct: (action: "approve" | "skip", value?: string) => void }) {
   const [value, setValue] = useState(step.value ?? "")

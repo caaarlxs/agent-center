@@ -27,7 +27,7 @@
 import type { Advice } from "./gate"
 import type { ChecklistItem, Env, PipelineState, PlanScript, Unit } from "./pipeline"
 
-export type StepKind = "merge" | "promote" | "tag" | "simulate" | "execute" | "manual" | "check"
+export type StepKind = "merge" | "promote" | "tag" | "simulate" | "execute" | "manual" | "check" | "revert" | "redeploy"
 export type StepStatus = "pending" | "waiting" | "running" | "done" | "failed" | "skipped"
 export type Link = { label: string; url: string }
 export type ReleaseStep = {
@@ -45,13 +45,16 @@ export type ReleaseStep = {
   value: string | null // the tag (proposed, then pushed), or the branch a promote goes to
   sha: string | null // the commit it deploys
   since: number | null // when it started: the runs and deployments since then are its own
-  phase: "checks" | "deploy" | "script" | null
+  phase: "checks" | "deploy" | "script" | "rerun" | null
   pid: number | null
   report: string | null // a script's report, in <ticket>/scripts
   error: string | null
   advice?: Advice | null // what the agent that looks at a waiting step says (lib/gate.ts)
+  previous?: string | null // a tag's: the one before it, to deploy again if the release is rolled back
+  runId?: number | null // a redeploy's: the run it ran again
 }
-export type Release = { env: Env; steps: ReleaseStep[]; reminders?: string[] }
+// A release, or a rollback of one (its steps undo the release's, the other way round).
+export type Release = { env: Env; steps: ReleaseStep[]; reminders?: string[]; rollback?: boolean }
 // The plan's order for a release: a unit, a script, or something a person does.
 export type OrderItem = { kind: "unit" | "script" | "manual"; id: string | null; text: string | null; envs: Env[] }
 
@@ -65,6 +68,7 @@ export type DeployConfig = {
   remind?: Record<string, Partial<Record<Env, string>>> // what a person must have done before a release to an environment starts
   gates?: Partial<Record<Env, "person" | "agent">> // who answers a step that waits: you (the agent only advises), or the agent
   gateAgent?: boolean // whether an agent looks at each step that waits, and says go on or hold
+  undo?: Record<string, string> // how a person undoes what a repo's own command published (a rollback says it)
   tag: { bump: "major" | "minor" | "patch" }
   setup: Record<string, string> // a repo's command that readies a checkout to run its scripts
   contextRepo?: string // the team's context for agents: changed only when a ticket makes a rule of it untrue
@@ -135,6 +139,25 @@ export function releaseSteps(state: PipelineState, env: Env, config: DeployConfi
     }
   }
   return [...simulations, ...steps].map((s, i) => ({ ...s, id: `R${i + 1}` }))
+}
+
+// ---------- rolling back ----------
+
+// The steps that undo a release, the other way round: each merge reverted
+// (its deploy runs again on the code before), a tag's deploy run again for the
+// tag before; what the board cannot undo (a release PR to a branch, a repo's
+// own command, data a script changed) said, for a person to do.
+export function rollbackSteps(release: Release, config: DeployConfig): ReleaseStep[] {
+  const undo = (s: ReleaseStep): Omit<ReleaseStep, "id">[] => {
+    const base = { unit: s.unit, repo: s.repo, links: s.links }
+    if (s.kind === "merge") return [blank("revert", `${s.repo}: revert ${s.links[0]?.label ?? "its merge"}`, { ...base, sha: s.sha, value: s.value })]
+    if (s.kind === "tag") return [s.previous ? blank("redeploy", `${s.repo}: deploy ${s.previous} again`, { ...base, value: s.previous }) : blank("manual", `${s.repo}: deploy the version before ${s.value} again, by hand`, base)]
+    if (s.kind === "promote") return [blank("manual", `${s.repo}: roll ${s.value} back by hand (promote its deployment before)`, base)]
+    if (s.kind === "execute" && s.script) return [blank("manual", `${s.title}: its data stays changed; undo it by hand if it must be (every record is in ${s.report})`, base)]
+    if (s.kind === "execute") return [blank("manual", `${s.repo}: undo what "${s.value}" published, by hand${config.undo?.[s.repo ?? ""] ? ` (${config.undo[s.repo!]})` : ""}`, base)]
+    return []
+  }
+  return release.steps.filter(s => s.status === "done").reverse().flatMap(undo).map((s, i) => ({ ...s, id: `R${i + 1}` }))
 }
 
 // What waits for you before it starts: in prod, every step but a simulation;
@@ -264,7 +287,7 @@ async function prepare(step: ReleaseStep, release: Release, ctx: Ctx, ops: Ops):
     const sha = await must(ops, ["git", "-C", clone, "rev-parse", "origin/HEAD"])
     if (!tag) return { sha, detail: "No vX.Y.Z tag yet: write the first one" }
     const items = lines((await ops.sh(["git", "-C", clone, "log", "--first-parent", "--format=%s", `${tag.latest}..${sha}`, "-n", "30"])).out)
-    return { sha, value: step.value ?? tag.next, items, detail: `${items.length} change${items.length === 1 ? "" : "s"} since ${tag.latest} go to prod` }
+    return { sha, value: step.value ?? tag.next, previous: tag.latest, items, detail: `${items.length} change${items.length === 1 ? "" : "s"} since ${tag.latest} go to prod` }
   }
   if (step.kind === "promote") {
     const slug = slugOf(prOf(step, ctx))
@@ -406,8 +429,44 @@ async function checkPromote(step: ReleaseStep, ops: Ops): Promise<Patch> {
 }
 const mergedSha = async (url: string, ops: Ops) => ({ sha: jsonOf(await must(ops, ["gh", "pr", "view", url, "--json", "mergeCommit"]))?.mergeCommit?.oid ?? null })
 
+// A merge undone: GitHub's revert PR of it, merged; then its deploy, like a merge's.
+async function revert(step: ReleaseStep, ctx: Ctx, ops: Ops): Promise<Patch> {
+  const url = prOf(step, ctx)
+  if (!url) throw new Error("The unit has no PR")
+  const id = jsonOf(await must(ops, ["gh", "pr", "view", url, "--json", "id"]))?.id
+  const out = jsonOf(await must(ops, ["gh", "api", "graphql", "-f", "query=mutation($id: ID!) { revertPullRequest(input: {pullRequestId: $id}) { revertPullRequest { url } } }", "-f", `id=${id}`]))
+  const revertUrl: string | undefined = out?.data?.revertPullRequest?.revertPullRequest?.url
+  if (!revertUrl) throw new Error("GitHub made no revert PR")
+  await must(ops, ["gh", "pr", "merge", revertUrl, `--${ctx.config.mergeMethod}`], { timeoutMs: 60_000 })
+  const pr = jsonOf(await must(ops, ["gh", "pr", "view", revertUrl, "--json", "state,mergeCommit,mergedAt"])) ?? {}
+  const links = [...step.links, { label: `Revert PR #${prNumber(revertUrl)}`, url: revertUrl }]
+  if (step.value === "no-deploy") return { status: "done", links, detail: "Reverted" }
+  return { status: "running", phase: "deploy", links, sha: pr.mergeCommit?.oid ?? null, since: pr.mergedAt ? Date.parse(pr.mergedAt) : ops.now(), detail: "Reverted: waiting for the deploy" }
+}
+
+// A tag's deploy run again for the tag before: its last good run, rerun.
+async function redeploy(step: ReleaseStep, ctx: Ctx, ops: Ops): Promise<Patch> {
+  const slug = slugOf(prOf(step, ctx))
+  if (!slug || !step.value) throw new Error("No repo or no tag to deploy again")
+  const runs = jsonOf((await ops.sh(["gh", "run", "list", "-R", slug, "--branch", step.value, "--status", "success", "-L", "1", "--json", "databaseId"])).out) ?? []
+  const runId = runs[0]?.databaseId
+  if (!runId) throw new Error(`No good deploy of ${step.value} to run again`)
+  await must(ops, ["gh", "run", "rerun", String(runId), "-R", slug])
+  return { status: "running", phase: "rerun", runId, since: ops.now(), detail: `Deploying ${step.value} again` }
+}
+
+async function checkRerun(step: ReleaseStep, ctx: Ctx, ops: Ops): Promise<Patch> {
+  const slug = slugOf(prOf(step, ctx))!
+  const run = jsonOf((await ops.sh(["gh", "run", "view", String(step.runId), "-R", slug, "--json", "status,conclusion,attempt,url"])).out) ?? {}
+  const links = run.url ? [...step.links.filter(l => l.label !== "Deploy run"), { label: "Deploy run", url: run.url }] : step.links
+  if (run.status !== "completed") return { links }
+  return run.conclusion === "success" ? { status: "done", links, detail: `${step.value} deployed again` } : { status: "failed", links, error: `The deploy of ${step.value} ended in ${run.conclusion}` }
+}
+
 function start(step: ReleaseStep, release: Release, ctx: Ctx, ops: Ops): Promise<Patch> {
   if (step.kind === "merge") return merge(step, ctx, ops)
+  if (step.kind === "revert") return revert(step, ctx, ops)
+  if (step.kind === "redeploy") return redeploy(step, ctx, ops)
   if (step.kind === "tag") return tag(step, ctx, ops)
   if (step.kind === "promote") return promote(step, ctx, ops)
   if (step.kind === "simulate" || step.kind === "execute") return startScript(step, release, ctx, ops)
@@ -417,6 +476,7 @@ function start(step: ReleaseStep, release: Release, ctx: Ctx, ops: Ops): Promise
 function check(step: ReleaseStep, ctx: Ctx, ops: Ops): Promise<Patch> {
   if (step.phase === "script") return checkScript(step, ctx, ops)
   if (step.phase === "checks") return checkPromote(step, ops)
+  if (step.phase === "rerun") return checkRerun(step, ctx, ops)
   return checkDeploy(step, ctx, ops)
 }
 

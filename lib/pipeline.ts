@@ -45,7 +45,7 @@ import { exec } from "./proc"
 import { overLimits, prChecks, reposClean, type Check } from "./checks"
 import { canJudge, gatePrompt, parseAdvice } from "./gate"
 import { readdir } from "node:fs/promises"
-import { DEFAULT_CONFIG, advanceRelease, approveStep, releaseSteps, retryStep, skipStep, type DeployConfig, type OrderItem, type Ops, type Release, type ReleaseStep } from "./release"
+import { DEFAULT_CONFIG, advanceRelease, approveStep, releaseSteps, retryStep, rollbackSteps, skipStep, type DeployConfig, type OrderItem, type Ops, type Release, type ReleaseStep } from "./release"
 
 export type Stage = "refine" | "plan" | "build" | "review" | "staging" | "test" | "prod" | "smoke"
 const STAGE_NAMES: Stage[] = ["refine", "plan", "build", "review", "staging", "test", "prod", "smoke"]
@@ -89,7 +89,8 @@ export type PipelineState = {
   checklist?: ChecklistItem[] // the plan's to-do list
   scripts?: PlanScript[] // the plan's scripts on the data
   order?: OrderItem[] // the plan's order for a release
-  release?: Release | null // the release at hand (staging, then prod)
+  release?: Release | null // the release at hand (staging, then prod), or its rollback
+  deployed?: Partial<Record<Env, Release>> // each release that ended, to roll back
   results?: TestResult[] // the last test's (or smoke check's), criterion by criterion
   contextImpact?: ContextImpact[] // the refinement's: what of the team's context the ticket changes
   checks?: Check[] // what the board checked of the last run, by itself
@@ -381,6 +382,7 @@ const fresh = async (key: string, runs: number, stage: Stage): Promise<PipelineS
   const prev = await stateOf(key)
   // The plan's units and to-do list, and the review's findings, stay with the ticket for the stages after it.
   return { ...EMPTY(key, runs, stage), summary: prev?.summary, history: prev?.history ?? [], units: prev?.units, checklist: prev?.checklist, checked: prev?.checked, scripts: prev?.scripts, contextImpact: prev?.contextImpact,
+    release: prev?.release, deployed: prev?.deployed,
     ...(stage === "review" ? {} : { findings: prev?.findings, fixed: stage === "build" ? [] : prev?.fixed }) }
 }
 // A stage's session is the pipeline's, not yours: once it ends it leaves the
@@ -592,8 +594,13 @@ async function tickRelease(key: string) {
     const step = failed ? release.steps.find(s => s.id === failed) : undefined
     if (!isDone) return void (await save({ ...state, release, ...(step ? { status: "failed", error: `${step.title}: ${step.error ?? step.detail ?? "failed"}`, endedAt: Date.now() } : {}) }))
     await commentOn(key, releaseComment(key, release))
+    // Rolled back, the environment runs the code from before the ticket: it waits for new PRs.
+    if (release.rollback) {
+      await labelTicket(key, [], [LABELS[release.env]])
+      return void (await save({ ...state, release, status: "failed", error: `Rolled back: ${release.env} runs the code from before ${key}`, endedAt: Date.now() }))
+    }
     await labelTicket(key, [LABELS[release.env]], [LABELS.needsInfo, LABELS.ready, LABELS.planned, LABELS.built, LABELS.reviewed, ...(release.env === "prod" ? [LABELS.staging] : [])])
-    await save({ ...state, release, status: "ready", endedAt: Date.now() })
+    await save({ ...state, release, deployed: { ...state.deployed, [release.env]: release }, status: "ready", endedAt: Date.now() })
   } catch (err) {
     console.error(`release ${key}:`, err)
   } finally {
@@ -636,7 +643,21 @@ async function spawnGate(dir: string, prompt: string, logPath: string): Promise<
 
 const MARKS = { done: "✓", skipped: "–", failed: "✗", pending: "·", waiting: "·", running: "·" }
 export const releaseComment = (key: string, release: Release) =>
-  `${MARK} · ${key} en ${release.env}\n\n` + release.steps.map(s => `${MARKS[s.status]} ${s.title}${s.value && s.kind === "tag" ? ` (${s.value})` : ""}${s.detail ? `: ${s.detail}` : ""}`).join("\n")
+  `${MARK} · ${key} ${release.rollback ? "revertido en" : "en"} ${release.env}\n\n` + release.steps.map(s => `${MARKS[s.status]} ${s.title}${s.value && s.kind === "tag" ? ` (${s.value})` : ""}${s.detail ? `: ${s.detail}` : ""}`).join("\n")
+
+// Undoing what a release did to an environment (lib/release.ts rollbackSteps),
+// once it ended: after a test or a check that failed, or a release that broke.
+export async function rollBackPipeline(key: string, env: Env) {
+  const state = await stateOf(key)
+  if (!state) throw new Error("Not a ticket of the pipeline")
+  if (state.status === "running") throw new Error("A stage runs: wait for it to end")
+  const deployed = state.deployed?.[env] ?? (state.release?.env === env && !state.release.rollback ? state.release : null)
+  if (!deployed) throw new Error(`Nothing was deployed to ${env}`)
+  const release: Release = { env, rollback: true, steps: rollbackSteps(deployed, await deployConfig()) }
+  if (!release.steps.length) throw new Error(`Nothing to undo in ${env}`)
+  await save({ ...(await fresh(key, state.runs + 1, env)), summary: state.summary, stage: env, status: "running", release })
+  void tickRelease(key)
+}
 
 // You, on the step at hand: go on (a tag of your own, if you write one), past it.
 export async function stepPipeline(key: string, id: string, action: "approve" | "skip", value?: string) {

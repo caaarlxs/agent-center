@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { DEFAULT_CONFIG, approveStep, deployState, isGated, nextTag, releaseSteps, reportOf, skipStep, retryStep, advanceRelease, type Ops, type Release } from "../lib/release"
+import { DEFAULT_CONFIG, rollbackSteps, approveStep, deployState, isGated, nextTag, releaseSteps, reportOf, skipStep, retryStep, advanceRelease, type Ops, type Release } from "../lib/release"
 
 const unit = (id: string, repo: string, n: number) => ({ id, repo, subtask: null, branch: `feat/${id}`, title: id, dependsOn: [], status: "done" as const, pr: `https://github.com/acme/${repo}/pull/${n}` })
 const units = [unit("U1", "api-service", 7), unit("U2", "web-app", 8), unit("U3", "mobile-app", 9)]
@@ -195,5 +195,50 @@ describe("advanceRelease", () => {
     expect(r.release.steps[0]).toMatchObject({ status: "failed", error: "not mergeable" })
     expect(r.failed).toBe("R1")
     expect(skipStep(r.release, "R1").steps[0]!.status).toBe("skipped")
+  })
+})
+
+describe("rollbackSteps", () => {
+  const done = (kind: string, repo: string | null, extra = {}) => ({ id: "", kind, title: `${repo}: ${kind}`, unit: repo === "api-service" ? "U1" : repo === "web-app" ? "U2" : "U3", repo, script: null, status: "done", isApproved: true, detail: null, items: [], links: [], value: null, sha: "m1", since: 1, phase: null, pid: null, report: null, error: null, ...extra }) as never
+  it("undoes a release to staging the other way round: each merge reverted, and what only a person can undo said", () => {
+    const staging = { env: "staging", steps: [done("simulate", "api-service", { script: "S1" }), done("manual", null), done("merge", "api-service", { sha: "aaa" }), done("execute", "api-service", { script: "S1", title: "Backfill: run for real", report: "S1-staging-execute.csv" }), done("merge", "mobile-app", { sha: "bbb", value: "no-deploy" }), done("execute", "mobile-app", { value: "pnpm update:preview" }), { ...(done("merge", "web-app") as object), status: "skipped" }] } as never
+    const steps = rollbackSteps(staging, { ...config, undo: { "mobile-app": "eas update:republish of the group before" } } as never)
+    expect(steps.map(s => [s.id, s.kind, s.repo, s.sha ?? s.value])).toEqual([
+      ["R1", "manual", "mobile-app", null],
+      ["R2", "revert", "mobile-app", "bbb"],
+      ["R3", "manual", "api-service", null],
+      ["R4", "revert", "api-service", "aaa"],
+    ])
+    expect(steps[0]!.title).toContain("eas update:republish")
+    expect(steps[2]!.title).toContain("S1-staging-execute.csv")
+    expect(steps[1]!.value).toBe("no-deploy")
+  })
+  it("undoes a release to prod by deploying the tag before again, and says how to undo a release PR", () => {
+    const prod = { env: "prod", steps: [done("tag", "api-service", { value: "v0.17.0", previous: "v0.16.1" }), done("promote", "web-app", { value: "prod" })] } as never
+    expect(rollbackSteps(prod, config).map(s => [s.kind, s.repo, s.value])).toEqual([["manual", "web-app", null], ["redeploy", "api-service", "v0.16.1"]])
+  })
+})
+
+describe("rolling back", () => {
+  it("reverts a merge by a revert PR it merges, then follows its deploy", async () => {
+    const { calls, ops } = fake({
+      "pr view https://github.com/acme/api-service/pull/7 --json id": JSON.stringify({ id: "PR_1" }),
+      "revertPullRequest": JSON.stringify({ data: { revertPullRequest: { revertPullRequest: { url: "https://github.com/acme/api-service/pull/9" } } } }),
+      "pr view https://github.com/acme/api-service/pull/9": JSON.stringify({ state: "MERGED", mergeCommit: { oid: "rev" }, mergedAt: "2026-11-04T10:00:00Z" }),
+    })
+    const release: Release = { env: "staging", rollback: true, steps: [{ ...releaseSteps(state({ units: [units[0]], scripts: [] }), "staging", config)[0]!, kind: "revert", sha: "aaa", title: "api-service: revert" }] }
+    const r = await advanceRelease(release, ctx, ops)
+    expect(calls).toContain("gh pr merge https://github.com/acme/api-service/pull/9 --merge")
+    expect(r.release.steps[0]).toMatchObject({ status: "running", phase: "deploy", sha: "rev" })
+  })
+  it("deploys the tag before again by rerunning its last good run, and waits for it", async () => {
+    const { calls, ops } = fake({ "run list": JSON.stringify([{ databaseId: 55 }]), "run view 55": JSON.stringify({ status: "in_progress", conclusion: "", attempt: 2, url: "https://x/run/55" }) })
+    const step = { ...releaseSteps(state({ units: [units[0]], scripts: [] }), "prod", config)[0]!, kind: "redeploy" as const, value: "v0.16.1", isApproved: true, title: "api-service: deploy v0.16.1 again" }
+    let r = await advanceRelease({ env: "prod", rollback: true, steps: [step] }, ctx, ops)
+    expect(calls).toContain("gh run list -R acme/api-service --branch v0.16.1 --status success -L 1 --json databaseId")
+    expect(calls).toContain("gh run rerun 55 -R acme/api-service")
+    expect(r.release.steps[0]).toMatchObject({ status: "running", phase: "rerun" })
+    r = await advanceRelease(r.release, ctx, ops)
+    expect(r.release.steps[0]!.status).toBe("running")
   })
 })

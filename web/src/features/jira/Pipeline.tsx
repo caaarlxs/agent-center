@@ -651,14 +651,35 @@ function NowActions({ state, preview, onRun, onStep }: { state: PipelineState; p
   const release = isRelease(state.stage) ? state.release : null
   const next = nextStage(state)
   if (state.status === "running") return state.sessionId ? <button className="shrink-0 text-xs font-semibold text-text-muted hover:text-text" onClick={() => openLog(state.sessionId!)}>Log</button> : null
+  const isRolledBack = !!release?.rollback && release.steps.every(s => s.status === "done" || s.status === "skipped")
   if (state.status === "failed") return (
     <>
-      {release && <SkipFailed release={release} onAct={onStep} />}
-      <Button variant="outline" className="h-7 shrink-0 text-xs" onClick={() => onRun()}>{release ? "Retry" : "Run again"}</Button>
+      <RollBack state={state} />
+      {release && !isRolledBack && <SkipFailed release={release} onAct={onStep} />}
+      {!isRolledBack && <Button variant="outline" className="h-7 shrink-0 text-xs" onClick={() => onRun()}>{release ? "Retry" : "Run again"}</Button>}
     </>
   )
   // Fixing what the review found starts from its findings.
-  return next && !(state.stage === "review" && next === "build") ? <StartButton stage={next} from={state.stage} reminders={preview?.env === next ? preview.reminders : undefined} onRun={onRun} /> : null
+  return (
+    <>
+      <RollBack state={state} />
+      {next && !(state.stage === "review" && next === "build") ? <StartButton stage={next} from={state.stage} reminders={preview?.env === next ? preview.reminders : undefined} onRun={onRun} /> : null}
+    </>
+  )
+}
+
+// Undoing a release, where one ended in this column: quiet, and it asks twice.
+function RollBack({ state }: { state: PipelineState }) {
+  const [isAsking, confirm] = useConfirm()
+  const env = nodeOf(state.stage)
+  const isDeployed = (env === "staging" || env === "prod") && (!!state.deployed?.[env] || (state.release?.env === env && !state.release.rollback && state.status !== "failed"))
+  if (!isDeployed || (state.release?.rollback && state.release.env === env)) return null
+  const go = () => confirm(() => void act("/api/pipeline/rollback", { key: state.key, env }, `Rolling back ${env}`))
+  return (
+    <button className={cn("shrink-0 text-xs font-semibold transition-colors duration-120", isAsking ? "text-bad" : "text-faint hover:text-text")} onClick={go}>
+      {isAsking ? `Sure? Roll back ${env}` : `Roll back ${env}`}
+    </button>
+  )
 }
 
 // The stage the section opens on: a release about to start, else the stage at hand.
