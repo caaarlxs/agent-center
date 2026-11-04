@@ -112,6 +112,44 @@ export function doingText(d: Doing | null | undefined) {
   if (!d.label) return name
   return SAYS_ITSELF.has(name) ? d.label : `${name} · ${d.label}`
 }
+// What it does now in words, for a card: the tool's own words (a command's
+// or an agent's description), else a verb and what it acts on.
+const fileName = (path: string) => path.split("/").pop() || path
+const VERB: Record<string, (label: string) => string> = {
+  Read: l => `Reading ${fileName(l)}`, Edit: l => `Editing ${fileName(l)}`, MultiEdit: l => `Editing ${fileName(l)}`,
+  Write: l => `Writing ${fileName(l)}`, NotebookEdit: l => `Editing ${fileName(l)}`,
+  Grep: l => `Searching the code for “${l}”`, Glob: l => `Looking for ${l}`,
+  WebSearch: l => `Searching the web for “${l}”`, WebFetch: l => `Reading ${l}`,
+}
+const NO_LABEL: Record<string, string> = { Bash: "Running a command", Agent: "Running a subagent", Task: "Running a subagent", TodoWrite: "Updating its task list", Read: "Reading files", Edit: "Editing a file", Write: "Writing a file", Grep: "Searching the code", Glob: "Looking for files", WebSearch: "Searching the web", WebFetch: "Reading a page" }
+const humane = (name: string) => {
+  const words = name.replace(/[_-]+/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase().trim()
+  return words.charAt(0).toUpperCase() + words.slice(1)
+}
+// A command as the program it runs: past `cd`, `export`, `NAME=value`, its
+// folder ("cd web && bun x vitest run" → bun; ".venv/bin/python" → python).
+const ENV = /^(?:[A-Za-z_]\w*=\S*\s+)+/
+function programOf(command: string) {
+  const parts = command.split(/&&|\|\||;|\|/).map(p => p.trim().replace(ENV, "")).filter(Boolean)
+  const main = parts.find(p => !/^(cd|export|source|set)\b/.test(p)) ?? parts[0] ?? ""
+  return (main.split(/\s+/)[0] ?? "").split("/").pop() || "a command"
+}
+// Bash's label is its description when it has one ("Run the tests"), else
+// the command itself, which says less than the program it runs.
+const isDescription = (label: string) => /^[A-Z][a-z]/.test(label) && !ENV.test(label)
+
+export function doingPhrase(d: Doing | null | undefined): string | null {
+  if (!d) return null
+  if (d.kind === "writing") return "Writing its answer"
+  if (d.kind !== "tool") return doingText(d)
+  const tool = d.tool ?? ""
+  if (BROWSER.test(tool)) return "Using the browser"
+  if (tool === "Bash" && d.label && !isDescription(d.label)) return `Running ${programOf(d.label)}`
+  if (SAYS_ITSELF.has(tool) && d.label) return d.label
+  if (VERB[tool] && d.label) return VERB[tool]!(d.label)
+  return NO_LABEL[tool] ?? humane(toolName(tool))
+}
+
 const timeText = (ms: number) => {
   const s = Math.max(0, Math.floor(ms / 1000))
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`

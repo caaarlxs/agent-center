@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { type Live, doingText, orbOf, shownLive, turnLine } from "./session-events"
+import { type Live, doingPhrase, doingText, orbOf, shownLive, turnLine } from "./session-events"
 
 const now = 1_000_000
 const live = (over: Partial<Live> = {}): Live => ({ turnId: "t", step: 0, text: "Writing…", done: false, at: now - 100, ...over })
@@ -63,5 +63,33 @@ describe("compacting and retrying", () => {
     expect(doingText({ kind: "compacting" })).toBe("Compacting the conversation")
     expect(doingText({ kind: "retrying", attempt: 2, max: 10 })).toBe("The API failed: retrying (2 of 10)")
     expect(doingText({ kind: "retrying", attempt: 3, max: null })).toBe("The API failed: retrying (attempt 3)")
+  })
+})
+
+describe("doingPhrase: what it does now, in words", () => {
+  it("says the tool's own words, or a verb and what it acts on", () => {
+    expect(doingPhrase({ kind: "tool", tool: "Bash", label: "Run the server tests" })).toBe("Run the server tests")
+    expect(doingPhrase({ kind: "tool", tool: "Read", label: "web/src/App.tsx" })).toBe("Reading App.tsx")
+    expect(doingPhrase({ kind: "tool", tool: "Edit", label: "lib/jira.ts" })).toBe("Editing jira.ts")
+    expect(doingPhrase({ kind: "tool", tool: "Write", label: "notes.md" })).toBe("Writing notes.md")
+    expect(doingPhrase({ kind: "tool", tool: "Grep", label: "useEffect" })).toBe("Searching the code for “useEffect”")
+    expect(doingPhrase({ kind: "tool", tool: "WebSearch", label: "lucide icons" })).toBe("Searching the web for “lucide icons”")
+    expect(doingPhrase({ kind: "tool", tool: "mcp__Claude_Browser__computer" })).toBe("Using the browser")
+    expect(doingPhrase({ kind: "tool", tool: "mcp__a25d__searchJiraIssuesUsingJql" })).toBe("Search jira issues using jql")
+    expect(doingPhrase({ kind: "tool", tool: "Bash" })).toBe("Running a command")
+  })
+  it("thinks, writes, compacts, retries", () => {
+    expect(doingPhrase({ kind: "thinking" })).toBe("Thinking")
+    expect(doingPhrase({ kind: "writing" })).toBe("Writing its answer")
+    expect(doingPhrase({ kind: "compacting" })).toBe("Compacting the conversation")
+    expect(doingPhrase(null)).toBeNull()
+  })
+})
+
+describe("doingPhrase with a raw command", () => {
+  it("names the program, not the whole line", () => {
+    expect(doingPhrase({ kind: "tool", tool: "Bash", label: "cd ~/organizer/agent-center/web && bun x vitest run" })).toBe("Running bun")
+    expect(doingPhrase({ kind: "tool", tool: "Bash", label: "git status --short" })).toBe("Running git")
+    expect(doingPhrase({ kind: "tool", tool: "Bash", label: "STAGE=prod .venv/bin/python x.py" })).toBe("Running python")
   })
 })

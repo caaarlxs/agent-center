@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { dialogAnswer, endOf, familyOf, isShellLike, isTemplate, partsOf, pathInCode, pathInLink, quoteOf, riskOf } from "./text"
+import { dialogAnswer, endOf, familyOf, isShellLike, isTemplate, partsOf, pathInCode, pathInLink, plainOf, quoteOf, riskOf } from "./text"
 
 describe("partsOf", () => {
   it("folds pasted blocks away from what was typed", () => {
@@ -100,5 +100,13 @@ describe("quoteOf", () => {
   it("quotes each line, as Markdown does, without the blank ones around it", () => {
     expect(quoteOf("  one line \n")).toBe("> one line")
     expect(quoteOf("first\n\nsecond")).toBe("> first\n>\n> second")
+  })
+})
+
+describe("plainOf", () => {
+  it("drops Markdown's marks, keeps the words", () => {
+    expect(plainOf("Está en **http://localhost:7777** y `bun test` pasa.")).toBe("Está en http://localhost:7777 y bun test pasa.")
+    expect(plainOf("Mira [la PR](https://github.com/x/y/pull/1):\n\n- uno\n- dos")).toBe("Mira la PR: uno · dos")
+    expect(plainOf("## Hecho\nTodo bien")).toBe("Hecho · Todo bien")
   })
 })

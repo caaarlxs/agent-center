@@ -23,6 +23,7 @@ Lucide's names, and must be in `web/src/features/guide/icons.ts`.
 
 ## {bot} Sessions
 
+- {sparkles} **Cards at a glance**: every card the same size; it says what the session is doing in its own words (as Claude desktop does), its question in amber when it waits for you, and three cells: files not committed, commits not pushed, PRs open. · 2026-11-04
 - {bell-ring} **Waiting cards shake**: a card that waits for you shakes now and then, harder the longer it waits; one at work glows.
 - {clock} **Later**: `A` or `1`–`5` puts a session away for a while.
 - {palette} **Colour and pin**: `C` gives a session a colour, `P` keeps it on top.

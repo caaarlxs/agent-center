@@ -1,5 +1,5 @@
 // The small pieces every view draws on a session (components.js): the line
-// that says why it is where it is, the replies, the "New" badge, its tags
+// that says why it is where it is, the "New" badge, its tags
 // (where its process runs, overlaps, background work, memory, run, PRs,
 // tasks, messages waiting, context used) and its action buttons with the Later and Colour menus.
 // The canvas card, the board card and the inbox row all build on these.
@@ -8,20 +8,16 @@ import {
 } from "lucide-react"
 import { motion } from "motion/react"
 import { type ReactNode, useEffect, useRef } from "react"
-import { toast } from "sonner"
 import { Kbd } from "@/components/ui/kbd"
 import type { Card } from "@/lib/api-types"
-import { undoable } from "@/lib/toast"
 import { cn } from "@/lib/utils"
 import { usageOf } from "./usage"
 import { useIsDots } from "@/lib/board-style"
 import { openDialog } from "@/app/open-dialog"
 import { type Tab, openSession } from "@/app/open-session"
 import { toggleWatch, watched } from "@/features/alerts/prefs"
-import { composerFill, takeBack } from "@/features/conversation/send"
 import { boardAct, openInClaude, stopSession } from "@/features/board/act"
 import { menu, toggleMenu } from "@/features/board/state"
-import { answer, permit, sendText } from "./actions"
 import { type StateKey, ago } from "./state"
 import { Num } from "@/components/common/Num"
 import { Anim } from "@/components/icons/animated"
@@ -57,67 +53,6 @@ export function Context({ card, lines = 2, className }: { card: Card; lines?: nu
     return <p className={base} style={clamp}><span className="font-semibold text-work">Now:</span> {card.progress.current}</p>
   if (card.recap && card.column !== "working") return <p className={cn(base, "text-[12.5px]")} style={clamp} title={card.recap}>{card.recap}</p>
   return null
-}
-
-// ---------- replies ----------
-
-// A reply Claude offered, delivered by the bridge mod. One that ends asking
-// for more ("…is: ") is a template: it goes to the reply box to be finished.
-async function reply(card: Card, text: string) {
-  if (/[:…]\s*$|\.\.\.\s*$/.test(text)) {
-    openTab(card.id)
-    setTimeout(() => composerFill.set({ id: card.id, text: `${text.trimEnd()} ` }), 120)
-    return
-  }
-  try {
-    const res = await sendText(card.id, text)
-    undoable(res.isOpen ? `Replied: “${text.slice(0, 60)}”` : "Reply queued: it arrives when the session is free", () => void takeBack(card.id, { id: res.messageId, text }))
-  } catch (err) {
-    toast((err as Error).message || "Could not send")
-  }
-}
-const say = (work: Promise<unknown>, done: string) => work.then(() => toast(done), (err: Error) => toast(err.message || "Could not answer"))
-
-function Choice({ isFirst, title, onClick, children, isSmall }: { isFirst: boolean; title?: string; onClick: () => void; children: ReactNode; isSmall?: boolean }) {
-  return (
-    <button title={title} onClick={onClick}
-      className={cn(
-        "max-w-full truncate rounded-[13px] border px-2.5 font-semibold transition-[transform,background-color,filter] duration-120 ease-(--ease-out) active:scale-[0.96]",
-        isSmall ? "h-6 text-[11.5px]" : "h-[26px] text-xs",
-        isFirst ? "border-ask bg-ask text-surface hover:brightness-108" : "border-[color-mix(in_srgb,var(--ask)_45%,transparent)] bg-ask-soft text-ask hover:bg-[color-mix(in_srgb,var(--ask)_22%,transparent)]",
-      )}>
-      {children}
-    </button>
-  )
-}
-
-// What waits on you, one click each: Allow / Deny, a question's options, the
-// replies Claude offered. A question with several parts opens the
-// conversation; a session without the bridge mod is answered in Claude.
-export function Replies({ card, isSmall }: { card: Card; isSmall?: boolean }) {
-  if (card.column !== "asking") return null
-  const permission = card.bridge?.permission
-  const question = card.bridge?.question
-  const only = question?.questions.length === 1 && !question.questions[0].multiSelect ? question.questions[0] : null
-  let buttons: { label: string; title?: string; act: () => void }[] = []
-  if (card.askKind === "permission" && permission)
-    buttons = [
-      { label: "Allow", act: () => say(permit(card.id, permission.id, "allow"), "Allowed") },
-      { label: "Deny", act: () => say(permit(card.id, permission.id, "deny"), "Denied") },
-    ]
-  else if (card.askKind === "dialog")
-    buttons = only && question
-      ? only.options.map(o => ({ label: o.label, title: o.description ?? o.label, act: () => say(answer(card.id, question.id, { [only.question]: o.label }), "Answer sent") }))
-      : question
-        ? [{ label: "Reply", act: () => openTab(card.id) }]
-        : [{ label: "Answer in Claude ↗", title: "You can answer this session only in Claude desktop", act: () => void openInClaude(card.id) }]
-  buttons = [...buttons, ...card.choices.map(c => ({ label: c.label, title: c.message, act: () => void reply(card, c.message || c.label) }))]
-  if (!buttons.length) return null
-  return (
-    <div className="nodrag flex flex-wrap gap-1.5" onClick={e => e.stopPropagation()}>
-      {buttons.map((b, i) => <Choice key={`${i}-${b.label}`} isFirst={i === 0} title={b.title} onClick={b.act} isSmall={isSmall}>{b.label}</Choice>)}
-    </div>
-  )
 }
 
 // ---------- the badge ----------
@@ -287,11 +222,11 @@ export function UsageMeter({ usage, barW = 28 }: { usage: Card["usage"]; barW?: 
   )
 }
 
-// The canvas card's signals: small, an icon and a number. At mid zoom only
-// the overlap stays.
-export function Signals({ card, now, isMid }: { card: Card; now: number; isMid?: boolean }) {
-  const prs = card.prs ?? []
-  if (isMid) return card.overlaps?.length || card.bridge.isDoubled ? <span className="ml-auto flex flex-none items-center gap-1"><ProcessChip card={card} isCompact /><OverlapChip card={card} isCompact /></span> : null
+// What a card warns of, small: where it runs, overlaps, background work,
+// memory, its run, messages waiting, and how full its context is (the
+// canvas card's foot; its work and PRs show in its cells, its tickets in the
+// preview).
+export function Warnings({ card, now }: { card: Card; now: number }) {
   return (
     <span className="ml-auto flex flex-none items-center gap-1 empty:hidden">
       <ProcessChip card={card} isCompact />
@@ -299,15 +234,12 @@ export function Signals({ card, now, isMid }: { card: Card; now: number; isMid?:
       <BackgroundChip card={card} now={now} isCompact />
       <MemoryChip card={card} now={now} isCompact />
       <RunChip card={card} isCompact />
-      {card.tickets?.[0] && <TicketChip ticket={card.tickets[0]} card={card} isCompact />}
-      {prs.length === 1 && <PrChip pr={prs[0]} card={card} isCompact />}
-      {prs.length > 1 && <Tag isCompact title={prs.map(p => `#${p.number} ${p.title}`).join("\n")} onClick={() => openTab(card.id, "prs")}><Anim.GitPullRequest size={12} />{prs.length}</Tag>}
-      {card.taskCount > 0 && <Tag isCompact className="text-text" title={`${card.taskCount} ${card.taskCount === 1 ? "task" : "tasks"}`} onClick={() => openTab(card.id, "tasks")}><ListChecks />{card.taskCount}</Tag>}
       <PendingChip card={card} isCompact />
       <UsageMeter usage={card.usage} barW={22} />
     </span>
   )
 }
+
 
 const when = (ms: number) => new Date(ms).toLocaleString("en-GB", { weekday: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
 

@@ -1,7 +1,9 @@
-// A session's card on the canvas (canvas.js CanvasCard): its state and title;
-// one line that says why it is where it is (or the replies, one click each);
-// a quiet foot with the repo, the age and small signals; its buttons float
-// over its top edge on hover. A card that waits for you shakes now and then,
+// A session's card on the canvas (canvas.js CanvasCard), every one the same
+// size: its state and title; what it does now in words, changing as it goes
+// (its question in amber when it waits for you, what it did when it rests);
+// what is not up yet, in three cells; a quiet foot with the repo, the age and
+// what it warns of. The rest (what you asked, the tickets, the PRs, the
+// branch) waits in the preview over it. Its buttons float over its top edge on hover. A card that waits for you shakes now and then,
 // harder the longer it waits; one at work glows. `level` is the canvas's
 // semantic zoom: far shows the state, the title and a question, drawn larger.
 import { Star } from "lucide-react"
@@ -11,7 +13,8 @@ import type { Card } from "@/lib/api-types"
 import { cn } from "@/lib/utils"
 import { menu, shake } from "@/features/board/state"
 import { useIsDots } from "@/lib/board-style"
-import { Actions, Context, Corner, Replies, Signals, SleepMark, edgeOf, tintOf } from "./parts"
+import { Actions, Corner, SleepMark, Warnings, edgeOf, tintOf } from "./parts"
+import { NowLine, WorkCells } from "./Activity"
 import { StateIcon } from "./StateIcon"
 import { ageOf, repoDot, stateOf, urgencyOf } from "./state"
 
@@ -79,7 +82,7 @@ function SessionCardView({ card, now, level = "near", unscale = 1, isSelected = 
       <HoverCardTrigger asChild>
         <article data-id={card.id} tabIndex={0} style={style} data-edge={edgeOf(card, { isSelected: ring || isNoteTarget, isWaiting: !!urgency })}
           className={cn(
-            "group/card relative flex w-72 origin-top cursor-grab flex-col gap-2 rounded-[12px] border border-line bg-surface px-3 pt-[11px] pb-2.5 shadow-[0_1px_2px_rgb(0_0_0/0.06)] select-none dark:border-line-strong",
+            "group/card relative flex h-[156px] w-72 origin-top cursor-grab flex-col gap-2 rounded-[12px] border border-line bg-surface px-3 pt-[11px] pb-2.5 shadow-[0_1px_2px_rgb(0_0_0/0.06)] select-none dark:border-line-strong",
             "transition-[border-color,box-shadow,opacity] duration-120 hover:[animation-play-state:paused] focus-visible:outline-offset-2",
             // Quieter cards dim what they say, not the card itself: an opaque
             // card keeps its edge on the canvas, a see-through one sinks into it.
@@ -94,22 +97,20 @@ function SessionCardView({ card, now, level = "near", unscale = 1, isSelected = 
           {state === "working" && <i aria-hidden className="work-glow pointer-events-none absolute -inset-[3px] animate-breathe rounded-[14px] shadow-[0_0_0_2px_color-mix(in_srgb,var(--work)_55%,transparent),0_0_22px_color-mix(in_srgb,var(--work)_35%,transparent)]" />}
           <div className={cn("flex min-w-0 gap-[9px]", isDots ? "items-center" : "items-start")}>
             <span className={cn(!isDots && "-mt-px")}><StateIcon card={card} size={Math.round(big(isDots ? 34 : 22, 1.8))} /></span>
-            <span title={card.title} className={cn("line-clamp-2 min-w-0 flex-1 text-sm leading-[1.3] [overflow-wrap:anywhere]", isDone ? "font-[550]" : "font-semibold")}
+            <span title={card.title} className={cn("line-clamp-2 min-h-[2.6em] min-w-0 flex-1 text-sm leading-[1.3] [overflow-wrap:anywhere]", isDots && "flex items-center", isDone ? "font-[550]" : "font-semibold")}
               style={far ? { fontSize: big(14, 2), lineHeight: 1.2 } : undefined}>{card.title}</span>
             <SleepMark card={card} />
             {card.pinned && <span className="ml-auto flex-none text-ask" title="Pinned"><Star className="size-3" /></span>}
             {card.isUnread && <i className="unread-dot mt-1.5 size-[7px] flex-none rounded-full bg-brand" title="New since you last looked" />}
           </div>
-          {!isDone && (!far || card.column === "asking") && (
-            <Context card={card} lines={level === "mid" ? 1 : 2} className="text-[12.5px] leading-[1.4]" />
-          )}
-          {!isDone && !far && <Replies card={card} isSmall />}
-          <footer className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px] text-faint" style={far ? { fontSize: big(11.5, 1.8) } : undefined}>
+          {(!far || card.column === "asking") && !isDone && <NowLine card={card} />}
+          {!far && !isDone && <WorkCells card={card} />}
+          <footer className="mt-auto flex min-w-0 items-center gap-x-2 text-[11.5px] text-faint" style={far ? { fontSize: big(11.5, 1.8) } : undefined}>
             <span className="inline-flex min-w-0 items-center gap-[5px] truncate" title={card.branch ? `${card.repo} · ${card.branch}` : card.repo}>
               <i className="repo-dot size-[7px] flex-none rounded-[2px]" style={{ background: repoDot(card.repo) }} />{card.repo}
             </span>
             {!far && <span className="dot-time flex-none whitespace-nowrap">{ageOf(card, now)}</span>}
-            {!isDone && !far && <Signals card={card} now={now} isMid={level === "mid"} />}
+            {!isDone && !far && <Warnings card={card} now={now} />}
           </footer>
           {!far && (
             <Actions card={card} isCompact
@@ -139,6 +140,10 @@ function Peek({ card, now }: { card: Card; now: number }) {
       {card.lastPrompt && <p className="line-clamp-3 text-text-muted [overflow-wrap:anywhere]"><span className="mr-1.5 font-semibold text-text">You</span>{card.lastPrompt}</p>}
       {text && <p className={cn("line-clamp-[8] [overflow-wrap:anywhere]", card.column === "asking" && "text-ask")}>{text}</p>}
       {p && card.column === "working" && <p className="text-[11.5px] text-text-muted">Step {Math.min(p.done + 1, p.total)} of {p.total}</p>}
+      {!!card.tickets?.length && <p className="text-[11.5px] text-text-muted"><span className="font-semibold text-text">Tickets</span> {card.tickets.map(t => t.key).join(" · ")}</p>}
+      {!!card.prs?.length && <p className="text-[11.5px] text-text-muted"><span className="font-semibold text-text">PRs</span> {card.prs.map(pr => `#${pr.number} ${pr.title}`).join(" · ")}</p>}
+      {(card.work?.uncommitted || card.work?.unpushed) ? <p className="text-[11.5px] text-ask">{[card.work.uncommitted && `${card.work.uncommitted} not committed`, card.work.unpushed && `${card.work.unpushed} not pushed`].filter(Boolean).join(" · ")}</p> : null}
+      {card.taskCount > 0 && <p className="text-[11.5px] text-text-muted">{card.taskCount} {card.taskCount === 1 ? "task" : "tasks"} open</p>}
       <footer className="flex min-w-0 items-center gap-2 text-[11.5px] text-faint">
         <span className="inline-flex items-center gap-[5px]"><i className="repo-dot size-[7px] rounded-[2px]" style={{ background: repoDot(card.repo) }} />{card.repo}</span>
         {card.branch && <span className="min-w-0 truncate font-mono">{card.branch}</span>}

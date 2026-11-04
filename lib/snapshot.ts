@@ -9,6 +9,7 @@ import { backgroundOf } from "./background"
 import { board, itemOf, keepAcrossAccounts, type BoardItem } from "./board"
 import { doingOf, status as bridgeStatus, type Permission } from "./bridge"
 import { retryingOf } from "./retrying"
+import { sessionSaying } from "./saying"
 import { accountLimits } from "./limits"
 import { canRunCommands } from "./commands"
 import { freshness } from "./freshness"
@@ -20,7 +21,7 @@ import { readTasks } from "./organizer"
 import { isPipelineOn, pipelineKeyOf, pipelines } from "./pipeline"
 import { progressOf } from "./plan"
 import { prUrlsIn } from "./prs"
-import { repoInfo } from "./repo"
+import { pendingWork, repoInfo } from "./repo"
 import { writtenSince } from "./session-files"
 import { isOrganizerOn } from "./setup"
 import { summary as runSummary } from "./runner"
@@ -197,6 +198,7 @@ async function cardOf(
     branch: repo.branch,
     prs: prsIn(refs, "OPEN"),
     mergedPrs: prsIn(refs, "MERGED"),
+    work: column !== "done" && repo.branch ? await pendingWork(s.cwd) : null, // not committed, not pushed
     title,
     tickets: jira ? sessionTickets(sessionKeys(item.tickets ?? {}, keysIn([repo.branch, title], jira.projects), await mentionsIn(ids), jira.projects)) : [],
     hasOwnTitle: !!item.title,
@@ -224,6 +226,7 @@ async function cardOf(
     usage: await usageOf(id, ids).catch(() => null),
     // The current turn's task list, while Claude works through it.
     progress: column === "working" ? await progressOf(id).catch(() => null) : null,
+    saying: column === "working" ? await sessionSaying(id).catch(() => null) : null, // what it says it does (lib/saying.ts)
     // What that turn does now (the card's orb).
     doing: column === "working" ? ((await retryingOf(id)) ?? (await doingOf(id))) : null,
     // Since when the session waits for the person (the moment it asked).

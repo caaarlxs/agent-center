@@ -75,3 +75,15 @@ export async function workState(cwd: string) {
     ahead: ahead === null ? null : Number(ahead),
   }
 }
+
+// What a folder holds that is not up yet (the card's git cells): files not
+// committed, commits not pushed. Asked at most every WORK_TTL_MS per folder.
+const WORK_TTL_MS = 20_000
+const works = new Map<string, { at: number; work: Promise<{ uncommitted: number; unpushed: number } | null> }>()
+export function pendingWork(cwd: string) {
+  const had = works.get(cwd)
+  if (had && Date.now() - had.at < WORK_TTL_MS) return had.work
+  const work = workState(cwd).then(w => (w ? { uncommitted: w.uncommitted, unpushed: w.unpushed ?? 0 } : null), () => null)
+  works.set(cwd, { at: Date.now(), work })
+  return work
+}

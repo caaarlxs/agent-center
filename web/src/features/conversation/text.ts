@@ -108,3 +108,12 @@ export function riskOf(command: string): string | null {
 // Some text quoted, as Markdown quotes it ("> " on each line): what Reply on
 // a selection puts in the reply box, and a side chat's prompt starts with.
 export const quoteOf = (text: string) => text.trim().split("\n").map(l => (l.trim() ? `> ${l.trimEnd()}` : ">")).join("\n")
+
+// Markdown as plain words, on one line (what a card shows of an answer): no
+// marks, links as their text, lines joined with " · " (after a colon, a space).
+export function plainOf(text: string): string {
+  const lines = text.split("\n")
+    .map(l => l.replace(/^\s*(#{1,6}\s+|[-*+]\s+|\d+[.)]\s+|>\s?)/, "").replace(/\[([^\]]+)\]\([^)]*\)/g, "$1").replace(/\*\*|__|`/g, "").trim())
+    .filter(Boolean)
+  return lines.reduce((out, l, i) => (i === 0 ? l : `${out}${out.endsWith(":") ? " " : " · "}${l}`), "")
+}
