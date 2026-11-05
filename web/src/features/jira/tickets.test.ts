@@ -22,11 +22,23 @@ describe("columnsOf", () => {
 })
 
 describe("lanesOf", () => {
-  it("puts tickets in a row per epic, the epic with them, the most first, those in none last", () => {
-    const e1 = epic("E-1")
-    const e2 = epic("E-2")
+  const e1 = epic("E-1")
+  const e2 = epic("E-2")
+  const story = (key: string): TicketRef => ({ ...e1, key, summary: key, type: "Story", kind: "story" })
+  const under = (key: string, parent: TicketRef, epicOf: TicketRef | null = null): TicketRow => ({ ...row(key, "x", "todo"), kind: "subtask", parent, epic: epicOf })
+  it("puts tickets in a row per epic, the epic with them, the most first, those with nothing above last", () => {
     const lanes = lanesOf([row("A", "x", "todo", "1", e2), row("B", "x", "todo"), row("C", "x", "todo", "1", e1), row("D", "x", "todo", "1", e1), { ...row("E-2", "x", "todo"), kind: "epic" }])
-    expect(lanes.map(l => [l.epic?.key ?? null, l.tickets.map(t => t.key).join(" ")])).toEqual([["E-2", "A E-2"], ["E-1", "C D"], [null, "B"]])
+    expect(lanes.map(l => [l.head?.key ?? null, l.tickets.map(t => t.key).join(" ")])).toEqual([["E-2", "A E-2"], ["E-1", "C D"], [null, "B"]])
+  })
+  it("groups under the highest ticket it knows: the epic, else the story", () => {
+    const s1 = story("S-1")
+    const lanes = lanesOf([under("T-1", s1), under("T-2", s1), under("T-3", story("S-2"), e1), row("B", "x", "todo")])
+    expect(lanes.map(l => [l.head?.key ?? null, l.head?.kind ?? null, l.tickets.map(t => t.key).join(" ")])).toEqual([["S-1", "story", "T-1 T-2"], ["E-1", "epic", "T-3"], [null, null, "B"]])
+  })
+  it("puts a story in its own row when its sub-tasks are there too", () => {
+    const s1 = story("S-1")
+    const lanes = lanesOf([under("T-1", s1), { ...row("S-1", "x", "todo"), kind: "story" }])
+    expect(lanes.map(l => [l.head?.key, l.tickets.map(t => t.key).join(" ")])).toEqual([["S-1", "T-1 S-1"]])
   })
 })
 

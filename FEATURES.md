@@ -69,7 +69,7 @@ Lucide's names, and must be in `web/src/features/guide/icons.ts`.
 
 ## {ticket} Jira
 
-- {kanban} **Tickets view**: your Jira tickets on your team's board columns, by epic if you like, with filters.
+- {kanban} **Tickets view**: your Jira tickets on your team's board columns, with filters; By parent groups each under the highest ticket above it (its epic, else its story). · 2026-11-05
 - {file-text} **A ticket, whole**: description, comments, parent and children, and the sessions linked to it.
 - {ticket-check} **Status and comments**: on a ticket assigned to you, change its status and comment.
 - {plus} **Sessions from tickets**: tick one or more tickets to start a session about them, or link one to a session that exists.

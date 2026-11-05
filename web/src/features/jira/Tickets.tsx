@@ -1,6 +1,6 @@
 // The "Tickets" view (lib/jira.ts): your Jira tickets on the columns of your
 // team's board, all of them and all as wide, optionally in a
-// row per epic, so what sits in what shows. A filter (yours, the ones you
+// row per ticket on top (an epic, else a story), so what sits in what shows. A filter (yours, the ones you
 // reported, the open sprint), words, or "No session" (none works on it yet)
 // narrow them. Each ticket shows its
 // kind, priority, sprint and last change, its parent, and the sessions
@@ -39,7 +39,7 @@ const FILTERS: { value: TicketFilter; label: string }[] = [
 type Grouping = "status" | "epic"
 const GROUPINGS: { value: Grouping; label: string }[] = [
   { value: "status", label: "Columns" },
-  { value: "epic", label: "By epic" },
+  { value: "epic", label: "By parent" },
 ]
 const GROUPING_KEY = "ac.ticketsGrouping"
 const ORDER = { todo: 0, doing: 1, done: 2 } as const
@@ -62,18 +62,23 @@ export function columnsOf(tickets: TicketRow[], board: BoardColumn[] = []): Colu
   return [...cols, ...[...extra.values()].sort((a, b) => ORDER[a.tone] - ORDER[b.tone])]
 }
 
-// A row per epic: the epic's tickets (and the epic itself), the most first;
-// those in no epic last.
-export type Lane = { epic: TicketRef | null; tickets: TicketRow[] }
+// A row per ticket on top: the highest one each ticket sits in (its epic,
+// else its parent, a story), with its tickets (and itself), the most first.
+// An epic, or a ticket others sit in, heads its own row; one with nothing
+// above it and nothing in it goes last.
+export type Lane = { head: TicketRef | null; tickets: TicketRow[] }
+const refTo = (t: TicketRow): TicketRef => ({ key: t.key, summary: t.summary, type: t.type, kind: t.kind, status: t.status, tone: t.tone, url: t.url })
 export function lanesOf(tickets: TicketRow[]): Lane[] {
+  const above = (t: TicketRow) => t.epic ?? t.parent
+  const heads = new Set(tickets.map(t => above(t)?.key))
   const lanes = new Map<string, Lane>()
   for (const t of tickets) {
-    const epic: TicketRef | null = t.kind === "epic" ? { key: t.key, summary: t.summary, type: t.type, kind: t.kind, status: t.status, tone: t.tone, url: t.url } : t.epic
-    const lane = lanes.get(epic?.key ?? "") ?? { epic, tickets: [] }
+    const head = above(t) ?? (t.kind === "epic" || heads.has(t.key) ? refTo(t) : null)
+    const lane = lanes.get(head?.key ?? "") ?? { head, tickets: [] }
     lane.tickets.push(t)
-    lanes.set(epic?.key ?? "", lane)
+    lanes.set(head?.key ?? "", lane)
   }
-  return [...lanes.values()].sort((a, b) => Number(!a.epic) - Number(!b.epic) || b.tickets.length - a.tickets.length)
+  return [...lanes.values()].sort((a, b) => Number(!a.head) - Number(!b.head) || b.tickets.length - a.tickets.length)
 }
 
 // A ticket of yours behind its PR: the PR, and its move to the column it
@@ -112,14 +117,14 @@ function SyncNote({ ticket, hint }: { ticket: TicketRow; hint: SyncHint }) {
   )
 }
 
-function TicketCard({ ticket, sessions, hint, isPicked, isPicking, showsEpic, onPick }: {
-  ticket: TicketRow; sessions: Card[]; hint: SyncHint | null; isPicked: boolean; isPicking: boolean; showsEpic: boolean; onPick: () => void
+function TicketCard({ ticket, sessions, hint, isPicked, isPicking, above, onPick }: {
+  ticket: TicketRow; sessions: Card[]; hint: SyncHint | null; isPicked: boolean; isPicking: boolean; above?: string; onPick: () => void
 }) {
   const now = useNow()
   const prs = sessions.flatMap(s => s.prs ?? [])
   const facts = [ticket.type, ticket.priority, ticket.sprint].filter(Boolean).join(" · ")
-  // A sub-task's story, or a story's epic when the row does not say it already.
-  const parent = ticket.parent && (showsEpic || ticket.parent.kind !== "epic") ? ticket.parent : null
+  // A sub-task's story, or a story's epic, when its row does not say it already.
+  const parent = ticket.parent && ticket.parent.key !== above ? ticket.parent : null
   const why = (s: Card) => s.tickets.find(t => t.key === ticket.key)?.why
   return (
     <article className={cn("group flex cursor-pointer flex-col gap-1.5 rounded-[10px] border bg-surface px-3 py-2.5", isPicked ? "border-brand ring-2 ring-brand-soft" : "border-line hover:border-line-strong")}
@@ -182,7 +187,7 @@ function ColumnHead({ col }: { col: Column }) {
   )
 }
 
-// The tickets on the board's columns, in a row per epic when asked.
+// The tickets on the board's columns, in a row per ticket on top when asked.
 type Picking = { picked: string[]; onPick: (key: string) => void }
 function TicketBoard({ tickets, board, grouping, cards, picking }: { tickets: TicketRow[]; board: BoardColumn[]; grouping: Grouping; cards: Card[]; picking: Picking }) {
   const sessionsByKey = useMemo(() => {
@@ -192,7 +197,7 @@ function TicketBoard({ tickets, board, grouping, cards, picking }: { tickets: Ti
   }, [cards])
   const isByEpic = grouping === "epic"
   const columns = columnsOf(tickets, board)
-  const lanes: Lane[] = isByEpic ? lanesOf(tickets) : [{ epic: null, tickets }]
+  const lanes: Lane[] = isByEpic ? lanesOf(tickets) : [{ head: null, tickets }]
   // Every column as wide as the others, the empty ones too.
   const template = `repeat(${columns.length}, minmax(250px, 1fr))`
   const minWidth = columns.length * 262
@@ -201,7 +206,7 @@ function TicketBoard({ tickets, board, grouping, cards, picking }: { tickets: Ti
       <div className="grid gap-x-3" style={{ gridTemplateColumns: template, minWidth, gridTemplateRows: isByEpic ? undefined : "auto 1fr", minHeight: isByEpic ? undefined : "100%" }}>
         {columns.map((col, i) => <ColumnHead key={i} col={col} />)}
         {lanes.map(lane => (
-          <Fragment key={lane.epic?.key ?? "none"}>
+          <Fragment key={lane.head?.key ?? "none"}>
             {isByEpic && <LaneHead lane={lane} />}
             {columns.map((col, i) => {
               const here = lane.tickets.filter(t => col.statusIds.includes(t.statusId))
@@ -209,7 +214,7 @@ function TicketBoard({ tickets, board, grouping, cards, picking }: { tickets: Ti
                 <section key={i} className={cn("dots-veil flex min-h-0 flex-col gap-2 rounded-[12px] bg-side p-2", isByEpic && !here.length && "min-h-10")}>
                   {here.map(t => (
                     <TicketCard key={t.key} ticket={t} sessions={sessionsByKey.get(t.key) ?? []} hint={syncHint(t, sessionsByKey.get(t.key) ?? [], columns)} isPicked={picking.picked.includes(t.key)} isPicking={picking.picked.length > 0}
-                      showsEpic={!isByEpic} onPick={() => picking.onPick(t.key)} />
+                      above={isByEpic ? lane.head?.key : undefined} onPick={() => picking.onPick(t.key)} />
                   ))}
                 </section>
               )
@@ -224,9 +229,9 @@ function TicketBoard({ tickets, board, grouping, cards, picking }: { tickets: Ti
 function LaneHead({ lane }: { lane: Lane }) {
   return (
     <div className="col-span-full flex items-center pt-3 pb-2 first:pt-0">
-      <button className="sticky left-0 flex min-w-0 items-center gap-2 rounded-md px-1 text-left text-[13px] font-semibold hover:bg-hover" disabled={!lane.epic}
-        onClick={() => lane.epic && openDialog({ kind: "ticket", key: lane.epic.key })}>
-        {lane.epic ? <><KindMark kind="epic" size={15} /><span className="font-mono text-xs text-text-muted">{lane.epic.key}</span><span className="truncate">{lane.epic.summary}</span></> : <span className="text-text-muted">In no epic</span>}
+      <button className="sticky left-0 flex min-w-0 items-center gap-2 rounded-md px-1 text-left text-[13px] font-semibold hover:bg-hover" disabled={!lane.head}
+        onClick={() => lane.head && openDialog({ kind: "ticket", key: lane.head.key })}>
+        {lane.head ? <><KindMark kind={lane.head.kind} type={lane.head.type} size={15} /><span className="font-mono text-xs text-text-muted">{lane.head.key}</span><span className="truncate">{lane.head.summary}</span></> : <span className="text-text-muted">Nothing above</span>}
         <span className="text-xs font-medium text-faint">{lane.tickets.length}</span>
       </button>
     </div>
