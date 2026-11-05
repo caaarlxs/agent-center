@@ -45,7 +45,6 @@ Lucide's names, and must be in `web/src/features/guide/icons.ts`.
 ## {message-square} Conversation
 
 - {reply} **Reply**: write in the box at the bottom; paste or drop files, or dictate with the microphone. A draft stays three days.
-- {mic} **Dictation as you speak**: with Whisper on this Mac, the text appears in the box while you speak (cut at your pauses, never mid-word); when you stop, only the last bit is left, a second or two. · 2026-11-05
 - {sliders-horizontal} **Mode and model**: the pills under the box change them in the session.
 - {wand-sparkles} **Suggested reply**: after a turn it shows grey in the box; `Tab` or `→` writes it, "Send suggestion" sends it. · 2026-11-03
 - {terminal} **Run a command**: a command block has Run, in the session's folder; one that touches prod or deletes asks for a second click. · 2026-11-03

@@ -130,11 +130,10 @@ export async function handleUpload(req: Request, path: string): Promise<Response
       return json({ error: errorMessage(err) }, 400)
     }
   }
-  // Dictation with Whisper: the audio of a recording (or a piece of one) in,
-  // its text out; ?prompt= is the text before the piece.
+  // Dictation with Whisper: the audio of a recording in, its text out.
   if (path === "/api/transcribe") {
     try {
-      return json({ ok: true, text: await transcribe(await req.arrayBuffer(), new URL(req.url).searchParams.get("prompt") ?? "") })
+      return json({ ok: true, text: await transcribe(await req.arrayBuffer()) })
     } catch (err) {
       return json({ error: errorMessage(err) }, 500)
     }
