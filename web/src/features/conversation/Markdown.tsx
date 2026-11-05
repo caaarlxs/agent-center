@@ -11,6 +11,7 @@ import { post } from "@/lib/api"
 import { useShikiTheme, useTokens } from "@/lib/code-theme"
 import { cn } from "@/lib/utils"
 import { openFile } from "@/app/open-session"
+import { boxParts } from "@/features/files/beside"
 import { endOf, isShellLike, localHref, pathInCode, pathInLink, riskOf, SHELL_LANG, nameOf } from "./text"
 import { Anim } from "@/components/icons/animated"
 import { CopyMark, useCopyMoment } from "@/components/icona/marks"
@@ -178,16 +179,27 @@ function localLinks() {
   }
   return (tree: Hast) => visit(tree)
 }
+// In a document, "[ ]" and "[x]" written in a line show as boxes (outside code).
+function boxes() {
+  const visit = (n: Hast) => {
+    if (n.tagName === "code" || n.tagName === "pre" || !n.children) return
+    n.children = n.children.flatMap(c => (c.type !== "text" ? (visit(c), [c]) : boxParts(c.value ?? "").map(p =>
+      typeof p === "string" ? { type: "text", value: p } : { type: "element", tagName: "span", properties: { className: ["doc-box"], dataTicked: p.isTicked }, children: [] })))
+  }
+  return (tree: Hast) => visit(tree)
+}
 const { harden, ...before } = defaultRehypePlugins
 const rehypePlugins = [...Object.values(before), localLinks, harden!]
+const documentPlugins = [...rehypePlugins, boxes]
 const urlTransform: UrlTransform = (url, key, node) => (pathInLink(url) && url.startsWith("agent-file:") ? url : defaultUrlTransform(url, key, node))
 
 // A table shows whole, however tall (Streamdown caps it at 300px otherwise).
 // isStreaming: text still being written; markdown left open (a ** not yet
 // closed) shows as it will once it is.
-export const Markdown = memo(function Markdown({ children, className, isStreaming = false }: { children: string; className?: string; isStreaming?: boolean }) {
+// isDocument: a file to read (Files, beside the panel): its boxes drawn.
+export const Markdown = memo(function Markdown({ children, className, isStreaming = false, isDocument = false }: { children: string; className?: string; isStreaming?: boolean; isDocument?: boolean }) {
   return (
-    <Streamdown className={cn("md", className)} components={components} rehypePlugins={rehypePlugins} urlTransform={urlTransform} plugins={{ cjk }} controls={false} tableMaxHeight={0} parseIncompleteMarkdown={isStreaming}>
+    <Streamdown className={cn("md", className)} components={components} rehypePlugins={isDocument ? documentPlugins : rehypePlugins} urlTransform={urlTransform} plugins={{ cjk }} controls={false} tableMaxHeight={0} parseIncompleteMarkdown={isStreaming}>
       {children}
     </Streamdown>
   )

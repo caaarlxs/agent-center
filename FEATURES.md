@@ -52,7 +52,8 @@ Lucide's names, and must be in `web/src/features/guide/icons.ts`.
 - {git-fork} **Fork**: the link under one of your messages starts a new session from that point.
 - {map} **Map**: in a long conversation, the rail on the right marks your messages, questions and failures; a click goes there.
 - {circle-arrow-right} **Next steps**: when a session waits, chips offer the obvious step: review, commit, push, open the PR.
-- {download} **Files beside the chat**: a file chip or a link to a file opens it beside the conversation, over the board, so you read and write at once; `Esc` closes it, Files opens it in its tab, and the chip's arrow downloads it. · 2026-11-05
+- {download} **Files beside the chat**: a file chip or a link to a file opens it beside the conversation, over the board, so you read and write at once; drag its left edge to widen it, `Esc` closes it, Files opens it in its tab, and the chip's arrow downloads it. · 2026-11-05
+- {file-text} **Documents to read**: a Markdown file shows as a page: sections under a rule, lead-ins and list numbers in colour, quotes as callouts, striped tables, and its `[ ]` as boxes. · 2026-11-05
 - {refresh-cw} **Compacting and retries**: while a session compacts its conversation, or tries a failed call to the API again, its orb and its line say so (with the attempt): it is not stuck. · 2026-11-04
 - {gauge} **Context**: the ring under the box shows how full the context is; hover it for the tokens and the cost.
 

@@ -56,7 +56,7 @@ function Body({ id, file, info, isSource }: { id: string; file: Listed; info: In
   switch (kind) {
     case "markdown":
       if (isSource) return code
-      return text === null ? <p className={muted}>Loading…</p> : <Markdown className="file-md mx-auto max-w-[760px] px-[22px] pt-[18px] pb-10">{text}</Markdown>
+      return text === null ? <p className={muted}>Loading…</p> : <Markdown isDocument className="file-md mx-auto max-w-[760px] px-[22px] pt-[18px] pb-10">{text}</Markdown>
     case "code":
       return code
     case "image":
