@@ -113,7 +113,7 @@ export type PipelineState = {
 
 export const MARK = "🤖 Agent Center"
 // The first words of a stage's prompt: they tell its session from yours.
-const TAG = "[Pipeline]"
+export const TAG = "[Pipeline]"
 export const pipelineKeyOf = (prompt?: string | null) => (prompt?.startsWith(`${TAG} `) ? (prompt.slice(TAG.length + 1).match(/^[A-Z][A-Z0-9]+-\d+/)?.[0] ?? null) : null)
 export const LABELS = { on: "agent", needsInfo: "agent-needs-info", ready: "agent-ready", planned: "agent-planned", built: "agent-built", reviewed: "agent-reviewed", staging: "agent-staging", tested: "agent-tested", prod: "agent-prod", live: "agent-live" }
 const ROOT = join(DATA_DIR, "pipeline")
@@ -127,7 +127,7 @@ const dirOf = (key: string) => join(ROOT, key)
 const isKey = (key: string) => /^[A-Z][A-Z0-9]+-\d+$/.test(key)
 
 // How every agent works, whatever its stage: for the next agent, not for a person.
-const AS_AGENT = `Trabajas sin una persona delante:
+export const AS_AGENT = `Trabajas sin una persona delante:
 - No narres entre pasos ni escribas un mensaje final: tu resultado son los ficheros.
 - Escribe para el siguiente agente: listas, campos y rutas, sin prosa ni repeticiones.
 - Lee solo lo que necesitas: \`git grep -n\` y rangos de líneas (\`git show <ref>:<fichero> | sed -n 'a,bp'\`), no ficheros enteros.
@@ -197,6 +197,8 @@ const STAGE: Record<AgentStage, StageDef> = {
 5. Escribe al final ${join(dir, "smoke.json")}: {"verdict": "ready" | "needs-info", "questions": [...], "results": [{"id": "P1", "criterion": "...", "status": "pass" | "fail", "evidence": "...", "files": [{"path": "evidence/P1-desktop.png", "caption": "..."}]}]}. Guarda la evidencia de cada criterio en ${join(dir, "evidence")}.`,
   },
 }
+export const verbOf = (stage: AgentStage) => STAGE[stage].verb
+
 // Clean: no user settings (your model, effort, hooks, plugins and CLAUDE.md
 // come from there), no connectors; its model and effort; and, for a stage
 // that writes, the repos' folder too.
@@ -347,13 +349,15 @@ export function snapshotOf(t: Ticket, parent: Ticket | null, children: Ticket[],
 
 // ---------- the state ----------
 
-async function stateOf(key: string): Promise<PipelineState | null> {
+// A state.json, with its run in the history (a state from before the history has none).
+export async function stateIn<S extends PipelineState>(dir: string): Promise<S | null> {
   try {
-    return withRun(JSON.parse(await readFile(join(dirOf(key), "state.json"), "utf8"))) // a state from before the history has its run in it
+    return withRun(JSON.parse(await readFile(join(dir, "state.json"), "utf8"))) as S
   } catch {
     return null
   }
 }
+const stateOf = (key: string) => stateIn(dirOf(key))
 // The state with its run in the history: added the first time, then kept up to date.
 export function withRun(s: PipelineState): PipelineState {
   const run: Run = { n: s.runs, stage: s.stage, sessionId: s.sessionId, startedAt: s.startedAt, endedAt: s.endedAt, status: s.status, questions: s.questions.length, units: s.units?.length ?? 0, ...(s.stage === "review" ? { findings: s.findings?.length ?? 0 } : {}), error: s.error }
@@ -370,7 +374,7 @@ const jsonOf = (text: string | null): any => {
 }
 // Each run with what its session spent, read from its transcript (only what
 // was added since the last look): never saved, so it is always the session's own.
-const withSpend = async (s: PipelineState): Promise<PipelineState> =>
+export const withSpend = async <S extends PipelineState>(s: S): Promise<S> =>
   ({ ...s, history: await Promise.all((s.history ?? []).map(async r => ({ ...r, spend: r.sessionId ? await sessionSpend(r.sessionId) : null }))) })
 
 // The state and each stage's document, for the ticket's view. A run whose
@@ -438,11 +442,11 @@ const fresh = async (key: string, runs: number, stage: Stage): Promise<PipelineS
 }
 // A stage's session is the pipeline's, not yours: once it ends it leaves the
 // board (its log stays a click away in the ticket), and never goes to Claude desktop.
-const putAway = (id: string) => void applyAction(id, [id], "archive", {}).catch(() => {})
+export const putAway = (id: string) => void applyAction(id, [id], "archive", {}).catch(() => {})
 
 // The Confluence pages the ticket and its parent link to (in their text or as
 // Jira's remote links), as they are now: the first few.
-async function linkedPages(t: Ticket, parent: Ticket | null): Promise<ConfluencePage[]> {
+export async function linkedPages(t: Ticket, parent: Ticket | null): Promise<ConfluencePage[]> {
   const remote = await remoteLinks(t.key).catch(() => [])
   const ids = confluenceIds([t.description, ...t.comments.map(c => c.body), parent?.description, ...remote]).slice(0, MAX_PAGES)
   return (await Promise.all(ids.map(id => confluencePage(id).catch(() => null)))).filter(Boolean) as ConfluencePage[]
@@ -450,7 +454,7 @@ async function linkedPages(t: Ticket, parent: Ticket | null): Promise<Confluence
 
 // The team's pages every stage reads (jira.json's contextPages: the system's
 // map), into the ticket's context/ folder, as they are now.
-async function writeContextPages(dir: string) {
+export async function writeContextPages(dir: string) {
   const ids = jsonOf(await readText(join(STAGES_DIR, "jira.json")))?.contextPages
   if (!Array.isArray(ids)) return
   await mkdir(join(dir, "context"), { recursive: true })
@@ -460,15 +464,21 @@ async function writeContextPages(dir: string) {
   }
 }
 
-async function runStage(key: string, runs: number, stage: AgentStage, auto?: boolean) {
-  const dir = dirOf(key)
-  await mkdir(dir, { recursive: true })
-  for (const f of [`${stage}.json`, `${stage}.md`, `${stage}.summary.md`]) await rename(join(dir, f), join(dir, `${f}.prev`)).catch(() => {})
+// The ticket, its parent and its children, each whole.
+export async function ticketWithFamily(key: string) {
   const t = await ticket(key)
   const [parent, children] = await Promise.all([
     t.parent ? ticket(t.parent.key).catch(() => null) : null,
     Promise.all(t.children.slice(0, 30).map(c => ticket(c.key).catch(() => null))).then(all => all.filter(Boolean) as Ticket[]),
   ])
+  return { t, parent, children }
+}
+
+async function runStage(key: string, runs: number, stage: AgentStage, auto?: boolean) {
+  const dir = dirOf(key)
+  await mkdir(dir, { recursive: true })
+  for (const f of [`${stage}.json`, `${stage}.md`, `${stage}.summary.md`]) await rename(join(dir, f), join(dir, `${f}.prev`)).catch(() => {})
+  const { t, parent, children } = await ticketWithFamily(key)
   // A child of a coordinator reads what its parent decided for all of them.
   const coordinator = t.parent ? await stateOf(t.parent.key) : null
   const isChild = !!coordinator?.children?.some(c => c.key === key)
@@ -491,7 +501,7 @@ async function runStage(key: string, runs: number, stage: AgentStage, auto?: boo
 // A stage's session, started on its own (its own process group, its output to
 // <stage>.log), so restarting the board never stops it: the board learns it
 // ended by watching its process, not by being its parent.
-async function spawnStage(dir: string, id: string, prompt: string, stage: AgentStage, onExit: () => void, figma = false): Promise<number> {
+export async function spawnStage(dir: string, id: string, prompt: string, stage: AgentStage, onExit: () => void, figma = false): Promise<number> {
   const log = openSync(join(dir, `${stage}.log`), "a")
   const proc = spawn(await claudeBinary(), ["-p", "--session-id", id, "--output-format", "stream-json", "--verbose", "--permission-mode", "auto", ...argsFor(stage, ROOT, { figma }), "--", prompt],
     { cwd: dir, env: claudeEnv({ AGENT_CENTER_LAUNCH: "1" }), detached: true, stdio: ["ignore", log, log] })
@@ -501,7 +511,7 @@ async function spawnStage(dir: string, id: string, prompt: string, stage: AgentS
   return proc.pid
 }
 
-const isAlive = (pid: number) => {
+export const isAlive = (pid: number) => {
   try {
     return process.kill(pid, 0), true
   } catch (err) {

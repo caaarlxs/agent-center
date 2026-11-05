@@ -19,6 +19,7 @@ import { PR_LIMIT, lookup as prLookup, type Pr } from "./github"
 import { running } from "./launch"
 import { readTasks } from "./organizer"
 import { isPipelineOn, pipelineKeyOf, pipelines } from "./pipeline"
+import { LOOSE, jobs } from "./jobs"
 import { progressOf } from "./plan"
 import { prUrlsIn } from "./prs"
 import { pendingWork, repoInfo } from "./repo"
@@ -318,6 +319,8 @@ export async function snapshot() {
     memory: { total: visible.reduce((sum, c) => sum + (c.memory?.total ?? 0), 0), pressure: memory.pressure },
     features: { organizer, pipeline: isPipelineOn() },
     pipelines: await pipelines(),
+    jobs: await jobs(),
+    loose: LOOSE, // the specialists that take jobs
     update: await freshness(),
     version,
   }

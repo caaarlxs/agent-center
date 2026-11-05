@@ -69,7 +69,7 @@ function useConfirm(): [boolean, (then: () => void) => void] {
   return [isAsking, then => (isAsking ? (setAsking(false), then()) : setAsking(true))]
 }
 
-const openLog = (id: string) => (dialog.set(null), openSession(id))
+export const openLog = (id: string) => (dialog.set(null), openSession(id))
 
 // ---------- the decisions ----------
 
@@ -131,15 +131,17 @@ function Decisions({ ticketKey, state, onSent }: { ticketKey: string; state: Pip
 type Activity = { steps: Step[]; helpers: Helper[]; units: Unit[]; checked?: string[] }
 const ACTIVITY_MS = 4_000
 
-export function useActivity(key: string, isOn = true) {
+// A job's (lib/jobs.ts) by its id: a state with "loose" in it.
+export const isJob = (state: PipelineState) => "loose" in state
+export function useActivity(key: string, isOn = true, isOfJob = false) {
   const [activity, setActivity] = useState<Activity | null>(null)
   useEffect(() => {
     if (!isOn) return
-    const load = () => get<Activity>(`/api/pipeline/activity?key=${encodeURIComponent(key)}`).then(setActivity, () => {})
+    const load = () => get<Activity>(`/api/pipeline/activity?${isOfJob ? "job" : "key"}=${encodeURIComponent(key)}`).then(setActivity, () => {})
     void load()
     const timer = setInterval(load, ACTIVITY_MS)
     return () => clearInterval(timer)
-  }, [key, isOn])
+  }, [key, isOn, isOfJob])
   return activity
 }
 
@@ -286,7 +288,7 @@ function FindingRow({ finding: f, unit, isFixed, isChosen, onChoose }: { finding
 function Findings({ state, onFix }: { state: PipelineState; onFix: (ids: string[]) => void }) {
   const findings = [...(state.findings ?? [])].sort((a, b) => SEVERITY[a.severity].rank - SEVERITY[b.severity].rank)
   const fixed = new Set(state.fixed ?? [])
-  const canChoose = state.stage === "review" && state.status === "ready"
+  const canChoose = state.stage === "review" && state.status === "ready" && !isJob(state)
   const [chosen, setChosen] = useState(() => new Set(findings.filter(f => f.severity !== "minor").map(f => f.id)))
   const choose = (id: string) => setChosen(c => (c.has(id) ? new Set([...c].filter(x => x !== id)) : new Set([...c, id])))
   const isBlocking = findings.some(f => chosen.has(f.id) && f.severity !== "minor")
@@ -383,7 +385,7 @@ const spendText = ({ spend: s }: Run) => s && `${modelName(s.model)} · ${tokens
 
 // Every run, the latest first: what it ended in (or does now), how long,
 // what it spent, its log.
-function Runs({ history, now }: { history: Run[]; now: number }) {
+export function Runs({ history, now }: { history: Run[]; now: number }) {
   const cards = useLive(l => l.snapshot?.cards)
   return (
     <ol className="m-0 flex list-none flex-col gap-1.5 p-0 text-xs">
@@ -403,7 +405,7 @@ function Runs({ history, now }: { history: Run[]; now: number }) {
   )
 }
 
-function FoldButton({ label, isOpen, onToggle }: { label: ReactNode; isOpen: boolean; onToggle: () => void }) {
+export function FoldButton({ label, isOpen, onToggle }: { label: ReactNode; isOpen: boolean; onToggle: () => void }) {
   return (
     <button className={cn("inline-flex items-center gap-1 text-xs font-semibold transition-colors duration-120", isOpen ? "text-text" : "text-text-muted hover:text-text")} onClick={onToggle} aria-expanded={isOpen}>
       <ChevronRight size={13} className={cn("transition-transform duration-150 ease-(--ease-out)", isOpen && "rotate-90")} />{label}
@@ -434,8 +436,8 @@ function Details({ children, label = "Details" }: { children: ReactNode; label?:
 
 // An agent at work in this stage: how far it got (its to-do list, its units),
 // its subagents; every step it took, folded.
-function AtWork({ state }: { state: PipelineState }) {
-  const activity = useActivity(state.key)
+export function AtWork({ state }: { state: PipelineState }) {
+  const activity = useActivity(state.key, true, isJob(state))
   const busy = activity?.helpers.filter(h => !h.isDone) ?? []
   return (
     <div className="flex flex-col gap-3">
@@ -512,7 +514,7 @@ function BuildPanel({ state }: { state: PipelineState }) {
 }
 
 const COUNTS: [Severity, string, string][] = [["blocker", "Blocker", "text-bad"], ["major", "Major", "text-ask"], ["minor", "Minor", "text-text"]]
-function ReviewPanel({ state, onFix }: { state: PipelineState; onFix: (ids: string[]) => void }) {
+export function ReviewPanel({ state, onFix }: { state: PipelineState; onFix: (ids: string[]) => void }) {
   const findings = state.findings ?? []
   return (
     <div className="flex flex-col gap-3">

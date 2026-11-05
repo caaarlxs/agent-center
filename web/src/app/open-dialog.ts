@@ -11,7 +11,7 @@ export type NewDraft = {
   suggestion?: { from: string; taskId: string | null }; tickets?: string[]
 }
 
-export type OpenDialog = { kind: "new"; draft?: NewDraft } | { kind: "setup" } | { kind: "digest" } | { kind: "context" } | { kind: "pets" } | { kind: "help" } | { kind: "run"; card: Card } | { kind: "ticket"; key: string } | null
+export type OpenDialog = { kind: "new"; draft?: NewDraft } | { kind: "setup" } | { kind: "digest" } | { kind: "context" } | { kind: "pets" } | { kind: "help" } | { kind: "run"; card: Card } | { kind: "ticket"; key: string } | { kind: "job"; id: string } | null
 
 export const dialog = createStore<OpenDialog>(null)
 export const openDialog = (next: OpenDialog) => dialog.set(next)

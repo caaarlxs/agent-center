@@ -30,6 +30,7 @@ import { MAX_UPLOAD_BYTES } from "./lib/uploads"
 import { deliverHere } from "./lib/deliver"
 import { startWaking } from "./lib/wake"
 import { startPipelinePoll } from "./lib/pipeline"
+import { startJobsWatch } from "./lib/jobs"
 import { handleRead } from "./routes/read"
 import { handleSession } from "./routes/session"
 import { handleUpload, handleWrite } from "./routes/write"
@@ -114,6 +115,7 @@ watch(SESSIONS_DIR, refreshSoon)
 startLive()
 startWaking(activate, deliverHere)
 startPipelinePoll()
+startJobsWatch()
 
 Bun.serve({
   port: PORT,

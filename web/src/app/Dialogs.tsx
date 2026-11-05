@@ -15,6 +15,7 @@ const DigestDialog = lazyView(() => import("@/features/digest/DigestDialog").the
 const NewSessionDialog = lazyView(() => import("@/features/new-session/NewSessionDialog").then(m => m.NewSessionDialog), { isFloating: true })
 const RunDialog = lazyView(() => import("@/features/run/RunDialog").then(m => m.RunDialog), { isFloating: true })
 const TicketDialog = lazyView(() => import("@/features/jira/TicketDialog").then(m => m.TicketDialog), { isFloating: true })
+const JobDialog = lazyView(() => import("@/features/jira/Job").then(m => m.JobDialog), { isFloating: true })
 const PetsDialog = lazyView(() => import("@/features/pets/PetsDialog").then(m => m.PetsDialog), { isFloating: true })
 const SetupDialog = lazyView(() => import("@/features/setup/SetupDialog").then(m => m.SetupDialog), { isFloating: true })
 
@@ -52,5 +53,6 @@ export function Dialogs() {
   if (open.kind === "pets") return <PetsDialog onClose={closeDialog} />
   if (open.kind === "run") return <RunDialog card={open.card} onClose={closeDialog} />
   if (open.kind === "ticket") return <TicketDialog ticketKey={open.key} onClose={closeDialog} />
+  if (open.kind === "job") return <JobDialog id={open.id} onClose={closeDialog} />
   return null // help: the guide draws itself
 }

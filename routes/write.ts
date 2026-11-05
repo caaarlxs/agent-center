@@ -3,6 +3,7 @@
 
 import { commentOn, connect, disconnect, moveTicket } from "../lib/jira"
 import { actOnDebt, answerPipeline, isStage, resetPipeline, rollBackPipeline, startPipeline, stopAuto, stepPipeline } from "../lib/pipeline"
+import { clearJob, isLoose, startJob } from "../lib/jobs"
 import { chooseIcon, isIcon } from "../lib/app-icon"
 import { choosePet, openPack } from "../lib/pets"
 import { stat } from "node:fs/promises"
@@ -129,10 +130,11 @@ export async function handleUpload(req: Request, path: string): Promise<Response
       return json({ error: errorMessage(err) }, 400)
     }
   }
-  // Dictation with Whisper: the audio of a recording in, its text out.
+  // Dictation with Whisper: the audio of a recording (or a piece of one) in,
+  // its text out; ?prompt= is the text before the piece.
   if (path === "/api/transcribe") {
     try {
-      return json({ ok: true, text: await transcribe(await req.arrayBuffer()) })
+      return json({ ok: true, text: await transcribe(await req.arrayBuffer(), new URL(req.url).searchParams.get("prompt") ?? "") })
     } catch (err) {
       return json({ error: errorMessage(err) }, 500)
     }
@@ -181,6 +183,12 @@ export async function handleWrite(path: string, body: Record<string, unknown>): 
     // Undo what a release did to an environment (staging or prod).
     case "/api/pipeline/rollback":
       return await rollBackPipeline(String(body.key ?? ""), body.env === "prod" ? "prod" : "staging").then(() => (refreshSoon(), json({ ok: true })), (err: Error) => json({ error: err.message }, 400))
+    // A job for one specialist (lib/jobs.ts): a ticket, and the PRs to the reviewer.
+    case "/api/jobs/start":
+      if (!isLoose(body.stage)) return json({ error: "That specialist takes no jobs yet" }, 400)
+      return await startJob(body.stage, { ticket: body.ticket, prs: body.prs }).then(r => (refreshSoon(), json({ ok: true, ...r })), (err: Error) => json({ error: err.message }, 400))
+    case "/api/jobs/clear":
+      return await clearJob(String(body.id ?? "")).then(() => (refreshSoon(), json({ ok: true })), (err: Error) => json({ error: err.message }, 400))
     case "/api/pipeline/reset":
       return await resetPipeline(String(body.key ?? "")).then(() => json({ ok: true }), (err: Error) => json({ error: err.message }, 400))
     case "/api/jira/disconnect":
