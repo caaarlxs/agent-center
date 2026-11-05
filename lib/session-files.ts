@@ -115,29 +115,53 @@ async function refsOf(ids: string[]) {
   return all
 }
 
-// For the "Files" tab: what the session sent you or published, still on
-// disk, newest first. What it only wrote stays out (it opens from the
-// conversation, and the Changes tab lists it).
+// For the "Files" tab: what the session sent you or published, and the
+// documents it wrote (a page, a report, a sheet), still on disk, newest
+// first. Its code and its notes stay out (the Changes tab lists them).
 const GIVEN = new Set<FileRef["source"]>(["sent", "artifact"])
+const DOCUMENT = /\.(html?|md|markdown|pdf|csv|tsv|txt|docx?|xlsx?|pptx?|odt|rtf|png|jpe?g|gif|webp|svg)$/i
+const NOTES = /^(?:\/private)?\/tmp\/|\/\.claude\//
+const isDocument = (path: string) => DOCUMENT.test(path) && !NOTES.test(path)
+export const isListed = (f: FileRef) => GIVEN.has(f.source) || (f.source === "written" && isDocument(f.path))
+// A document the session only named (a script of its made it, then it linked
+// it): listed when it changed around the time it was named, or after. An old
+// file it only quoted stays out.
+const MADE_BEFORE_MS = 30 * 60_000
+export const isMade = (f: FileRef, mtimeMs: number) => f.source === "mentioned" && isDocument(f.path) && mtimeMs >= f.at - MADE_BEFORE_MS
 export async function sessionFiles(ids: string[]) {
-  const refs = [...(await refsOf(ids)).values()].filter(f => GIVEN.has(f.source)).sort((a, b) => b.at - a.at).slice(0, 200)
+  const refs = [...(await refsOf(ids)).values()].filter(f => isListed(f) || (f.source === "mentioned" && isDocument(f.path))).sort((a, b) => b.at - a.at)
   const out = []
   for (const f of refs) {
+    if (out.length >= 200) break
     const info = await stat(f.path).catch(() => null)
-    if (info?.isFile()) out.push({ ...f, name: basename(f.path), size: info.size, modifiedAt: info.mtimeMs })
+    if (info?.isFile() && (isListed(f) || isMade(f, info.mtimeMs))) out.push({ ...f, name: basename(f.path), size: info.size, modifiedAt: info.mtimeMs })
   }
   return out
 }
 
-// The file at `raw` (absolute, ~/, or relative to the session's folder), if
-// the session's transcript names it.
+// The session's files whose path ends in `raw`, a relative path: Claude
+// writes some relative to a folder above the session's (the project's).
+export function endingIn(paths: string[], raw: string) {
+  const rel = raw.trim().replace(/^(\.\/)+/, "")
+  if (!rel || isAbsolute(rel) || rel.startsWith("~")) return []
+  return paths.filter(p => p.endsWith(`/${rel}`))
+}
+
+// The file at `raw` (absolute, ~/, or relative to the session's folder or a
+// folder above it), if the session's transcript names it.
 export async function sessionFile(ids: string[], raw: string, cwds: string[]) {
   const refs = await refsOf(ids)
-  const candidates = [toAbsolute(raw, ""), ...cwds.map(cwd => toAbsolute(raw, cwd))].filter((p): p is string => !!p)
-  const path = candidates.find(p => refs.has(p))
-  if (!path) return null
-  const info = await stat(path).catch(() => null)
-  if (!info?.isFile()) return null
+  const candidates = [toAbsolute(raw, ""), ...cwds.map(cwd => toAbsolute(raw, cwd)), ...endingIn([...refs.keys()], raw)].filter((p): p is string => !!p)
+  let path: string | null = null
+  let info: Awaited<ReturnType<typeof stat>> | null = null
+  for (const p of candidates.filter(p => refs.has(p))) {
+    info = await stat(p).catch(() => null)
+    if (info?.isFile()) {
+      path = p
+      break
+    }
+  }
+  if (!path || !info) return null
   return { path, name: basename(path), size: info.size, mtime: info.mtimeMs, ext: extname(path).slice(1).toLowerCase(), isViewable: info.size <= MAX_VIEW_BYTES }
 }
 

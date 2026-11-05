@@ -26,10 +26,10 @@ import { OfficeDoc } from "./OfficeDoc"
 import { Anim } from "@/components/icons/animated"
 import { CopyMark, useCopyMoment } from "@/components/icona/marks"
 
-export type Listed = { path: string; name: string; size: number; modifiedAt: number; source: "sent" | "artifact" | "written"; url?: string }
+export type Listed = { path: string; name: string; size: number; modifiedAt: number; source: "sent" | "artifact" | "written" | "mentioned"; url?: string }
 type Info = { path: string; size: number; mtime?: number; isViewable: boolean; error?: string }
 
-const SOURCE = { sent: "sent", artifact: "published", written: "written" } // written: a file opened from the conversation
+const SOURCE = { sent: "sent", artifact: "published", written: "written", mentioned: "made" } // written: with Write or Edit; made: by a script of its, then linked
 const MAX_ROWS = 1000
 const home = (path: string) => path.replace(/^\/Users\/[^/]+/, "~")
 const muted = "p-4 text-text-muted"
