@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils"
 import { ZOOM, minZoomOf, zoomTarget } from "./zoom"
 
 export const savedZoom = persistedStore<number | null>("canvasZoom", null)
-export const DONE_H = 48 + 144 // the "Done" band at the foot: its head and one row of cards
+export const DONE_H = 40 + 64 // the "Done" band at the foot: its head and one row of small cards
 const TOP_H = 16 // a margin over the canvas's top
 
 // "Done" is drawn at the canvas's scale, as in the classic board where it is

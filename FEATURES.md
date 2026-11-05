@@ -39,7 +39,7 @@ Lucide's names, and must be in `web/src/features/guide/icons.ts`.
 - {link} **Notes on cards**: a note put next to a card attaches to it and moves with it.
 - {frame} **Zones**: a zone groups cards; drag it and its cards and notes come along.
 - {folder} **Folders**: fold a zone into a folder; a card dropped on it goes in, a click unfolds it.
-- {circle-check} **Done**: drop a card on "Done" at the bottom to finish it; drag it out to reopen it.
+- {circle-check} **Done**: drop a card on "Done" at the bottom to finish it; there it shrinks to a strip with its title, repo and age; drag it out to reopen it. · 2026-11-05
 - {move} **Move around**: `Space` and drag moves the view, `+` `−` `0` zoom, a drag on the empty canvas picks several cards.
 
 ## {message-square} Conversation

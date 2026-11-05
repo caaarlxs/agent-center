@@ -12,13 +12,14 @@ import { archiveAll, boardAct } from "@/features/board/act"
 import { selected } from "@/features/board/state"
 import { SessionCard } from "@/features/session/SessionCard"
 import { ageOf } from "@/features/session/state"
-import { CARD_W, GRID } from "./geometry"
+import { GRID } from "./geometry"
 import { DONE_H, bandScale } from "./ZoomControl"
 import { FOLD_EASE } from "./ZoneNode"
 import { Num } from "@/components/common/Num"
 import { Anim } from "@/components/icons/animated"
 
 export const DONE_BAND = "done-band" // its id, for the drop test
+const CHIP_W = 220 // a done card: a strip, smaller than one on the canvas
 
 // Whether the pointer is over the band (a card let go there is done).
 export function isOverDone(e: { clientX: number; clientY: number }) {
@@ -64,8 +65,8 @@ function DoneCard({ card, now, isOpen, onLift }: { card: Card; now: number; isOp
     window.addEventListener("pointerup", up)
   }
   return (
-    <div ref={ref} onPointerDown={onPointerDown} className={cn("relative flex-none", isDragging && "z-50")} style={{ width: CARD_W }}>
-      <SessionCard card={card} now={now} isSelected={isPointed} isReading={isOpen} isDragging={isDragging} />
+    <div ref={ref} onPointerDown={onPointerDown} className={cn("relative flex-none", isDragging && "z-50")} style={{ width: CHIP_W }}>
+      <SessionCard card={card} now={now} isSmall isSelected={isPointed} isReading={isOpen} isDragging={isDragging} />
     </div>
   )
 }
@@ -115,7 +116,7 @@ export function DoneBand({ cards, isTarget, onLift }: { cards: Card[]; isTarget:
   }, [])
   const scale = bandScale.use()
   // One row, as many as the band is wide (newest first); the rest wait behind "+N more".
-  const slots = Math.max(1, Math.floor((width - GRID) / (CARD_W + GRID)))
+  const slots = Math.max(1, Math.floor((width - GRID) / (CHIP_W + 12)))
   const shown = cards.length > slots ? cards.slice(0, slots - 1) : cards
   const more = cards.slice(shown.length)
   useEffect(() => void (more.length || setMoreOpen(false)), [more.length])
@@ -136,13 +137,13 @@ export function DoneBand({ cards, isTarget, onLift }: { cards: Card[]; isTarget:
           </button>
         )}
       </header>
-      <div ref={row} className="flex items-start gap-6 overflow-x-clip px-6 pt-0.5">
+      <div ref={row} className="flex items-start gap-3 overflow-x-clip px-6 pt-0.5">
         {shown.map(card => <DoneCard key={card.id} card={card} now={now} isOpen={open?.id === card.id} onLift={onLift} />)}
         {more.length > 0 && (
-          <button data-done-more aria-expanded={isMoreOpen} onClick={() => setMoreOpen(!isMoreOpen)} style={{ width: CARD_W }}
-            className={cn("flex h-[72px] flex-none flex-col items-center justify-center gap-0.5 rounded-[12px] border-[1.5px] border-dashed text-[12.5px] text-text-muted hover:border-brand hover:bg-hover",
+          <button data-done-more aria-expanded={isMoreOpen} onClick={() => setMoreOpen(!isMoreOpen)}
+            className={cn("flex h-12 flex-none items-center justify-center gap-1.5 rounded-[12px] px-4 border-[1.5px] border-dashed text-[12.5px] text-text-muted hover:border-brand hover:bg-hover",
               isMoreOpen ? "border-brand text-text" : "border-line-strong")}>
-            <b className="text-xl text-text tabular-nums"><Num value={more.length} prefix="+" /></b><span>more done</span>
+            <b className="text-[13px] text-text tabular-nums"><Num value={more.length} prefix="+" /></b><span>more done</span>
           </button>
         )}
       </div>

@@ -6,6 +6,8 @@
 // branch) waits in the preview over it. Its buttons float over its top edge on hover. A card that waits for you shakes now and then,
 // harder the longer it waits; one at work glows. `level` is the canvas's
 // semantic zoom: far shows the state, the title and a question, drawn larger.
+// A small card (a done one in the band at the foot) is a strip: its state,
+// its title, and under it its repo and age.
 import { Star } from "lucide-react"
 import { type CSSProperties, memo } from "react"
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card"
@@ -57,10 +59,11 @@ type Props = {
   isReading?: boolean
   isDragging?: boolean
   isNoteTarget?: boolean
+  isSmall?: boolean
 }
 
-function SessionCardView({ card, now, level = "near", unscale = 1, isSelected = false, isReading = false, isDragging = false, isNoteTarget = false }: Props) {
-  const far = level === "far"
+function SessionCardView({ card, now, level = "near", unscale = 1, isSelected = false, isReading = false, isDragging = false, isNoteTarget = false, isSmall = false }: Props) {
+  const far = level === "far" && !isSmall
   const state = stateOf(card)
   const isDone = state === "done"
   const urgency = isDone ? null : urgencyOf(card, now)
@@ -82,7 +85,8 @@ function SessionCardView({ card, now, level = "near", unscale = 1, isSelected = 
       <HoverCardTrigger asChild>
         <article data-id={card.id} tabIndex={0} style={style} data-edge={edgeOf(card, { isSelected: ring || isNoteTarget, isWaiting: !!urgency })}
           className={cn(
-            "group/card relative flex h-[156px] w-72 origin-top cursor-grab flex-col gap-2 rounded-[12px] border border-line bg-surface px-3 pt-[11px] pb-2.5 shadow-[0_1px_2px_rgb(0_0_0/0.06)] select-none dark:border-line-strong",
+            "group/card relative flex origin-top cursor-grab rounded-[12px] border border-line bg-surface shadow-[0_1px_2px_rgb(0_0_0/0.06)] select-none dark:border-line-strong",
+            isSmall ? "h-12 w-full items-center gap-2.5 px-2.5" : "h-[156px] w-72 flex-col gap-2 px-3 pt-[11px] pb-2.5",
             "transition-[border-color,box-shadow,opacity] duration-120 hover:[animation-play-state:paused] focus-visible:outline-offset-2",
             // Quieter cards dim what they say, not the card itself: an opaque
             // card keeps its edge on the canvas, a see-through one sinks into it.
@@ -95,6 +99,7 @@ function SessionCardView({ card, now, level = "near", unscale = 1, isSelected = 
           )}>
           <Corner state={state} />
           {state === "working" && <i aria-hidden className="work-glow pointer-events-none absolute -inset-[3px] animate-breathe rounded-[14px] shadow-[0_0_0_2px_color-mix(in_srgb,var(--work)_55%,transparent),0_0_22px_color-mix(in_srgb,var(--work)_35%,transparent)]" />}
+          {isSmall ? <Strip card={card} now={now} /> : (<>
           <div className={cn("flex min-w-0 gap-[9px]", isDots ? "items-center" : "items-start")}>
             <span className={cn(!isDots && "-mt-px")}><StateIcon card={card} size={Math.round(big(isDots ? 34 : 22, 1.8))} /></span>
             <span title={card.title} className={cn("line-clamp-2 min-h-[2.6em] min-w-0 flex-1 text-sm leading-[1.3] [overflow-wrap:anywhere]", isDots && "flex items-center", isDone ? "font-[550]" : "font-semibold")}
@@ -112,6 +117,7 @@ function SessionCardView({ card, now, level = "near", unscale = 1, isSelected = 
             {!far && <span className="dot-time flex-none whitespace-nowrap">{ageOf(card, now)}</span>}
             {!isDone && !far && <Warnings card={card} now={now} />}
           </footer>
+          </>)}
           {!far && (
             <Actions card={card} isCompact
               className={cn(
@@ -125,6 +131,22 @@ function SessionCardView({ card, now, level = "near", unscale = 1, isSelected = 
       </HoverCardTrigger>
       <Peek card={card} now={now} />
     </HoverCard>
+  )
+}
+
+// A done card in the band: its state, its title, and under it its repo and age.
+function Strip({ card, now }: { card: Card; now: number }) {
+  return (
+    <>
+      <StateIcon card={card} size={20} />
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span title={card.title} className="truncate text-[13px] leading-[1.3] font-[550]">{card.title}</span>
+        <span className="flex min-w-0 items-center gap-[5px] text-[11px] leading-[1.3] text-faint" title={card.branch ? `${card.repo} · ${card.branch}` : card.repo}>
+          <i className="repo-dot size-[6px] flex-none rounded-[2px]" style={{ background: repoDot(card.repo) }} /><span className="truncate">{card.repo}</span>
+          <span className="dot-time flex-none whitespace-nowrap">{ageOf(card, now)}</span>
+        </span>
+      </span>
+    </>
   )
 }
 
