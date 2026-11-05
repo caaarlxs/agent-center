@@ -1,7 +1,9 @@
 // Which session created each organizer task. Tasks added since the session tag
 // exists carry it; older ones are found by the `organizer.py add "…"` command
 // Claude ran in a conversation. Scans only what each transcript added since
-// the last pass.
+// the last pass, and only the conversations of the last weeks: reading every
+// transcript on the Mac (gigabytes, sessions archived long ago) cost the
+// server its memory.
 
 import { readdir, stat } from "node:fs/promises"
 import { basename, join } from "node:path"
@@ -11,6 +13,7 @@ import { cleanText } from "./organizer"
 
 const ADD_RE = /organizer\.py\s+add\s+(?:--[\w-]+(?:\s+[^\s"']+)?\s+)*(["'])((?:\\.|(?!\1).)*)\1/gs
 
+const RECENT_MS = 30 * 86_400_000
 const scans = new Map<string, { offset: number }>()
 const links = new Map<string, { session: string; at: number }>() // clean text → newest session to add it
 
@@ -47,6 +50,7 @@ export function refreshLinks() {
         const path = join(PROJECTS_DIR, dir.name, name)
         try {
           const { size, mtimeMs } = await stat(path)
+          if (Date.now() - mtimeMs > RECENT_MS) continue
           const scan = scans.get(path) ?? { offset: 0 }
           scans.set(path, scan)
           if (size < scan.offset) scan.offset = 0

@@ -3,7 +3,7 @@
 // each pass reads only what was added since the last one.
 
 import { stat } from "node:fs/promises"
-import { readAppended } from "./files"
+import { own, readAppended } from "./files"
 import { transcriptPath } from "./transcript"
 
 const PR_URL = /https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+/g
@@ -21,7 +21,7 @@ export async function prUrlsIn(sessionId: string, limit = 5): Promise<string[]> 
   }
   const urls = scan
   scan.offset = await readAppended(path, scan.offset, size, text => {
-    for (const url of text.match(PR_URL) ?? []) urls.seen.set(url, ++urls.tick)
+    for (const url of text.match(PR_URL) ?? []) urls.seen.set(own(url), ++urls.tick)
   })
   return [...scan.seen.entries()].sort((a, b) => b[1] - a[1]).slice(0, limit).map(([url]) => url)
 }

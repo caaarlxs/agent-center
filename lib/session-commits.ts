@@ -9,7 +9,7 @@
 import { stat } from "node:fs/promises"
 import { basename, dirname } from "node:path"
 import { HOME } from "./config"
-import { readAppended } from "./files"
+import { own, readAppended } from "./files"
 import { run } from "./proc"
 import { touchedPaths } from "./session-changes"
 import { transcriptPath } from "./transcript"
@@ -65,7 +65,7 @@ async function scanned(id: string) {
   if (!scan || size < scan.offset) scans.set(id, (scan = { offset: 0, hashes: new Set(), folders: new Set() }))
   const s = scan
   s.offset = await readAppended(path, s.offset, size, text => {
-    for (const hash of hashesIn(text)) s.hashes.add(hash)
+    for (const hash of hashesIn(text)) if (!s.hashes.has(hash)) s.hashes.add(own(hash))
     for (const line of text.split("\n")) {
       if (!line.includes('"name":"Bash"')) continue
       try {

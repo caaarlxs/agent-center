@@ -78,7 +78,7 @@ export async function workState(cwd: string) {
 
 // What a folder holds that is not up yet (the card's git cells): files not
 // committed, commits not pushed. Asked at most every WORK_TTL_MS per folder.
-const WORK_TTL_MS = 20_000
+const WORK_TTL_MS = 60_000 // each ask is two git processes per folder
 const works = new Map<string, { at: number; work: Promise<{ uncommitted: number; unpushed: number } | null> }>()
 export function pendingWork(cwd: string) {
   const had = works.get(cwd)

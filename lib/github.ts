@@ -7,6 +7,9 @@ import { type FileDiff, parse } from "./changes"
 import { exec } from "./proc"
 
 const SUMMARY_TTL_MS = 120_000
+// A branch with no PR asks again less often: most cards have none, and every
+// ask is a `gh` process (a PR the session opens shows sooner from its transcript).
+const NO_PR_TTL_MS = 600_000
 const DETAIL_TTL_MS = 20_000
 const MAX_IN_FLIGHT = 3
 const PR_URL = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+$/
@@ -119,7 +122,7 @@ const BATCH = 20
 // repository) or a PR URL.
 export function lookup(key: string, ref: string, cwd: string): Pr | null {
   const hit = summaries.get(key)
-  if (!hit || Date.now() - hit.at > SUMMARY_TTL_MS) {
+  if (!hit || Date.now() - hit.at > (hit.pr ? SUMMARY_TTL_MS : NO_PR_TTL_MS)) {
     queue.set(key, { ref, cwd })
     drain()
   }

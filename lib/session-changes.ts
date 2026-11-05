@@ -4,11 +4,12 @@
 // it is now by undoing those edits, last first; the diff is git's, on the
 // two texts, so the Changes tab shows them as any other.
 
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { isAbsolute, join, relative } from "node:path"
 import { HOME } from "./config"
 import { type FileDiff, parse } from "./changes"
+import { readAppended } from "./files"
 import { exec } from "./proc"
 import { transcriptPath } from "./transcript"
 
@@ -48,23 +49,34 @@ function touchOf(r: any): Touch[] {
 }
 
 // Every file the session edited or wrote, with its edits in order, from what
-// each tool gave back.
+// each tool gave back. Each transcript is read once, then only what it added.
+type Scan = { offset: number; files: Map<string, Touch[]> }
+const scans = new Map<string, Scan>()
+
+function ingest(scan: Scan, chunk: string) {
+  for (const line of chunk.split("\n")) {
+    if (!line.includes('"filePath"')) continue
+    let r: any
+    try {
+      r = JSON.parse(line).toolUseResult
+    } catch {
+      continue
+    }
+    const touches = r && typeof r.filePath === "string" ? touchOf(r) : []
+    if (touches.length) scan.files.set(r.filePath, [...(scan.files.get(r.filePath) ?? []), ...touches])
+  }
+}
+
 async function touchesOf(ids: string[]) {
   const files = new Map<string, Touch[]>()
   for (const id of ids) {
     const path = await transcriptPath(id)
-    const text = path ? await readFile(path, "utf8").catch(() => "") : ""
-    for (const line of text.split("\n")) {
-      if (!line.includes('"filePath"')) continue
-      let r: any
-      try {
-        r = JSON.parse(line).toolUseResult
-      } catch {
-        continue
-      }
-      const touches = r && typeof r.filePath === "string" ? touchOf(r) : []
-      if (touches.length) files.set(r.filePath, [...(files.get(r.filePath) ?? []), ...touches])
-    }
+    const size = path ? await stat(path).then(s => s.size, () => 0) : 0
+    if (!path || !size) continue
+    let scan = scans.get(path)
+    if (!scan || size < scan.offset) scans.set(path, (scan = { offset: 0, files: new Map() }))
+    scan.offset = await readAppended(path, scan.offset, size, text => ingest(scan!, text))
+    for (const [file, touches] of scan.files) files.set(file, [...(files.get(file) ?? []), ...touches])
   }
   return files
 }

@@ -225,6 +225,15 @@ export async function saveSettings(change: Partial<Settings>) {
 // The terminal (~/.claude.json) and Claude desktop signed in with different
 // accounts: a session started in one opens in the other as a separate copy.
 // Shown only then: the fix is to sign in with the same one (/login).
+// Bun before 1.4.4 kept memory for every process it started (about 32 KB
+// each, gigabytes a day for the board) and never gave back what it read.
+const BUN_MIN = [1, 4, 4]
+export function bunStep(version: string): Step {
+  const parts = version.split(".").map(n => Number.parseInt(n, 10) || 0)
+  const isOld = BUN_MIN.some((min, i) => parts.slice(0, i).every((p, j) => p === BUN_MIN[j]) && (parts[i] ?? 0) < min)
+  return isOld ? { id: "bun", state: "outdated", detail: version } : { id: "bun", state: "done" }
+}
+
 export function accountStep(cli: string | null, desktop: string | null): Step | null {
   return cli && desktop && cli !== desktop ? { id: "account", state: "missing" } : null
 }
@@ -243,6 +252,7 @@ export async function setupStatus(): Promise<{ steps: Step[]; isReady: boolean; 
   const whisperReady = !!which("whisper-cli") && !!which("ffmpeg") && (await exists(join(MODELS_DIR, MODEL)))
   const steps: Step[] = [
     { id: "claude", state: (await exists("/Applications/Claude.app")) ? "done" : "unavailable" },
+    bunStep(Bun.version),
     { id: "hook", state: await hookState(s) },
     { id: "bridge", state: await bridgeState(), detail: installed ?? undefined },
     { id: "uploads", state: s.permissions?.allow?.includes(UPLOADS_RULE) ? "done" : "missing" },

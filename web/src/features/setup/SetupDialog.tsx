@@ -63,6 +63,10 @@ const STEPS: Record<string, Meta> = {
     title: "Same Claude account", need: "Recommended",
     text: "The terminal and Claude desktop are signed in with different accounts. A session started in the terminal opens in Claude desktop as a separate copy: what you write in one does not reach the other.",
   },
+  bun: {
+    title: "Bun 1.4.4 or newer", need: "Recommended",
+    text: "Older Bun keeps memory for every command the board runs and never gives it back: the server grows to gigabytes.",
+  },
   github: {
     title: "GitHub PRs", need: "Optional",
     text: "With the gh CLI signed in, each card shows its PRs and the conversation lets you review and merge them.",
@@ -275,6 +279,7 @@ function SetupStep({ step, status, busy, language, setLanguage, run }: StepProps
         </details>
       )}
       {step.id === "account" && <p className={text}>Sign in with the same account in both: in the terminal, <code>claude</code> then <code>/login</code>; or in Claude desktop, your account menu.</p>}
+      {step.id === "bun" && step.state !== "done" && <p className={text}>You have {step.detail}. In the terminal: <code>bun upgrade && launchctl kickstart -k gui/$(id -u)/local.agent-center</code></p>}
       {step.id === "github" && step.state !== "done" && <p className={text}>In the terminal: <code>{step.detail === "not-installed" ? "brew install gh && gh auth login" : "gh auth login"}</code></p>}
     </Row>
   )
