@@ -348,6 +348,11 @@ html[data-theme-switch]::view-transition-new(root) { animation: theme-curtain 60
 .md.file-md strong { color: var(--text); font-weight: 650; }
 .md.file-md p { white-space: pre-line; } /* a line of the file, a line on the page */
 .md.file-md .doc-box { cursor: pointer; }
+/* The page in blocks (DocPage): each its own .md, spaced as one text. */
+.doc-page .doc-block { margin-bottom: 12px; }
+.doc-page .md.file-md > h2:first-child { margin-top: 36px; }
+.doc-page .doc-block:first-child .md.file-md > h2:first-child { margin-top: 0; }
+.doc-page .md.file-md > h3:first-child { margin-top: 24px; }
 .md.file-md .doc-box:hover { border-color: var(--brand); }
 .md.file-md p > strong:first-child { color: var(--brand); }
 .md.file-md h1 { font-size: 26px; line-height: 1.25; margin: 0 0 16px; font-weight: 700; letter-spacing: -0.01em; color: var(--text); }

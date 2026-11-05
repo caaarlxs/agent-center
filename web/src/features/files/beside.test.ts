@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { boxParts, docWidth, toggleBox } from "./beside"
+import { blocksOf, boxParts, docWidth, toggleBox, withBlock } from "./beside"
 
 describe("docWidth", () => {
   it("uses your width, else the default, within the board's room", () => {
@@ -24,5 +24,26 @@ describe("toggleBox", () => {
     expect(toggleBox(text, 1)).toBe("1. A\n[ ] Sí  [x] No\n`[ ]` code\n```\n[ ] fenced\n```\n- [x] task")
     expect(toggleBox(text, 2)).toBe("1. A\n[ ] Sí  [ ] No\n`[ ]` code\n```\n[ ] fenced\n```\n- [ ] task")
     expect(toggleBox(text, 3)).toBe(text)
+  })
+})
+
+describe("blocksOf", () => {
+  it("cuts a document at its blank lines, never inside code, and joins back whole", () => {
+    const text = "# T\n\nPara qué.\nOtra línea.\n\n\n```\na\n\nb\n```\n\n- x\n- y\n"
+    const blocks = blocksOf(text)
+    expect(blocks.join("")).toBe(text)
+    expect(blocks.map(b => b.trim())).toEqual(["# T", "Para qué.\nOtra línea.", "```\na\n\nb\n```", "- x\n- y"])
+  })
+  it("keeps a file with no blank lines in one block", () => {
+    expect(blocksOf("a\nb")).toEqual(["a\nb"])
+    expect(blocksOf("")).toEqual([])
+  })
+})
+
+describe("withBlock", () => {
+  it("puts the edited block back, keeping the blank lines after it", () => {
+    const blocks = blocksOf("a\n\nb ____\n\nc")
+    expect(withBlock(blocks, 1, "b hecho")).toBe("a\n\nb hecho\n\nc")
+    expect(withBlock(blocks, 2, "c2\n")).toBe("a\n\nb ____\n\nc2")
   })
 })

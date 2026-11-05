@@ -22,3 +22,28 @@ export function toggleBox(text: string, n: number): string {
     return mark === " " ? "[x]" : "[ ]"
   })
 }
+
+// A document cut into the blocks you edit one at a time: at its blank lines
+// (which stay at the end of the block before them), never inside code.
+// Joined back, they are the text, whole.
+export function blocksOf(text: string): string[] {
+  const blocks: string[] = []
+  let block = ""
+  let isFenced = false
+  let hasGap = false // the block already ends in a blank line
+  for (const line of text.split(/(?<=\n)/)) {
+    const isBlank = !isFenced && !line.trim()
+    if (!isBlank && hasGap) (blocks.push(block), (block = ""), (hasGap = false))
+    if (/^\s*(```|~~~)/.test(line)) isFenced = !isFenced
+    block += line
+    if (isBlank && block.trim()) hasGap = true
+  }
+  if (block) blocks.push(block)
+  return blocks
+}
+
+// The text with block i written anew, its blank lines after it kept.
+export function withBlock(blocks: string[], i: number, edited: string): string {
+  const gap = blocks[i]!.match(/\s*$/)![0]
+  return blocks.map((b, n) => (n === i ? edited.replace(/\s+$/, "") + gap : b)).join("")
+}

@@ -8,7 +8,7 @@
 import Editor from "@monaco-editor/react"
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react"
 import { Kbd } from "@/components/ui/kbd"
-import { toggleBox } from "./beside"
+import { DocPage } from "./DocPage"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { get, post, sessionFileUrl as at } from "@/lib/api"
@@ -18,7 +18,7 @@ import { useNow } from "@/lib/now"
 import { cn } from "@/lib/utils"
 import { FileIcon } from "@/components/common/FileIcon"
 import { showImage } from "@/components/common/Lightbox"
-import { Markdown, copyText } from "@/features/conversation/Markdown"
+import { copyText } from "@/features/conversation/Markdown"
 import { ago } from "@/features/session/state"
 import { SideFlyout, useSideRoom } from "@/features/session/SideFlyout"
 import { kindOf, parseDelimited } from "./kinds"
@@ -92,16 +92,10 @@ function Body({ id, file, info, isSource }: { id: string; file: Listed; info: In
   const [hasNoPreview, setNoPreview] = useState(false)
   if (!info.isViewable) return <p className={muted}>Too large to show here ({bytesText(info.size)}).</p>
   const code = monaco.ready && text !== null ? <Source text={text} path={file.path} onSave={save} /> : <p className={muted}>Loading…</p>
-  // A box clicked on the page: ticked or cleared in the file. Its number is
-  // its place among the page's boxes (each block of the page draws its own).
-  const onBox = (e: React.MouseEvent) => {
-    const box = (e.target as HTMLElement).closest(".doc-box")
-    if (box && text !== null) void save(toggleBox(text, [...e.currentTarget.querySelectorAll(".doc-box")].indexOf(box)))
-  }
   switch (kind) {
     case "markdown":
       if (isSource) return code
-      return text === null ? <p className={muted}>Loading…</p> : <div onClick={onBox}><Markdown isDocument className="file-md mx-auto max-w-[760px] px-[22px] pt-[18px] pb-10">{text}</Markdown></div>
+      return text === null ? <p className={muted}>Loading…</p> : <DocPage text={text} onSave={save} />
     case "code":
       return code
     case "image":
