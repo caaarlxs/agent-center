@@ -305,6 +305,12 @@ html[data-theme-switch]::view-transition-new(root) { animation: theme-curtain 60
 .md pre code { color: inherit; background: none; border: 0; padding: 0; font-size: 12px; line-height: 1.55; white-space: inherit; }
 .md table { border-collapse: collapse; margin: 0 0 8px; font-size: 12.5px; display: block; overflow-x: auto; max-width: 100%; }
 .md th, .md td { border: 1px solid var(--line); padding: 4px 9px; text-align: left; vertical-align: top; }
+/* Streamdown's frame around a table: as wide as the table (never wider than
+   the text, scrolling sideways past it), one rounded border, the cells'
+   own outer borders hidden under it. */
+.md [data-streamdown=table-wrapper] { width: fit-content; max-width: 100%; margin: 0 0 10px; padding: 0; gap: 0; border: 0; background: none; }
+.md [data-streamdown=table-wrapper] > div { border: 1px solid var(--line); border-radius: 8px; background: none; }
+.md [data-streamdown=table-wrapper] table { display: table; width: auto; margin: 0; border-style: hidden; }
 .md th { background: var(--side); font-weight: 600; }
 .md blockquote { margin: 0 0 8px; padding-left: 10px; border-left: 3px solid var(--line-strong); color: var(--text-muted); }
 .md hr { border: 0; border-top: 1px solid var(--line); margin: 12px 0; }
