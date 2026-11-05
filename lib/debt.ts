@@ -66,7 +66,7 @@ export function ticketOf(points: DebtEntry[]) {
       : "Deuda técnica que los agentes del pipeline vieron y no tocaron, porque su ticket no la pedía.",
     "",
     ...repos.flatMap(r => [`${r}:`, ...lines.filter((_, i) => points[i]!.repo === r), ""]),
-    "Las reglas están en las reglas de código del equipo (deale-context / .claude/rules del repo).",
+    "Las reglas están en deale-context (context/03-engineering/rules/) y en .claude/rules del repo.",
   ].join("\n")
   return { summary: summary.slice(0, 250), description }
 }
