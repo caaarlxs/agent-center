@@ -1,15 +1,16 @@
 // Tells you what your sessions did, on every update of the board: the Dock
-// badge counts who asks; then the chime, the Mac's voice, the notification in
-// another window, and the once-only notice of the sessions with the bell.
+// badge counts who asks; then which one (a notice with its name and Open,
+// its card flashing, L to open it), the chime, the Mac's voice, the
+// notification in another window, and the bell's once-only chime.
 import { useEffect, useMemo, useRef } from "react"
 import { yours } from "@/features/board/state"
-import { toast } from "sonner"
 import { post } from "@/lib/api"
 import { useLive } from "@/lib/live"
 import { openNow } from "@/app/open-session"
 import { chime } from "./chime"
 import { WHAT, eventsOf, seenOf, type Seen } from "./events"
 import { canNotify, showNotice, sound, speech, watched } from "./prefs"
+import { tellWhich } from "./recent"
 
 const upper = (s: string) => s[0].toUpperCase() + s.slice(1)
 // What a notification says when the session's question is not known.
@@ -31,10 +32,12 @@ export function useAlerts() {
     const isAsk = events.some(e => e.kind !== "done")
     if (sound.get() === "on") chime(isAsk ? "ask" : "done")
 
+    const reading = openNow()?.id
+    tellWhich(events, reading)
+
     // The Mac reads the recap aloud; not the session you are reading now.
     const voice = speech.get()
     const bell = new Set(watched.get())
-    const reading = openNow()?.id
     if (voice.mode !== "off")
       for (const { card, kind } of events)
         if ((voice.mode === "all" || bell.has(card.id)) && !(reading === card.id && document.hasFocus()))
@@ -44,10 +47,7 @@ export function useAlerts() {
     const told = events.filter(e => bell.has(e.card.id))
     if (told.length) {
       if (sound.get() !== "on") chime(told.some(e => e.kind !== "done") ? "ask" : "done")
-      for (const { card, kind } of told) {
-        toast(`“${card.title}” ${WHAT[kind]}`)
-        if (canNotify() && !document.hasFocus()) void showNotice(card.title, upper(WHAT[kind]), card.id)
-      }
+      for (const { card, kind } of told) if (canNotify() && !document.hasFocus()) void showNotice(card.title, upper(WHAT[kind]), card.id)
       watched.set(watched.get().filter(id => !told.some(e => e.card.id === id)))
     }
 

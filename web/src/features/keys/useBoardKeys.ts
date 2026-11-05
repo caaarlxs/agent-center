@@ -2,6 +2,7 @@
 // added once; it reads the newest state from a ref, so two keys pressed
 // between renders both see what the first one did. The canvas adds its own
 // (+ − 0, Space, Esc on what is picked: Canvas.tsx).
+import { openLast } from "@/features/alerts/recent"
 import { useEffect, useMemo, useRef } from "react"
 import { useLive } from "@/lib/live"
 import { isTyping } from "@/lib/keys"
@@ -147,6 +148,7 @@ export function useBoardKeys({ nextUp, toggleSearch, openSearch, isSearching }: 
         }
         case "n": e.preventDefault(); return openDialog({ kind: "new" })
         case "f": e.preventDefault(); return nextUp()
+        case "l": e.preventDefault(); return openLast() // the last that finished or asked
         case "d": e.preventDefault(); return openDialog({ kind: "digest" })
         case "s": if (card?.column === "working") void stopSession(card); return
         case "u": if (card?.column === "pending") void boardAct(card, "unseen"); return

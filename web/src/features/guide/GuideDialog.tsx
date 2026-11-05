@@ -31,6 +31,7 @@ const SHORTCUTS: [string, string[][]][] = [
   ["Tiers: one place left · right", [["<"], [">"]]],
   ["Lanes per repo", [["G"]]],
   ["Next up: what waits for you", [["F"]]],
+  ["The last session that finished or asked", [["L"]]],
   ["New session", [["N"]]],
   ["Catch me up", [["D"]]],
   ["Stop the running turn", [["S"]]],

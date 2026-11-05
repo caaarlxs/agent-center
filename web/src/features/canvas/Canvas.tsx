@@ -9,6 +9,7 @@
 import {
   type Node, type NodeChange, type NodeProps, type OnNodeDrag, type ReactFlowInstance, Panel, SelectionMode, applyNodeChanges, useReactFlow, useStore,
 } from "@xyflow/react"
+import { ArrowRight } from "lucide-react"
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 import { Canvas as FlowCanvas } from "@/components/ai-elements/canvas"
@@ -20,7 +21,8 @@ import { isTyping } from "@/lib/keys"
 import { undoable } from "@/lib/toast"
 import { cn } from "@/lib/utils"
 import { openSession, useOpenSession } from "@/app/open-session"
-import { focusRequest, repoFilter } from "@/app/view-state"
+import { focusCard, focusRequest, repoFilter } from "@/app/view-state"
+import { edgeOf, recentEnds } from "@/features/alerts/recent"
 import { boardAct } from "@/features/board/act"
 import { drawingZone, noteAsked, selected as selectedCard, useBoardCards, whereTo } from "@/features/board/state"
 import { moveTo } from "@/features/session/actions"
@@ -439,6 +441,7 @@ export function Canvas() {
         style={{ "--xy-selection-background-color": "color-mix(in srgb, var(--brand) 12%, transparent)", "--xy-selection-border": "1.5px solid var(--brand)" } as CSSProperties}
       >
         <CanvasKeys />
+        <EdgeArrows at={at} cards={all} />
         <CanvasFlip root={box} />
         <FitTracker onFit={setFit} />
         <BandScaleTracker />
@@ -452,6 +455,38 @@ export function Canvas() {
 
 // Cards that arrive on the canvas or leave it (to Done, archived) animate as
 // on the other views (flip.ts); run when React Flow has drawn its nodes.
+// The sessions that just finished or asked, off screen: an arrow on the
+// canvas's edge toward each, with its name; a click goes there. Gone once
+// you open it (it is read) or after half an hour.
+function EdgeArrows({ at, cards }: { at: Record<string, Point>; cards: Card[] }) {
+  const recent = recentEnds.use()
+  const [tx, ty, zoom] = useStore(s => s.transform)
+  const width = useStore(s => s.width)
+  const height = useStore(s => s.height) - useBandHeight()
+  const byId = new Map(cards.map(c => [c.id, c]))
+  const arrows = recent.flatMap(({ id }) => {
+    const card = byId.get(id)
+    const p = at[id]
+    if (!card || !p || !(card.isUnread || card.column === "asking")) return []
+    const edge = edgeOf({ x: (p.x + CARD_W / 2) * zoom + tx, y: (p.y + heightOf(id) / 2) * zoom + ty }, { width, height })
+    return edge ? [{ card, edge }] : []
+  })
+  // The label leans away from the nearer side, so it stays inside the canvas.
+  const shift = (v: number, max: number) => `${-Math.round((v / Math.max(1, max)) * 100)}%`
+  return (
+    <>
+      {arrows.map(({ card, edge }) => (
+        <button key={card.id} onClick={() => focusCard(card.id)} title={`Go to “${card.title}”`}
+          style={{ left: edge.x, top: edge.y, transform: `translate(${shift(edge.x, width)}, ${shift(edge.y, height)})` }}
+          className="absolute z-20 flex max-w-[220px] items-center gap-1.5 rounded-full border border-brand bg-raised py-1 pr-3 pl-2 text-[12px] font-semibold text-text shadow-pop hover:bg-hover active:scale-[0.97]">
+          <ArrowRight className="size-3.5 shrink-0 text-brand" style={{ transform: `rotate(${edge.angle}deg)` }} />
+          <span className="truncate">{card.title}</span>
+        </button>
+      ))}
+    </>
+  )
+}
+
 function CanvasFlip({ root }: { root: React.RefObject<HTMLDivElement | null> }) {
   useStore(s => s.nodes)
   useFlip(root, `canvas|${repoFilter.use()}`, whereTo)
