@@ -14,7 +14,7 @@ import { Markdown } from "@/features/conversation/Markdown"
 import { ago, repoDot } from "@/features/session/state"
 import type { Job } from "@server/jobs"
 import type { AgentStage } from "@server/pipeline"
-import { AtWork, BuildPanel, FoldButton, PlanPanel, ReviewPanel, Runs, TestPanel, act, openLog } from "./Pipeline"
+import { AtWork, BuildPanel, FoldButton, PlanPanel, ReviewPanel, Runs, TestPanel, act, openLog, useConfirm } from "./Pipeline"
 import { PipelineMark, liveLine } from "./PipelineMark"
 import { SPECIALISTS, jobLabel } from "./jobs-board"
 import { costOf, dollars } from "./pipeline-board"
@@ -56,6 +56,7 @@ function JobNow({ job, onClose }: { job: Job; onClose: () => void }) {
           : <span className={cn("truncate text-[13.5px] font-semibold", job.status === "failed" ? "text-bad" : "text-text")}>{line}</span>}
         <span className="text-[11.5px] text-faint tabular-nums">{ago(isRunning ? job.startedAt : (job.endedAt ?? job.startedAt), now)}{runs.length ? ` · ≈${dollars(costOf(runs))}` : ""}</span>
       </div>
+      {!isRunning && <OnInPipeline job={job} onClose={onClose} />}
       {isRunning ? job.sessionId && <button className="shrink-0 text-xs font-semibold text-text-muted hover:text-text" onClick={() => openLog(job.sessionId!)}>Log</button>
         : <>
             <button className="shrink-0 text-xs font-semibold text-faint hover:text-text" onClick={() => void clear()}>Clear</button>
@@ -65,12 +66,24 @@ function JobNow({ job, onClose }: { job: Job; onClose: () => void }) {
   )
 }
 
+// A refinement, a plan or a build of a ticket goes on in the pipeline from
+// where it ended (it asks once more: it labels the ticket, a build moves it in
+// Jira); once there, a link to it.
+function OnInPipeline({ job, onClose }: { job: Job; onClose: () => void }) {
+  const [isAsking, confirm] = useConfirm()
+  const adopts = useLive(l => l.snapshot?.adopts) ?? []
+  if (job.continued) return <button className="shrink-0 text-xs font-semibold text-brand hover:underline" onClick={() => openDialog({ kind: "ticket", key: job.continued! })}>In the pipeline</button>
+  if (job.status !== "ready" || !job.ticket || !adopts.includes(job.stage as AgentStage)) return null
+  const go = () => confirm(async () => (await act("/api/jobs/continue", { id: job.id }, `${job.ticket} goes on in the pipeline`)) && (onClose(), openDialog({ kind: "ticket", key: job.ticket! })))
+  return <Button variant={isAsking ? "destructive" : "default"} className="h-7 shrink-0 text-xs" onClick={go}>{isAsking ? "Sure? Continue in the pipeline" : "Continue in the pipeline"}</Button>
+}
+
 // What it left, by specialist: a plan's units, a build's PRs, a review's
 // findings, a test's results; and the questions it could not decide.
 function StagePanel({ job }: { job: Job }) {
   if (job.stage === "plan") return <PlanPanel state={job} steps={null} />
   if (job.stage === "build") return <BuildPanel state={job} />
-  if (job.stage === "review") return <ReviewPanel state={job} onFix={() => {}} />
+  if (job.stage === "review") return <ReviewPanel state={job} onFix={() => {}} onPublish={ids => void act("/api/jobs/publish", { id: job.id, findings: ids }, "Published to the PRs")} />
   if (job.stage === "test" || job.stage === "smoke") return <TestPanel state={job} release={null} />
   return null
 }

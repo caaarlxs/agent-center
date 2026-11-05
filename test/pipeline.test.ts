@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { blocking, checkedIn, toFixNow, MARK, answeredAfter, answersComment, argsFor, parseResult, pipelineKeyOf, stageToRun, unbuilt, withRun, questionsComment, snapshotOf, prodWarning, autoNext, linksFigma } from "../lib/pipeline"
+import { blocking, checkedIn, isAdopted, toFixNow, MARK, answeredAfter, answersComment, argsFor, parseResult, pipelineKeyOf, stageToRun, unbuilt, withRun, questionsComment, snapshotOf, prodWarning, autoNext, linksFigma } from "../lib/pipeline"
 
 const questions = [
   { id: "Q1", question: "¿Cuál es el copy?", proposal: "El del ticket" },
@@ -325,5 +325,12 @@ describe("a unit's sub-tasks", () => {
     const out = parseResult(JSON.stringify({ verdict: "ready", units }), "plan").units
     expect(out[0]!.subtasks).toEqual(["PP-2795", "PP-2792", "PP-2793"])
     expect(out[1]!.subtasks).toEqual(["PP-1"])
+  })
+})
+
+describe("isAdopted", () => {
+  it("a job's work the pipeline takes on: its stage's files, the ticket and its context; not its worktrees, nor a review's or a test's", () => {
+    const names = ["refine.md", "refine.summary.md", "plan.json", "build.json", "build.progress.json", "build.checklist.json", "ticket.md", "context", "work", "state.json", "review.json", "test.md", "prs.json", "build.log"]
+    expect(names.filter(isAdopted)).toEqual(["refine.md", "refine.summary.md", "plan.json", "build.json", "build.progress.json", "build.checklist.json", "ticket.md", "context"])
   })
 })

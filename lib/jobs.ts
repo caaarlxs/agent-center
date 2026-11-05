@@ -22,11 +22,11 @@ import { activityOf } from "./activity"
 import { applyAction } from "./board"
 import { exec } from "./proc"
 import { keptFiles } from "./evidence"
-import { AS_AGENT, STAGES_DIR, TAG, buildProgress, checkedIn, isAlive, linkedPages, linksFigma, parseResult, putAway, snapshotOf, spawnStage, stateIn, ticketWithFamily, verbOf, withRun, withSpend, writeContextPages, type AgentStage, type PipelineState, type Unit } from "./pipeline"
+import { AS_AGENT, MARK, STAGES_DIR, TAG, adoptJob, buildProgress, checkedIn, isAlive, linkedPages, linksFigma, parseResult, putAway, snapshotOf, spawnStage, stateIn, ticketWithFamily, verbOf, withRun, withSpend, writeContextPages, type AgentStage, type Finding, type PipelineState, type Unit } from "./pipeline"
 
 export type PrInfo = { url: string; repo: string; number: number; title: string; head: string; base: string; body: string; worktree: string | null }
 export type JobInput = { ticket: string | null; prs: string[] }
-export type Job = PipelineState & { id: string; loose: true; ticket: string | null; prs: PrInfo[]; done?: Done }
+export type Job = PipelineState & { id: string; loose: true; ticket: string | null; prs: PrInfo[]; done?: Done; published?: string[]; continued?: string }
 
 const ROOT = join(DATA_DIR, "pipeline")
 const JOBS = join(ROOT, "jobs")
@@ -246,6 +246,66 @@ export async function resolveJob(input: JobInput, findsPrs = true): Promise<Reso
   const more = await Promise.all(found.map(u => prInfo(u).catch(() => null)))
   const error = input.ticket && !t ? `${input.ticket} is not in Jira` : missing ? `${missing} PR${missing === 1 ? "" : "s"} not found on GitHub` : null
   return { ticket: t ? { key: t.key, summary: t.summary, isNamed: !input.ticket } : null, prs: [...prs.map(p => brief(p, false)), ...more.filter((p): p is PrInfo => !!p).map(p => brief(p, true))], error }
+}
+
+// ---------- on in the pipeline ----------
+
+// A refinement, a plan or a build goes on in the pipeline from where the job
+// left it (lib/pipeline.ts adoptJob); a build's worktrees move there with git.
+export async function continueJob(id: string) {
+  const job = isJobId(id) ? await stateOf(id) : null
+  if (!job || job.status !== "ready" || !job.ticket) throw new Error("Not a job that ended with a ticket")
+  if (job.continued) throw new Error(`Already in the pipeline as ${job.continued}`)
+  const { units, checklist, checked, scripts, summary, sessionId, startedAt } = job
+  await adoptJob(job.ticket, dirOf(id), job.stage as AgentStage, { units, checklist, checked, scripts, summary, sessionId, startedAt })
+  if (job.stage === "build") await moveWorktrees(join(dirOf(id), "work"), join(ROOT, job.ticket, "work"))
+  await save({ ...job, continued: job.ticket })
+  return { key: job.ticket }
+}
+
+async function moveWorktrees(from: string, to: string) {
+  await mkdir(to, { recursive: true })
+  for (const name of await readdir(REPOS).catch(() => [] as string[])) {
+    const list = await exec(["git", "-C", join(REPOS, name), "worktree", "list", "--porcelain"])
+    for (const path of list.stdout.split("\n").filter(l => l.startsWith(`worktree ${from}/`)).map(l => l.slice(9)))
+      await exec(["git", "-C", join(REPOS, name), "worktree", "move", path, join(to, path.slice(from.length + 1))], { timeoutMs: 60_000 })
+  }
+}
+
+// ---------- publishing a review ----------
+
+// The findings you chose, as one review a PR on GitHub: each on its line where
+// it has one, the rest in the review's text (those of no PR, in the first one's).
+const SEVERITY_NAME = { blocker: "Bloqueante", major: "Importante", minor: "Menor" } as const
+const findingText = (f: Finding) => `**${SEVERITY_NAME[f.severity]}** · ${f.title}${f.detail ? `\n\n${f.detail}` : ""}${f.fix ? `\n\nArreglo: ${f.fix}` : ""}`
+export function reviewsFor(findings: Finding[], units: Unit[], ticket: string | null) {
+  const first = units[0]?.id
+  return units.map(u => {
+    const here = findings.filter(f => f.unit === u.id || (!units.some(x => x.id === f.unit) && u.id === first))
+    const inline = here.filter(f => f.file && f.line)
+    const loose = here.filter(f => !(f.file && f.line))
+    const body = [`${MARK} · Revisión${ticket ? ` de ${ticket}` : ""}: ${here.length} hallazgo${here.length === 1 ? "" : "s"}.`, ...loose.map(findingText)].join("\n\n")
+    return { pr: u.pr!, body, comments: inline.map(f => ({ path: f.file!, line: f.line!, side: "RIGHT" as const, body: findingText(f) })), count: here.length }
+  }).filter(r => r.count > 0 && r.pr)
+}
+
+// Posts them, once you chose them. A line GitHub refuses (it is not in the
+// change) leaves the inline comments out: they go in the review's text instead.
+export async function publishReview(id: string, ids: string[]) {
+  const job = isJobId(id) ? await stateOf(id) : null
+  if (!job || job.stage !== "review" || job.status === "running" || job.status === "failed") throw new Error("Not a review that ended")
+  const chosen = (job.findings ?? []).filter(f => ids.includes(f.id))
+  if (!chosen.length) throw new Error("Choose the findings to publish")
+  const reviews = reviewsFor(chosen, job.units ?? [], job.ticket)
+  for (const r of reviews) {
+    const ref = prRef(r.pr)!
+    const post = (payload: object) => exec(["gh", "api", "--method", "POST", `repos/${ref.owner}/${ref.repo}/pulls/${ref.number}/reviews`, "--input", "-"], { input: JSON.stringify(payload), timeoutMs: 30_000 })
+    let sent = await post({ event: "COMMENT", body: r.body, comments: r.comments })
+    if (sent.code !== 0 && r.comments.length) sent = await post({ event: "COMMENT", body: [r.body, ...r.comments.map(c => `\`${c.path}:${c.line}\`\n\n${c.body}`)].join("\n\n") })
+    if (sent.code !== 0) throw new Error(`${ref.repo} #${ref.number}: ${sent.stderr.trim() || "GitHub refused the review"}`)
+  }
+  await save({ ...job, published: [...new Set([...(job.published ?? []), ...chosen.map(f => f.id)])] })
+  return { prs: reviews.length }
 }
 
 // ---------- the run ----------

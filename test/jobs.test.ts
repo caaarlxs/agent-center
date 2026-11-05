@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { jobPrompt, nextJobId, prRef, ticketFromPrs, unitsOfPrs, validJob, type PrInfo } from "../lib/jobs"
+import { jobPrompt, nextJobId, prRef, reviewsFor, ticketFromPrs, unitsOfPrs, validJob, type PrInfo } from "../lib/jobs"
 
 const pr = (n: number, extra: Partial<PrInfo> = {}): PrInfo => ({ url: `https://github.com/acme/web/pull/${n}`, repo: "web", number: n, title: `PR ${n}`, head: `feat/x-${n}`, base: "master", body: "", worktree: null, ...extra })
 
@@ -83,5 +83,24 @@ describe("every specialist", () => {
   it("the tester stays in staging; the prod checker only reads", () => {
     expect(jobPrompt("test", "JOB-2", "/d", job())).toContain("Solo staging")
     expect(jobPrompt("smoke", "JOB-2", "/d", job())).toContain("Solo lectura")
+  })
+})
+
+describe("reviewsFor", () => {
+  const units = unitsOfPrs([pr(4), pr(5, { url: "https://github.com/acme/api/pull/5", repo: "api" })])
+  const f = (id: string, unit: string | null, extra = {}) => ({ id, unit, severity: "major" as const, file: null, line: null, title: `T${id}`, detail: "D", fix: "", ...extra })
+  it("one review a PR, with the findings you chose in it: on their line where they have one, else in its text", () => {
+    const out = reviewsFor([f("F1", "U1", { file: "a.ts", line: 3, fix: "X" }), f("F2", "U1"), f("F3", "U2")], units, "PP-1")
+    expect(out.map(r => r.pr)).toEqual(["https://github.com/acme/web/pull/4", "https://github.com/acme/api/pull/5"])
+    expect(out[0]!.comments).toEqual([{ path: "a.ts", line: 3, side: "RIGHT", body: "**Importante** · TF1\n\nD\n\nArreglo: X" }])
+    expect(out[0]!.body).toContain("PP-1")
+    expect(out[0]!.body).toContain("**Importante** · TF2")
+    expect(out[0]!.body).not.toContain("TF1")
+    expect(out[1]!.body).toContain("TF3")
+  })
+  it("a finding of no PR goes in the first one's text; a PR with nothing chosen gets nothing", () => {
+    const out = reviewsFor([f("F1", null)], units, null)
+    expect(out).toHaveLength(1)
+    expect(out[0]!.body).toContain("TF1")
   })
 })

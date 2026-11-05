@@ -31,7 +31,7 @@
 import { spawn } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { openSync } from "node:fs"
-import { mkdir, readFile, rename } from "node:fs/promises"
+import { cp, mkdir, readFile, rename } from "node:fs/promises"
 import { join } from "node:path"
 import { DATA_DIR } from "./config"
 import { writeJsonAtomic } from "./files"
@@ -759,6 +759,26 @@ export async function startPipeline(key: string, take = false, asked?: Stage, ch
   if (stage === "build" && state?.stage === "review") await writeJsonAtomic(join(dirOf(key), "review.fix.json"), { fix: toFixNow(state.findings, chosen) }, { pretty: true })
   else if (stage !== "build") await rename(join(dirOf(key), "review.fix.json"), join(dirOf(key), "review.fix.json.prev")).catch(() => {})
   void run(key, (state?.runs ?? 0) + 1, stage, auto)
+}
+
+// A job's work (lib/jobs.ts) taken on by the pipeline where it ended: its
+// files, the ticket at that stage and done, waiting at the next one's door.
+// Only on a ticket of yours (the label checks it) and not in the pipeline yet;
+// a build is followed in Jira as if the pipeline had built it.
+const ADOPTED = /^((refine|plan|build)(\.summary)?\.(md|json)|build\.(progress|checklist)\.json|ticket\.md|context|work)$/
+export const ADOPTS: AgentStage[] = ["refine", "plan", "build"]
+export const isAdopted = (name: string) => ADOPTED.test(name) && name !== "work"
+export async function adoptJob(key: string, from: string, stage: AgentStage, fields: Partial<PipelineState>) {
+  if (!isKey(key)) throw new Error("Not a ticket key")
+  if (!ADOPTS.includes(stage)) throw new Error("Only a refinement, a plan or a build goes on in the pipeline")
+  if (await stateOf(key)) throw new Error(`${key} is already in the pipeline: start it over there first`)
+  await labelTicket(key, [LABELS.on, STAGE[stage].label], [])
+  const dir = dirOf(key)
+  await mkdir(dir, { recursive: true })
+  // A build's worktrees move with git (jobs.ts), not as files.
+  for (const f of await readdir(from)) if (isAdopted(f)) await cp(join(from, f), join(dir, f), { recursive: true })
+  const done: PipelineState = { ...EMPTY(key, 1, stage), ...fields, stage, status: "ready", endedAt: Date.now() }
+  await save(stage === "build" ? { ...done, ...(await inJira("built", done)) } : done)
 }
 
 // Stop running on its own: the stage at work ends, and the next waits for you.

@@ -11,7 +11,7 @@
 // and start the stage again. Start over clears the run and the labels; the
 // comments stay. On someone else's ticket it runs only once you take it
 // (two clicks: it is assigned to you).
-import { AlertTriangle, Check, ChevronRight, Database, FastForward, FlaskConical, ListChecks, Play, RotateCcw, Route, ShieldCheck } from "lucide-react"
+import { AlertTriangle, Check, ChevronRight, Database, FastForward, FlaskConical, ListChecks, Play, RotateCcw, Route, Send, ShieldCheck } from "lucide-react"
 import { useEffect, useState, type ReactNode } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -59,7 +59,7 @@ export async function act(path: string, body: object, done: string) {
 }
 
 // A click that asks once more (it turns red) before it does what it says.
-function useConfirm(): [boolean, (then: () => void) => void] {
+export function useConfirm(): [boolean, (then: () => void) => void] {
   const [isAsking, setAsking] = useState(false)
   useEffect(() => {
     if (!isAsking) return
@@ -250,7 +250,7 @@ function Scripts({ scripts, units }: { scripts: PlanScript[]; units: Unit[] }) {
 // click shows why and the fix); the ones a build fixed since, ticked.
 const SEVERITY: Record<Severity, { rank: number; dot: string }> = { blocker: { rank: 0, dot: "bg-bad" }, major: { rank: 1, dot: "bg-ask" }, minor: { rank: 2, dot: "bg-line-strong" } }
 
-function FindingRow({ finding: f, unit, isFixed, isChosen, onChoose }: { finding: Finding; unit: Unit | undefined; isFixed: boolean; isChosen: boolean | null; onChoose: () => void }) {
+function FindingRow({ finding: f, unit, isFixed, isPublished = false, isChosen, onChoose }: { finding: Finding; unit: Unit | undefined; isFixed: boolean; isPublished?: boolean; isChosen: boolean | null; onChoose: () => void }) {
   const [isOpen, setOpen] = useState(false)
   const where = f.file ? `${f.file}${f.line ? `:${f.line}` : ""}` : ""
   return (
@@ -264,7 +264,7 @@ function FindingRow({ finding: f, unit, isFixed, isChosen, onChoose }: { finding
         {isFixed ? <Check size={12} className="text-work" /> : <i className={cn("size-2 translate-y-[-1px] rounded-full", SEVERITY[f.severity].dot)} title={f.severity} />}
         <span className={cn("text-[13px] leading-[1.45]", isFixed ? "text-text-muted" : "text-text")}>{f.title}</span>
         {/* The build says it fixed it: only the next review confirms it. */}
-        <span className={cn("text-[11px]", isFixed ? "font-semibold text-ask" : "text-faint")}>{isFixed ? "fixed · to confirm" : f.severity}</span>
+        <span className={cn("text-[11px]", isFixed ? "font-semibold text-ask" : "text-faint")}>{isFixed ? "fixed · to confirm" : isPublished ? `${f.severity} · published` : f.severity}</span>
         <span className="col-start-2 flex min-w-0 items-baseline gap-2 text-[11.5px] text-faint">
           {unit && <span className="inline-flex shrink-0 items-center gap-1.5"><i className="size-[7px] rounded-[2px]" style={{ background: repoDot(unit.repo) }} />{unit.repo}</span>}
         </span>
@@ -285,19 +285,32 @@ function FindingRow({ finding: f, unit, isFixed, isChosen, onChoose }: { finding
 // You choose what the build fixes: the blockers and majors come chosen, the
 // minors not; one button fixes them all in one run. With blockers chosen it
 // is the next step; with only minors, a quiet one beside staging.
-function Findings({ state, onFix }: { state: PipelineState; onFix: (ids: string[]) => void }) {
+// A job's review (lib/jobs.ts) publishes what you chose to its PRs instead: it asks once more.
+function PublishButton({ n, onGo }: { n: number; onGo: () => void }) {
+  const [isAsking, confirm] = useConfirm()
+  const label = `Publish ${n} to the PRs`
+  return (
+    <Button variant={isAsking ? "destructive" : "outline"} className="mt-1 h-8 self-start gap-1.5 text-xs" onClick={() => confirm(onGo)}>
+      <Send size={13} />{isAsking ? `Sure? ${label}` : label}
+    </Button>
+  )
+}
+
+function Findings({ state, onFix, onPublish }: { state: PipelineState; onFix: (ids: string[]) => void; onPublish?: (ids: string[]) => void }) {
   const findings = [...(state.findings ?? [])].sort((a, b) => SEVERITY[a.severity].rank - SEVERITY[b.severity].rank)
   const fixed = new Set(state.fixed ?? [])
-  const canChoose = state.stage === "review" && state.status === "ready" && !isJob(state)
+  const published = new Set((state as { published?: string[] }).published ?? [])
+  const canChoose = state.stage === "review" && (state.status === "ready" || state.status === "needs-info") && (isJob(state) ? !!onPublish : state.status === "ready")
   const [chosen, setChosen] = useState(() => new Set(findings.filter(f => f.severity !== "minor").map(f => f.id)))
   const choose = (id: string) => setChosen(c => (c.has(id) ? new Set([...c].filter(x => x !== id)) : new Set([...c, id])))
   const isBlocking = findings.some(f => chosen.has(f.id) && f.severity !== "minor")
   return (
     <div className="flex flex-col gap-1">
       <ol className="m-0 list-none p-0">
-        {findings.map(f => <FindingRow key={f.id} finding={f} unit={state.units?.find(u => u.id === f.unit)} isFixed={fixed.has(f.id)} isChosen={canChoose ? chosen.has(f.id) : null} onChoose={() => choose(f.id)} />)}
+        {findings.map(f => <FindingRow key={f.id} finding={f} unit={state.units?.find(u => u.id === f.unit)} isFixed={fixed.has(f.id)} isPublished={published.has(f.id)} isChosen={canChoose ? chosen.has(f.id) : null} onChoose={() => choose(f.id)} />)}
       </ol>
-      {canChoose && chosen.size > 0 && (
+      {canChoose && chosen.size > 0 && onPublish && <PublishButton n={chosen.size} onGo={() => onPublish([...chosen])} />}
+      {canChoose && chosen.size > 0 && !onPublish && (
         <Button variant={isBlocking ? "default" : "outline"} className="mt-1 h-8 self-start gap-1.5 text-xs" onClick={() => onFix([...chosen])}>
           <Play size={13} className="fill-current" />Fix {chosen.size} with build
         </Button>
@@ -514,7 +527,7 @@ export function BuildPanel({ state }: { state: PipelineState }) {
 }
 
 const COUNTS: [Severity, string, string][] = [["blocker", "Blocker", "text-bad"], ["major", "Major", "text-ask"], ["minor", "Minor", "text-text"]]
-export function ReviewPanel({ state, onFix }: { state: PipelineState; onFix: (ids: string[]) => void }) {
+export function ReviewPanel({ state, onFix, onPublish }: { state: PipelineState; onFix: (ids: string[]) => void; onPublish?: (ids: string[]) => void }) {
   const findings = state.findings ?? []
   return (
     <div className="flex flex-col gap-3">
@@ -524,7 +537,7 @@ export function ReviewPanel({ state, onFix }: { state: PipelineState; onFix: (id
           return <Tile key={severity}><span className="text-[11.5px] text-faint">{label}</span><span className={cn("text-[20px] leading-none font-semibold tabular-nums", n ? tone : "text-faint")}>{n}</span></Tile>
         })}
       </div>
-      {findings.length > 0 && <Findings state={state} onFix={onFix} />}
+      {findings.length > 0 && <Findings state={state} onFix={onFix} onPublish={onPublish} />}
     </div>
   )
 }

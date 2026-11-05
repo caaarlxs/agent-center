@@ -18,7 +18,7 @@ import { readDesktop, type DesktopIndex } from "./desktop"
 import { PR_LIMIT, lookup as prLookup, type Pr } from "./github"
 import { running } from "./launch"
 import { readTasks } from "./organizer"
-import { isPipelineOn, pipelineKeyOf, pipelines } from "./pipeline"
+import { ADOPTS, isPipelineOn, pipelineKeyOf, pipelines } from "./pipeline"
 import { LOOSE, jobs } from "./jobs"
 import { progressOf } from "./plan"
 import { prUrlsIn } from "./prs"
@@ -321,6 +321,7 @@ export async function snapshot() {
     pipelines: await pipelines(),
     jobs: await jobs(),
     loose: LOOSE, // the specialists that take jobs
+    adopts: ADOPTS, // the jobs whose work goes on in the pipeline
     update: await freshness(),
     version,
   }

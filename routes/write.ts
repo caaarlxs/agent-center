@@ -3,7 +3,7 @@
 
 import { commentOn, connect, disconnect, moveTicket } from "../lib/jira"
 import { actOnDebt, answerPipeline, isStage, resetPipeline, rollBackPipeline, startPipeline, stopAuto, stepPipeline } from "../lib/pipeline"
-import { clearJob, isLoose, startJob } from "../lib/jobs"
+import { clearJob, continueJob, isLoose, publishReview, startJob } from "../lib/jobs"
 import { chooseIcon, isIcon } from "../lib/app-icon"
 import { choosePet, openPack } from "../lib/pets"
 import { stat } from "node:fs/promises"
@@ -186,6 +186,11 @@ export async function handleWrite(path: string, body: Record<string, unknown>): 
     case "/api/jobs/start":
       if (!isLoose(body.stage)) return json({ error: "That specialist takes no jobs yet" }, 400)
       return await startJob(body.stage, { ticket: body.ticket, prs: body.prs }).then(r => (refreshSoon(), json({ ok: true, ...r })), (err: Error) => json({ error: err.message }, 400))
+    // A job's work, on in the pipeline; a review's findings you chose, to its PRs.
+    case "/api/jobs/continue":
+      return await continueJob(String(body.id ?? "")).then(r => (refreshSoon(), json({ ok: true, ...r })), (err: Error) => json({ error: err.message }, 400))
+    case "/api/jobs/publish":
+      return await publishReview(String(body.id ?? ""), Array.isArray(body.findings) ? body.findings.map(String) : []).then(r => (refreshSoon(), json({ ok: true, ...r })), (err: Error) => json({ error: err.message }, 400))
     case "/api/jobs/clear":
       return await clearJob(String(body.id ?? "")).then(() => (refreshSoon(), json({ ok: true })), (err: Error) => json({ error: err.message }, 400))
     case "/api/pipeline/reset":
