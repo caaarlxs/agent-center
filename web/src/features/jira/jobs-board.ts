@@ -50,4 +50,14 @@ export const jobToSend = (draft: Draft, resolved: Resolved | null, dropped: stri
   prs: (resolved?.prs.map(p => p.url) ?? draft.prs).filter(u => !dropped.includes(u)),
 })
 
+// What stops the job, in a line: what you pasted, what the lookup found wrong, no PR to review.
+export function draftProblem(pasteError: string | null, resolved: Resolved | null, takesPrs: boolean): string | null {
+  if (pasteError || resolved?.error) return pasteError ?? resolved!.error
+  return resolved && takesPrs && !resolved.prs.length ? `No open PR names ${resolved.ticket?.key ?? "the ticket"}` : null
+}
+
+// It goes once looked up, with nothing wrong, and with what its specialist needs.
+export const canSendDraft = (sent: Draft, resolved: Resolved | null, isLooking: boolean, takesPrs: boolean) =>
+  !isLooking && !!resolved && !resolved.error && (takesPrs ? sent.prs.length > 0 : !!resolved.ticket)
+
 export const sendText = (stage: AgentStage, prs: number) => (stage === "review" ? `Review ${prs} PR${prs === 1 ? "" : "s"}` : "Send")

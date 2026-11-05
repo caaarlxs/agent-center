@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { SPECIALISTS, addToDraft, clampSplit, jobColumn, jobLabel, jobToSend, parseJobInput, sendText } from "./jobs-board"
+import { SPECIALISTS, addToDraft, canSendDraft, draftProblem, clampSplit, jobColumn, jobLabel, jobToSend, parseJobInput, sendText } from "./jobs-board"
 
 const job = (extra = {}) => ({ id: "JOB-1", stage: "review", ticket: null, prs: [{ url: "https://github.com/o/web/pull/4", repo: "web", number: 4 }], ...extra }) as never
 
@@ -66,5 +66,21 @@ describe("a job you write", () => {
     expect(sendText("review", 1)).toBe("Review 1 PR")
     expect(sendText("review", 3)).toBe("Review 3 PRs")
     expect(sendText("plan", 0)).toBe("Send")
+  })
+})
+
+describe("what stops a job", () => {
+  const found = (prs: number, error: string | null = null) => ({ ticket: { key: "PP-1", summary: "", isNamed: false }, prs: Array.from({ length: prs }, (_, i) => ({ url: `u${i}`, repo: "web", number: i, title: "", isFound: true })), error })
+  it("says what you pasted wrong, what the lookup found wrong, or that no PR names the ticket", () => {
+    expect(draftProblem("Not a ticket or a PR: x", null, true)).toBe("Not a ticket or a PR: x")
+    expect(draftProblem(null, found(1, "PP-9 is not in Jira"), true)).toBe("PP-9 is not in Jira")
+    expect(draftProblem(null, found(0), true)).toBe("No open PR names PP-1")
+    expect(draftProblem(null, found(0), false)).toBeNull()
+  })
+  it("goes once looked up, with PRs for the reviewer and a ticket for the rest", () => {
+    expect(canSendDraft({ ticket: "PP-1", prs: ["u0"] }, found(1), false, true)).toBe(true)
+    expect(canSendDraft({ ticket: "PP-1", prs: ["u0"] }, found(1), true, true)).toBe(false)
+    expect(canSendDraft({ ticket: "PP-1", prs: [] }, found(1), false, true)).toBe(false)
+    expect(canSendDraft({ ticket: "PP-1", prs: [] }, found(0), false, false)).toBe(true)
   })
 })

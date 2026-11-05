@@ -12,7 +12,7 @@ import { repoDot } from "@/features/session/state"
 import type { Resolved } from "@server/jobs"
 import type { AgentStage } from "@server/pipeline"
 import { act } from "./Pipeline"
-import { SPECIALISTS, addToDraft, jobToSend, sendText, type Draft } from "./jobs-board"
+import { SPECIALISTS, addToDraft, canSendDraft, draftProblem, jobToSend, sendText, type Draft } from "./jobs-board"
 
 const LOOKUP_MS = 350
 
@@ -60,49 +60,58 @@ function PrRow({ pr, isOn, onToggle }: { pr: Resolved["prs"][number]; isOn: bool
   )
 }
 
-export function JobComposer({ stage, onDone }: { stage: AgentStage; onDone: () => void }) {
-  const takesPrs = stage === "review"
+// What you pasted, the PRs you unticked, and what went wrong with the last paste.
+function useDraft(takesPrs: boolean) {
   const [text, setText] = useState("")
   const [draft, setDraft] = useState<Draft>({ ticket: null, prs: [] })
   const [dropped, setDropped] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
-  const { resolved, isLooking } = useResolved(stage, draft)
-  const sent = jobToSend(draft, resolved, dropped)
-  const isEmpty = !draft.ticket && !draft.prs.length
-  const canSend = !isLooking && !resolved?.error && (takesPrs ? sent.prs.length > 0 : !!resolved?.ticket)
   const add = (pasted: string) => {
     const next = addToDraft(draft, pasted, takesPrs)
     setError(next.error)
     if (!next.error) (setDraft(next.draft), setText(""))
   }
+  const type = (value: string) => (setText(value), setError(null))
+  const toggle = (url: string) => setDropped(d => (d.includes(url) ? d.filter(u => u !== url) : [...d, url]))
+  const dropTicket = () => setDraft(d => ({ ...d, ticket: null }))
+  const dropLastPr = () => setDraft(d => ({ ...d, prs: d.prs.slice(0, -1) }))
+  return { text, draft, dropped, error, add, type, toggle, dropTicket, dropLastPr }
+}
+
+const LOOKING = "min-w-0 flex-1 truncate text-[11.5px] [--color-background:var(--text)] [--color-muted-foreground:var(--text-muted)]"
+
+export function JobComposer({ stage, onDone }: { stage: AgentStage; onDone: () => void }) {
+  const takesPrs = stage === "review"
+  const d = useDraft(takesPrs)
+  const { resolved, isLooking } = useResolved(stage, d.draft)
+  const sent = jobToSend(d.draft, resolved, d.dropped)
+  const isEmpty = !d.draft.ticket && !d.draft.prs.length
+  const canSend = canSendDraft(sent, resolved, isLooking, takesPrs)
   const send = async () => {
-    if (!canSend) return
-    if (await act("/api/jobs/start", { stage, ...sent }, `${SPECIALISTS.find(s => s.stage === stage)?.name}: on it`)) onDone()
+    if (canSend && (await act("/api/jobs/start", { stage, ...sent }, `${SPECIALISTS.find(s => s.stage === stage)?.name}: on it`))) onDone()
   }
-  const paste = (e: ClipboardEvent<HTMLInputElement>) => (e.preventDefault(), add(`${text} ${e.clipboardData.getData("text")}`))
+  const paste = (e: ClipboardEvent<HTMLInputElement>) => (e.preventDefault(), d.add(`${d.text} ${e.clipboardData.getData("text")}`))
   const key = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Escape") return onDone()
-    if (e.key === "Enter") return void (e.preventDefault(), text.trim() ? add(text) : send())
-    if (e.key === "Backspace" && !text && draft.prs.length) setDraft(d => ({ ...d, prs: d.prs.slice(0, -1) }))
+    if (e.key === "Enter") return void (e.preventDefault(), d.text.trim() ? d.add(d.text) : send())
+    if (e.key === "Backspace" && !d.text) d.dropLastPr()
   }
-  const toggle = (url: string) => setDropped(d => (d.includes(url) ? d.filter(u => u !== url) : [...d, url]))
-  const ticket = resolved?.ticket ?? (draft.ticket ? { key: draft.ticket, summary: null, isNamed: false } : null)
-  const status = error ?? resolved?.error ?? (resolved && takesPrs && !resolved.prs.length ? `No open PR names ${resolved.ticket?.key ?? "the ticket"}` : null)
+  const ticket = resolved?.ticket ?? (d.draft.ticket ? { key: d.draft.ticket, summary: null, isNamed: false } : null)
+  const prs = resolved?.prs ?? []
   return (
     <div className="flex flex-none flex-col gap-2 rounded-[10px] border border-line-strong bg-surface p-2.5 shadow-card">
-      <input autoFocus value={text} onChange={e => (setText(e.target.value), setError(null))} onPaste={paste} onKeyDown={key}
-        onBlur={() => isEmpty && !text.trim() && onDone()}
-        placeholder={takesPrs ? (isEmpty ? "Paste PR links or a ticket" : "Paste more") : "Paste a ticket"} aria-label={takesPrs ? "PR links or a ticket" : "A ticket"}
+      <input autoFocus value={d.text} onChange={e => d.type(e.target.value)} onPaste={paste} onKeyDown={key} onBlur={() => isEmpty && !d.text.trim() && onDone()}
+        placeholder={!takesPrs ? "Paste a ticket" : isEmpty ? "Paste PR links or a ticket" : "Paste more"} aria-label={takesPrs ? "PR links or a ticket" : "A ticket"}
         className="h-7 bg-transparent px-0.5 text-[13px] outline-none placeholder:text-faint" />
-      {(ticket || draft.prs.length > 0 || (resolved?.prs.length ?? 0) > 0) && (
+      {(ticket || prs.length > 0) && (
         <ul className="m-0 flex list-none flex-col gap-0.5 p-0">
-          {ticket && <TicketRow ticket={ticket.key} summary={ticket.summary} isNamed={ticket.isNamed} onRemove={() => setDraft(d => ({ ...d, ticket: null }))} />}
-          {(resolved?.prs ?? []).map(p => <PrRow key={p.url} pr={p} isOn={!dropped.includes(p.url)} onToggle={() => toggle(p.url)} />)}
+          {ticket && <TicketRow ticket={ticket.key} summary={ticket.summary} isNamed={ticket.isNamed} onRemove={d.dropTicket} />}
+          {prs.map(p => <PrRow key={p.url} pr={p} isOn={!d.dropped.includes(p.url)} onToggle={() => d.toggle(p.url)} />)}
         </ul>
       )}
       <div className="flex min-h-6 items-center gap-2">
-        {isLooking ? <Shimmer as="span" duration={1.6} className="min-w-0 flex-1 truncate text-[11.5px] [--color-background:var(--text)] [--color-muted-foreground:var(--text-muted)]">Looking up</Shimmer>
-          : <span className="min-w-0 flex-1 truncate text-[11.5px] text-bad">{status}</span>}
+        {isLooking ? <Shimmer as="span" duration={1.6} className={LOOKING}>Looking up</Shimmer>
+          : <span className="min-w-0 flex-1 truncate text-[11.5px] text-bad">{draftProblem(d.error, resolved, takesPrs)}</span>}
         {!isEmpty && (
           <button disabled={!canSend} onClick={() => void send()}
             className="h-6 shrink-0 rounded-md bg-text px-2 text-[11.5px] font-semibold text-surface transition-[opacity,transform] duration-100 active:scale-[0.97] disabled:opacity-30">
