@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { SPECIALISTS, clampSplit, jobColumn, jobLabel, parseJobInput } from "./jobs-board"
+import { SPECIALISTS, addToDraft, clampSplit, jobColumn, jobLabel, jobToSend, parseJobInput, sendText } from "./jobs-board"
 
 const job = (extra = {}) => ({ id: "JOB-1", stage: "review", ticket: null, prs: [{ url: "https://github.com/o/web/pull/4", repo: "web", number: 4 }], ...extra }) as never
 
@@ -44,5 +44,27 @@ describe("clampSplit", () => {
     expect(clampSplit(0.05)).toBe(0.2)
     expect(clampSplit(0.95)).toBe(0.85)
     expect(clampSplit(Number.NaN)).toBe(0.62)
+  })
+})
+
+describe("a job you write", () => {
+  const empty = { ticket: null, prs: [] }
+  it("what you paste joins what is there; a new ticket takes the old one's place", () => {
+    const one = addToDraft(empty, "PP-1 https://github.com/o/web/pull/4", true)
+    expect(one).toEqual({ draft: { ticket: "PP-1", prs: ["https://github.com/o/web/pull/4"] }, error: null })
+    expect(addToDraft(one.draft, "https://github.com/o/web/pull/4 https://github.com/o/api/pull/9 PP-2", true).draft).toEqual({ ticket: "PP-2", prs: ["https://github.com/o/web/pull/4", "https://github.com/o/api/pull/9"] })
+  })
+  it("what it does not understand stays out, and it says why", () => {
+    expect(addToDraft({ ticket: "PP-1", prs: [] }, "hola", true)).toEqual({ draft: { ticket: "PP-1", prs: [] }, error: "Not a ticket or a PR: hola" })
+  })
+  it("sends the ticket (yours, or the one the PRs name) and the PRs you left ticked", () => {
+    const resolved = { ticket: { key: "PP-1", summary: "x", isNamed: true }, prs: [{ url: "a", repo: "web", number: 1, title: "", isFound: false }, { url: "b", repo: "api", number: 2, title: "", isFound: true }], error: null }
+    expect(jobToSend({ ticket: null, prs: ["a"] }, resolved, ["b"])).toEqual({ ticket: "PP-1", prs: ["a"] })
+    expect(jobToSend({ ticket: "PP-1", prs: [] }, null, [])).toEqual({ ticket: "PP-1", prs: [] })
+  })
+  it("the reviewer's button says how many PRs it reviews", () => {
+    expect(sendText("review", 1)).toBe("Review 1 PR")
+    expect(sendText("review", 3)).toBe("Review 3 PRs")
+    expect(sendText("plan", 0)).toBe("Send")
   })
 })

@@ -17,7 +17,7 @@ import { mkdir, readdir, readFile, rename } from "node:fs/promises"
 import { join } from "node:path"
 import { DATA_DIR } from "./config"
 import { writeJsonAtomic } from "./files"
-import { jiraSetup, keysIn } from "./jira"
+import { jiraSetup, keysIn, ticket as jiraTicket } from "./jira"
 import { activityOf } from "./activity"
 import { applyAction } from "./board"
 import { exec } from "./proc"
@@ -121,7 +121,18 @@ const gh = async (args: string[], timeoutMs = 30_000) => {
   if (r.code !== 0) throw new Error(r.stderr.trim() || `gh ${args[0]} failed`)
   return JSON.parse(r.stdout)
 }
-async function prInfo(url: string): Promise<PrInfo> {
+// A PR's details, kept a few minutes: what you write looks them up at every change.
+const PR_MS = 3 * 60_000
+const prCache = new Map<string, { at: number; info: Promise<PrInfo> }>()
+function prInfo(url: string): Promise<PrInfo> {
+  const kept = prCache.get(url)
+  if (kept && Date.now() - kept.at < PR_MS) return kept.info
+  const info = prInfoNow(url)
+  prCache.set(url, { at: Date.now(), info })
+  info.catch(() => prCache.delete(url))
+  return info
+}
+async function prInfoNow(url: string): Promise<PrInfo> {
   const ref = prRef(url)!
   const p = await gh(["pr", "view", ref.url, "--json", "number,title,headRefName,baseRefName,body"])
   return { url: ref.url, repo: ref.repo, number: p.number, title: p.title ?? "", head: p.headRefName ?? "", base: p.baseRefName ?? "", body: String(p.body ?? "").slice(0, 4000), worktree: null }
@@ -166,6 +177,23 @@ async function removeWorktrees(job: Job) {
     await exec(["git", "-C", repo, "worktree", "remove", "--force", p.worktree], { timeoutMs: 30_000 })
     await exec(["git", "-C", repo, "update-ref", "-d", `refs/agent-center/pr-${p.number}`])
   }
+}
+
+// What a job you are writing would take, before you send it: the ticket
+// (yours, or the one the PRs name) with its title, and each PR with its
+// title: yours, and the open ones that name the ticket or its children.
+export type Resolved = { ticket: { key: string; summary: string; isNamed: boolean } | null; prs: (Pick<PrInfo, "url" | "repo" | "number" | "title"> & { isFound: boolean })[]; error: string | null }
+const brief = (p: PrInfo, isFound: boolean) => ({ url: p.url, repo: p.repo, number: p.number, title: p.title, isFound })
+export async function resolveJob(input: JobInput, findsPrs = true): Promise<Resolved> {
+  const given = await Promise.all(input.prs.filter(u => prRef(u)).map(u => prInfo(prRef(u)!.url).catch(() => null)))
+  const prs = given.filter((p): p is PrInfo => !!p)
+  const missing = input.prs.length - prs.length
+  const key = input.ticket ?? ticketFromPrs(prs, jiraSetup()?.projects ?? [])
+  const t = key ? await jiraTicket(key).catch(() => null) : null
+  const found = t && findsPrs && !prs.length ? await prsNaming([t.key, ...t.children.map(c => c.key)]) : []
+  const more = await Promise.all(found.map(u => prInfo(u).catch(() => null)))
+  const error = input.ticket && !t ? `${input.ticket} is not in Jira` : missing ? `${missing} PR${missing === 1 ? "" : "s"} not found on GitHub` : null
+  return { ticket: t ? { key: t.key, summary: t.summary, isNamed: !input.ticket } : null, prs: [...prs.map(p => brief(p, false)), ...more.filter((p): p is PrInfo => !!p).map(p => brief(p, true))], error }
 }
 
 // ---------- the run ----------

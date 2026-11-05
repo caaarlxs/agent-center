@@ -4,7 +4,7 @@
 
 import { jiraSetup, searchTickets, ticket, ticketRows, transitionsOf } from "../lib/jira"
 import { debtRegister, pipelineActivity, pipelineEvidence, pipelineOf, pipelineReport } from "../lib/pipeline"
-import { jobActivity, jobOf } from "../lib/jobs"
+import { jobActivity, jobOf, resolveJob } from "../lib/jobs"
 import { reportOf } from "../lib/release"
 import { namedBy, repoPage, sessionCommits, sessionRepos } from "../lib/session-commits"
 import { ICONS, chosenIcon } from "../lib/app-icon"
@@ -314,6 +314,10 @@ export async function handleRead(url: URL): Promise<Response | null> {
   if (path === "/api/jira") return json({ setup: jiraSetup() })
   if (path === "/api/prs/diff") return await prDiff(url.searchParams.get("url") ?? "").then(files => json({ files }), (err: Error) => json({ error: err.message }, 400))
   // A job (lib/jobs.ts): its state and document, and what its agent does now.
+  if (path === "/api/jobs/resolve") {
+    const ticket = url.searchParams.get("ticket")?.trim().toUpperCase() || null
+    return await resolveJob({ ticket, prs: url.searchParams.getAll("pr") }, url.searchParams.get("stage") === "review").then(r => json(r), (err: Error) => json({ error: err.message }, 400))
+  }
   if (path === "/api/jobs/job") return await jobOf(url.searchParams.get("id") ?? "").then(r => json(r), (err: Error) => json({ error: err.message }, 400))
   if (path === "/api/pipeline/activity" && url.searchParams.has("job")) return await jobActivity(url.searchParams.get("job") ?? "").then(r => json(r), (err: Error) => json({ error: err.message }, 400))
   if (path === "/api/pipeline/activity") return await pipelineActivity(url.searchParams.get("key") ?? "").then(r => json(r), (err: Error) => json({ error: err.message }, 400))

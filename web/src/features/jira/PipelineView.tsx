@@ -19,8 +19,9 @@ import { dialog } from "@/app/open-dialog"
 import { ago } from "@/features/session/state"
 import type { Job } from "@server/jobs"
 import type { AgentStage, PipelineState } from "@server/pipeline"
-import { act, isJob, useActivity } from "./Pipeline"
-import { SPECIALISTS, SPLIT, clampSplit, jobColumn, jobLabel, parseJobInput } from "./jobs-board"
+import { isJob, useActivity } from "./Pipeline"
+import { SPECIALISTS, SPLIT, clampSplit, jobColumn, jobLabel } from "./jobs-board"
+import { JobComposer } from "./JobComposer"
 import { StageEffect } from "./StageEffect"
 import { DebtButton } from "./Debt"
 import { effectOf, sceneOf } from "./stage-effects"
@@ -153,35 +154,6 @@ function Divider({ split, onSplit, box }: { split: number; onSplit: (v: number) 
 
 const COLUMNS = "grid auto-cols-[minmax(290px,1fr)] grid-flow-col gap-3 px-5"
 const COLUMN = "dots-veil flex min-h-0 flex-col rounded-[12px] bg-side px-2 pt-3 pb-2"
-
-// A job for a specialist, written where its cards go: a ticket (its key or
-// link) and, to the reviewer, PR links. Enter sends it; Esc lets it go.
-function JobComposer({ stage, onDone }: { stage: AgentStage; onDone: () => void }) {
-  const [text, setText] = useState("")
-  const takesPrs = stage === "review"
-  const parsed = parseJobInput(text, takesPrs)
-  const what = [parsed.ticket, parsed.prs.length ? `${parsed.prs.length} PR${parsed.prs.length === 1 ? "" : "s"}` : null].filter(Boolean).join(" · ")
-  const send = async () => {
-    if (parsed.error || !what) return
-    if (await act("/api/jobs/start", { stage, ticket: parsed.ticket, prs: parsed.prs }, `${SPECIALISTS.find(s => s.stage === stage)?.name}: on it`)) onDone()
-  }
-  const key = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Escape") return onDone()
-    if (e.key === "Enter" && !e.shiftKey) return void (e.preventDefault(), send())
-  }
-  return (
-    <div className="flex h-[108px] flex-none flex-col gap-1.5 rounded-[10px] border border-line-strong bg-surface p-2.5 shadow-card">
-      <textarea autoFocus value={text} onChange={e => setText(e.target.value)} onKeyDown={key} onBlur={() => !text.trim() && onDone()}
-        placeholder={takesPrs ? "PR links or a ticket" : "A ticket"} aria-label={takesPrs ? "PR links or a ticket" : "A ticket"}
-        className="min-h-0 flex-1 resize-none bg-transparent text-[13px] leading-[1.45] outline-none placeholder:text-faint" />
-      <div className="flex items-center gap-2">
-        <span className={cn("min-w-0 flex-1 truncate text-[11.5px]", parsed.error ? "text-bad" : "text-faint")}>{parsed.error ?? what}</span>
-        <button disabled={!!parsed.error || !what} onClick={() => void send()}
-          className="h-6 shrink-0 rounded-md bg-text px-2 text-[11.5px] font-semibold text-surface transition-[opacity,transform] duration-100 active:scale-[0.97] disabled:opacity-30">Send</button>
-      </div>
-    </div>
-  )
-}
 
 // A specialist's head: its line (flowing while it works), its name, how many
 // jobs it holds, and the + that hands it one (the ones that take jobs).
