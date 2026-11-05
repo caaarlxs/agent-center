@@ -64,7 +64,8 @@ function Palette({ onClose }: { onClose: () => void }) {
   const counts = Object.fromEntries(TABS.map(([key, , keep]) => [key, all.filter(keep).length]))
   const rows = all.filter(TABS.find(([key]) => key === tab)![2])
   const chosen = rows[Math.min(index, rows.length - 1)]
-  useEffect(() => list.current?.querySelector("[aria-selected=true]")?.scrollIntoView({ block: "nearest" }), [index, tab])
+  // void: Chrome's scrollIntoView returns a promise, and an effect may return only its cleanup.
+  useEffect(() => void list.current?.querySelector("[aria-selected=true]")?.scrollIntoView({ block: "nearest" }), [index, tab])
 
   const open = (r: Result | undefined, inClaude = false) => {
     if (!r) return
