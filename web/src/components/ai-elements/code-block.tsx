@@ -27,7 +27,7 @@ import type {
   HighlighterGeneric,
   ThemedToken,
 } from "shiki";
-import { createHighlighter } from "shiki";
+import { getHighlighter as getSharedHighlighter } from "@/lib/code-theme";
 
 // Shiki uses bitflags for font styles: 1=italic, 2=bold, 4=underline
 // oxlint-disable-next-line eslint(no-bitwise)
@@ -129,14 +129,24 @@ const CodeBlockContext = createContext<CodeBlockContextType>({
   code: "",
 });
 
-// Highlighter cache (singleton per language)
-const highlighterCache = new Map<
-  string,
-  Promise<HighlighterGeneric<BundledLanguage, BundledTheme>>
->();
+// The page's one highlighter (lib/code-theme.ts: Shiki's JavaScript engine,
+// no WebAssembly), each language and theme loaded into it once: a highlighter
+// per language held its own engine and themes, many times over.
+const loading = new Map<string, Promise<void>>();
+const load = (key: string, work: () => Promise<void>) => {
+  if (!loading.has(key)) loading.set(key, work().catch(() => {}));
+  return loading.get(key)!;
+};
 
-// Token cache
+// Token cache: the newest TOKENS_KEPT blocks (it kept every block ever shown,
+// every tool output of every conversation opened, for as long as the page lived).
+const TOKENS_KEPT = 150;
 const tokensCache = new Map<string, TokenizedCode>();
+const keepTokens = (key: string, tokens: TokenizedCode) => {
+  tokensCache.delete(key);
+  tokensCache.set(key, tokens);
+  while (tokensCache.size > TOKENS_KEPT) tokensCache.delete(tokensCache.keys().next().value!);
+};
 
 // Subscribers for async token updates
 const subscribers = new Map<string, Set<(result: TokenizedCode) => void>>();
@@ -147,21 +157,14 @@ const getTokensCacheKey = (code: string, language: BundledLanguage) => {
   return `${language}:${code.length}:${start}:${end}`;
 };
 
-const getHighlighter = (
+const getHighlighter = async (
   language: BundledLanguage
 ): Promise<HighlighterGeneric<BundledLanguage, BundledTheme>> => {
-  const cached = highlighterCache.get(language);
-  if (cached) {
-    return cached;
-  }
-
-  const highlighterPromise = createHighlighter({
-    langs: [language],
-    themes: ["github-light", "github-dark"],
-  });
-
-  highlighterCache.set(language, highlighterPromise);
-  return highlighterPromise;
+  const h = (await getSharedHighlighter()) as unknown as HighlighterGeneric<BundledLanguage, BundledTheme>;
+  for (const theme of ["github-light", "github-dark"] as const)
+    if (!h.getLoadedThemes().includes(theme)) await load(theme, () => h.loadTheme(theme));
+  if (!h.getLoadedLanguages().includes(language)) await load(language, () => h.loadLanguage(language));
+  return h;
 };
 
 // Create raw tokens for immediate display while highlighting loads
@@ -225,7 +228,7 @@ export const highlightCode = (
       };
 
       // Cache the result
-      tokensCache.set(tokensCacheKey, tokenized);
+      keepTokens(tokensCacheKey, tokenized);
 
       // Notify all subscribers
       const subs = subscribers.get(tokensCacheKey);

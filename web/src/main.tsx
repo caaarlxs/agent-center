@@ -6,8 +6,10 @@ import "./lib/board-style" // marks the page with its style before the first pai
 import { App } from "./app/App"
 import { Guard } from "./components/common/Guard"
 import { loadAppIcon } from "./lib/app-icon"
+import { startMemoryReport } from "./lib/memory-report"
 
 loadAppIcon() // the tab shows the icon chosen in Settings
+startMemoryReport() // its memory to the server's log, every 10 minutes
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

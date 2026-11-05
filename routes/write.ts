@@ -10,6 +10,7 @@ import { applyAction, isTaskId, setNotes, setSuggestion, setZones } from "../lib
 import { requestSettings } from "../lib/bridge"
 import { activate, newInClient, pickFolder } from "../lib/client"
 import { logClientError } from "../lib/client-errors"
+import { logMemory } from "../lib/memory-log"
 import { EFFORTS, MODES } from "../lib/config"
 import { writeContext } from "../lib/context"
 import { readDesktop } from "../lib/desktop"
@@ -232,6 +233,10 @@ export async function handleWrite(path: string, body: Record<string, unknown>): 
     // A view in the page that broke (components/common/Guard.tsx).
     case "/api/clienterror":
       await logClientError(body)
+      return json({ ok: true })
+    // The page's memory, every 10 minutes (lib/memory-log.ts, logs/memory.jsonl).
+    case "/api/memory":
+      await logMemory(body)
       return json({ ok: true })
     case "/api/new":
       return newSession(body)

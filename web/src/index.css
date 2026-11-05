@@ -371,6 +371,8 @@ html[data-theme-switch]::view-transition-new(root) { animation: theme-curtain 60
 .doc-box { display: inline-block; width: 13px; height: 13px; margin: 0 4px 0 2px; vertical-align: -2px; border: 1.5px solid var(--line-strong); border-radius: 4px; background: var(--surface); }
 .doc-box[data-ticked="true"] { border-color: var(--brand); background: var(--brand) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='white' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 8.5l3 3 6-7'/%3E%3C/svg%3E") center / 10px no-repeat; }
 
+/* The Dots style's field behind the canvas and the views (Backdrop.tsx): still dots, a shade off the page. */
+.dot-field { background-color: var(--bg); background-image: radial-gradient(color-mix(in srgb, var(--text) 9%, transparent) 1px, transparent 1.4px); background-size: 8px 8px; }
 /* Settings › Look: the Dots style's preview, its dot field. */
 .style-preview-dots { background-color: var(--side); background-image: radial-gradient(color-mix(in srgb, var(--text) 22%, transparent) 1px, transparent 1.4px); background-size: 7px 7px; }
 

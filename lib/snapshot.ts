@@ -243,7 +243,9 @@ async function cardOf(
     tier: item.tier ?? "other",
     tierRank: item.tier_rank ?? null,
     run: await runSummary(id),
-    bridge: { ...bridge, wake: wakeState(id) },
+    // lastSeen to the minute: the page only weighs it against 15 minutes, and
+    // a heartbeat every 2 s would send and redraw the whole card each time.
+    bridge: { ...bridge, lastSeen: bridge.lastSeen && Math.floor(bridge.lastSeen / 60_000) * 60_000, wake: wakeState(id) },
   }
 }
 

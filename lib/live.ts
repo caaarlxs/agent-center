@@ -1,12 +1,16 @@
 // Live updates: one snapshot of the board, pushed to every open window over
 // server-sent events whenever it changes. Recomputed every second while a
-// window listens, and soon after anything the server itself changes.
+// window listens, and soon after anything the server itself changes. A window
+// gets the whole board when it connects, then only what changed ("patch":
+// the cards that changed, lib/live-patch.ts), so it redraws only those.
 
+import { patchOf, piecesOf, type Pieces } from "./live-patch"
 import { snapshot, type Snapshot } from "./snapshot"
 
 const encoder = new TextEncoder()
 const clients = new Set<ReadableStreamDefaultController<Uint8Array>>()
 let latest = "" // the last snapshot, as sent
+let pieces: Pieces | null = null // the same, card by card
 let computing: Promise<void> | null = null
 let again = false
 
@@ -30,10 +34,15 @@ export function refresh(): Promise<void> {
   }
   computing = (async () => {
     try {
-      const body = JSON.stringify(await snapshot())
+      const board = await snapshot()
+      const body = JSON.stringify(board)
       if (body !== latest) {
+        const next = piecesOf(board as unknown as Parameters<typeof piecesOf>[0])
+        const patch = pieces && patchOf(pieces, next)
         latest = body
-        broadcast(`data: ${body}\n\n`)
+        pieces = next
+        if (patch) broadcast(`event: patch\ndata: ${JSON.stringify(patch)}\n\n`)
+        else broadcast(`data: ${body}\n\n`)
       }
     } catch (err) {
       console.error("snapshot failed", err)
