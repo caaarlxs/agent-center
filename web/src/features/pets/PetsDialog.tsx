@@ -355,7 +355,7 @@ function Collection({ state }: { state: Pets }) {
   const classic = Object.keys(owned).filter(id => !isCommunity(id) && owned[id])
   if (!all) return <div className="flex flex-col items-center gap-2 py-16 text-[13px] text-text-muted"><Spinner />Reading the catalogue of codex-pets.net…</div>
   return (
-    <div className="flex flex-col gap-3 pb-2">
+    <div className="pets-still flex flex-col gap-3 pb-2">
       <div className="flex flex-wrap items-center gap-1.5">
         <button className={chip(!only)} onClick={() => filter(setOnly)(null)}>All</button>
         {RARITIES.map(r => (
