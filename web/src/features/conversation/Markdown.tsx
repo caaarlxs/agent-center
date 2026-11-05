@@ -179,14 +179,21 @@ function localLinks() {
   }
   return (tree: Hast) => visit(tree)
 }
-// In a document, "[ ]" and "[x]" written in a line show as boxes (outside code).
+// In a document, "[ ]" and "[x]" show as boxes (outside code), a list's task
+// boxes too: in the page's order, as toggleBox counts them in the text.
 function boxes() {
-  const visit = (n: Hast) => {
-    if (n.tagName === "code" || n.tagName === "pre" || !n.children) return
-    n.children = n.children.flatMap(c => (c.type !== "text" ? (visit(c), [c]) : boxParts(c.value ?? "").map(p =>
-      typeof p === "string" ? { type: "text", value: p } : { type: "element", tagName: "span", properties: { className: ["doc-box"], dataTicked: p.isTicked }, children: [] })))
+  return (tree: Hast) => {
+    const box = (isTicked: boolean): Hast => ({ type: "element", tagName: "span", properties: { className: ["doc-box"], dataTicked: isTicked }, children: [] })
+    const visit = (n: Hast) => {
+      if (n.tagName === "code" || n.tagName === "pre" || !n.children) return
+      n.children = n.children.flatMap(c => {
+        if (c.tagName === "input" && c.properties?.type === "checkbox") return [box(!!c.properties.checked)]
+        if (c.type !== "text") return (visit(c), [c])
+        return boxParts(c.value ?? "").map(p => (typeof p === "string" ? { type: "text", value: p } : box(p.isTicked)))
+      })
+    }
+    visit(tree)
   }
-  return (tree: Hast) => visit(tree)
 }
 const { harden, ...before } = defaultRehypePlugins
 const rehypePlugins = [...Object.values(before), localLinks, harden!]

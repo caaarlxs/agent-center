@@ -6,7 +6,7 @@
 // arbitrary path of this Mac. Each transcript is read once, then only what
 // it adds.
 
-import { stat } from "node:fs/promises"
+import { stat, writeFile } from "node:fs/promises"
 import { basename, extname, isAbsolute, resolve } from "node:path"
 import { HOME } from "./config"
 import { readAppended } from "./files"
@@ -138,7 +138,22 @@ export async function sessionFile(ids: string[], raw: string, cwds: string[]) {
   if (!path) return null
   const info = await stat(path).catch(() => null)
   if (!info?.isFile()) return null
-  return { path, name: basename(path), size: info.size, ext: extname(path).slice(1).toLowerCase(), isViewable: info.size <= MAX_VIEW_BYTES }
+  return { path, name: basename(path), size: info.size, mtime: info.mtimeMs, ext: extname(path).slice(1).toLowerCase(), isViewable: info.size <= MAX_VIEW_BYTES }
+}
+
+// The files the page may write back: text (a document, notes, a table, code).
+const EDITABLE = /^(md|markdown|mdx|txt|log|csv|tsv|json|jsonl|ya?ml|toml|ini|xml|sql|sh|zsh|bash|py|rb|go|rs|java|kt|swift|c|h|cpp|hpp|cs|php|js|jsx|ts|tsx|mjs|cjs|css|scss|html?)$/
+export const isEditable = (ext: string) => EDITABLE.test(ext)
+
+// One of the session's files written from the page (a box ticked, the
+// source edited), if nobody changed it since it was read (mtime), or forced.
+export async function saveSessionFile(file: { path: string; ext: string }, text: string, mtime: number, force: boolean) {
+  if (!isEditable(file.ext)) return { error: "This kind of file is not edited here", status: 400 }
+  const info = await stat(file.path).catch(() => null)
+  if (!info?.isFile()) return { error: "It is gone", status: 404 }
+  if (!force && info.mtimeMs !== mtime) return { error: "It changed on disk since you opened it", conflict: true, mtime: info.mtimeMs, status: 409 }
+  await writeFile(file.path, text)
+  return { ok: true, mtime: (await stat(file.path)).mtimeMs }
 }
 
 // What the session wrote or edited since `since`, but the files every

@@ -6,7 +6,9 @@
 // else as Quick Look's picture of its first page. Only files the session's own
 // transcript names are served (lib/session-files.ts).
 import Editor from "@monaco-editor/react"
-import { type ReactNode, useEffect, useMemo, useState } from "react"
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react"
+import { Kbd } from "@/components/ui/kbd"
+import { toggleBox } from "./beside"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { get, post, sessionFileUrl as at } from "@/lib/api"
@@ -25,38 +27,81 @@ import { Anim } from "@/components/icons/animated"
 import { CopyMark, useCopyMoment } from "@/components/icona/marks"
 
 export type Listed = { path: string; name: string; size: number; modifiedAt: number; source: "sent" | "artifact" | "written"; url?: string }
-type Info = { path: string; size: number; isViewable: boolean; error?: string }
+type Info = { path: string; size: number; mtime?: number; isViewable: boolean; error?: string }
 
 const SOURCE = { sent: "sent", artifact: "published", written: "written" } // written: a file opened from the conversation
 const MAX_ROWS = 1000
 const home = (path: string) => path.replace(/^\/Users\/[^/]+/, "~")
 const muted = "p-4 text-text-muted"
 
-function useText(url: string | null) {
+// A text file's words, and how to write them back (a box ticked, the source
+// edited): shown at once, saved if nobody changed the file meanwhile.
+function useText(id: string, path: string, url: string | null, mtime?: number) {
   const [text, setText] = useState<string | null>(null)
+  const at = useRef(mtime)
   useEffect(() => {
     setText(null)
     if (url) fetch(url).then(r => (r.ok ? r.text() : Promise.reject(new Error(`${r.status}`)))).then(setText, () => setText(""))
   }, [url])
-  return text
+  const save = async (next: string) => {
+    const before = text
+    setText(next)
+    try {
+      at.current = (await post<{ mtime: number }>(`/api/sessions/${encodeURIComponent(id)}/filesave`, { path, text: next, mtime: at.current })).mtime
+      return true
+    } catch (err) {
+      setText(before)
+      toast((err as Error).message || "Could not save it")
+      return false
+    }
+  }
+  return { text, save }
+}
+
+// The source, editable when it is text: Save (or ⌘S) writes it.
+function Source({ text, path, onSave }: { text: string; path: string; onSave: (text: string) => Promise<boolean> }) {
+  const { theme, isPlain } = useMonacoTheme()
+  const [draft, setDraft] = useState<string | null>(null)
+  const isDirty = draft !== null && draft !== text
+  const save = useRef(() => {})
+  save.current = () => void (isDirty && onSave(draft!).then(ok => ok && setDraft(null)))
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      {isDirty && (
+        <div className="flex shrink-0 items-center gap-2 border-b border-line bg-ask-soft px-3.5 py-1.5 text-[12.5px]">
+          <span className="flex-1 text-text-muted">Not saved</span>
+          <Button variant="ghost" onClick={() => setDraft(null)}>Discard</Button>
+          <Button onClick={() => save.current()}>Save <Kbd>⌘S</Kbd></Button>
+        </div>
+      )}
+      <div className="min-h-0 flex-1">
+        <Editor value={draft ?? text} path={`files/${isPlain ? "plain/" : ""}${path}`} language={isPlain ? "plaintext" : undefined} theme={theme}
+          onChange={v => setDraft(v ?? "")} onMount={(editor, m) => editor.addCommand(m.KeyMod.CtrlCmd | m.KeyCode.KeyS, () => save.current())}
+          options={{ fontSize: 13, minimap: { enabled: false }, automaticLayout: true, wordWrap: "on" }} />
+      </div>
+    </div>
+  )
 }
 
 function Body({ id, file, info, isSource }: { id: string; file: Listed; info: Info; isSource: boolean }) {
   const kind = kindOf(file.name)
   const fileUrl = at(id, "file", file.path)
-  const text = useText(info.isViewable && ["markdown", "code", "table"].includes(kind) ? fileUrl : null)
+  const { text, save } = useText(id, file.path, info.isViewable && ["markdown", "code", "table"].includes(kind) ? fileUrl : null, info.mtime)
   const monaco = useMonaco()
-  const { theme, isPlain } = useMonacoTheme()
   const rows = useMemo(() => (kind === "table" && text ? parseDelimited(text, file.name.endsWith(".tsv") ? "\t" : ",", MAX_ROWS) : []), [kind, text, file.name])
   const [hasNoPreview, setNoPreview] = useState(false)
   if (!info.isViewable) return <p className={muted}>Too large to show here ({bytesText(info.size)}).</p>
-  const code = monaco.ready && text !== null
-    ? <div className="h-full min-h-0"><Editor value={text} path={`files/${isPlain ? "plain/" : ""}${file.path}`} language={isPlain ? "plaintext" : undefined} theme={theme} options={{ readOnly: true, fontSize: 13, minimap: { enabled: false }, automaticLayout: true }} /></div>
-    : <p className={muted}>Loading…</p>
+  const code = monaco.ready && text !== null ? <Source text={text} path={file.path} onSave={save} /> : <p className={muted}>Loading…</p>
+  // A box clicked on the page: ticked or cleared in the file. Its number is
+  // its place among the page's boxes (each block of the page draws its own).
+  const onBox = (e: React.MouseEvent) => {
+    const box = (e.target as HTMLElement).closest(".doc-box")
+    if (box && text !== null) void save(toggleBox(text, [...e.currentTarget.querySelectorAll(".doc-box")].indexOf(box)))
+  }
   switch (kind) {
     case "markdown":
       if (isSource) return code
-      return text === null ? <p className={muted}>Loading…</p> : <Markdown isDocument className="file-md mx-auto max-w-[760px] px-[22px] pt-[18px] pb-10">{text}</Markdown>
+      return text === null ? <p className={muted}>Loading…</p> : <div onClick={onBox}><Markdown isDocument className="file-md mx-auto max-w-[760px] px-[22px] pt-[18px] pb-10">{text}</Markdown></div>
     case "code":
       return code
     case "image":

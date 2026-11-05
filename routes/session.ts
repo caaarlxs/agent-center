@@ -16,7 +16,7 @@ import { launch } from "../lib/launch"
 import { latestJson, latestState, refreshSoon } from "../lib/live"
 import { rescan, sleepSession, stopProcess } from "../lib/memory"
 import { saveCommand, start as startRun, status as runStatus, stop as stopRun } from "../lib/runner"
-import { sessionFile } from "../lib/session-files"
+import { saveSessionFile, sessionFile } from "../lib/session-files"
 import { speakTurn, type Kind } from "../lib/speech"
 import { groupOf, knownSessionIds } from "../lib/snapshot"
 import { wokeNow } from "../lib/wake"
@@ -197,6 +197,16 @@ export async function handleSession(id: string, action: string, body: Record<str
       if (!file) return json({ error: "This session does not name that file, or it is gone" }, 404)
       const opened = (await Bun.spawn(["/usr/bin/open", ...(body.reveal ? ["-R"] : []), file.path]).exited) === 0
       return json(opened ? { ok: true } : { error: "macOS could not open it" }, opened ? 200 : 500)
+    }
+    // One of the session's files written from the page (Files, or beside the
+    // panel): a box ticked, its source edited; only a file the session names.
+    case "filesave": {
+      const group = groupOf(id)
+      if (typeof body.text !== "string") return json({ error: "nothing to save" }, 400)
+      const file = await sessionFile(group?.ids ?? [id], String(body.path ?? ""), group ? [group.lead.cwd, group.root] : [])
+      if (!file) return json({ error: "This session does not name that file, or it is gone" }, 404)
+      const { status = 200, ...res } = await saveSessionFile(file, body.text, Number(body.mtime), body.force === true)
+      return json(res, status)
     }
     // A file edited in the "Code" tab, saved if nobody changed it meanwhile.
     case "codesave": {
