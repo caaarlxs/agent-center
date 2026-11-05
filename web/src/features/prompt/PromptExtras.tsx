@@ -49,12 +49,13 @@ export const toolIcon = "inline-grid size-[30px] shrink-0 place-items-center rou
 
 type MicState =
   | { kind: "idle" }
-  | { kind: "recording"; rec: Recording }
+  | { kind: "recording"; rec: Recording; base: string } // base: the box before, the text grows after it
   | { kind: "transcribing" }
   | { kind: "dictating"; stop: () => void }
 
 // Whisper while it records: a live wave of the microphone's level and the
-// time; a click or Enter writes the text, Esc drops it. Either way the field
+// time, and the text growing in the box piece by piece; a click or Enter
+// waits for the last piece, Esc drops it all (the box as it was). Either way the field
 // takes the focus back, the caret at the end, so the next Enter sends.
 // Without Whisper, the browser's dictation writes as you speak.
 export function MicButton() {
@@ -81,11 +82,11 @@ export function MicButton() {
   }, [])
 
   const add = (heard: string, base = textInput.value) => textInput.setInput(base ? `${base.trimEnd()} ${heard}` : heard)
-  const finish = async (rec: Recording) => {
+  const finish = async (rec: Recording, base: string) => {
     setMic({ kind: "transcribing" })
     try {
       const heard = await rec.stop()
-      if (heard) add(heard)
+      if (heard) add(heard, base)
     } catch (err) {
       toast.error((err as Error).message)
     }
@@ -94,6 +95,7 @@ export function MicButton() {
   }
 
   const rec = mic.kind === "recording" ? mic.rec : null
+  const base = mic.kind === "recording" ? mic.base : ""
   // The composer's glow: on while you speak, off once it writes.
   useEffect(() => {
     const form = button.current?.closest("form") ?? null
@@ -110,8 +112,8 @@ export function MicButton() {
   useEffect(() => {
     if (!rec) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Enter" && !e.shiftKey && !e.isComposing) (e.preventDefault(), e.stopImmediatePropagation(), void finish(rec))
-      else if (e.key === "Escape") (e.preventDefault(), e.stopImmediatePropagation(), rec.cancel(), setMic({ kind: "idle" }), backToField())
+      if (e.key === "Enter" && !e.shiftKey && !e.isComposing) (e.preventDefault(), e.stopImmediatePropagation(), void finish(rec, base))
+      else if (e.key === "Escape") (e.preventDefault(), e.stopImmediatePropagation(), rec.cancel(), textInput.setInput(base), setMic({ kind: "idle" }), backToField())
     }
     window.addEventListener("keydown", onKey, true)
     return () => window.removeEventListener("keydown", onKey, true)
@@ -125,7 +127,7 @@ export function MicButton() {
   if (mic.kind === "recording") {
     const s = Math.floor((Date.now() - mic.rec.startedAt) / 1000)
     return (
-      <button ref={button as React.RefObject<HTMLButtonElement>} type="button" onClick={() => finish(mic.rec)} title="Stop and write (↵) · discard (Esc)"
+      <button ref={button as React.RefObject<HTMLButtonElement>} type="button" onClick={() => finish(mic.rec, mic.base)} title="Stop and write (↵) · discard (Esc)"
         className={cn(pill, quiet, "cursor-pointer hover:bg-press hover:text-text")}>
         {orb("listening")}
         <Elapsed seconds={s} />
@@ -150,7 +152,8 @@ export function MicButton() {
       }
     }
     try {
-      setMic({ kind: "recording", rec: await recordVoice() })
+      const base = textInput.value
+      setMic({ kind: "recording", base, rec: await recordVoice(text => add(text, base)) })
     } catch (err) {
       toast((err as Error)?.name === "NotAllowedError" ? "The browser has no permission to use the microphone" : "Could not start recording")
     }
