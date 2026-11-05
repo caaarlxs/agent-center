@@ -68,6 +68,13 @@ describe("parseResult", () => {
   })
   it("reads a change to the team's context only with the words it makes untrue", () => {
     const contextImpact = [{ file: "glossary/publicacion.md", quote: "Una empresa se publica si…", why: "Ahora también cuenta la facturación" }, { file: "x.md", why: "sin cita" }]
+    expect(parseResult(JSON.stringify({ verdict: "ready", contextImpact }), "refine").contextImpact).toEqual([{ ...contextImpact[0], proposal: null } as never])
+  })
+  it("reads a new code rule, which has no words of before, with the rule it proposes", () => {
+    const contextImpact = [
+      { file: "context/03-engineering/rules/backend/04-dynamodb.md", quote: null, why: "core-lib ya tiene batch_write", proposal: "Escribe en lote con batch_write de core-lib." },
+      { file: "context/03-engineering/rules/backend/04-dynamodb.md", quote: null, why: "sin regla" },
+    ]
     expect(parseResult(JSON.stringify({ verdict: "ready", contextImpact }), "refine").contextImpact).toEqual([contextImpact[0] as never])
   })
   it("reads the findings a build fixed", () => {

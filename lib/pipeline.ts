@@ -74,7 +74,8 @@ export type Finding = { id: string; unit: string | null; severity: Severity; fil
 // What a test (in staging) or a smoke check (in prod) found of each criterion.
 export type TestResult = { id: string; criterion: string; status: "pass" | "fail"; evidence: string; files?: EvidenceFile[] }
 // A rule of the team's context (its repo) that the ticket makes untrue: the file and the words.
-export type ContextImpact = { file: string; quote: string; why: string }
+// quote: the words of today it makes untrue; null for a new code rule, which says what it proposes instead.
+export type ContextImpact = { file: string; quote: string | null; why: string; proposal: string | null }
 export type Result = { verdict: "ready" | "needs-info"; questions: Question[]; units: Unit[]; checklist: ChecklistItem[]; findings: Finding[]; fixed: string[]; scripts: PlanScript[]; order: OrderItem[]; results: TestResult[]; contextImpact: ContextImpact[]; children?: unknown; debt: DebtItem[] }
 export type PipelineStatus = "running" | "needs-info" | "ready" | "failed"
 export type Run = { n: number; stage: Stage; sessionId: string | null; startedAt: number; endedAt: number | null; status: PipelineStatus; questions: number; units: number; findings?: number; error: string | null; spend?: Spend | null }
@@ -267,7 +268,8 @@ const resultsIn = (v: unknown): TestResult[] =>
     .map((r, i) => ({ id: String(r.id ?? `T${i + 1}`), criterion: textOf(r.criterion), status: r.status === "pass" ? ("pass" as const) : ("fail" as const), evidence: textOf(r.evidence), files: filesIn(r.files) }))
 // Only with the words it makes untrue: else it is no impact at all.
 const impactIn = (v: unknown): ContextImpact[] =>
-  listOf(v).filter(x => textOf(x?.file) && textOf(x?.quote)).map(x => ({ file: textOf(x.file), quote: textOf(x.quote), why: textOf(x.why) }))
+  listOf(v).filter(x => textOf(x?.file) && (textOf(x?.quote) || textOf(x?.proposal)))
+    .map(x => ({ file: textOf(x.file), quote: textOf(x.quote) || null, why: textOf(x.why), proposal: textOf(x.proposal) || null }))
 // The criteria a test (or a smoke check) found failing.
 export const failing = (results: TestResult[] | undefined) => (results ?? []).filter(r => r.status === "fail")
 // The findings that stop a ticket: they go back to Build.
