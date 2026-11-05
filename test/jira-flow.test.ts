@@ -91,3 +91,12 @@ describe("followInJira", () => {
     expect(out.checks).toEqual([{ id: "jira-PP-10", label: "PP-10: could not move it to Finalizada", status: "warn", detail: "No move leads there from where it is" }])
   })
 })
+
+describe("a unit with several sub-tasks", () => {
+  const one = { key: "PP-2774", units: [{ id: "U1", repo: "deale-frontend", subtasks: ["PP-2795", "PP-2792", "PP-2793", "PP-2794"], pr: "https://github.com/o/fe/pull/9" }], fixes: [] } as never
+  it("moves each of them, and each in review says where the PR is", () => {
+    expect(movesFor("build-started", one, flow).map(m => m.key)).toEqual(["PP-2795", "PP-2792", "PP-2793", "PP-2794"])
+    expect(movesFor("built", one, flow).map(m => [m.key, m.comment])).toEqual(["PP-2795", "PP-2792", "PP-2793", "PP-2794"].map(k => [k, "PR: https://github.com/o/fe/pull/9"]))
+    expect(movesFor("in-staging", one, flow)).toHaveLength(4)
+  })
+})

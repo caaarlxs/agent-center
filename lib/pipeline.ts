@@ -59,7 +59,7 @@ export type AgentStage = Exclude<Stage, Env>
 const isRelease = (stage: Stage): stage is Env => stage === "staging" || stage === "prod"
 export type Question = { id: string; question: string; proposal: string }
 // A unit of work: one repo, one PR.
-export type Unit = { id: string; repo: string; subtask: string | null; branch: string; title: string; dependsOn: string[]; status?: "done" | "failed"; pr?: string | null }
+export type Unit = { id: string; repo: string; subtask: string | null; subtasks?: string[]; branch: string; title: string; dependsOn: string[]; status?: "done" | "failed"; pr?: string | null }
 // An item of the plan's to-do list: what gets done, in plain words, and its unit.
 export type ChecklistItem = { id: string; text: string; unit: string | null }
 // A script a plan runs on the data (a backfill, a migration): its unit, the
@@ -152,7 +152,7 @@ const STAGE: Record<AgentStage, StageDef> = {
 1. Lee ${join(STAGES_DIR, "plan.md")} y ${join(STAGES_DIR, "environment.md")}, y síguelos. Si el ticket cambia datos que ya existen, lee también ${join(STAGES_DIR, "scripts.md")}.
 2. El refinamiento aprobado está en ${join(dir, "refine.md")}. El ticket, al día, en ${join(dir, "ticket.md")}: sus comentarios mandan.
 3. Escribe el plan en ${join(dir, "plan.md")} y el resumen en ${join(dir, "plan.summary.md")}.
-4. Escribe al final ${join(dir, "plan.json")}: {"verdict": "ready" | "needs-info", "questions": [...], "units": [{"id": "U1", "repo": "...", "subtask": "PP-...", "branch": "...", "title": "...", "dependsOn": []}], "checklist": [{"id": "C1", "text": "...", "unit": "U1"}], "scripts": [{"id": "S1", "unit": "U1", "title": "...", "command": "...", "when": "...", "envs": ["staging", "prod"]}], "release": [{"step": "manual", "text": "...", "envs": ["staging"]}, {"step": "unit", "id": "U1"}, {"step": "script", "id": "S1"}]}.`,
+4. Escribe al final ${join(dir, "plan.json")}: {"verdict": "ready" | "needs-info", "questions": [...], "units": [{"id": "U1", "repo": "...", "subtasks": ["PP-...", "PP-..."], "branch": "...", "title": "...", "dependsOn": []}], "checklist": [{"id": "C1", "text": "...", "unit": "U1"}], "scripts": [{"id": "S1", "unit": "U1", "title": "...", "command": "...", "when": "...", "envs": ["staging", "prod"]}], "release": [{"step": "manual", "text": "...", "envs": ["staging"]}, {"step": "unit", "id": "U1"}, {"step": "script", "id": "S1"}]}.`,
   },
   build: {
     verb: "construir", title: "Construcción", done: "construido: PRs abiertas", label: LABELS.built, unlabel: [LABELS.ready, LABELS.planned, LABELS.reviewed], model: "claude-opus-5-5", effort: "high", writes: true,
@@ -213,17 +213,33 @@ const deniedFor = (stage: AgentStage, root: string) => [
 // The test in staging loads its test data and cleans it up with this script
 // (<data>/pipeline/fixtures), run from its folder; its IAM user can write only that data.
 const FIXTURES = "Bash(python3 fixtures.py:*)"
-export const argsFor = (stage: AgentStage, root = ROOT) => {
+// Figma, for the stages that read a design (not the check in prod), when the ticket
+// links one: the team's Figma connection (stages/figma-mcp.json), with only the
+// tools that read; the ones that write in Figma are denied.
+const FIGMA_STAGES: AgentStage[] = ["refine", "plan", "build", "review", "test"]
+const FIGMA_READ = ["whoami", "get_design_context", "get_metadata", "get_screenshot", "get_variable_defs", "get_figjam", "get_libraries", "search_design_system", "get_code_connect_map", "get_motion_context", "download_assets"]
+const FIGMA_WRITE = ["use_figma", "generate_figma_design", "create_new_file", "upload_assets", "add_code_connect_map", "send_code_connect_mappings", "generate_diagram", "generate_image",
+  "create_generative_plugin", "update_generative_plugin", "create_shader", "update_shader", "export_video", "html_to_figma", "send_code_to_figma", "weave_run_tool", "weave_run_model", "weave_upload_asset", "weave_cancel_tool_run"]
+const figmaTools = (names: string[]) => names.map(n => `mcp__figma__${n}`)
+export const linksFigma = (text: string) => /figma\.com\/(design|file|proto|board|make)\//.test(text)
+
+export const argsFor = (stage: AgentStage, root = ROOT, opts: { figma?: boolean } = {}) => {
   const s = STAGE[stage]
-  return ["--setting-sources", "project,local", "--strict-mcp-config", "--model", s.model, "--effort", s.effort, ...(s.writes ? ["--add-dir", join(root, "repos")] : []), "--disallowedTools", ...deniedFor(stage, root), ...(stage === "test" ? ["--allowedTools", FIXTURES] : [])]
+  const figma = !!opts.figma && FIGMA_STAGES.includes(stage)
+  const allowed = [...(stage === "test" ? [FIXTURES] : []), ...(figma ? figmaTools(FIGMA_READ) : [])]
+  return ["--setting-sources", "project,local", "--strict-mcp-config", "--model", s.model, "--effort", s.effort, ...(s.writes ? ["--add-dir", join(root, "repos")] : []),
+    "--disallowedTools", ...deniedFor(stage, root), ...(figma ? figmaTools(FIGMA_WRITE) : []),
+    ...(allowed.length ? ["--allowedTools", ...allowed] : []), ...(figma ? ["--mcp-config", join(root, "stages", "figma-mcp.json")] : [])]
 }
 
 const listOf = (v: unknown): any[] => (Array.isArray(v) ? v : [])
 // A plan's units; a build's also say how each went and its PR.
+// Every sub-task a unit covers (its "subtasks", and the single "subtask" of before), each once.
+const subtasksIn = (u: any): string[] => [...new Set([...listOf(u.subtasks), u.subtask].filter(k => typeof k === "string" && k.trim()).map((k: string) => k.trim()))]
 const unitsIn = (v: unknown, isBuild: boolean): Unit[] =>
   listOf(v)
     .filter(u => typeof u?.repo === "string" && u.repo.trim() && typeof u?.title === "string" && u.title.trim())
-    .map((u, i) => ({ id: String(u.id ?? `U${i + 1}`), repo: u.repo.trim(), subtask: typeof u.subtask === "string" && u.subtask ? u.subtask : null,
+    .map((u, i) => ({ id: String(u.id ?? `U${i + 1}`), repo: u.repo.trim(), subtask: typeof u.subtask === "string" && u.subtask ? u.subtask : null, subtasks: subtasksIn(u),
       branch: String(u.branch ?? ""), title: u.title.trim(), dependsOn: listOf(u.dependsOn).map(String),
       ...(isBuild ? { status: u.status === "done" ? ("done" as const) : ("failed" as const), pr: typeof u.pr === "string" && u.pr ? u.pr : null } : {}) }))
 
@@ -462,7 +478,9 @@ async function runStage(key: string, runs: number, stage: AgentStage, auto?: boo
   const state = stage === "build" ? { ...started, ...(await inJira("build-started", started)) } : started
   await save(state)
   const id = randomUUID()
-  const pid = await spawnStage(dir, id, promptFor(key, dir, stage, state.children), stage, () => void watch())
+  // Figma, when what the stage reads links a design and the team set Figma up.
+  const figma = linksFigma(await readText(join(dir, "ticket.md")) ?? "") && existsSync(join(STAGES_DIR, "figma-mcp.json"))
+  const pid = await spawnStage(dir, id, promptFor(key, dir, stage, state.children), stage, () => void watch(), figma)
   await save({ ...state, sessionId: id, pid })
   await applyAction(id, [id], "tickets", { started: [key] })
 }
@@ -470,9 +488,9 @@ async function runStage(key: string, runs: number, stage: AgentStage, auto?: boo
 // A stage's session, started on its own (its own process group, its output to
 // <stage>.log), so restarting the board never stops it: the board learns it
 // ended by watching its process, not by being its parent.
-async function spawnStage(dir: string, id: string, prompt: string, stage: AgentStage, onExit: () => void): Promise<number> {
+async function spawnStage(dir: string, id: string, prompt: string, stage: AgentStage, onExit: () => void, figma = false): Promise<number> {
   const log = openSync(join(dir, `${stage}.log`), "a")
-  const proc = spawn(await claudeBinary(), ["-p", "--session-id", id, "--output-format", "stream-json", "--verbose", "--permission-mode", "auto", ...argsFor(stage), "--", prompt],
+  const proc = spawn(await claudeBinary(), ["-p", "--session-id", id, "--output-format", "stream-json", "--verbose", "--permission-mode", "auto", ...argsFor(stage, ROOT, { figma }), "--", prompt],
     { cwd: dir, env: claudeEnv({ AGENT_CENTER_LAUNCH: "1" }), detached: true, stdio: ["ignore", log, log] })
   if (!proc.pid) throw new Error("Claude Code did not start")
   proc.on("exit", onExit)

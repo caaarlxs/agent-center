@@ -21,7 +21,7 @@ export type Flow = {
 export type Event = "build-started" | "built" | "in-staging" | "tested" | "in-prod"
 export type Move = { key: string; to: Status; comment?: string }
 
-type Unit = { subtask?: string | null; pr?: string | null }
+type Unit = { subtask?: string | null; subtasks?: string[]; pr?: string | null }
 type Result = { id: string; criterion?: string; status: "pass" | "fail" }
 export type FlowState = { key: string; units?: Unit[]; fixes?: string[]; results?: Result[] }
 
@@ -33,7 +33,8 @@ export type Jira = {
   createSubtask: (parent: string, summary: string, type: string) => Promise<string>
 }
 
-const subtasksOf = (state: FlowState) => [...new Set([...(state.units ?? []).map(u => u.subtask), ...(state.fixes ?? [])].filter(Boolean))] as string[]
+const ofUnit = (u: Unit) => [...new Set([...(u.subtasks ?? []), u.subtask].filter(Boolean))] as string[]
+const subtasksOf = (state: FlowState) => [...new Set([...(state.units ?? []).flatMap(ofUnit), ...(state.fixes ?? [])])]
 const failing = (state: FlowState) => (state.results ?? []).filter(r => r.status === "fail")
 
 // A story with no sub-tasks has nothing for Jira to follow: the story itself moves.
@@ -49,7 +50,7 @@ export function movesFor(event: Event, state: FlowState, flow: Flow): Move[] {
   const isAlone = !subtasksOf(state).length && (event === "build-started" || event === "built" || event === "in-staging")
   if (isAlone) return storyMoves(event, state, s)
   if (event === "build-started") return subtasksOf(state).map(key => ({ key, to: s.inProgress }))
-  if (event === "built") return (state.units ?? []).filter(u => u.subtask && u.pr).map(u => ({ key: u.subtask!, to: s.inReview, comment: `PR: ${u.pr}` }))
+  if (event === "built") return (state.units ?? []).filter(u => u.pr).flatMap(u => ofUnit(u).map(key => ({ key, to: s.inReview, comment: `PR: ${u.pr}` })))
   if (event === "in-staging") return subtasksOf(state).map(key => ({ key, to: s.done }))
   if (event === "tested") return [{ key: state.key, to: failing(state).length ? s.reopened : s.readyForProd }]
   return [{ key: state.key, to: s.done }]

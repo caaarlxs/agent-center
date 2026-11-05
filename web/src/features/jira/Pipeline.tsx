@@ -210,7 +210,7 @@ function Units({ units }: { units: Unit[] }) {
           </span>
           {u.pr ? <a href={u.pr} target="_blank" rel="noreferrer" className="font-mono text-[11px] font-semibold text-brand no-underline hover:underline">PR #{u.pr.split("/").pop()}</a>
             : u.status === "failed" ? <span className="text-[11px] font-semibold text-bad">Failed</span>
-            : <span className="font-mono text-[11px] text-faint">{u.subtask ?? ""}</span>}
+            : <span className="font-mono text-[11px] text-faint">{subtasksOf(u) ?? ""}</span>}
           <span />
           <span className="min-w-0 truncate font-mono text-[11px] text-faint">{u.branch}{u.dependsOn.length > 0 && <span className="font-sans"> · after {u.dependsOn.map(d => units.findIndex(x => x.id === d) + 1 || d).join(", ")}</span>}</span>
         </li>
@@ -452,6 +452,9 @@ function AtWork({ state }: { state: PipelineState }) {
   )
 }
 
+// The sub-tasks a unit covers, in a line (the single one of older plans too).
+const subtasksOf = (u: Unit) => (u.subtasks?.length ? u.subtasks.join(", ") : u.subtask) || null
+
 // The refinement: the decisions it asked for and how many runs it took.
 function RefinePanel({ state }: { state: PipelineState }) {
   const runs = (state.history ?? []).filter(r => (r.stage ?? "refine") === "refine")
@@ -469,7 +472,7 @@ function PlanPanel({ state, steps }: { state: PipelineState; steps: number | nul
   const units = state.units ?? []
   return (
     <div className="flex flex-col gap-3">
-      <Tiles>{units.map(u => <Tile key={u.id}><RepoName repo={u.repo} /><span className="text-[11.5px] text-faint">{u.subtask ?? u.id}</span></Tile>)}</Tiles>
+      <Tiles>{units.map(u => <Tile key={u.id}><RepoName repo={u.repo} /><span className="text-[11.5px] text-faint">{subtasksOf(u) ?? u.id}</span></Tile>)}</Tiles>
       <span className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-text-muted">
         {state.checklist?.length ? <span className="inline-flex items-center gap-1.5"><ListChecks size={13} />{state.checklist.length} to-dos</span> : null}
         {state.scripts?.length ? <span className="inline-flex items-center gap-1.5"><Database size={13} />{state.scripts.length} script{state.scripts.length === 1 ? "" : "s"} on the data</span> : null}

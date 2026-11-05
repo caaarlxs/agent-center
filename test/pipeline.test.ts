@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { blocking, checkedIn, toFixNow, MARK, answeredAfter, answersComment, argsFor, parseResult, pipelineKeyOf, stageToRun, unbuilt, withRun, questionsComment, snapshotOf, prodWarning, autoNext } from "../lib/pipeline"
+import { blocking, checkedIn, toFixNow, MARK, answeredAfter, answersComment, argsFor, parseResult, pipelineKeyOf, stageToRun, unbuilt, withRun, questionsComment, snapshotOf, prodWarning, autoNext, linksFigma } from "../lib/pipeline"
 
 const questions = [
   { id: "Q1", question: "¿Cuál es el copy?", proposal: "El del ticket" },
@@ -18,15 +18,15 @@ describe("parseResult", () => {
   it("reads a plan's units, numbering the ones without an id", () => {
     const units = [{ repo: "api-service", subtask: "PP-2", branch: "feat/PP-2-x", title: "Campo", dependsOn: [] }, { id: "U9", repo: "web-app", title: "Aviso", dependsOn: ["U1"] }, { title: "sin repo" }]
     expect(parseResult(JSON.stringify({ verdict: "ready", units }), "plan").units).toEqual([
-      { id: "U1", repo: "api-service", subtask: "PP-2", branch: "feat/PP-2-x", title: "Campo", dependsOn: [] },
-      { id: "U9", repo: "web-app", subtask: null, branch: "", title: "Aviso", dependsOn: ["U1"] },
+      { id: "U1", repo: "api-service", subtask: "PP-2", subtasks: ["PP-2"], branch: "feat/PP-2-x", title: "Campo", dependsOn: [] },
+      { id: "U9", repo: "web-app", subtask: null, subtasks: [], branch: "", title: "Aviso", dependsOn: ["U1"] },
     ])
   })
   it("reads what the build left of each unit: its status and its PR", () => {
     const units = [{ id: "U1", repo: "api-service", title: "Campo", status: "done", pr: "https://github.com/acme/api-service/pull/7" }, { id: "U2", repo: "web-app", title: "Aviso", status: "weird" }]
     expect(parseResult(JSON.stringify({ verdict: "ready", units }), "build").units).toEqual([
-      { id: "U1", repo: "api-service", subtask: null, branch: "", title: "Campo", dependsOn: [], status: "done", pr: "https://github.com/acme/api-service/pull/7" },
-      { id: "U2", repo: "web-app", subtask: null, branch: "", title: "Aviso", dependsOn: [], status: "failed", pr: null },
+      { id: "U1", repo: "api-service", subtask: null, subtasks: [], branch: "", title: "Campo", dependsOn: [], status: "done", pr: "https://github.com/acme/api-service/pull/7" },
+      { id: "U2", repo: "web-app", subtask: null, subtasks: [], branch: "", title: "Aviso", dependsOn: [], status: "failed", pr: null },
     ])
   })
   it("reads a plan's to-do list in plain words, each item numbered and tied to its unit", () => {
@@ -210,6 +210,18 @@ describe("unbuilt", () => {
 })
 
 describe("argsFor", () => {
+  it("gives a stage Figma, read-only, only when the ticket links a design", () => {
+    const args = argsFor("build", "/data/pipeline", { figma: true })
+    expect(args).toEqual(expect.arrayContaining(["--mcp-config", "/data/pipeline/stages/figma-mcp.json", "mcp__figma__get_design_context", "mcp__figma__get_screenshot"]))
+    const denied = args.slice(args.indexOf("--disallowedTools") + 1)
+    expect(denied).toEqual(expect.arrayContaining(["mcp__figma__use_figma", "mcp__figma__generate_figma_design", "mcp__figma__upload_assets"]))
+    expect(argsFor("build", "/data/pipeline")).not.toContain("--mcp-config")
+    expect(argsFor("smoke", "/data/pipeline", { figma: true })).not.toContain("--mcp-config")
+  })
+  it("finds a link to a design in what the stage reads", () => {
+    expect(linksFigma("Ver diseño → https://www.figma.com/design/rl5pxe5r/UI?node-id=21003-315196")).toBe(true)
+    expect(linksFigma("https://github.com/o/r/pull/7")).toBe(false)
+  })
   it("lets only the test in staging load and clean its test data (fixtures.py), nothing else", () => {
     expect(argsFor("test", "/data/pipeline")).toEqual(expect.arrayContaining(["--allowedTools", "Bash(python3 fixtures.py:*)"]))
     for (const stage of ["refine", "plan", "build", "review", "smoke"] as const) expect(argsFor(stage, "/data/pipeline")).not.toContain("Bash(python3 fixtures.py:*)")
@@ -297,5 +309,14 @@ describe("autoNext", () => {
   })
   it("leaves a coordinator to its children", () => {
     expect(autoNext(at("refine", "ready", { children: [{ key: "PP-2", dependsOn: [] }] }))).toBeNull()
+  })
+})
+
+describe("a unit's sub-tasks", () => {
+  it("reads every sub-task a unit covers, the old single one too, each once", () => {
+    const units = [{ id: "U1", repo: "deale-frontend", title: "Badge", subtasks: ["PP-2795", "PP-2792", "PP-2795"], subtask: "PP-2793" }, { id: "U2", repo: "x", title: "y", subtask: "PP-1" }]
+    const out = parseResult(JSON.stringify({ verdict: "ready", units }), "plan").units
+    expect(out[0]!.subtasks).toEqual(["PP-2795", "PP-2792", "PP-2793"])
+    expect(out[1]!.subtasks).toEqual(["PP-1"])
   })
 })
