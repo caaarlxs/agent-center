@@ -22,3 +22,13 @@ describe("Run on a code block", () => {
     expect(run.textContent).toContain("Run · prod?")
   })
 })
+
+describe("Links to files", () => {
+  it("keeps a relative or absolute link to a file as a link, not blocked", async () => {
+    const { container } = md("- [cuestionario.md](cuestionario.md): lo que respondes\n- [a](/Users/x/a%20b.md) y [web](https://x.com)")
+    await act(() => new Promise(r => setTimeout(r, 300)))
+    expect(container.textContent).not.toContain("[blocked]")
+    expect([...container.querySelectorAll(".file-link")].map(e => [e.textContent, e.getAttribute("title")])).toEqual([["cuestionario.md", "Open cuestionario.md here"], ["a", "Open a b.md here"]])
+    expect(container.querySelector("a[href^='https://x.com']")).not.toBeNull()
+  })
+})

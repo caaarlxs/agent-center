@@ -25,7 +25,7 @@ import { Orb } from "@yogesharc/thinking-orbs"
 import { useNow } from "@/lib/now"
 import { cn } from "@/lib/utils"
 import { openDialog } from "@/app/open-dialog"
-import { openSession, showChange, showFile, showTab } from "@/app/open-session"
+import { openFile, openSession, showChange, showTab } from "@/app/open-session"
 import { fileName, sentFiles } from "@/features/prompt/files"
 import { ago } from "@/features/session/state"
 import { answer, launch, permit, stop } from "@/features/session/actions"
@@ -99,13 +99,13 @@ function Bubble({ text: raw, isPending }: { text: string; isPending?: boolean })
 const chip = "inline-flex h-[30px] max-w-[260px] items-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 text-[12.5px] text-text no-underline hover:border-line-strong"
 
 // A file Claude showed you: its type, name and size ("gone" when it is no
-// longer there); a click opens it in the Files tab, the arrow saves it.
+// longer there); a click opens it beside the panel (or in Files), the arrow saves it.
 function FileChip({ sessionId, path }: { sessionId: string; path: string }) {
   const [info, setInfo] = useState<{ path?: string; size?: number; error?: string } | null>(null)
   useEffect(() => void get<{ path: string; size: number }>(sessionFileUrl(sessionId, "fileinfo", path)).then(setInfo, (err: Error) => setInfo({ error: err.message })), [sessionId, path])
   return (
     <span className={cn(chip, "pr-1")}>
-      <button className="inline-flex min-w-0 items-center gap-1.5" onClick={() => showFile(path)} title={info?.path ?? path}>
+      <button className="inline-flex min-w-0 items-center gap-1.5" onClick={() => openFile(path)} title={info?.path ?? path}>
         <FileIcon path={path} /><span className="truncate">{nameOf(path)}</span>
         {info?.size != null ? <small className="shrink-0 text-[11px] text-faint tabular-nums">{bytesText(info.size)}</small> : info?.error && <small className="shrink-0 text-[11px] text-faint">gone</small>}
       </button>
@@ -622,7 +622,7 @@ function ShownItem({ item, sessionId, asked, suggested, onFork }: { item: Shown;
             <b className="truncate text-[13px]">{item.path ? nameOf(item.path).replace(/\.[^.]+$/, "") : "Artifact"}</b>
             <small className="text-[11.5px] text-faint">{item.url ? "Published on claude.ai" : "Published"}</small>
           </div>
-          {item.path && <Button variant="ghost" onClick={() => showFile(item.path!)}>View file</Button>}
+          {item.path && <Button variant="ghost" onClick={() => openFile(item.path!)}>View file</Button>}
           {item.url && <Button variant="outline" asChild><a href={item.url} target="_blank" rel="noreferrer">Open <Anim.ArrowUpRight size={12} /></a></Button>}
         </div>
       )

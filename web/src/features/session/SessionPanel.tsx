@@ -14,7 +14,7 @@ import { createStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
 import { Guard } from "@/components/common/Guard"
 import { SessionBot } from "./bot"
-import { type Tab, WORKSPACES, openSession, showTab } from "@/app/open-session"
+import { type Tab, WORKSPACES, beside, openSession, showTab } from "@/app/open-session"
 import { openDialog } from "@/app/open-dialog"
 import { toggleWatch, watched } from "@/features/alerts/prefs"
 import { lazyView } from "@/lib/lazy-view"
@@ -42,6 +42,7 @@ const Prs = lazyView(() => import("@/features/prs/Prs").then(m => m.Prs))
 const Tasks = lazyView(() => import("@/features/tasks/Tasks").then(m => m.Tasks))
 const Commits = lazyView(() => import("@/features/commits/Commits").then(m => m.Commits))
 const TicketTab = lazyView(() => import("@/features/jira/TicketTab").then(m => m.TicketTab))
+const DocBeside = lazyView(() => import("@/features/files/DocBeside").then(m => m.DocBeside))
 const Trace = lazyView(() => import("@/features/trace/Trace").then(m => m.Trace))
 const PRELOAD: Partial<Record<string, () => void>> = { changes: Changes.preload, code: CodeWorkspace.preload, files: Files.preload, prs: Prs.preload, tasks: Tasks.preload, commits: Commits.preload, trace: Trace.preload }
 
@@ -223,6 +224,10 @@ export function SessionPanel({ id, tab: asked, file }: { id: string; tab: Tab; f
   // Code stays mounted once opened, hidden while another tab shows.
   const [hasCode, setHasCode] = useState(tab === "code")
   useEffect(() => void (tab === "code" && setHasCode(true)), [tab])
+  // A file beside the panel: loaded the first time one opens, then kept, so it folds away.
+  const isBeside = beside.use()?.id === id
+  const [hasBeside, setHasBeside] = useState(isBeside)
+  useEffect(() => void (isBeside && setHasBeside(true)), [isBeside])
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || e.defaultPrevented || document.querySelector("[role=dialog], [role=menu]")) return
@@ -278,6 +283,7 @@ export function SessionPanel({ id, tab: asked, file }: { id: string; tab: Tab; f
         {tab === "files" && <Guard key={id} where="files"><Files id={id} file={file} /></Guard>}
         {hasCode && <div className={cn("flex min-h-0 flex-1 flex-col", tab !== "code" && "hidden")}><Guard key={id} where="code"><CodeWorkspace id={id} isShown={tab === "code"} /></Guard></div>}
       </div>
+      {hasBeside && <Guard key={id} where="file beside"><DocBeside id={id} /></Guard>}
     </aside>
   )
 }

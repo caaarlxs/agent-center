@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { dialogAnswer, endOf, familyOf, isShellLike, isTemplate, partsOf, pathInCode, pathInLink, plainOf, quoteOf, riskOf } from "./text"
+import { dialogAnswer, endOf, familyOf, isShellLike, isTemplate, partsOf, pathInCode, pathInLink, localHref, plainOf, quoteOf, riskOf } from "./text"
 
 describe("partsOf", () => {
   it("folds pasted blocks away from what was typed", () => {
@@ -40,6 +40,20 @@ describe("paths", () => {
     expect(pathInLink("src/app%20one.ts:12:3")).toBe("src/app one.ts")
     expect(pathInLink("https://example.com")).toBeNull()
     expect(pathInLink("#top")).toBeNull()
+  })
+  it("finds a file in a link marked as local", () => {
+    expect(pathInLink(localHref("cuestionario-backend.md"))).toBe("cuestionario-backend.md")
+    expect(pathInLink(localHref("/Users/x/a b.md"))).toBe("/Users/x/a b.md")
+  })
+})
+
+describe("localHref", () => {
+  it("marks a path so the Markdown guard lets it through, and leaves web links and anchors", () => {
+    expect(localHref("docs/a.md")).toBe("agent-file:docs%2Fa.md")
+    expect(localHref("https://x.com")).toBe("https://x.com")
+    expect(localHref("mailto:a@b.c")).toBe("mailto:a@b.c")
+    expect(localHref("#top")).toBe("#top")
+    expect(localHref("//cdn.x/a.js")).toBe("//cdn.x/a.js")
   })
 })
 

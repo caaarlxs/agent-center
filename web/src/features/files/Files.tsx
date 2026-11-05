@@ -6,7 +6,7 @@
 // else as Quick Look's picture of its first page. Only files the session's own
 // transcript names are served (lib/session-files.ts).
 import Editor from "@monaco-editor/react"
-import { useEffect, useMemo, useState } from "react"
+import { type ReactNode, useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { get, post, sessionFileUrl as at } from "@/lib/api"
@@ -24,7 +24,7 @@ import { OfficeDoc } from "./OfficeDoc"
 import { Anim } from "@/components/icons/animated"
 import { CopyMark, useCopyMoment } from "@/components/icona/marks"
 
-type Listed = { path: string; name: string; size: number; modifiedAt: number; source: "sent" | "artifact" | "written"; url?: string }
+export type Listed = { path: string; name: string; size: number; modifiedAt: number; source: "sent" | "artifact" | "written"; url?: string }
 type Info = { path: string; size: number; isViewable: boolean; error?: string }
 
 const SOURCE = { sent: "sent", artifact: "published", written: "written" } // written: a file opened from the conversation
@@ -98,7 +98,9 @@ function Body({ id, file, info, isSource }: { id: string; file: Listed; info: In
   }
 }
 
-function Viewer({ id, file }: { id: string; file: Listed }) {
+// actions: more buttons at the end of its head (beside the panel: Files, close);
+// isCompact: beside the panel, without Show in Finder and Open on the Mac.
+export function Viewer({ id, file, actions, isCompact = false }: { id: string; file: Listed; actions?: ReactNode; isCompact?: boolean }) {
   const [info, setInfo] = useState<Info | null>(null)
   const [isSource, setSource] = useState(false)
   useEffect(() => void get<Info>(at(id, "fileinfo", file.path)).then(setInfo, (err: Error) => setInfo({ path: file.path, size: 0, isViewable: false, error: err.message })), [id, file.path])
@@ -120,10 +122,11 @@ function Viewer({ id, file }: { id: string; file: Listed }) {
           <>
             <button className={cn("inline-grid size-7 place-items-center rounded-[7px] text-text-muted transition-colors duration-200 hover:bg-press hover:text-text active:scale-[0.92]", copied.step >= 0 && "text-work hover:text-work")} onClick={copyPath} title="Copy the path"><CopyMark moment={copied} size={14} idle={<Anim.Copy size={14} />} /></button>
             <Button variant="ghost" asChild><a href={at(id, "download", file.path)} download={file.name} title="Download it">Download</a></Button>
-            <Button variant="ghost" onClick={() => openOnMac(true)} title="Show it in Finder">Show in Finder</Button>
-            <Button variant="ghost" onClick={() => openOnMac()} title="Open it in its app on this Mac">Open on the Mac</Button>
+            {!isCompact && <Button variant="ghost" onClick={() => openOnMac(true)} title="Show it in Finder">Show in Finder</Button>}
+            {!isCompact && <Button variant="ghost" onClick={() => openOnMac()} title="Open it in its app on this Mac">Open on the Mac</Button>}
           </>
         )}
+        {actions}
       </header>
       <div className="min-h-0 flex-1 overflow-auto">
         {!info ? <p className={muted}>Loading…</p> : info.error ? <p className={muted}>{info.error}</p> : <Body id={id} file={file} info={info} isSource={isSource} />}

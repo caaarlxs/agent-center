@@ -37,8 +37,16 @@ export function dialogAnswer(text: string): string {
 // in the Files tab; so does a link to a file of the session's folder.
 const PATH_CODE = /^(?:~|\/)[^\n]{1,300}\.[A-Za-z0-9]{1,8}$/
 export const pathInCode = (code: string) => (PATH_CODE.test(code.trim()) ? code.trim() : null)
+// A link to a file on this Mac (a path, relative or not), marked with its own
+// scheme: the Markdown guard blocks a link it cannot place on the web (it
+// would show "[blocked]"), and lets any scheme through. Web links, anchors and
+// links to other schemes stay as they are.
+const LOCAL = "agent-file:"
+export const localHref = (href: string) => (/^([a-z][a-z0-9+.-]*:|#|\/\/)/i.test(href) ? href : LOCAL + encodeURIComponent(href))
+
 export function pathInLink(href: string | undefined): string | null {
-  if (!href || /^([a-z][a-z0-9+.-]*:|#)/i.test(href)) return null
+  if (href?.startsWith(LOCAL)) href = decodeURIComponent(href.slice(LOCAL.length))
+  else if (!href || /^([a-z][a-z0-9+.-]*:|#)/i.test(href)) return null
   let path = href
   try {
     path = decodeURI(href)

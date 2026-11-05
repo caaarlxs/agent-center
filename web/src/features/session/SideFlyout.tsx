@@ -20,7 +20,7 @@ const DRAWER = [0.32, 0.72, 0, 1] as const // iOS's drawer curve: quick to start
 // The frame lets the side's shadow out to the left, above and below, never onto the panel.
 const FRAME = "inset(-48px 0 -48px -48px)"
 
-export function SideFlyout({ label, isOpen = true, className, children }: { label: string; isOpen?: boolean; className?: string; children: ReactNode }) {
+export function SideFlyout({ label, isOpen = true, width = 264, className, children }: { label: string; isOpen?: boolean; width?: number; className?: string; children: ReactNode }) {
   // The panel itself: positioned, so the side hangs off its left edge.
   const [host, setHost] = useState<HTMLElement | null>(null)
   useEffect(() => setHost(document.querySelector<HTMLElement>("[data-panel]")), [])
@@ -29,7 +29,7 @@ export function SideFlyout({ label, isOpen = true, className, children }: { labe
   return createPortal(
     <AnimatePresence>
       {isOpen && (
-        <motion.div key="side" className="absolute inset-y-0 right-full w-[264px]" style={{ clipPath: FRAME }} exit={{ opacity: 1 }}>
+        <motion.div key="side" className="absolute inset-y-0 right-full" style={{ clipPath: FRAME, width }} exit={{ opacity: 1 }}>
           <motion.aside aria-label={label}
             className={cn("flex h-full w-full flex-col border-r border-line bg-side shadow-pop will-change-transform", className)}
             initial={isStill ? { opacity: 0 } : { x: "100%" }}

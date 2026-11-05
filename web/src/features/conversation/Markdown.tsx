@@ -1,17 +1,17 @@
 // Claude's Markdown as the classic board draws it (util.js md, styles.css:534-576):
 // plain code blocks that wrap, each with Copy (and Run for a shell block when
-// Setup allows it), inline code and relative links that name a file opening it
-// in the Files tab, other links in a new window. Streamdown parses; the look is
+// Setup allows it), inline code and links that name a file opening it beside
+// the panel (or in the Files tab), other links in a new window. Streamdown parses; the look is
 // the .md block in index.css.
 import { Check, Play } from "lucide-react"
 import { createContext, Fragment, memo, useContext, useEffect, useRef, useState, type ComponentProps, type ReactNode } from "react"
-import { Streamdown, type Components } from "streamdown"
+import { Streamdown, defaultRehypePlugins, defaultUrlTransform, type Components, type UrlTransform } from "streamdown"
 import { cjk } from "@streamdown/cjk"
 import { post } from "@/lib/api"
 import { useShikiTheme, useTokens } from "@/lib/code-theme"
 import { cn } from "@/lib/utils"
-import { showFile } from "@/app/open-session"
-import { endOf, isShellLike, pathInCode, pathInLink, riskOf, SHELL_LANG, nameOf } from "./text"
+import { openFile } from "@/app/open-session"
+import { endOf, isShellLike, localHref, pathInCode, pathInLink, riskOf, SHELL_LANG, nameOf } from "./text"
 import { Anim } from "@/components/icons/animated"
 import { CopyMark, useCopyMoment } from "@/components/icona/marks"
 import { SwapText } from "@/components/watermelon/SwapText"
@@ -138,12 +138,12 @@ function CodeBox({ text, lang }: { text: string; lang: string }) {
   )
 }
 
-// A path that opens in the Files tab.
+// A path that opens beside the panel, or in the Files tab.
 function FileLink({ path, children, isCode }: { path: string; children: ReactNode; isCode?: boolean }) {
   const Tag = isCode ? "code" : "a"
   return (
-    <Tag role="link" tabIndex={0} className="file-link" title={`Open ${nameOf(path)} here`} onClick={() => showFile(path)}
-      onKeyDown={e => e.key === "Enter" && showFile(path)}>{children}</Tag>
+    <Tag role="link" tabIndex={0} className="file-link" title={`Open ${nameOf(path)} here`} onClick={() => openFile(path)}
+      onKeyDown={e => e.key === "Enter" && openFile(path)}>{children}</Tag>
   )
 }
 
@@ -169,12 +169,25 @@ const components: Components = {
   },
 }
 
+// Links to files on this Mac get their own scheme before the guard (harden)
+// looks at them, so they stay links (pathInLink reads them back).
+function localLinks() {
+  const visit = (n: Hast) => {
+    if (n.tagName === "a" && typeof n.properties?.href === "string") n.properties.href = localHref(n.properties.href)
+    n.children?.forEach(visit)
+  }
+  return (tree: Hast) => visit(tree)
+}
+const { harden, ...before } = defaultRehypePlugins
+const rehypePlugins = [...Object.values(before), localLinks, harden!]
+const urlTransform: UrlTransform = (url, key, node) => (pathInLink(url) && url.startsWith("agent-file:") ? url : defaultUrlTransform(url, key, node))
+
 // A table shows whole, however tall (Streamdown caps it at 300px otherwise).
 // isStreaming: text still being written; markdown left open (a ** not yet
 // closed) shows as it will once it is.
 export const Markdown = memo(function Markdown({ children, className, isStreaming = false }: { children: string; className?: string; isStreaming?: boolean }) {
   return (
-    <Streamdown className={cn("md", className)} components={components} plugins={{ cjk }} controls={false} tableMaxHeight={0} parseIncompleteMarkdown={isStreaming}>
+    <Streamdown className={cn("md", className)} components={components} rehypePlugins={rehypePlugins} urlTransform={urlTransform} plugins={{ cjk }} controls={false} tableMaxHeight={0} parseIncompleteMarkdown={isStreaming}>
       {children}
     </Streamdown>
   )
