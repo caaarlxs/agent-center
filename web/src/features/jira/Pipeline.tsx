@@ -470,7 +470,7 @@ function RefinePanel({ state }: { state: PipelineState }) {
   )
 }
 
-function PlanPanel({ state, steps }: { state: PipelineState; steps: number | null }) {
+export function PlanPanel({ state, steps }: { state: PipelineState; steps: number | null }) {
   const units = state.units ?? []
   return (
     <div className="flex flex-col gap-3">
@@ -489,7 +489,7 @@ function PlanPanel({ state, steps }: { state: PipelineState; steps: number | nul
   )
 }
 
-function BuildPanel({ state }: { state: PipelineState }) {
+export function BuildPanel({ state }: { state: PipelineState }) {
   const units = state.units ?? []
   return (
     <div className="flex flex-col gap-3">
@@ -566,7 +566,7 @@ function ResultRow({ result: r, ticketKey }: { result: TestResult; ticketKey: st
   )
 }
 
-function TestPanel({ state, release }: { state: PipelineState; release: Release | null }) {
+export function TestPanel({ state, release }: { state: PipelineState; release: Release | null }) {
   const results = state.results ?? []
   const pass = results.filter(r => r.status === "pass").length
   return (

@@ -63,3 +63,25 @@ describe("jobPrompt", () => {
     expect(jobPrompt("review", "JOB-3", "/d", { ticket: null, prs: [pr(1)] })).toContain("No hay ticket")
   })
 })
+
+describe("every specialist", () => {
+  const job = (done = {}) => ({ ticket: "PP-1", prs: [], done })
+  it("reads the ticket with its children, and writes only its files; the builder, its PRs as drafts", () => {
+    for (const stage of ["refine", "plan", "test", "smoke"] as const) {
+      const text = jobPrompt(stage, "JOB-2", "/d", job())
+      expect(text).toContain("/d/ticket.md")
+      expect(text).toContain("No escribas en Jira, en GitHub ni en los repos")
+    }
+    expect(jobPrompt("build", "JOB-2", "/d", job())).toContain("Abre cada PR como borrador; nunca mergees ni despliegues")
+  })
+  it("takes what the pipeline already did of the ticket; without it, it does that first", () => {
+    expect(jobPrompt("plan", "JOB-2", "/d", job({ "refine.md": "/p/PP-1/refine.md" }))).toContain("/p/PP-1/refine.md: úsalo")
+    expect(jobPrompt("plan", "JOB-2", "/d", job())).toContain("No hay refinamiento")
+    expect(jobPrompt("build", "JOB-2", "/d", job({ "plan.json": "/p/PP-1/plan.json" }))).toContain("/p/PP-1/plan.json: síguelo")
+    expect(jobPrompt("build", "JOB-2", "/d", job())).toContain("No hay plan: haz primero uno")
+  })
+  it("the tester stays in staging; the prod checker only reads", () => {
+    expect(jobPrompt("test", "JOB-2", "/d", job())).toContain("Solo staging")
+    expect(jobPrompt("smoke", "JOB-2", "/d", job())).toContain("Solo lectura")
+  })
+})

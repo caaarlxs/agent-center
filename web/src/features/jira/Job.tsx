@@ -13,12 +13,15 @@ import { openDialog } from "@/app/open-dialog"
 import { Markdown } from "@/features/conversation/Markdown"
 import { ago, repoDot } from "@/features/session/state"
 import type { Job } from "@server/jobs"
-import { AtWork, FoldButton, ReviewPanel, Runs, act, openLog } from "./Pipeline"
+import type { AgentStage } from "@server/pipeline"
+import { AtWork, BuildPanel, FoldButton, PlanPanel, ReviewPanel, Runs, TestPanel, act, openLog } from "./Pipeline"
 import { PipelineMark, liveLine } from "./PipelineMark"
 import { SPECIALISTS, jobLabel } from "./jobs-board"
 import { costOf, dollars } from "./pipeline-board"
 
 const FOLLOW_MS = 5_000
+// What each specialist's document is.
+const DOC: Record<AgentStage, string> = { refine: "Refinement", plan: "Plan", build: "Build", review: "Review", test: "Test", smoke: "Prod check" }
 
 function Sources({ job }: { job: Job }) {
   return (
@@ -62,13 +65,22 @@ function JobNow({ job, onClose }: { job: Job; onClose: () => void }) {
   )
 }
 
-// What it found: a review's findings; the questions it could not decide.
+// What it left, by specialist: a plan's units, a build's PRs, a review's
+// findings, a test's results; and the questions it could not decide.
+function StagePanel({ job }: { job: Job }) {
+  if (job.stage === "plan") return <PlanPanel state={job} steps={null} />
+  if (job.stage === "build") return <BuildPanel state={job} />
+  if (job.stage === "review") return <ReviewPanel state={job} onFix={() => {}} />
+  if (job.stage === "test" || job.stage === "smoke") return <TestPanel state={job} release={null} />
+  return null
+}
+
 function JobResult({ job }: { job: Job }) {
   if (job.status === "running") return <AtWork state={job} />
   if (job.status === "failed") return null
   return (
     <>
-      {job.stage === "review" && <ReviewPanel state={job} onFix={() => {}} />}
+      <StagePanel job={job} />
       {job.questions.length > 0 && (
         <ol className="m-0 flex list-none flex-col gap-2 p-0 text-[13px]">
           {job.questions.map(q => <li key={q.id}><span className="font-semibold">{q.question}</span>{q.proposal && <span className="block text-text-muted">{q.proposal}</span>}</li>)}
@@ -97,7 +109,7 @@ function JobFoot({ job }: { job: Job }) {
   return (
     <footer className="-mx-1 border-t border-line px-1 pt-2.5">
       <span className="flex justify-end gap-4">
-        {doc && <FoldButton label={job.stage === "review" ? "Review" : "Report"} isOpen={fold === "doc"} onToggle={() => toggle("doc")} />}
+        {doc && <FoldButton label={DOC[job.stage as AgentStage]} isOpen={fold === "doc"} onToggle={() => toggle("doc")} />}
         {runs.length > 0 && <FoldButton label="Runs" isOpen={fold === "runs"} onToggle={() => toggle("runs")} />}
       </span>
       {fold === "doc" && doc && <Markdown className="mt-3 max-h-[40vh] overflow-auto text-[13px]">{doc}</Markdown>}

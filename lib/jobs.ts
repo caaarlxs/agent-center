@@ -21,11 +21,12 @@ import { jiraSetup, keysIn, ticket as jiraTicket } from "./jira"
 import { activityOf } from "./activity"
 import { applyAction } from "./board"
 import { exec } from "./proc"
-import { AS_AGENT, STAGES_DIR, TAG, isAlive, linkedPages, linksFigma, parseResult, putAway, snapshotOf, spawnStage, stateIn, ticketWithFamily, verbOf, withRun, withSpend, writeContextPages, type AgentStage, type PipelineState, type Unit } from "./pipeline"
+import { keptFiles } from "./evidence"
+import { AS_AGENT, STAGES_DIR, TAG, buildProgress, checkedIn, isAlive, linkedPages, linksFigma, parseResult, putAway, snapshotOf, spawnStage, stateIn, ticketWithFamily, verbOf, withRun, withSpend, writeContextPages, type AgentStage, type PipelineState, type Unit } from "./pipeline"
 
 export type PrInfo = { url: string; repo: string; number: number; title: string; head: string; base: string; body: string; worktree: string | null }
 export type JobInput = { ticket: string | null; prs: string[] }
-export type Job = PipelineState & { id: string; loose: true; ticket: string | null; prs: PrInfo[] }
+export type Job = PipelineState & { id: string; loose: true; ticket: string | null; prs: PrInfo[]; done?: Done }
 
 const ROOT = join(DATA_DIR, "pipeline")
 const JOBS = join(ROOT, "jobs")
@@ -33,8 +34,8 @@ const REPOS = join(ROOT, "repos")
 const dirOf = (id: string) => join(JOBS, id)
 const isJobId = (id: string) => /^JOB-\d+$/.test(id)
 const isKey = (key: string) => /^[A-Z][A-Z0-9]+-\d+$/.test(key)
-// The specialists that take jobs, so far.
-export const LOOSE: AgentStage[] = ["review"]
+// The specialists that take jobs: all of them.
+export const LOOSE: AgentStage[] = ["refine", "plan", "build", "review", "test", "smoke"]
 export const isLoose = (v: unknown): v is AgentStage => LOOSE.includes(v as AgentStage)
 const NAME: Record<AgentStage, string> = { refine: "Refine", plan: "Plan", build: "Build", review: "Review", test: "Test", smoke: "Smoke" }
 
@@ -67,7 +68,41 @@ export const ticketFromPrs = (prs: PrInfo[], projects: string[]) => keysIn(prs.f
 export const unitsOfPrs = (prs: PrInfo[]): Unit[] =>
   prs.map((p, i) => ({ id: `U${i + 1}`, repo: p.repo, subtask: null, subtasks: [], branch: p.head, title: p.title || `PR #${p.number}`, dependsOn: [], status: "done", pr: p.url }))
 
-const BRIEF: Partial<Record<AgentStage, (dir: string, job: { ticket: string | null; prs: PrInfo[] }) => string>> = {
+// What the pipeline already did of the ticket, if it went through it: context the job reads.
+const PIPELINE_FILES = ["refine.md", "plan.md", "plan.json", "build.json"] as const
+type Done = Partial<Record<(typeof PIPELINE_FILES)[number], string>>
+async function pipelineFiles(key: string): Promise<Done> {
+  const paths = PIPELINE_FILES.map(f => [f, join(ROOT, key, f)] as const)
+  return Object.fromEntries(paths.filter(([, path]) => existsSync(path)))
+}
+type BriefJob = { ticket: string | null; prs: PrInfo[]; done?: Done }
+const LOOSE_NOTE = "No es una etapa del pipeline: nadie publica en Jira lo que dejas; lo lee una persona aquí."
+const ticketLine = (dir: string) => `El ticket entero (descripción, comentarios, padre, hijos y links) está en ${join(dir, "ticket.md")}. El trabajo es el ticket y todos sus hijos.`
+const criteriaLine = (dir: string, done: Done = {}) =>
+  done["refine.md"] ? `Los criterios de aceptación están en el refinamiento del pipeline, ${done["refine.md"]}; el ticket, al día, en ${join(dir, "ticket.md")}: sus comentarios mandan.` : `No hay refinamiento: los criterios de aceptación salen del ticket, ${join(dir, "ticket.md")}.`
+const resultLine = (dir: string, stage: string, schema: string) => `Escribe al final ${join(dir, `${stage}.json`)}: ${schema}`
+const RESULTS = `{"verdict": "ready" | "needs-info", "questions": [...], "results": [{"id": "T1", "criterion": "...", "status": "pass" | "fail", "evidence": "...", "files": [{"path": "evidence/T1-desktop.png", "caption": "..."}]}]}`
+
+const BRIEF: Record<AgentStage, (dir: string, job: BriefJob) => string> = {
+  refine: (dir, { ticket }) => `Eres el refinador del equipo, en un encargo suelto: refinar el ticket ${ticket}. ${LOOSE_NOTE}
+
+1. Lee ${join(STAGES_DIR, "refine.md")} y ${join(STAGES_DIR, "environment.md")}, y síguelos. Si el ticket coordina a hijos entregables, sigue ${join(STAGES_DIR, "epic.md")} en lugar de refine.md.
+2. ${ticketLine(dir)}
+3. Escribe el refinamiento en ${join(dir, "refine.md")} y el resumen en ${join(dir, "refine.summary.md")}.
+4. ${resultLine(dir, "refine", `{"verdict": "ready" | "needs-info", "questions": [{"id": "Q1", "question": "...", "proposal": "..."}]}`)}. Solo preguntas de PRODUCTO; las técnicas las decides tú.`,
+  plan: (dir, { ticket, done }) => `Eres el planificador del equipo, en un encargo suelto: planificar el ticket ${ticket}. ${LOOSE_NOTE}
+
+1. Lee ${join(STAGES_DIR, "plan.md")} y ${join(STAGES_DIR, "environment.md")}, y síguelos. Si el ticket cambia datos que ya existen, lee también ${join(STAGES_DIR, "scripts.md")}.
+2. ${ticketLine(dir)} ${done?.["refine.md"] ? `El refinamiento del pipeline está en ${done["refine.md"]}: úsalo.` : "No hay refinamiento: saca tú los criterios de aceptación del ticket y ponlos al principio de plan.md. Lo que solo una persona puede decidir va en questions, con su propuesta."}
+3. Escribe el plan en ${join(dir, "plan.md")} y el resumen en ${join(dir, "plan.summary.md")}.
+4. ${resultLine(dir, "plan", `{"verdict": "ready" | "needs-info", "questions": [...], "units": [{"id": "U1", "repo": "...", "subtasks": ["PP-..."], "branch": "...", "title": "...", "dependsOn": []}], "checklist": [{"id": "C1", "text": "...", "unit": "U1"}], "scripts": [...], "release": [...]}`)}.`,
+  build: (dir, { ticket, done }) => `Eres el constructor del equipo, en un encargo suelto: construir el ticket ${ticket}. ${LOOSE_NOTE}
+
+1. Lee ${join(STAGES_DIR, "build.md")} y ${join(STAGES_DIR, "environment.md")}, y síguelos. Si el plan tiene \`scripts\`, lee también ${join(STAGES_DIR, "scripts.md")}.
+2. ${ticketLine(dir)} ${done?.["plan.json"] ? `El plan del pipeline está en ${done["plan.md"] ?? done["plan.json"]} y ${done["plan.json"]}: síguelo.` : `No hay plan: haz primero uno siguiendo ${join(STAGES_DIR, "plan.md")}, escríbelo en ${join(dir, "plan.md")} y ${join(dir, "plan.json")}, y después construye con él.`}
+3. Trabaja en ${join(dir, "work")}. Lo que ya hizo un run anterior está en ${join(dir, "build.progress.json")}: no lo repitas. Marca las tareas de la checklist en ${join(dir, "build.checklist.json")} en cuanto estén hechas.
+4. Escribe el resumen en ${join(dir, "build.summary.md")}.
+5. ${resultLine(dir, "build", `{"verdict": "ready" | "needs-info", "questions": [...], "units": [{"id": "U1", "repo": "...", "title": "...", "branch": "...", "status": "done" | "failed", "pr": "https://github.com/..." | null}]}`)}. Todas las unidades.`,
   review: (dir, { ticket, prs }) => `Eres el revisor del equipo, en un encargo suelto: revisar ${prs.length === 1 ? "una PR" : `${prs.length} PRs`}${ticket ? ` del ticket ${ticket}` : ""}. No es una etapa del pipeline: no hay refinamiento, plan, build.json, checks.json ni revisión anterior, y lo que review.md dice de ellos no aplica.
 
 1. Lee ${join(STAGES_DIR, "review.md")} y ${join(STAGES_DIR, "environment.md")}, y síguelos.
@@ -75,15 +110,32 @@ const BRIEF: Partial<Record<AgentStage, (dir: string, job: { ticket: string | nu
 3. ${ticket ? `El ticket, con su padre, sus hijos y sus links, está en ${join(dir, "ticket.md")}. Juzga las PRs contra él: que hagan lo que pide y cumplan sus criterios de aceptación, además del código. Si no trae criterios, sácalos de la descripción.` : "No hay ticket: revisa solo el código (corrección, estructura, arquitectura y tests). Dilo en la primera línea de review.md."}
 4. Escribe los hallazgos en ${join(dir, "review.md")} y el resumen en ${join(dir, "review.summary.md")}.
 5. Escribe al final ${join(dir, "review.json")}: {"verdict": "ready", "questions": [], "findings": [{"id": "F1", "unit": "U1", "severity": "blocker" | "major" | "minor", "file": "ruta", "line": 12, "title": "...", "detail": "...", "fix": "..."}]}. "unit" es el id de la PR en prs.json. Lo que solo una persona puede decidir es un hallazgo, con la pregunta en "detail".`,
+  test: (dir, { ticket, done }) => `Eres el tester del equipo, en un encargo suelto: probar en staging el ticket ${ticket}, tal como está desplegado ahora. ${LOOSE_NOTE}
+
+1. Lee ${join(STAGES_DIR, "test.md")} y ${join(STAGES_DIR, "environment.md")}, y síguelos.
+2. ${criteriaLine(dir, done)}${done?.["build.json"] ? ` Lo construido está en ${done["build.json"]}.` : ""}
+3. Solo staging. Nunca prod: ni con STAGE=prod, ni con sus tablas, ni con sus URLs.
+4. Escribe el informe en ${join(dir, "test.md")} y el resumen en ${join(dir, "test.summary.md")}.
+5. ${resultLine(dir, "test", RESULTS)}. Guarda la evidencia de cada criterio en ${join(dir, "evidence")}.`,
+  smoke: (dir, { ticket, done }) => `Eres el comprobador de prod del equipo, en un encargo suelto: comprobar en prod el ticket ${ticket}, tal como está desplegado ahora. ${LOOSE_NOTE}
+
+1. Lee ${join(STAGES_DIR, "smoke.md")} y ${join(STAGES_DIR, "environment.md")}, y síguelos.
+2. ${criteriaLine(dir, done)}
+3. Solo lectura: en prod no creas, cambias ni borras nada.
+4. Escribe el informe en ${join(dir, "smoke.md")} y el resumen en ${join(dir, "smoke.summary.md")}.
+5. ${resultLine(dir, "smoke", RESULTS.replaceAll("T1", "P1"))}. Guarda la evidencia de cada criterio en ${join(dir, "evidence")}.`,
 }
 
-export const jobPrompt = (stage: AgentStage, id: string, dir: string, job: { ticket: string | null; prs: PrInfo[] }) => `${TAG} ${id} · ${verbOf(stage)} (encargo)
+// What it may write outside its files: only the builder, its PRs as drafts.
+const OUTSIDE: Partial<Record<AgentStage, string>> = { build: "No escribas en Jira. Abre cada PR como borrador; nunca mergees ni despliegues." }
 
-${BRIEF[stage]!(dir, job)}
+export const jobPrompt = (stage: AgentStage, id: string, dir: string, job: BriefJob) => `${TAG} ${id} · ${verbOf(stage)} (encargo)
+
+${BRIEF[stage](dir, job)}
 
 ${AS_AGENT}
 
-No escribas en Jira, en GitHub ni en los repos: tu resultado son tus ficheros.`
+${OUTSIDE[stage] ?? "No escribas en Jira, en GitHub ni en los repos: tu resultado son tus ficheros."}`
 
 // ---------- the state ----------
 
@@ -111,7 +163,7 @@ export async function jobOf(id: string) {
 export async function jobActivity(id: string) {
   const job = isJobId(id) ? await stateOf(id) : null
   if (job?.status !== "running" || !job.sessionId) return { steps: [], helpers: [], units: [], checked: [] }
-  return { ...(await activityOf(job.sessionId)), units: [], checked: [] }
+  return { ...(await activityOf(job.sessionId)), ...(await buildProgress(dirOf(id))) }
 }
 
 // ---------- GitHub ----------
@@ -221,7 +273,7 @@ export async function startJob(stage: AgentStage, input: { ticket?: unknown; prs
 // ticket they name or the PRs that name it, its snapshot.
 export async function prepareJob(start: Job): Promise<Job> {
   const dir = dirOf(start.id)
-  const prs = await Promise.all(start.prs.map(p => prInfo(p.url)))
+  const prs = start.stage === "review" ? await Promise.all(start.prs.map(p => prInfo(p.url))) : []
   const named = start.ticket ?? ticketFromPrs(prs, jiraSetup()?.projects ?? [])
   const family = named ? await ticketWithFamily(named).catch(err => (start.ticket ? Promise.reject(err) : null)) : null
   const ticket = family ? family.t.key : null
@@ -229,6 +281,8 @@ export async function prepareJob(start: Job): Promise<Job> {
     await Bun.write(join(dir, "ticket.md"), snapshotOf(family.t, family.parent, family.children, await linkedPages(family.t, family.parent)))
     await writeContextPages(dir)
   }
+  // The rest take the ticket alone, and what the pipeline already did of it.
+  if (start.stage !== "review") return { ...start, ticket, summary: family!.t.summary, done: await pipelineFiles(family!.t.key) }
   const urls = prs.length ? [] : await prsNaming([family!.t.key, ...family!.children.map(c => c.key)])
   if (!prs.length && !urls.length) throw new Error(`No open PR names ${ticket} or its children`)
   const all = [...prs, ...(await Promise.all(urls.map(prInfo)))]
@@ -265,7 +319,12 @@ async function finish(job: Job) {
   const text = await readText(join(dirOf(job.id), `${job.stage}.json`))
   if (!text) throw new Error(`The agent left no ${job.stage}.json`)
   const result = parseResult(text, job.stage)
-  await save({ ...job, status: result.verdict === "needs-info" ? "needs-info" : "ready", questions: result.questions, findings: result.findings, prs: job.prs.map(p => ({ ...p, worktree: null })), endedAt: Date.now() })
+  const dir = dirOf(job.id)
+  // A plan's units and to-do list; a build's units, with their PRs; a test's results, with the files it kept.
+  const made = job.stage === "plan" ? { units: result.units, checklist: result.checklist, scripts: result.scripts }
+    : job.stage === "build" ? { units: result.units, checked: checkedIn(await readText(join(dir, "build.checklist.json"))) }
+    : job.stage === "test" || job.stage === "smoke" ? { results: result.results.map(r => ({ ...r, files: keptFiles(dir, r.files ?? []) })) } : {}
+  await save({ ...job, ...made, status: result.verdict === "needs-info" ? "needs-info" : "ready", questions: result.questions, findings: result.findings, prs: job.prs.map(p => ({ ...p, worktree: null })), endedAt: Date.now() })
 }
 
 // A job you are done with leaves the board (its files stay, put aside).
@@ -274,6 +333,8 @@ export async function clearJob(id: string) {
   if (!job) throw new Error("Not a job")
   if (job.status === "running") throw new Error("The job runs: wait for it to end")
   await rename(dirOf(id), `${dirOf(id)}.old-${Date.now()}`)
+  // A build's worktrees went with its folder: the repos forget them.
+  if (job.stage === "build") for (const name of await readdir(REPOS).catch(() => [] as string[])) await exec(["git", "-C", join(REPOS, name), "worktree", "prune"])
 }
 
 const WATCH_MS = 10_000

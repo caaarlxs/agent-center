@@ -398,13 +398,18 @@ export async function pipelineActivity(key: string) {
   if (!isKey(key)) throw new Error("Not a ticket key")
   const state = await stateOf(key)
   if (state?.status !== "running" || !state.sessionId) return { steps: [], helpers: [], units: [], checked: [] }
-  const progress = await readText(join(dirOf(key), "build.progress.json"))
+  return { ...(await activityOf(state.sessionId)), ...(await buildProgress(dirOf(key))) }
+}
+
+// How far a build got: each unit (build.progress.json) and the to-dos it marked done.
+export async function buildProgress(dir: string) {
+  const progress = await readText(join(dir, "build.progress.json"))
   let units: Unit[] = []
   try {
     const data = progress ? JSON.parse(progress) : null
     units = unitsIn(Array.isArray(data) ? data : data?.units, true)
   } catch {}
-  return { ...(await activityOf(state.sessionId)), units, checked: checkedIn(await readText(join(dirOf(key), "build.checklist.json"))) }
+  return { units, checked: checkedIn(await readText(join(dir, "build.checklist.json"))) }
 }
 
 // ---------- the stage ----------
@@ -667,7 +672,8 @@ async function attachEvidence(key: string, dir: string, results: TestResult[]) {
 export async function pipelineEvidence(key: string, name: string) {
   const type = evidenceType(name)
   if (!isKey(key) || !type) throw new Error("Not a file of the evidence")
-  const file = Bun.file(join(dirOf(key), "evidence", name))
+  // A job's (lib/jobs.ts) lives with the jobs.
+  const file = Bun.file(join(/^JOB-\d+$/.test(key) ? join(ROOT, "jobs", key) : dirOf(key), "evidence", name))
   return (await file.exists()) ? { body: await file.arrayBuffer(), type } : null
 }
 
