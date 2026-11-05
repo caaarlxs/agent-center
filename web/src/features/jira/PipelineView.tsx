@@ -15,6 +15,7 @@ import { ago } from "@/features/session/state"
 import type { PipelineState } from "@server/pipeline"
 import { useActivity } from "./Pipeline"
 import { StageEffect } from "./StageEffect"
+import { DebtButton } from "./Debt"
 import { effectOf, sceneOf } from "./stage-effects"
 import { PipelineMark, liveLine } from "./PipelineMark"
 import { BUILT, STAGES, boardColumn, childrenLine, costOf, dollars, isCoordinating, isQueued, toFix, waitingStep } from "./pipeline-board"
@@ -104,7 +105,9 @@ export function PipelineView() {
   const byId = useMemo(() => new Map((cards ?? []).map(c => [c.id, c])), [cards])
   const board = useGlide(states.map(s => `${s.key}:${boardColumn(s, states)}`).join())
   return (
-    <div ref={board} className="grid h-full min-w-min auto-cols-[minmax(290px,1fr)] grid-flow-col gap-3 px-5 pt-3.5 pb-5">
+    <div className="flex h-full min-w-min flex-col">
+      <div className="sticky left-0 self-start px-6 pt-2"><DebtButton /></div>
+    <div ref={board} className="grid min-h-0 flex-1 auto-cols-[minmax(290px,1fr)] grid-flow-col gap-3 px-5 pt-2 pb-5">
       {STAGES.map((name, i) => {
         const here = states.filter(s => boardColumn(s, states) === i)
         return (
@@ -116,6 +119,7 @@ export function PipelineView() {
           </section>
         )
       })}
+    </div>
     </div>
   )
 }

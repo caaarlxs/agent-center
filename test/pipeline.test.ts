@@ -8,8 +8,8 @@ const questions = [
 
 describe("parseResult", () => {
   it("reads the verdict and the questions", () => {
-    expect(parseResult(JSON.stringify({ verdict: "needs-info", questions }), "refine")).toEqual({ verdict: "needs-info", questions, units: [], checklist: [], findings: [], fixed: [], scripts: [], order: [], results: [], contextImpact: [] })
-    expect(parseResult(`{"verdict":"ready","questions":[]}`, "refine")).toEqual({ verdict: "ready", questions: [], units: [], checklist: [], findings: [], fixed: [], scripts: [], order: [], results: [], contextImpact: [] })
+    expect(parseResult(JSON.stringify({ verdict: "needs-info", questions }), "refine")).toEqual({ verdict: "needs-info", questions, units: [], checklist: [], findings: [], fixed: [], scripts: [], order: [], results: [], contextImpact: [], debt: [] })
+    expect(parseResult(`{"verdict":"ready","questions":[]}`, "refine")).toEqual({ verdict: "ready", questions: [], units: [], checklist: [], findings: [], fixed: [], scripts: [], order: [], results: [], contextImpact: [], debt: [] })
   })
   it("numbers questions without an id and drops empty ones", () => {
     const r = parseResult(JSON.stringify({ verdict: "needs-info", questions: [{ question: "¿A?", proposal: "" }, { question: " " }] }), "refine")

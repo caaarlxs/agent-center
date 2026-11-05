@@ -641,3 +641,12 @@ export async function attachTo(key: string, paths: string[]) {
   await request(setup, `/rest/api/3/issue/${key}/attachments`, { method: "POST", body: form, headers: { "X-Atlassian-Token": "no-check" } })
   briefs.delete(key)
 }
+
+// A new ticket, assigned to you (the board writes only on what is yours): its key.
+export async function createIssue(f: { project: string; typeId: string; summary: string; description: string; labels: string[] }): Promise<string> {
+  const setup = setupOrThrow()
+  if (!/^[A-Z][A-Z0-9]{1,9}$/.test(f.project)) throw new Error("Not a project key")
+  const fields = { project: { key: f.project }, issuetype: { id: f.typeId }, summary: f.summary.slice(0, 250), description: docOf(f.description.slice(0, 30_000)), labels: f.labels, assignee: { accountId: await myId(setup) } }
+  const r = await call(setup, "/rest/api/3/issue", { method: "POST", body: JSON.stringify({ fields }) })
+  return String(r?.key ?? "")
+}

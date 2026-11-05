@@ -35,10 +35,11 @@ import { mkdir, readFile, rename } from "node:fs/promises"
 import { join } from "node:path"
 import { DATA_DIR } from "./config"
 import { writeJsonAtomic } from "./files"
-import { assignToMe, attachTo, commentOn, confluenceIds, confluencePage, createSubtask, issueState, remoteLinks, type ConfluencePage, labelTicket, moveToStatus, openStatuses, ticket, type Ticket, type TicketComment } from "./jira"
+import { assignToMe, attachTo, commentOn, createIssue, confluenceIds, confluencePage, createSubtask, issueState, remoteLinks, type ConfluencePage, labelTicket, moveToStatus, openStatuses, ticket, type Ticket, type TicketComment } from "./jira"
 import { flowOf, followInJira, type Event as JiraEvent } from "./jira-flow"
 import { childrenIn, deliverablesOf, toStart, waitsFor, type Child } from "./coordinator"
 import { evidenceType, filesIn, keptFiles, type EvidenceFile } from "./evidence"
+import { debtIn, merged as debtMerged, ticketOf as debtTicket, type DebtEntry, type DebtItem } from "./debt"
 import { claudeBinary, running } from "./launch"
 import { claudeEnv } from "./proc"
 import { applyAction } from "./board"
@@ -74,7 +75,7 @@ export type Finding = { id: string; unit: string | null; severity: Severity; fil
 export type TestResult = { id: string; criterion: string; status: "pass" | "fail"; evidence: string; files?: EvidenceFile[] }
 // A rule of the team's context (its repo) that the ticket makes untrue: the file and the words.
 export type ContextImpact = { file: string; quote: string; why: string }
-export type Result = { verdict: "ready" | "needs-info"; questions: Question[]; units: Unit[]; checklist: ChecklistItem[]; findings: Finding[]; fixed: string[]; scripts: PlanScript[]; order: OrderItem[]; results: TestResult[]; contextImpact: ContextImpact[]; children?: unknown }
+export type Result = { verdict: "ready" | "needs-info"; questions: Question[]; units: Unit[]; checklist: ChecklistItem[]; findings: Finding[]; fixed: string[]; scripts: PlanScript[]; order: OrderItem[]; results: TestResult[]; contextImpact: ContextImpact[]; children?: unknown; debt: DebtItem[] }
 export type PipelineStatus = "running" | "needs-info" | "ready" | "failed"
 export type Run = { n: number; stage: Stage; sessionId: string | null; startedAt: number; endedAt: number | null; status: PipelineStatus; questions: number; units: number; findings?: number; error: string | null; spend?: Spend | null }
 export type PipelineState = {
@@ -307,7 +308,7 @@ export function parseResult(text: string, stage: Stage): Result {
     .filter(c => typeof c?.text === "string" && c.text.trim())
     .map((c, i) => ({ id: String(c.id ?? `C${i + 1}`), text: c.text.trim(), unit: typeof c.unit === "string" && c.unit ? c.unit : null }))
   if (stage === "plan" && data.verdict === "ready" && !units.length) throw new Error("plan.json is ready but has no units")
-  return { verdict: data.verdict, questions, units, checklist, findings: findingsIn(data.findings), fixed: listOf(data.fixed).map(String), scripts: scriptsIn(data.scripts), order: orderIn(data.release), results: resultsIn(data.results), contextImpact: impactIn(data.contextImpact), children: data.children }
+  return { verdict: data.verdict, questions, units, checklist, findings: findingsIn(data.findings), fixed: listOf(data.fixed).map(String), scripts: scriptsIn(data.scripts), order: orderIn(data.release), results: resultsIn(data.results), contextImpact: impactIn(data.contextImpact), children: data.children, debt: debtIn(data.debt) }
 }
 
 export const questionsComment = (key: string, questions: Question[], stage: AgentStage) =>
@@ -560,7 +561,37 @@ async function finish(key: string) {
   const tested = state.stage === "test" || state.stage === "smoke" ? { results: shown.results } : {}
   const context = state.stage === "refine" ? { contextImpact: result.contextImpact } : {}
   const done: PipelineState = { ...state, status: "ready", questions: [], units, checklist, checked, scripts, ...found, ...tested, ...context, checks: withJira([...checks, ...attached.checks], state.checks), endedAt: Date.now() }
-  await settle(done, result)
+  await recordDebt(key, result.debt)
+  await settle({ ...done, checks: withJira([...(done.checks ?? []), ...graveDebt(result.debt)], []) }, result)
+}
+
+// ---------- the team's code debt (debt.ts) ----------
+
+const DEBT = join(ROOT, "debt.json")
+export const debtRegister = async (): Promise<DebtEntry[]> => jsonOf(await readText(DEBT)) ?? []
+async function recordDebt(key: string, items: DebtItem[]) {
+  if (!items.length) return
+  await writeJsonAtomic(DEBT, debtMerged(await debtRegister(), items, key, Date.now()), { pretty: true })
+}
+// A point of debt that is a security or data-loss risk: a warning in the ticket that saw it.
+const graveDebt = (items: DebtItem[]): Check[] =>
+  items.filter(d => d.kind === "debt" && d.severity === "blocker").map((d, i) => ({ id: `debt-${i + 1}`, label: `Grave debt in ${d.repo}`, status: "warn" as const, detail: `${d.file}${d.line ? `:${d.line}` : ""}: ${d.note}` }))
+
+// Points of debt you chose: into one Jira ticket (jira.json debtIssue), or dismissed, or open again.
+export async function actOnDebt(keys: string[], action: "ticket" | "dismiss" | "reopen") {
+  const register = await debtRegister()
+  const chosen = register.filter(e => keys.includes(e.key))
+  if (!chosen.length) throw new Error("No such debt")
+  let jira: string | null = null
+  if (action === "ticket") {
+    const conf = jsonOf(await readText(join(STAGES_DIR, "jira.json")))?.debtIssue
+    if (!conf?.project || !conf?.typeId) throw new Error("jira.json has no debtIssue (project, typeId, labels)")
+    jira = await createIssue({ project: conf.project, typeId: conf.typeId, labels: conf.labels ?? ["deuda-tecnica"], ...debtTicket(chosen) })
+  }
+  const status = action === "ticket" ? "ticketed" : action === "dismiss" ? "dismissed" : "open"
+  const next = register.map(e => (keys.includes(e.key) ? { ...e, status, jira: action === "ticket" ? jira : action === "reopen" ? null : e.jira } as DebtEntry : e))
+  await writeJsonAtomic(DEBT, next, { pretty: true })
+  return { jira }
 }
 
 // A stage done: Jira follows it, a coordinator keeps its children's order and

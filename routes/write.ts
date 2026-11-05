@@ -2,7 +2,7 @@
 // notes, PR actions, tasks, files sent and dictation.
 
 import { commentOn, connect, disconnect, moveTicket } from "../lib/jira"
-import { answerPipeline, isStage, resetPipeline, rollBackPipeline, startPipeline, stopAuto, stepPipeline } from "../lib/pipeline"
+import { actOnDebt, answerPipeline, isStage, resetPipeline, rollBackPipeline, startPipeline, stopAuto, stepPipeline } from "../lib/pipeline"
 import { chooseIcon, isIcon } from "../lib/app-icon"
 import { choosePet, openPack } from "../lib/pets"
 import { stat } from "node:fs/promises"
@@ -164,6 +164,11 @@ export async function handleWrite(path: string, body: Record<string, unknown>): 
     // answer its questions (to Jira, then the stage again), start over.
     case "/api/pipeline/start":
       return await startPipeline(String(body.key ?? ""), body.take === true, isStage(body.stage) ? body.stage : undefined, Array.isArray(body.fix) ? body.fix.map(String) : undefined, typeof body.auto === "boolean" ? body.auto : undefined).then(() => (refreshSoon(), json({ ok: true })), (err: Error) => json({ error: err.message }, 400))
+    // Points of debt you chose: into one Jira ticket, dismissed, or open again.
+    case "/api/pipeline/debt": {
+      const action = body.action === "dismiss" || body.action === "reopen" ? body.action : "ticket"
+      return await actOnDebt(Array.isArray(body.keys) ? body.keys.map(String) : [], action).then(r => (refreshSoon(), json({ ok: true, ...r })), (err: Error) => json({ error: err.message }, 400))
+    }
     // Stop a pipeline that runs on its own: the next stage waits for you.
     case "/api/pipeline/auto":
       return await stopAuto(String(body.key ?? "")).then(() => (refreshSoon(), json({ ok: true })), (err: Error) => json({ error: err.message }, 400))
