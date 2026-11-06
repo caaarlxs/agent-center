@@ -11,19 +11,21 @@ export type Resolved = { resolved: boolean; reason: string }
 export type ConflictPr = { url: string; repo: string; head: string; base: string }
 
 export function conflictsPrompt(key: string, env: Env, pr: ConflictPr, paths: { dir: string; clone: string; stages: string; answer: string }) {
-  const tree = join(paths.dir, "conflicts", `${pr.repo}-${pr.url.split("/").pop()}`)
+  const n = pr.url.split("/").pop()
+  const tree = join(paths.dir, "conflicts", `${pr.repo}-${n}`)
+  const local = `conflicts/${key}-${n}`
   return `Eres quien resuelve los conflictos de una PR antes del merge del release de ${key} a ${env}.
 
 La PR: ${pr.url}, rama ${pr.head}, contra ${pr.base}. GitHub no la puede mergear: tiene conflictos con ${pr.base}.
 
 1. Lee ${join(paths.stages, "environment.md")}: cómo se trabaja y se prueba en cada repo.
-2. En el clon ${paths.clone}: \`git fetch origin ${pr.base} ${pr.head}\` y \`git worktree add -B ${pr.head} ${tree} origin/${pr.head}\`. Trabaja solo en ese worktree.
+2. En el clon ${paths.clone}: \`git fetch origin ${pr.base} ${pr.head}\` y \`git worktree add -b ${local} ${tree} origin/${pr.head}\` (una rama local propia: la de la PR puede estar abierta en el worktree del build). Trabaja solo en ese worktree.
 3. Mergea origin/${pr.base} en la rama: \`git merge origin/${pr.base}\`. Nunca rebase, nunca --force.
 4. Resuelve cada conflicto manteniendo lo que hace cada lado: lo que entró en ${pr.base} y lo que pide el ticket (${join(paths.dir, "refine.md")} y ${join(paths.dir, "plan.md")}).
 5. Pasa los tests del repo que tocan los ficheros que estaban en conflicto.
 6. Si todo cuadra: haz el commit del merge y \`git push origin HEAD:${pr.head}\`. Nunca a ${pr.base}.
 7. No hagas push si un conflicto pide decidir qué comportamiento gana, o si los tests fallan por el merge: para y dilo.
-8. Al terminar, \`git -C ${paths.clone} worktree remove --force ${tree}\`.
+8. Al terminar, \`git -C ${paths.clone} worktree remove --force ${tree}\` y \`git -C ${paths.clone} branch -D ${local}\`.
 9. Escribe ${paths.answer}: {"resolved": true | false, "reason": "<una frase para una persona: qué resolviste, o por qué no>"}.
 
 No escribas en Jira ni en GitHub fuera de ese push. Trabajas sin una persona delante: tu resultado es el fichero.`

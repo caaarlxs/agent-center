@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test"
+import { conflictsPrompt } from "../lib/conflicts"
 import { DEFAULT_CONFIG, rollbackSteps, approveStep, deployState, isGated, nextTag, releaseSteps, reportOf, skipStep, retryStep, advanceRelease, type Ops, type Release } from "../lib/release"
 
 const unit = (id: string, repo: string, n: number) => ({ id, repo, subtask: null, branch: `feat/${id}`, title: id, dependsOn: [], status: "done" as const, pr: `https://github.com/acme/${repo}/pull/${n}` })
@@ -288,5 +289,15 @@ describe("a PR with conflicts", () => {
     const r = await advanceRelease(start(), ctx, ops)
     expect(r.release.steps[0]!.status).toBe("pending")
     expect(calls.some(c => c.includes("pr merge"))).toBe(false)
+  })
+})
+
+describe("conflictsPrompt", () => {
+  it("works on a branch of its own (the PR's may be open in the build's worktree), pushes to the PR's, and cleans up", () => {
+    const text = conflictsPrompt("PP-1", "staging", { url: "https://github.com/o/api/pull/7", repo: "api", head: "feat/x", base: "master" }, { dir: "/d/PP-1", clone: "/r/api", stages: "/s", answer: "/d/PP-1/conflicts/R1-1.json" })
+    expect(text).toContain("worktree add -b conflicts/PP-1-7 /d/PP-1/conflicts/api-7 origin/feat/x")
+    expect(text).toContain("git push origin HEAD:feat/x")
+    expect(text).toContain("branch -D conflicts/PP-1-7")
+    expect(text).toContain("Nunca rebase, nunca --force")
   })
 })
