@@ -38,12 +38,16 @@ export const setView = (v: View) => (view.set(v), drawingZone.set(false))
 
 // The sessions that are yours: a pipeline stage's shows in the Pipeline view only.
 export const yours = (cards: Card[]) => cards.filter(c => !c.pipeline)
+// On the views: yours, but the session you customize Agent Center from (the
+// sidebar's Customize opens it) until you pick another.
+export const onBoard = (cards: Card[]) => yours(cards).filter(c => !c.isCustomize)
 
 // The cards as the board shows them: the server's, with what was just done
-// here on top, without the archived ones nor the pipeline's.
+// here on top, without the archived ones, the pipeline's nor the one you
+// customize Agent Center from.
 export function useBoardCards(): Card[] {
   const all = useLive(l => l.snapshot?.cards)
-  const cards = useMemo(() => all && yours(all), [all])
+  const cards = useMemo(() => all && onBoard(all), [all])
   const ov = overrides.use()
   useEffect(() => {
     if (cards) overrides.set(settle(overrides.get(), cards, Date.now()))

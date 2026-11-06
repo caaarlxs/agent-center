@@ -1,9 +1,10 @@
-import { describe, expect, test } from "vitest"
+import { describe, expect, it, test } from "vitest"
 import type { Card } from "@/lib/api-types"
 import { dropAction, inboxGroups, runsOf } from "./columns"
 import { canvasOrder, stepFrom, walkOrder } from "./order"
 import { patchOf, settle, withOverrides } from "./overrides"
 import { byRank, emptyText, ranksAt, tierOf, tierStep, toTier } from "./tiers"
+import { onBoard } from "./state"
 
 const card = (id: string, extra: Partial<Card> = {}) =>
   ({ id, column: "review", pinned: false, repoRoot: "/r", repo: "r", tier: "other", pos: null, isUnread: false, title: id, ...extra }) as Card
@@ -101,5 +102,12 @@ describe("optimistic changes", () => {
     expect(shown).toHaveLength(1)
     expect(shown[0]).toMatchObject({ id: "b", pinned: true })
     expect(shown[0]).not.toHaveProperty("at")
+  })
+})
+
+describe("onBoard", () => {
+  it("leaves out the pipeline's sessions and the one you customize Agent Center from", () => {
+    const cards = [{ id: "a" }, { id: "b", pipeline: { key: "PP-1" } }, { id: "c", isCustomize: true }] as unknown as Card[]
+    expect(onBoard(cards).map(c => c.id)).toEqual(["a"])
   })
 })
