@@ -21,7 +21,8 @@ export function CustomizeButton({ isSlim }: { isSlim: boolean }) {
   const label = !isSlim && "Customize Agent Center"
   if (chosen)
     return (
-      <Button variant="outline" className={look} onClick={() => openSession(chosen.id)} title={`Open “${chosen.title}”, the session you customize Agent Center from (right-click another card to change it)`}>
+      // data-id: a right-click here offers to stop customizing from it (its card is off the views).
+      <Button variant="outline" data-id={chosen.id} className={look} onClick={() => openSession(chosen.id)} title={`Open “${chosen.title}”, the session you customize Agent Center from (right-click: stop; right-click another card: change it)`}>
         <Wrench className="size-3.5" />{label}
       </Button>
     )

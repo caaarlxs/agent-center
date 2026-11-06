@@ -111,6 +111,6 @@ Lucide's names, and must be in `web/src/features/guide/icons.ts`.
 
 - {timer} **Limits**: your 5-hour and weekly use, when each resets, and where your pace gets you; the chevron by "5 hours" folds it into one line (5h on the left, the week on the right), and it stays as you leave it. · 2026-11-06
 - {book-text} **General context**: read and edit CLAUDE.md and what each project remembers.
-- {wrench} **Customize Agent Center**: opens the session you change Agent Center from; right-click a card for "Use to customize Agent Center" (one at a time); that session leaves the views until you pick another. With none picked, it offers your latest sessions or a new one. · 2026-11-06
+- {wrench} **Customize Agent Center**: opens the session you change Agent Center from; right-click a card for "Use to customize Agent Center" (one at a time); that session leaves the views until you pick another (a right-click on Customize stops it). With none picked, it offers your latest sessions or a new one. · 2026-11-06
 - {paw-print} **Pets**: open packs and send a pet out on the board to keep you company. · 2026-11-03
 - {settings} **Settings**: setup steps for this Mac, alerts (notifications, chime, reading aloud) and the look; it warns when the terminal and Claude desktop use different accounts. · 2026-11-04
