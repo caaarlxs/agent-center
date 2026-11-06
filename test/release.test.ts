@@ -105,6 +105,7 @@ function fake(answers: Record<string, string>) {
     },
     now: () => 2_000_000,
     spawn: async () => 4242,
+    agent: async () => 4343,
     isAlive: () => true,
     readText: async () => null,
     exists: () => true,
@@ -112,7 +113,7 @@ function fake(answers: Record<string, string>) {
   }
   return { calls, ops }
 }
-const ctx = { key: "PP-1", summary: "A ticket", dir: "/d/PP-1", repos: "/d/repos", config, units, scripts: [script], checklist: [] }
+const ctx = { key: "PP-1", summary: "A ticket", dir: "/d/PP-1", repos: "/d/repos", stages: "/d/stages", config, units, scripts: [script], checklist: [] }
 
 describe("advanceRelease", () => {
   it("merges a draft PR to staging, then follows its deploy until it ends", async () => {
@@ -240,5 +241,52 @@ describe("rolling back", () => {
     expect(r.release.steps[0]).toMatchObject({ status: "running", phase: "rerun" })
     r = await advanceRelease(r.release, ctx, ops)
     expect(r.release.steps[0]!.status).toBe("running")
+  })
+})
+
+describe("a PR with conflicts", () => {
+  const view = (mergeable: string) => JSON.stringify({ state: "OPEN", isDraft: false, mergeable, headRefName: "feat/U1", baseRefName: "master" })
+  const start = () => ({ env: "staging", steps: releaseSteps(state({ units: [units[0]], scripts: [] }), "staging", config) }) as Release
+  it("hands them to an agent instead of failing, and merges once it resolved them", async () => {
+    const answers: Record<string, string> = { "pr view": view("CONFLICTING") }
+    const { calls, ops } = fake(answers)
+    let prompt = ""
+    ops.agent = async (_dir, text) => ((prompt = text), 77)
+    let r = await advanceRelease(start(), ctx, ops)
+    expect(r.release.steps[0]).toMatchObject({ status: "running", phase: "conflicts", pid: 77, attempts: 1 })
+    expect(calls.some(c => c.includes("pr merge"))).toBe(false)
+    expect(prompt).toContain("feat/U1")
+    expect(prompt).toContain("/d/PP-1/conflicts/R1-1.json")
+    r = await advanceRelease(r.release, ctx, ops)
+    expect(r.release.steps[0]).toMatchObject({ status: "running", phase: "conflicts" })
+    ops.readText = async path => (path === "/d/PP-1/conflicts/R1-1.json" ? `{"resolved": true, "reason": "Kept both"}` : null)
+    answers["pr view"] = view("MERGEABLE")
+    r = await advanceRelease(r.release, ctx, ops)
+    r = await advanceRelease(r.release, ctx, ops)
+    expect(calls).toContain("gh pr merge https://github.com/acme/api-service/pull/7 --merge")
+  })
+  it("stops when the agent could not resolve them, or ended without a word, saying why", async () => {
+    const { ops } = fake({ "pr view": view("CONFLICTING") })
+    ops.agent = async () => 77
+    const running = (await advanceRelease(start(), ctx, ops)).release
+    ops.readText = async () => `{"resolved": false, "reason": "Which copy wins is a product decision"}`
+    expect((await advanceRelease(running, ctx, ops)).release.steps[0]).toMatchObject({ status: "failed", error: "Conflicts not resolved: Which copy wins is a product decision" })
+    ops.readText = async () => null
+    ops.isAlive = () => false
+    expect((await advanceRelease(running, ctx, ops)).release.steps[0]).toMatchObject({ status: "failed" })
+  })
+  it("never hands the same conflicts to an agent twice; Retry lets it try again", async () => {
+    const { ops } = fake({ "pr view": view("CONFLICTING") })
+    ops.agent = async () => 77
+    const again = { ...start(), steps: start().steps.map(s => ({ ...s, attempts: 1 })) }
+    const r = await advanceRelease(again, ctx, ops)
+    expect(r.release.steps[0]!.status).toBe("failed")
+    expect(retryStep(r.release, "R1").steps[0]!.attempts).toBe(0)
+  })
+  it("waits while GitHub works out whether it merges", async () => {
+    const { calls, ops } = fake({ "pr view": view("UNKNOWN") })
+    const r = await advanceRelease(start(), ctx, ops)
+    expect(r.release.steps[0]!.status).toBe("pending")
+    expect(calls.some(c => c.includes("pr merge"))).toBe(false)
   })
 })

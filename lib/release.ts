@@ -24,6 +24,7 @@
 // deploy by what GitHub says of its commit: the Actions runs and the
 // deployments created since it started.
 
+import { conflictsPrompt, parseResolved, type ConflictPr } from "./conflicts"
 import type { Advice } from "./gate"
 import type { ChecklistItem, Env, PipelineState, PlanScript, Unit } from "./pipeline"
 
@@ -45,13 +46,14 @@ export type ReleaseStep = {
   value: string | null // the tag (proposed, then pushed), or the branch a promote goes to
   sha: string | null // the commit it deploys
   since: number | null // when it started: the runs and deployments since then are its own
-  phase: "checks" | "deploy" | "script" | "rerun" | null
+  phase: "checks" | "deploy" | "script" | "rerun" | "conflicts" | null
   pid: number | null
   report: string | null // a script's report, in <ticket>/scripts
   error: string | null
   advice?: Advice | null // what the agent that looks at a waiting step says (lib/gate.ts)
   previous?: string | null // a tag's: the one before it, to deploy again if the release is rolled back
   runId?: number | null // a redeploy's: the run it ran again
+  attempts?: number // a merge's: the times an agent took on its conflicts (lib/conflicts.ts)
 }
 // A release, or a rollback of one (its steps undo the release's, the other way round).
 export type Release = { env: Env; steps: ReleaseStep[]; reminders?: string[]; rollback?: boolean }
@@ -251,8 +253,9 @@ export type Ops = {
   readText: (path: string) => Promise<string | null>
   exists: (path: string) => boolean
   secret: (name: string) => Promise<string | null> // from the keychain
+  agent: (dir: string, prompt: string, log: string) => Promise<number> // an agent on its own process, that may push to a PR's branch
 }
-export type Ctx = { key: string; summary: string; dir: string; repos: string; config: DeployConfig; units: Unit[]; scripts: PlanScript[]; checklist: ChecklistItem[] }
+export type Ctx = { key: string; summary: string; dir: string; repos: string; stages: string; config: DeployConfig; units: Unit[]; scripts: PlanScript[]; checklist: ChecklistItem[] }
 type Patch = Partial<ReleaseStep>
 
 const slugOf = (url: string | null | undefined) => url?.match(/github\.com\/([^/]+\/[^/]+)\/pull\//)?.[1] ?? null
@@ -377,11 +380,16 @@ async function checkDeploy(step: ReleaseStep, ctx: Ctx, ops: Ops): Promise<Patch
   return deployState(runs, deployments, step.since ?? 0, ops.now())
 }
 
-async function merge(step: ReleaseStep, ctx: Ctx, ops: Ops): Promise<Patch> {
+// A merge: the PR ready and merged, then its deploy followed. A PR with
+// conflicts goes to an agent first (lib/conflicts.ts); one GitHub has not
+// weighed yet waits a tick.
+async function merge(step: ReleaseStep, release: Release, ctx: Ctx, ops: Ops): Promise<Patch> {
   const url = prOf(step, ctx)
   if (!url) throw new Error("The unit has no PR")
-  const view = async () => jsonOf(await must(ops, ["gh", "pr", "view", url, "--json", "state,isDraft,mergeCommit,mergedAt"])) ?? {}
+  const view = async () => jsonOf(await must(ops, ["gh", "pr", "view", url, "--json", "state,isDraft,mergeable,headRefName,baseRefName,mergeCommit,mergedAt"])) ?? {}
   let pr = await view()
+  if (pr.state !== "MERGED" && pr.mergeable === "CONFLICTING") return resolveConflicts(step, release, ctx, ops, { url, repo: step.repo ?? "", head: pr.headRefName, base: pr.baseRefName })
+  if (pr.state !== "MERGED" && pr.mergeable === "UNKNOWN") return { detail: "GitHub is working out whether it merges" }
   if (pr.state !== "MERGED") {
     if (pr.isDraft) await must(ops, ["gh", "pr", "ready", url])
     await must(ops, ["gh", "pr", "merge", url, `--${ctx.config.mergeMethod}`], { timeoutMs: 60_000 })
@@ -390,6 +398,22 @@ async function merge(step: ReleaseStep, ctx: Ctx, ops: Ops): Promise<Patch> {
   // A merge that deploys nothing (the repo's own command does) is done once merged.
   if (step.value === "no-deploy") return { status: "done", sha: pr.mergeCommit?.oid ?? null, detail: "Merged" }
   return { status: "running", phase: "deploy", sha: pr.mergeCommit?.oid ?? null, since: pr.mergedAt ? Date.parse(pr.mergedAt) : ops.now(), detail: "Merged: waiting for the deploy" }
+}
+
+// Once only: conflicts again after an agent resolved them are yours (Retry hands them over again).
+const answerOf = (step: ReleaseStep, ctx: Ctx) => `${ctx.dir}/conflicts/${step.id}-${step.attempts ?? 0}.json`
+async function resolveConflicts(step: ReleaseStep, release: Release, ctx: Ctx, ops: Ops, pr: ConflictPr): Promise<Patch> {
+  if ((step.attempts ?? 0) >= 1) throw new Error(`Conflicts with ${pr.base} again after an agent took them on: resolve them by hand, then Retry`)
+  const next = { ...step, attempts: (step.attempts ?? 0) + 1 }
+  const answer = answerOf(next, ctx)
+  const pid = await ops.agent(ctx.dir, conflictsPrompt(ctx.key, release.env, pr, { dir: ctx.dir, clone: cloneOf(step, ctx), stages: ctx.stages, answer }), answer.replace(/\.json$/, ".log"))
+  return { status: "running", phase: "conflicts", pid, attempts: next.attempts, detail: `Conflicts with ${pr.base}: an agent resolves them` }
+}
+async function checkConflicts(step: ReleaseStep, ctx: Ctx, ops: Ops): Promise<Patch> {
+  const text = await ops.readText(answerOf(step, ctx))
+  if (text === null) return ops.isAlive(step.pid ?? 0) ? {} : { status: "failed", pid: null, error: "The agent stopped without an answer: resolve the conflicts by hand, then Retry" }
+  const answer = parseResolved(text)
+  return answer.resolved ? { status: "pending", phase: null, pid: null, detail: `Conflicts resolved: ${answer.reason}` } : { status: "failed", pid: null, error: `Conflicts not resolved: ${answer.reason}` }
 }
 
 async function tag(step: ReleaseStep, ctx: Ctx, ops: Ops): Promise<Patch> {
@@ -464,7 +488,7 @@ async function checkRerun(step: ReleaseStep, ctx: Ctx, ops: Ops): Promise<Patch>
 }
 
 function start(step: ReleaseStep, release: Release, ctx: Ctx, ops: Ops): Promise<Patch> {
-  if (step.kind === "merge") return merge(step, ctx, ops)
+  if (step.kind === "merge") return merge(step, release, ctx, ops)
   if (step.kind === "revert") return revert(step, ctx, ops)
   if (step.kind === "redeploy") return redeploy(step, ctx, ops)
   if (step.kind === "tag") return tag(step, ctx, ops)
@@ -477,6 +501,7 @@ function check(step: ReleaseStep, ctx: Ctx, ops: Ops): Promise<Patch> {
   if (step.phase === "script") return checkScript(step, ctx, ops)
   if (step.phase === "checks") return checkPromote(step, ops)
   if (step.phase === "rerun") return checkRerun(step, ctx, ops)
+  if (step.phase === "conflicts") return checkConflicts(step, ctx, ops)
   return checkDeploy(step, ctx, ops)
 }
 
@@ -519,7 +544,7 @@ export function approveStep(release: Release, id: string, value?: string): Relea
 }
 export function retryStep(release: Release, id: string): Release {
   if (!current(release, id) || release.steps.find(s => s.id === id)!.status !== "failed") throw new Error("That step has not failed")
-  return withStep(release, id, { status: "pending", error: null, phase: null, pid: null, advice: null })
+  return withStep(release, id, { status: "pending", error: null, phase: null, pid: null, advice: null, attempts: 0 })
 }
 export function skipStep(release: Release, id: string): Release {
   if (!current(release, id)) throw new Error("Only the step at hand can be skipped")

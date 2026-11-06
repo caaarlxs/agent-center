@@ -826,6 +826,18 @@ const releaseOps: Ops = {
   readText,
   exists: existsSync,
   secret: async name => (await exec(["security", "find-generic-password", "-s", name, "-w"])).stdout.trim() || null,
+  // The agent that resolves a PR's conflicts (lib/conflicts.ts): a build's
+  // limits (it may push to the PR's branch, never merge), on its own process;
+  // its session, the pipeline's.
+  agent: async (dir, prompt, logPath) => {
+    await mkdir(join(logPath, ".."), { recursive: true })
+    const log = openSync(logPath, "a")
+    const tagged = `${TAG} ${dir.split("/").pop()} · resolver conflictos\n\n${prompt}`
+    const proc = spawn(await claudeBinary(), ["-p", "--permission-mode", "auto", ...argsFor("build"), "--", tagged], { cwd: dir, env: claudeEnv({ AGENT_CENTER_LAUNCH: "1" }), detached: true, stdio: ["ignore", log, log] })
+    if (!proc.pid) throw new Error("Claude Code did not start")
+    proc.unref()
+    return proc.pid
+  },
 }
 
 // Takes a ticket's release as far as it goes now; done, it goes to Jira.
@@ -836,7 +848,7 @@ async function tickRelease(key: string) {
   try {
     const state = await stateOf(key)
     if (!state?.release || state.status !== "running" || !isRelease(state.stage)) return
-    const ctx = { key, summary: state.summary ?? key, dir: dirOf(key), repos: join(ROOT, "repos"), config: await deployConfig(), units: state.units ?? [], scripts: state.scripts ?? [], checklist: state.checklist ?? [] }
+    const ctx = { key, summary: state.summary ?? key, dir: dirOf(key), repos: join(ROOT, "repos"), stages: STAGES_DIR, config: await deployConfig(), units: state.units ?? [], scripts: state.scripts ?? [], checklist: state.checklist ?? [] }
     const advanced = await advanceRelease(state.release, ctx, releaseOps)
     const { isDone, failed } = advanced
     const release = await judged(state, advanced.release, ctx.config)
