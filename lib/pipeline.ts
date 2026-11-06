@@ -32,7 +32,7 @@ import { spawn } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { openSync } from "node:fs"
 import { cp, mkdir, readFile, rename } from "node:fs/promises"
-import { join } from "node:path"
+import { basename, join } from "node:path"
 import { DATA_DIR } from "./config"
 import { writeJsonAtomic } from "./files"
 import { assignToMe, attachTo, commentOn, createIssue, confluenceIds, confluencePage, createSubtask, issueState, remoteLinks, type ConfluencePage, labelTicket, moveToStatus, openStatuses, ticket, type Ticket, type TicketComment } from "./jira"
@@ -272,6 +272,11 @@ const resultsIn = (v: unknown): TestResult[] =>
 const impactIn = (v: unknown): ContextImpact[] =>
   listOf(v).filter(x => textOf(x?.file) && (textOf(x?.quote) || textOf(x?.proposal)))
     .map(x => ({ file: textOf(x.file), quote: textOf(x.quote) || null, why: textOf(x.why), proposal: textOf(x.proposal) || null }))
+// The repos an impact asks to change: a repo's own rules go by its name
+// ("deale-frontend/docs/rules/…"); the rest is the team's context.
+export const impactRepos = (impacts: ContextImpact[], repos: string[], contextRepo: string) => [
+  ...new Set(impacts.map(i => repos.find(r => r !== contextRepo && i.file.startsWith(`${r}/`)) ?? contextRepo)),
+]
 // The criteria a test (or a smoke check) found failing.
 export const failing = (results: TestResult[] | undefined) => (results ?? []).filter(r => r.status === "fail")
 // The findings that stop a ticket: they go back to Build.
@@ -714,9 +719,12 @@ async function checksAfter(state: PipelineState, result: Result): Promise<Check[
   if (state.stage === "build") for (const u of result.units) checks.push(...(await prChecks(u, releaseOps.sh)))
   if (state.stage === "plan" && contextRepo) {
     const hasUnit = result.units.some(u => u.repo === contextRepo)
-    const isAsked = (state.contextImpact ?? []).length > 0
+    const asked = impactRepos(state.contextImpact ?? [], dirs.map(d => basename(d)), contextRepo)
+    const isAsked = asked.includes(contextRepo)
     checks.push(hasUnit === isAsked ? { id: "context", label: hasUnit ? `${contextRepo} changes, as the refinement asked` : `${contextRepo} stays as it is`, status: "ok", detail: null }
       : { id: "context", label: hasUnit ? `${contextRepo} changes, but the refinement found no rule it makes untrue` : `The refinement found rules of ${contextRepo} to change, and the plan has no unit for them`, status: "warn", detail: null })
+    for (const repo of asked.filter(r => r !== contextRepo && !result.units.some(u => u.repo === r)))
+      checks.push({ id: `rules-${repo}`, label: `The refinement found rules of ${repo} to change, and the plan has no unit in ${repo}`, status: "warn", detail: null })
   }
   checks.push(...overLimits(Date.now() - state.startedAt, spend?.cost ?? 0))
   return checks

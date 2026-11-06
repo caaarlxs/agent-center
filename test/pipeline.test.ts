@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { blocking, checkedIn, isAdopted, toFixNow, MARK, answeredAfter, answersComment, argsFor, parseResult, pipelineKeyOf, stageToRun, unbuilt, withRun, questionsComment, snapshotOf, prodWarning, autoNext, linksFigma } from "../lib/pipeline"
+import { blocking, checkedIn, isAdopted, toFixNow, MARK, answeredAfter, answersComment, argsFor, parseResult, pipelineKeyOf, stageToRun, unbuilt, withRun, questionsComment, snapshotOf, prodWarning, autoNext, linksFigma, impactRepos } from "../lib/pipeline"
 
 const questions = [
   { id: "Q1", question: "¿Cuál es el copy?", proposal: "El del ticket" },
@@ -332,5 +332,19 @@ describe("isAdopted", () => {
   it("a job's work the pipeline takes on: its stage's files, the ticket and its context; not its worktrees, nor a review's or a test's", () => {
     const names = ["refine.md", "refine.summary.md", "plan.json", "build.json", "build.progress.json", "build.checklist.json", "ticket.md", "context", "work", "state.json", "review.json", "test.md", "prs.json", "build.log"]
     expect(names.filter(isAdopted)).toEqual(["refine.md", "refine.summary.md", "plan.json", "build.json", "build.progress.json", "build.checklist.json", "ticket.md", "context"])
+  })
+})
+
+describe("impactRepos", () => {
+  const repos = ["deale-context", "deale-frontend", "deale-mobile"]
+  const impact = (file: string) => ({ file, quote: "x", why: "y", proposal: null })
+  it("puts a change of the team's context in the context repo", () => {
+    expect(impactRepos([impact("context/03-engineering/05-code-standards.md")], repos, "deale-context")).toEqual(["deale-context"])
+  })
+  it("puts a change of a repo's own rules in that repo", () => {
+    expect(impactRepos([impact("deale-frontend/docs/rules/02-componentes.md"), impact("deale-mobile/docs/rules/07-i18n.md")], repos, "deale-context")).toEqual(["deale-frontend", "deale-mobile"])
+  })
+  it("names each repo once", () => {
+    expect(impactRepos([impact("glossary.md"), impact("deale-context/context/x.md"), impact("deale-frontend/docs/rules/a.md"), impact("deale-frontend/docs/rules/b.md")], repos, "deale-context")).toEqual(["deale-context", "deale-frontend"])
   })
 })
