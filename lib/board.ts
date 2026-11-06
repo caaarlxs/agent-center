@@ -49,10 +49,16 @@ export const TIERS = ["main", "fixes", "searches", "other"]
 export type Suggestion = { from: string; session?: string; dismissed_at?: number }
 
 // seenEpoch: when "new since you looked" started; older activity is not new.
+// customize: the board key of the session you change Agent Center from (the
+// sidebar's Customize opens it), chosen with a right-click.
 export type Board = {
   items: Record<string, BoardItem>; seenEpoch?: number; zones?: Zone[]; notes?: Note[]
-  suggestions?: Record<string, Suggestion>
+  suggestions?: Record<string, Suggestion>; customize?: string
 }
+
+// The session that customizes Agent Center after marking (or unmarking) `key`:
+// one at a time; unmarking another leaves it as it was.
+export const customizeAfter = (current: string | undefined, key: string, isOff: boolean) => (isOff ? (current === key ? undefined : current) : key)
 
 export let board: Board = { items: {} }
 
@@ -101,7 +107,7 @@ export function itemOf(key: string, ids: string[]): BoardItem {
   return board.items[key] ?? ids.map(id => board.items[id]).find(Boolean) ?? {}
 }
 
-const ACTIONS = new Set(["pin", "unpin", "park", "unpark", "done", "undone", "archive", "unarchive", "seen", "unseen", "move", "rename", "color", "tier", "rank", "tickets"])
+const ACTIONS = new Set(["pin", "unpin", "park", "unpark", "done", "undone", "archive", "unarchive", "seen", "unseen", "move", "rename", "color", "tier", "rank", "tickets", "customize"])
 export const isBoardAction = (action: string) => ACTIONS.has(action)
 
 // Applies one of ACTIONS to a group's item (`key`: the group's board key,
@@ -186,6 +192,9 @@ export async function applyAction(key: string, ids: string[], action: string, bo
     case "color":
       if (color) item.color = color
       else delete item.color
+      break
+    case "customize":
+      board.customize = customizeAfter(board.customize, key, body.off === true)
       break
     case "tier":
       if (tier && tier !== "other") item.tier = tier

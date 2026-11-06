@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils"
 import { repoDot } from "@/features/session/state"
 import { notify, sound, speech, toggleNotify, toggleSound, toggleSpeech } from "@/features/alerts/prefs"
 import { Limits, SlimLimits } from "@/features/limits/Limits"
+import { CustomizeButton } from "./CustomizeButton"
 import { openDialog } from "./open-dialog"
 import { openSession } from "./open-session"
 import { repoFilter, sideOpen, view, type View } from "./view-state"
@@ -197,6 +198,7 @@ export function Sidebar() {
             title="General context: ~/.claude/CLAUDE.md, what Claude reads in every session. See it and edit it">
             <BookText className="size-3.5" />{!isSlim && "General context"}
           </Button>
+          <CustomizeButton isSlim={isSlim} />
         </div>
         <nav className="flex flex-col gap-px">
           {VIEWS.filter(v => (v.key === "tickets" ? hasJira : v.key === "pipeline" ? hasJira && hasPipeline : true)).map(v => (

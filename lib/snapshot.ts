@@ -223,6 +223,7 @@ async function cardOf(
     askKind: column === "asking" ? (question ? "dialog" : permission ? "permission" : (s.ask_kind ?? null)) : null,
     // New: Claude finished something since the person last looked.
     isUnread: (s.state === "asking" || s.state === "permission" || s.state === "done") && s.updated_at > (item.seen_at ?? board.seenEpoch ?? 0),
+    isCustomize: key === board.customize, // the session you change Agent Center from
     isLaunching: running.has(id),
     usage: await usageOf(id, ids).catch(() => null),
     // The current turn's task list, while Claude works through it.

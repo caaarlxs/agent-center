@@ -40,4 +40,11 @@ describe("what a right-click offers, by what is under it", () => {
     expect(labels(el('<div class="md"><p>hola</p></div>', "p"))).toEqual(["Copy text", "Reload page"])
     expect(labels(el("<div>x</div>", "div"))).toEqual(["Reload page"])
   })
+  it("a session's card: use it to customize Agent Center, or stop, besides the rest", () => {
+    const card = el('<article data-id="s1"><p>Custom IDE</p></article>', "p")
+    const items = itemsFor(card, "", "", { id: "s1", isCustomize: false })
+    expect(items.map(i => i.label)).toEqual(["Use to customize Agent Center", "Reload page"])
+    expect(items[0]!.action).toEqual({ kind: "customize", id: "s1", isOff: false })
+    expect(itemsFor(card, "", "", { id: "s1", isCustomize: true }).map(i => i.label)[0]).toBe("Stop customizing Agent Center from here")
+  })
 })

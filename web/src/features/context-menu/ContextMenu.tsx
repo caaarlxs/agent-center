@@ -3,19 +3,29 @@
 // click elsewhere, Esc, a scroll or leaving the window. Arrows move through
 // it, Enter picks. It always shows: some windows (an app's) have no menu of their own.
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
-import { ClipboardPaste, Copy, ExternalLink, ImageIcon, Link, Mail, Maximize2, RotateCw, Scissors, TextSelect, type LucideIcon } from "lucide-react"
+import { ClipboardPaste, Copy, ExternalLink, ImageIcon, Link, Mail, Maximize2, RotateCw, Scissors, TextSelect, Wrench, type LucideIcon } from "lucide-react"
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { toast } from "sonner"
 import { showImage } from "@/components/common/Lightbox"
 import { cn } from "@/lib/utils"
 import { copyText } from "@/features/conversation/Markdown"
-import { type Action, type Item, itemsFor } from "./items"
+import { post } from "@/lib/api"
+import { live } from "@/lib/live"
+import { type Action, type Item, type UnderSession, itemsFor } from "./items"
 
 const ICON: Record<string, LucideIcon> = {
   "Open link in a new tab": ExternalLink, "Copy link": Link, "Write an email": Mail, "Copy email address": Copy,
   "See it large": Maximize2, "Copy image": ImageIcon, "Copy image address": Link, "Open image in a new tab": ExternalLink,
   Cut: Scissors, Copy, Paste: ClipboardPaste, "Select all": TextSelect, "Copy text": Copy, "Reload page": RotateCw,
+  "Use to customize Agent Center": Wrench, "Stop customizing Agent Center from here": Wrench,
+}
+
+// The session whose card (or row) is under the pointer, if any.
+function sessionUnder(target: Element): UnderSession | undefined {
+  const id = target.closest("[data-id]")?.getAttribute("data-id")
+  const card = id ? live().snapshot?.cards.find(c => c.id === id) : undefined
+  return card && { id: card.id, isCustomize: !!card.isCustomize }
 }
 
 // The word under the cursor: the text between spaces around the point clicked.
@@ -63,6 +73,9 @@ async function run(action: Action, selection: string) {
       case "open": return void window.open(action.url, "_blank", "noopener,noreferrer")
       case "image": return showImage(action.src)
       case "reload": return location.reload()
+      case "customize":
+        await post(`/api/sessions/${encodeURIComponent(action.id)}/customize`, { off: action.isOff })
+        return void toast(action.isOff ? "Agent Center is customized from no session now" : "Customize, in the sidebar, opens this session now")
       case "copyImage": return void (await copyImage(action.src), toast("Image copied"))
       case "cut": return void (await copyText(selection), typeInto(action.field, ""))
       case "paste": return typeInto(action.field, await navigator.clipboard.readText())
@@ -139,7 +152,7 @@ export function ContextMenu() {
     const onMenu = (e: MouseEvent) => {
       if (!(e.target instanceof Element) || box.current?.contains(e.target)) return
       const selection = window.getSelection()?.toString() ?? ""
-      const items = itemsFor(e.target, selection, wordAt(e.clientX, e.clientY))
+      const items = itemsFor(e.target, selection, wordAt(e.clientX, e.clientY), sessionUnder(e.target))
       if (!items.length) return setOpen(null)
       e.preventDefault()
       setOpen({ x: e.clientX, y: e.clientY, items, selection })

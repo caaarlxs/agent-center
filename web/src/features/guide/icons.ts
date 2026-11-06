@@ -8,7 +8,7 @@ import {
   ListTodo, ListTree, Lock, Map as MapIcon, MessageCircleQuestion, MessageSquare, MessagesSquare, MousePointerClick, Move,
   Orbit, Palette, PanelLeft, PanelRight, PawPrint, Play, Plus, RefreshCw, Reply, Rocket, Rows3, Scale, Search, Server,
   Settings, Shapes, ShieldCheck, SlidersHorizontal, Sparkles, SquareCheck, SquareTerminal, StickyNote,
-  Terminal, Ticket, TicketCheck, Timer, Undo2, WandSparkles, Workflow,
+  Terminal, Ticket, TicketCheck, Timer, Undo2, WandSparkles, Workflow, Wrench,
 } from "lucide-react"
 
 export const ICONS: Record<string, LucideIcon | undefined> = {
@@ -82,4 +82,5 @@ export const ICONS: Record<string, LucideIcon | undefined> = {
   "undo-2": Undo2,
   "wand-sparkles": WandSparkles,
   "workflow": Workflow,
+  "wrench": Wrench,
 }

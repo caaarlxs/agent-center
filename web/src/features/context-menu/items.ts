@@ -3,7 +3,8 @@
 // address only written as text (or as code), an image (see it large, copy
 // it, copy its address), a field (cut, copy, paste, select all), and the
 // text you selected (copy). Else the message's text to copy, and a reload:
-// the menu always shows, as some windows have none of their own.
+// the menu always shows, as some windows have none of their own. On a
+// session's card, first: use it to customize Agent Center (or stop).
 
 export type Action =
   | { kind: "copy"; text: string }
@@ -12,6 +13,7 @@ export type Action =
   | { kind: "copyImage"; src: string }
   | { kind: "cut" | "paste" | "selectAll"; field: HTMLElement }
   | { kind: "reload" }
+  | { kind: "customize"; id: string; isOff: boolean }
 export type Item = { label: string; action: Action; hint?: string; group: number }
 
 const FIELD = "input:not([type=checkbox]):not([type=radio]):not([type=range]), textarea, [contenteditable=''], [contenteditable=true]"
@@ -63,7 +65,16 @@ function fallbackItems(target: Element): Item[] {
   ]
 }
 
-export function itemsFor(target: Element, selection: string, word = ""): Item[] {
+// The session whose card is under the pointer, and whether Agent Center is
+// customized from it.
+export type UnderSession = { id: string; isCustomize: boolean }
+
+function sessionItems(s: UnderSession): Item[] {
+  return [{ label: s.isCustomize ? "Stop customizing Agent Center from here" : "Use to customize Agent Center", action: { kind: "customize", id: s.id, isOff: s.isCustomize }, group: 3 }]
+}
+
+export function itemsFor(target: Element, selection: string, word = "", session?: UnderSession): Item[] {
+  const forSession = session ? sessionItems(session) : []
   const field = target.closest<HTMLElement>(FIELD)
   if (field) return fieldItems(field, selection)
   const href = target.closest("a[href]")?.getAttribute("href")
@@ -74,5 +85,5 @@ export function itemsFor(target: Element, selection: string, word = ""): Item[] 
     ...(link ? linkItems(link) : []),
     ...(image?.getAttribute("src") ? imageItems(new URL(image.getAttribute("src")!, location.href).href) : []),
   ]
-  return items.length ? items : fallbackItems(target)
+  return [...forSession, ...(items.length ? items : fallbackItems(target))]
 }
