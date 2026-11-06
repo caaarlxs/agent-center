@@ -54,9 +54,18 @@ type MicState =
   | { kind: "dictating"; stop: () => void }
 
 // Whisper while it records: a live wave of the microphone's level and the
-// time; a click or Enter writes the text, Esc drops it. Either way the field
+// time; Enter writes the text and sends it, a click only writes it (to
+// change it first), Esc drops it. Either way the field
 // takes the focus back, the caret at the end, so the next Enter sends.
 // Without Whisper, the browser's dictation writes as you speak.
+// Submits the form once its field holds `text`, waiting up to about a second.
+function submitWhenShown(form: HTMLFormElement | null, text: string, frames = 30) {
+  const field = form?.querySelector("textarea")
+  if (!form || !field) return
+  if (field.value.includes(text)) return void form.requestSubmit()
+  if (frames > 0) setTimeout(() => submitWhenShown(form, text, frames - 1), 30)
+}
+
 export function MicButton() {
   const { textInput } = usePromptInputController()
   const [isWhisper, setWhisper] = useState(false)
@@ -81,11 +90,15 @@ export function MicButton() {
   }, [])
 
   const add = (heard: string, base = textInput.value) => textInput.setInput(base ? `${base.trimEnd()} ${heard}` : heard)
-  const finish = async (rec: Recording) => {
+  const finish = async (rec: Recording, isSend = false) => {
+    const form = button.current?.closest("form") ?? null
     setMic({ kind: "transcribing" })
     try {
       const heard = await rec.stop()
       if (heard) add(heard)
+      // Sent as the box's own Enter would, once the box shows the text (sent
+      // before, it would go empty and the text be lost).
+      if (heard && isSend) submitWhenShown(form, heard)
     } catch (err) {
       toast.error((err as Error).message)
     }
@@ -110,7 +123,7 @@ export function MicButton() {
   useEffect(() => {
     if (!rec) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Enter" && !e.shiftKey && !e.isComposing) (e.preventDefault(), e.stopImmediatePropagation(), void finish(rec))
+      if (e.key === "Enter" && !e.shiftKey && !e.isComposing) (e.preventDefault(), e.stopImmediatePropagation(), void finish(rec, true))
       else if (e.key === "Escape") (e.preventDefault(), e.stopImmediatePropagation(), rec.cancel(), setMic({ kind: "idle" }), backToField())
     }
     window.addEventListener("keydown", onKey, true)
@@ -125,7 +138,7 @@ export function MicButton() {
   if (mic.kind === "recording") {
     const s = Math.floor((Date.now() - mic.rec.startedAt) / 1000)
     return (
-      <button ref={button as React.RefObject<HTMLButtonElement>} type="button" onClick={() => finish(mic.rec)} title="Stop and write (↵) · discard (Esc)"
+      <button ref={button as React.RefObject<HTMLButtonElement>} type="button" onClick={() => finish(mic.rec)} title="Stop and write · send (↵) · discard (Esc)"
         className={cn(pill, quiet, "cursor-pointer hover:bg-press hover:text-text")}>
         {orb("listening")}
         <Elapsed seconds={s} />

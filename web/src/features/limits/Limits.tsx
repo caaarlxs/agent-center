@@ -1,8 +1,12 @@
 // The plan's limits in the sidebar (sidebar.js Limits): per window, how much
 // is used (amber from 70%, red from 90%), a mark for the time gone by, when it
 // resets, the pace and where it gets at this pace; under the 5-hour window,
-// which sessions used most of it. Folded, a ring per window.
+// which sessions used most of it. Folded (kept in this browser), one line as
+// tall as the rows under it: the 5 hours on the left, the week on the right.
+// In the folded sidebar, a ring per window.
+import { ChevronDown } from "lucide-react"
 import { useLive } from "@/lib/live"
+import { persistedStore } from "@/lib/store"
 import { useNow } from "@/lib/now"
 import { cn } from "@/lib/utils"
 import { openSession } from "@/app/open-session"
@@ -13,20 +17,40 @@ import { Num } from "@/components/common/Num"
 const PCT_TEXT: Record<Tone, string> = { ok: "", ask: "text-ask", bad: "text-bad" }
 const FILL: Record<Tone, string> = { ok: "bg-work", ask: "bg-ask", bad: "bg-bad" }
 
+const limitsOpen = persistedStore("limitsOpen", true)
+const SHORT: Record<string, string> = { five_hour: "5h", seven_day: "Week" }
+
 export function Limits() {
   const limits = useLive(l => l.snapshot?.limits)
   const cards = useLive(l => l.snapshot?.cards)
+  const isOpen = limitsOpen.use()
   const now = useNow()
   if (!limits?.windows.length) return null
   const isOld = now - limits.at > STALE_MS
   const spenders = topSpenders(cards ?? [])
+  const rows = limitRows(limits, now)
+  if (!isOpen)
+    return (
+      <button onClick={() => limitsOpen.set(true)} title={isOld ? `Plan limits, from ${ago(limits.at, now)} ago. Click to open` : "Plan limits. Click to open"}
+        className={cn("mx-0.5 mt-2.5 flex h-[30px] shrink-0 items-center rounded-md border border-line bg-surface text-[11.5px] text-text-muted transition-colors duration-[120ms] hover:bg-hover hover:text-text", isOld && "opacity-55")}>
+        {rows.map((r, i) => (
+          <span key={r.kind} className={cn("flex min-w-0 flex-1 items-center gap-1.5 px-2.5", i > 0 && "border-l border-line")}>
+            <span className="shrink-0 font-semibold text-text">{SHORT[r.kind] ?? r.label}</span>
+            <span className="meter h-1.5 min-w-0 flex-1 overflow-hidden rounded bg-hover"><i className={cn("block h-full rounded", FILL[r.tone])} style={{ width: `${Math.min(100, r.pct)}%` }} /></span>
+            <span className={cn("shrink-0 font-[650] tabular-nums", PCT_TEXT[r.tone])}><Num value={r.pct} suffix="%" /></span>
+          </span>
+        ))}
+      </button>
+    )
   return (
     <section className={cn("mx-0.5 mt-2.5 flex flex-col gap-2.5 rounded-[10px] border border-line bg-surface px-2.5 pt-2.5 pb-2", isOld && "opacity-55")}
       title={isOld ? `Data from ${ago(limits.at, now)} ago: no open session has updated it` : "Plan limits"}>
-      {limitRows(limits, now).map(r => (
+      {rows.map(r => (
         <div key={r.kind} className="text-xs text-text-muted">
           <div className="mb-1.5 flex items-baseline justify-between text-text">
-            <b className="font-semibold">{r.label}</b>
+            {r === rows[0]
+              ? <button onClick={() => limitsOpen.set(false)} title="Fold into one line" className="-ml-1 flex items-center gap-1 rounded px-1 font-semibold hover:bg-hover">{r.label}<ChevronDown className="size-3 rotate-180 text-faint" /></button>
+              : <b className="font-semibold">{r.label}</b>}
             <span className={cn("font-[650] tabular-nums", PCT_TEXT[r.tone])}><Num value={r.pct} suffix="%" /></span>
           </div>
           {/* The time mark sits over the bar, not in it: the Dots style shows the bar only through its dots. */}

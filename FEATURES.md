@@ -45,7 +45,7 @@ Lucide's names, and must be in `web/src/features/guide/icons.ts`.
 
 ## {message-square} Conversation
 
-- {reply} **Reply**: write in the box at the bottom; paste or drop files, or dictate with the microphone. A draft stays three days.
+- {reply} **Reply**: write in the box at the bottom; paste or drop files, or dictate with the microphone (`↵` writes what you said and sends it; a click on the recording only writes it). A draft stays three days. · 2026-11-06
 - {sliders-horizontal} **Mode and model**: the pills under the box change them in the session.
 - {wand-sparkles} **Suggested reply**: after a turn it shows grey in the box; `Tab` or `→` writes it, "Send suggestion" sends it. · 2026-11-03
 - {terminal} **Run a command**: a command block has Run, in the session's folder; one that touches prod or deletes asks for a second click. · 2026-11-03
@@ -109,7 +109,7 @@ Lucide's names, and must be in `web/src/features/guide/icons.ts`.
 
 ## {panel-left} Sidebar
 
-- {timer} **Limits**: your 5-hour and weekly use, when each resets, and where your pace gets you.
+- {timer} **Limits**: your 5-hour and weekly use, when each resets, and where your pace gets you; the chevron by "5 hours" folds it into one line (5h on the left, the week on the right), and it stays as you leave it. · 2026-11-06
 - {book-text} **General context**: read and edit CLAUDE.md and what each project remembers.
 - {paw-print} **Pets**: open packs and send a pet out on the board to keep you company. · 2026-11-03
 - {settings} **Settings**: setup steps for this Mac, alerts (notifications, chime, reading aloud) and the look; it warns when the terminal and Claude desktop use different accounts. · 2026-11-04
