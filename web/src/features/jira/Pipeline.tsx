@@ -11,7 +11,7 @@
 // and start the stage again. Start over clears the run and the labels; the
 // comments stay. On someone else's ticket it runs only once you take it
 // (two clicks: it is assigned to you).
-import { AlertTriangle, Check, ChevronRight, CircleHelp, Database, FastForward, FlaskConical, ListChecks, LogOut, Play, RotateCcw, Route, Send, ShieldCheck, Trash2 } from "lucide-react"
+import { AlertTriangle, Check, ChevronRight, CircleHelp, Database, FastForward, FlaskConical, ListChecks, LogOut, Play, TicketPlus, RotateCcw, Route, Send, ShieldCheck, Trash2 } from "lucide-react"
 import { useEffect, useState, type ReactNode } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -34,6 +34,7 @@ import type { ChecklistItem, Finding, PipelineState, PlanScript, Run, Severity, 
 import type { Check as BoardCheck } from "@server/checks"
 import { deliverablesOf } from "@server/coordinator"
 import type { Leftover } from "@server/cleanup"
+import { anchorOf, ticketsOfYours, type Proposal } from "@server/proposals"
 import { MODELS } from "@/features/prompt/Settings"
 import { PipelineMark, liveLine, startText, startingText, statusText } from "./PipelineMark"
 import { STAGE_KEYS, STAGES, costOf, dollars, isRelease, journeyOf, nextStage, passesOf, stageAt, toFix, tokens } from "./pipeline-board"
@@ -753,6 +754,56 @@ function Checks({ checks }: { checks: BoardCheck[] }) {
   )
 }
 
+// Tickets the stages proposed: you create each one (yours, linked to a ticket
+// of yours; a second click confirms) or dismiss it. Nothing is created alone.
+const KIND_WORD: Record<Proposal["kind"], string> = { bug: "Bug", story: "Story", task: "Task", subtask: "Sub-task" }
+function Proposed({ state }: { state: PipelineState }) {
+  const shown = (state.proposals ?? []).filter(p => p.status !== "dismissed")
+  if (!shown.length) return null
+  return (
+    <div className="flex flex-col gap-2">
+      <span className="inline-flex items-center gap-2 text-xs font-semibold text-text-muted"><TicketPlus size={13} />Proposed tickets</span>
+      <ul className="m-0 flex list-none flex-col gap-2 p-0">
+        {shown.map(p => <ProposedTicket key={p.id} ticketKey={state.key} p={p} anchor={anchorOf(p, ticketsOfYours(state))} />)}
+      </ul>
+    </div>
+  )
+}
+function ProposedTicket({ ticketKey, p, anchor }: { ticketKey: string; p: Proposal; anchor: string | null }) {
+  const [isAsking, confirm] = useConfirm()
+  const [isOpen, setOpen] = useState(false)
+  const send = async (action: "create" | "dismiss") => {
+    try {
+      const r = await post<{ created?: string; warning?: string | null }>("/api/pipeline/proposal", { key: ticketKey, id: p.id, action })
+      toast(action === "dismiss" ? "Dismissed" : [`${r.created} created`, r.warning].filter(Boolean).join(". "))
+      window.dispatchEvent(new Event(CHANGED))
+    } catch (err) {
+      toast((err as Error).message || "It did not work")
+    }
+  }
+  return (
+    <li className="flex flex-col gap-1.5 rounded-[8px] border border-line bg-surface px-3 py-2.5">
+      <div className="flex items-start gap-2">
+        <span className="mt-[1px] shrink-0 rounded-[4px] bg-hover px-1.5 text-[11px] font-semibold text-text-muted">{KIND_WORD[p.kind]}</span>
+        <button className="min-w-0 flex-1 text-left text-[13px] leading-[1.45] text-text" onClick={() => setOpen(o => !o)} aria-expanded={isOpen}>{p.summary}</button>
+      </div>
+      {p.why && <span className="text-xs text-text-muted">{p.why}</span>}
+      {isOpen && p.description && <Markdown className="text-[13px] text-text-muted">{p.description}</Markdown>}
+      <div className="flex items-center gap-3">
+        <span className="text-xs text-faint">{p.kind === "subtask" ? "Inside" : "Linked to"} {anchor ?? "—"}</span>
+        <span className="ml-auto flex items-center gap-3">
+          {p.status === "created" ? <button className="font-mono text-xs font-semibold text-brand hover:underline" onClick={() => dialog.set({ kind: "ticket", key: p.created! })}>{p.created}</button> : (
+            <>
+              <button className="text-xs font-semibold text-faint hover:text-text" onClick={() => void send("dismiss")}>Dismiss</button>
+              <Button variant={isAsking ? "destructive" : "outline"} className="h-7 text-xs" disabled={!anchor} onClick={() => confirm(() => void send("create"))}>{isAsking ? "Sure? Create in Jira" : "Create"}</Button>
+            </>
+          )}
+        </span>
+      </div>
+    </li>
+  )
+}
+
 // The column a stage is shown in: the test in staging's, the check in prod's.
 const nodeOf = (stage: Stage): Stage => (stage === "test" ? "staging" : stage === "smoke" ? "prod" : stage)
 
@@ -998,6 +1049,7 @@ export function Pipeline({ ticket, onTaken }: { ticket: Ticket; onTaken: () => v
         )}
         {state && <Now state={state} preview={data.preview} now={now} onRun={stage => void start(stage)} onStep={step} />}
         {state?.checks?.length && state.status !== "running" ? <Checks checks={state.checks} /> : null}
+        {state && <Proposed state={state} />}
         {state?.status === "needs-info" ? <Decisions key={state.askedAt} ticketKey={ticket.key} state={state} onSent={() => void load()} />
           : state && <StagePasses key={shown} stage={shown} state={state} preview={data.preview} onRun={(stage, fix) => void start(stage, fix)} onStep={step} />}
       </div>

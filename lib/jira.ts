@@ -620,10 +620,11 @@ export async function moveToStatus(key: string, statusId: string) {
 }
 
 // A sub-task under a ticket of yours, assigned to you: its key.
-export async function createSubtask(parent: string, summary: string, typeId: string): Promise<string> {
+export async function createSubtask(parent: string, summary: string, typeId: string, description?: string): Promise<string> {
   const setup = setupOrThrow()
   await mineOrThrow(setup, parent)
-  const fields = { project: { key: parent.split("-")[0] }, parent: { key: parent }, summary: summary.slice(0, 250), issuetype: { id: typeId }, assignee: { accountId: await myId(setup) } }
+  const fields = { project: { key: parent.split("-")[0] }, parent: { key: parent }, summary: summary.slice(0, 250), issuetype: { id: typeId }, assignee: { accountId: await myId(setup) },
+    ...(description ? { description: docOf(description.slice(0, 30_000)) } : {}) }
   const r = await call(setup, "/rest/api/3/issue", { method: "POST", body: JSON.stringify({ fields }) })
   briefs.delete(parent)
   return String(r?.key ?? "")
@@ -664,6 +665,14 @@ export async function attachTo(key: string, paths: string[]) {
   for (const path of paths) form.append("file", Bun.file(path), path.split("/").pop())
   await request(setup, `/rest/api/3/issue/${key}/attachments`, { method: "POST", body: form, headers: { "X-Atlassian-Token": "no-check" } })
   briefs.delete(key)
+}
+
+// Two tickets related ("relates to"): the link shows on both; one of them must be yours.
+export async function relateTickets(key: string, yours: string) {
+  const setup = setupOrThrow()
+  await mineOrThrow(setup, yours)
+  await request(setup, "/rest/api/3/issueLink", { method: "POST", body: JSON.stringify({ type: { name: "Relates" }, inwardIssue: { key: keyOrThrow(key) }, outwardIssue: { key: yours } }) })
+  briefs.delete(yours)
 }
 
 // A new ticket, assigned to you (the board writes only on what is yours): its key.

@@ -35,9 +35,10 @@ import { appendFile, cp, mkdir, readFile, rename, rm } from "node:fs/promises"
 import { basename, join } from "node:path"
 import { DATA_DIR } from "./config"
 import { writeJsonAtomic } from "./files"
-import { assignToMe, attachTo, commentOn, createIssue, confluenceIds, confluencePage, createSubtask, issueState, remoteLinks, type ConfluencePage, labelTicket, moveToStatus, openStatuses, ticket, type Ticket, type TicketComment } from "./jira"
+import { relateTickets, assignToMe, attachTo, commentOn, createIssue, confluenceIds, confluencePage, createSubtask, issueState, remoteLinks, type ConfluencePage, labelTicket, moveToStatus, openStatuses, ticket, type Ticket, type TicketComment } from "./jira"
 import { flowOf, followInJira, type Event as JiraEvent } from "./jira-flow"
 import { childrenIn, deliverablesOf, toStart, waitsFor, type Child } from "./coordinator"
+import { anchorOf, newDescription, proposalsIn, ticketsOfYours, withProposals, type Proposal } from "./proposals"
 import { archiveOf, cleanupSteps, keptAfter, leftoversOf, wantedBranches, worktreesIn, type Archive, type Clone, type Found, type Kept as KeptBranch } from "./cleanup"
 import { evidenceType, filesIn, keptFiles, type EvidenceFile } from "./evidence"
 import { debtIn, merged as debtMerged, ticketOf as debtTicket, type DebtEntry, type DebtItem } from "./debt"
@@ -80,7 +81,7 @@ export type TestResult = { id: string; criterion: string; status: "pass" | "fail
 // A rule of the team's context (its repo) that the ticket makes untrue: the file and the words.
 // quote: the words of today it makes untrue; null for a new code rule, which says what it proposes instead.
 export type ContextImpact = { file: string; quote: string | null; why: string; proposal: string | null }
-export type Result = { verdict: "ready" | "needs-info"; questions: Question[]; units: Unit[]; checklist: ChecklistItem[]; findings: Finding[]; fixed: string[]; scripts: PlanScript[]; order: OrderItem[]; results: TestResult[]; contextImpact: ContextImpact[]; children?: unknown; debt: DebtItem[] }
+export type Result = { verdict: "ready" | "needs-info"; questions: Question[]; units: Unit[]; checklist: ChecklistItem[]; findings: Finding[]; fixed: string[]; scripts: PlanScript[]; order: OrderItem[]; results: TestResult[]; contextImpact: ContextImpact[]; children?: unknown; debt: DebtItem[]; tickets?: unknown }
 export type PipelineStatus = "running" | "needs-info" | "ready" | "failed"
 // kept: what the run left, to see each pass of a stage apart (a plan's or a build's units, a review's findings, a test's results).
 export type Kept = { units?: Unit[]; checklist?: ChecklistItem[]; findings?: Finding[]; results?: TestResult[] }
@@ -113,6 +114,7 @@ export type PipelineState = {
   fixOf?: Record<string, string> // the one open for each criterion that failed
   children?: Child[] // a coordinator's children, in the order they go (coordinator.ts)
   parent?: string | null // the coordinator a child's pipeline belongs to
+  proposals?: Proposal[] // tickets the stages proposed, for you to create (proposals.ts)
   local?: boolean // a ticket not yours (an epic of the team) that only coordinates yours: nothing of it goes to Jira
   auto?: boolean // runs on by itself, stage after stage, until the review (autoNext)
   error: string | null
@@ -381,7 +383,7 @@ export function parseResult(text: string, stage: Stage): Result {
     .filter(c => typeof c?.text === "string" && c.text.trim())
     .map((c, i) => ({ id: String(c.id ?? `C${i + 1}`), text: c.text.trim(), unit: typeof c.unit === "string" && c.unit ? c.unit : null }))
   if (stage === "plan" && data.verdict === "ready" && !units.length) throw new Error("plan.json is ready but has no units")
-  return { verdict: data.verdict, questions, units, checklist, findings: findingsIn(data.findings), fixed: listOf(data.fixed).map(String), scripts: scriptsIn(data.scripts), order: orderIn(data.release), results: resultsIn(data.results), contextImpact: impactIn(data.contextImpact), children: data.children, debt: debtIn(data.debt) }
+  return { verdict: data.verdict, questions, units, checklist, findings: findingsIn(data.findings), fixed: listOf(data.fixed).map(String), scripts: scriptsIn(data.scripts), order: orderIn(data.release), results: resultsIn(data.results), contextImpact: impactIn(data.contextImpact), children: data.children, debt: debtIn(data.debt), tickets: data.tickets }
 }
 
 export const questionsComment = (key: string, questions: Question[], stage: AgentStage) =>
@@ -546,7 +548,7 @@ const fresh = async (key: string, runs: number, stage: Stage): Promise<PipelineS
   const prev = await stateOf(key)
   // The plan's units and to-do list, and the review's findings, stay with the ticket for the stages after it.
   return { ...EMPTY(key, runs, stage), summary: prev?.summary, history: prev?.history ?? [], units: prev?.units, checklist: prev?.checklist, checked: prev?.checked, scripts: prev?.scripts, contextImpact: prev?.contextImpact,
-    release: prev?.release, deployed: prev?.deployed, fixes: prev?.fixes, fixOf: prev?.fixOf, threads: prev?.threads, fixing: ["refine", "plan", "test", "smoke"].includes(stage) ? null : prev?.fixing, results: stage === "test" || stage === "smoke" ? undefined : prev?.results, children: prev?.children, parent: prev?.parent, auto: prev?.auto, local: prev?.local,
+    release: prev?.release, deployed: prev?.deployed, fixes: prev?.fixes, fixOf: prev?.fixOf, threads: prev?.threads, fixing: ["refine", "plan", "test", "smoke"].includes(stage) ? null : prev?.fixing, results: stage === "test" || stage === "smoke" ? undefined : prev?.results, children: prev?.children, parent: prev?.parent, auto: prev?.auto, local: prev?.local, proposals: prev?.proposals,
     ...(stage === "review" ? {} : { findings: prev?.findings, fixed: stage === "build" ? [] : prev?.fixed }) }
 }
 // A stage's session is the pipeline's, not yours: once it ends it leaves the
@@ -676,7 +678,7 @@ async function finish(key: string) {
       await save({ ...state, publishedRun: state.runs })
     }
     if (!state.local) await labelTicket(key, [LABELS.needsInfo], [stage.label])
-    await save({ ...state, publishedRun: state.runs, status: "needs-info", questions: result.questions, askedAt: Date.now(), endedAt: Date.now() })
+    await save({ ...state, publishedRun: state.runs, status: "needs-info", questions: result.questions, proposals: withProposals(state.proposals, proposalsIn(result.tickets, state.runs)), askedAt: Date.now(), endedAt: Date.now() })
     return
   }
   const checks = await checksAfter(state, result)
@@ -706,7 +708,8 @@ async function finish(key: string) {
   const found = state.stage === "review" ? { findings: result.findings, fixed: [] } : state.stage === "build" ? { fixed: result.fixed } : {}
   const tested = state.stage === "test" || state.stage === "smoke" ? { results: shown.results } : {}
   const context = state.stage === "refine" ? { contextImpact: result.contextImpact } : {}
-  const done: PipelineState = { ...state, publishedRun: state.runs, status: "ready", questions: [], units, checklist, checked, scripts, ...found, ...tested, ...context, checks: withJira([...checks, ...attached.checks], state.checks), endedAt: Date.now() }
+  const proposals = withProposals(state.proposals, proposalsIn(result.tickets, state.runs))
+  const done: PipelineState = { ...state, publishedRun: state.runs, status: "ready", questions: [], proposals, units, checklist, checked, scripts, ...found, ...tested, ...context, checks: withJira([...checks, ...attached.checks], state.checks), endedAt: Date.now() }
   await recordDebt(key, result.debt)
   await settle({ ...done, checks: withJira([...(done.checks ?? []), ...graveDebt(result.debt)], []) }, result)
 }
@@ -1316,6 +1319,39 @@ const keepOut = (parent: string, key: string) => locked(parent, async () => {
   if (!p) return
   const id = `child-${key}`
   await save({ ...p, checks: [...(p.checks ?? []).filter(c => c.id !== id), { id, label: `${key} is out of the pipeline`, status: "warn", detail: "Taken out by you: it does not start again on its own" }] })
+})
+
+// ---------- tickets the stages propose (proposals.ts) ----------
+
+// A proposed ticket, created by you: yours, and linked to a ticket of yours (a
+// sub-task goes inside it). A link Jira refuses is a warning: the ticket stays.
+export const createProposed = (key: string, id: string) => locked(key, async () => {
+  const state = await stateOf(key)
+  const p = state?.proposals?.find(x => x.id === id)
+  if (!state || p?.status !== "proposed") throw new Error("No such proposal")
+  const anchor = anchorOf(p, ticketsOfYours(state))
+  if (!anchor) throw new Error("No ticket of yours to link it to")
+  const { created, warning } = await createInJira(p, anchor, newDescription(p, key))
+  await save({ ...state, proposals: state.proposals!.map(x => (x.id === id ? { ...x, status: "created" as const, created } : x)) })
+  return { created, anchor, warning }
+})
+// In Jira, as jira.json says: a sub-task inside the ticket of yours, else a ticket linked to it.
+async function createInJira(p: Proposal, anchor: string, description: string) {
+  const conf = jsonOf(await readText(join(STAGES_DIR, "jira.json")))
+  if (p.kind === "subtask") {
+    if (!conf?.subtaskType) throw new Error("jira.json has no subtaskType")
+    return { created: await createSubtask(anchor, p.summary, conf.subtaskType, description), warning: null }
+  }
+  const typeId = conf?.newIssue?.types?.[p.kind]
+  if (!conf?.newIssue?.project || !typeId) throw new Error(`jira.json has no newIssue type for ${p.kind}`)
+  const created = await createIssue({ project: conf.newIssue.project, typeId, summary: p.summary, description, labels: conf.newIssue.labels ?? [] })
+  const warning = await relateTickets(created, anchor).then(() => null, (err: Error) => `${created} is not linked to ${anchor}: ${err.message}`)
+  return { created, warning }
+}
+export const dismissProposed = (key: string, id: string) => locked(key, async () => {
+  const state = await stateOf(key)
+  if (!state?.proposals?.some(x => x.id === id && x.status === "proposed")) throw new Error("No such proposal")
+  await save({ ...state, proposals: state.proposals.map(x => (x.id === id ? { ...x, status: "dismissed" as const } : x)) })
 })
 
 // ---------- what a ticket leaves once out (cleanup.ts) ----------
