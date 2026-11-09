@@ -8,14 +8,14 @@
 // ahead of it (open, or merged) with its move; a click opens it whole, "Session"
 // begins one about it, and a tick (or ⌘-click) picks several to begin one
 // about them all.
-import { Plus, RefreshCw, X } from "lucide-react"
+import { ChevronDown, Plus, RefreshCw, X } from "lucide-react"
 import { Fragment, useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { toast } from "sonner"
 import { get, post } from "@/lib/api"
 import type { BoardColumn, Card, TicketFilter, TicketRef, TicketRow, Transition } from "@/lib/api-types"
-import { createStore } from "@/lib/store"
+import { createStore, persistedStore } from "@/lib/store"
 import { useNow } from "@/lib/now"
 import { cn } from "@/lib/utils"
 import { openDialog } from "@/app/open-dialog"
@@ -189,6 +189,14 @@ function ColumnHead({ col }: { col: Column }) {
 
 // The tickets on the board's columns, in a row per ticket on top when asked.
 type Picking = { picked: string[]; onPick: (key: string) => void }
+// The rows folded (by their head's key, "none" for the last row): kept in this browser.
+const foldedLanes = persistedStore<string[]>("ticketLanesFolded", [])
+const laneKey = (lane: Lane) => lane.head?.key ?? "none"
+const toggleLane = (key: string) => {
+  const folded = foldedLanes.get()
+  foldedLanes.set(folded.includes(key) ? folded.filter(k => k !== key) : [...folded, key])
+}
+
 function TicketBoard({ tickets, board, grouping, cards, picking }: { tickets: TicketRow[]; board: BoardColumn[]; grouping: Grouping; cards: Card[]; picking: Picking }) {
   const sessionsByKey = useMemo(() => {
     const by = new Map<string, Card[]>()
@@ -198,6 +206,7 @@ function TicketBoard({ tickets, board, grouping, cards, picking }: { tickets: Ti
   const isByEpic = grouping === "epic"
   const columns = columnsOf(tickets, board)
   const lanes: Lane[] = isByEpic ? lanesOf(tickets) : [{ head: null, tickets }]
+  const folded = foldedLanes.use()
   // Every column as wide as the others, the empty ones too.
   const template = `repeat(${columns.length}, minmax(250px, 1fr))`
   const minWidth = columns.length * 262
@@ -206,9 +215,9 @@ function TicketBoard({ tickets, board, grouping, cards, picking }: { tickets: Ti
       <div className="grid gap-x-3" style={{ gridTemplateColumns: template, minWidth, gridTemplateRows: isByEpic ? undefined : "auto 1fr", minHeight: isByEpic ? undefined : "100%" }}>
         {columns.map((col, i) => <ColumnHead key={i} col={col} />)}
         {lanes.map(lane => (
-          <Fragment key={lane.head?.key ?? "none"}>
-            {isByEpic && <LaneHead lane={lane} />}
-            {columns.map((col, i) => {
+          <Fragment key={laneKey(lane)}>
+            {isByEpic && <LaneHead lane={lane} isFolded={folded.includes(laneKey(lane))} />}
+            {!(isByEpic && folded.includes(laneKey(lane))) && columns.map((col, i) => {
               const here = lane.tickets.filter(t => col.statusIds.includes(t.statusId))
               return (
                 <section key={i} className={cn("dots-veil flex min-h-0 flex-col gap-2 rounded-[12px] bg-side p-2", isByEpic && !here.length && "min-h-10")}>
@@ -226,10 +235,16 @@ function TicketBoard({ tickets, board, grouping, cards, picking }: { tickets: Ti
   )
 }
 
-function LaneHead({ lane }: { lane: Lane }) {
+// A row's head: its chevron folds the row (its tickets hide, the count stays);
+// a click on the ticket opens it.
+function LaneHead({ lane, isFolded }: { lane: Lane; isFolded: boolean }) {
   return (
-    <div className="col-span-full flex items-center pt-3 pb-2 first:pt-0">
-      <button className="sticky left-0 flex min-w-0 items-center gap-2 rounded-md px-1 text-left text-[13px] font-semibold hover:bg-hover" disabled={!lane.head}
+    <div className="col-span-full flex items-center gap-1 pt-3 pb-2 first:pt-0">
+      <button onClick={() => toggleLane(laneKey(lane))} aria-expanded={!isFolded} title={isFolded ? "Unfold this row" : "Fold this row"}
+        className="sticky left-0 grid size-6 shrink-0 place-items-center rounded-md text-text-muted hover:bg-hover hover:text-text">
+        <ChevronDown className={cn("size-3.5 transition-transform duration-150", isFolded && "-rotate-90")} />
+      </button>
+      <button className="sticky left-7 flex min-w-0 items-center gap-2 rounded-md px-1 text-left text-[13px] font-semibold hover:bg-hover" disabled={!lane.head}
         onClick={() => lane.head && openDialog({ kind: "ticket", key: lane.head.key })}>
         {lane.head ? <><KindMark kind={lane.head.kind} type={lane.head.type} size={15} /><span className="font-mono text-xs text-text-muted">{lane.head.key}</span><span className="truncate">{lane.head.summary}</span></> : <span className="text-text-muted">Nothing above</span>}
         <span className="text-xs font-medium text-faint">{lane.tickets.length}</span>
