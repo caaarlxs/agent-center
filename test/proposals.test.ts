@@ -42,7 +42,7 @@ describe("a ticket that depends on an answer", () => {
 
 describe("where a new ticket goes", () => {
   it("with a ticket of yours: the agent's choice if it is yours, else the first of yours", () => {
-    const epic = { key: "PP-1", local: true, children: [{ key: "PP-2" }, { key: "PP-3" }] }
+    const epic = { key: "PP-1", local: true, scope: [{ key: "PP-2", kind: "story" }, { key: "PP-3", kind: "story" }, { key: "PP-4", kind: "subtask" }] }
     expect(ticketsOfYours(epic)).toEqual(["PP-2", "PP-3"])
     expect(ticketsOfYours({ key: "PP-5" })).toEqual(["PP-5"])
     expect(anchorOf(p({ linkTo: "PP-3" }), ticketsOfYours(epic))).toBe("PP-3")

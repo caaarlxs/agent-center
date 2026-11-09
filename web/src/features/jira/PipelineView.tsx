@@ -27,7 +27,7 @@ import { StageEffect } from "./StageEffect"
 import { DebtButton } from "./Debt"
 import { effectOf, sceneOf } from "./stage-effects"
 import { PipelineMark, liveLine } from "./PipelineMark"
-import { BUILT, STAGES, STAGE_KEYS, boardColumn, childrenLine, costOf, dollars, isCoordinating, isQueued, toFix, waitingStep } from "./pipeline-board"
+import { BUILT, STAGES, STAGE_KEYS, columnOf, costOf, dollars, isQueued, toFix, waitingStep } from "./pipeline-board"
 import { StageHelp } from "./StageHelp"
 
 // A ticket opens the ticket; a job, the job.
@@ -39,19 +39,17 @@ const shimmer = "[--color-background:var(--text)] [--color-muted-foreground:var(
 // A ticket at a glance, the same size in every column: what it is, the one
 // line that matters now (what its agent does, what it waits for, what broke,
 // what it came to), and its key, cost and time; its stage's effect on the right.
-export function TicketCard({ state, card, now, all = [] }: { state: PipelineState; card: Card | undefined; now: number; all?: PipelineState[] }) {
+export function TicketCard({ state, card, now }: { state: PipelineState; card: Card | undefined; now: number }) {
   const isRunning = state.status === "running"
   const isAsking = state.status === "needs-info" || toFix(state).length > 0 || !!waitingStep(state)
   const isLoose = isJob(state)
   const activity = useActivity(state.key, isRunning && !state.release, isLoose)
   const effect = effectOf(state)
   const step = isRunning && !state.release ? (activity?.steps.findLast(s => s.isOpen) ?? activity?.steps.at(-1)) : undefined
-  // A coordinator says where its children are; the rest, what matters now.
-  const isParent = isCoordinating(state)
-  const line = isParent ? childrenLine(state, all) : (step?.text ?? liveLine(state, card))
+  const line = step?.text ?? liveLine(state, card)
   const time = ago(isRunning ? state.startedAt : (state.endedAt ?? state.startedAt), now)
   return (
-    <article tabIndex={0} data-card={state.key} data-col={isLoose ? undefined : boardColumn(state, all)} onClick={() => open(state)} onKeyDown={onOpenKey(state)} data-edge={isAsking ? "waiting" : undefined}
+    <article tabIndex={0} data-card={state.key} data-col={isLoose ? undefined : columnOf(state)} onClick={() => open(state)} onKeyDown={onOpenKey(state)} data-edge={isAsking ? "waiting" : undefined}
       className={cn("group/card relative h-[108px] flex-none cursor-pointer rounded-[10px] border px-3 py-3 transition-[border-color,box-shadow] duration-100 hover:shadow-card",
         isRunning && "beam",
         isAsking ? "border-[color-mix(in_srgb,var(--ask)_50%,var(--line))] bg-surface shadow-[0_0_0_3px_var(--ask-soft),0_0_24px_var(--ask-soft)]"
@@ -208,7 +206,7 @@ export function PipelineView() {
   const loose = useLive(l => l.snapshot?.loose) ?? []
   const cards = useLive(l => l.snapshot?.cards)
   const byId = useMemo(() => new Map((cards ?? []).map(c => [c.id, c])), [cards])
-  const board = useGlide(states.map(s => `${s.key}:${boardColumn(s, states)}`).join())
+  const board = useGlide(states.map(s => `${s.key}:${columnOf(s)}`).join())
   const halves = useRef<HTMLDivElement>(null)
   const [split, setSplit] = useSplit()
   return (
@@ -217,12 +215,12 @@ export function PipelineView() {
       <div ref={halves} className="flex min-h-0 flex-1 flex-col">
         <div ref={board} className={cn(COLUMNS, "min-h-0 flex-none pt-2 pb-2")} style={{ height: `${split * 100}%` }}>
           {STAGES.map((name, i) => {
-            const here = states.filter(s => boardColumn(s, states) === i)
+            const here = states.filter(s => columnOf(s) === i)
             return (
               <section key={name} className={cn(COLUMN, i >= BUILT && !here.length && "opacity-50")}>
                 <StageHead n={i + 1} name={name} stage={STAGE_KEYS[i]!} tickets={here} />
                 <div className="-m-0.5 flex min-h-0 flex-col gap-2 overflow-y-auto p-0.5">
-                  {here.map(s => <TicketCard key={s.key} state={s} card={s.sessionId ? byId.get(s.sessionId) : undefined} now={now} all={states} />)}
+                  {here.map(s => <TicketCard key={s.key} state={s} card={s.sessionId ? byId.get(s.sessionId) : undefined} now={now} />)}
                 </div>
               </section>
             )

@@ -128,3 +128,27 @@ describe("a criterion that fails again", () => {
     expect(out.fixOf!.T2).toBe("PP-21")
   })
 })
+
+describe("a ticket that takes in several stories (scope.ts)", () => {
+  const stories = [{ key: "PP-30", subtasks: ["PP-11", "PP-12"] }, { key: "PP-40", subtasks: [] }]
+  const epic = (extra = {}) => ({ key: "PP-1", units, results: [], stories, ...extra }) as never
+  it("a story whose sub-tasks the plan follows moves through them; one with none moves itself", () => {
+    expect(movesFor("build-started", epic(), flow)).toEqual([
+      { key: "PP-11", to: flow.statuses.inProgress },
+      { key: "PP-12", to: flow.statuses.inProgress },
+      { key: "PP-40", to: flow.statuses.inProgress },
+    ])
+    expect(movesFor("in-staging", epic(), flow).map(m => [m.key, m.to.id])).toEqual([["PP-11", "10020"], ["PP-12", "10020"], ["PP-40", "10067"]])
+  })
+  it("each story by the results of its own criteria; prod makes them all done", () => {
+    const results = [{ id: "C1", status: "fail", ticket: "PP-30" }, { id: "C2", status: "pass", ticket: "PP-40" }]
+    expect(movesFor("tested", epic({ results }), flow)).toEqual([{ key: "PP-30", to: flow.statuses.reopened }, { key: "PP-40", to: flow.statuses.readyForProd }])
+    expect(movesFor("in-prod", epic(), flow).map(m => m.key)).toEqual(["PP-30", "PP-40"])
+  })
+  it("the [Fix] of a criterion goes under its story", async () => {
+    const parents: string[] = []
+    const jira = { issue: async () => ({ status: "x", mine: true }), open: async () => [], move: async () => {}, comment: async () => {}, createSubtask: async (parent: string) => (parents.push(parent), `PP-9${parents.length}`) }
+    await followInJira("tested", epic({ results: [{ id: "C1", status: "fail", ticket: "PP-40" }, { id: "C2", status: "fail" }] }), flow, jira)
+    expect(parents).toEqual(["PP-40", "PP-30"])
+  })
+})

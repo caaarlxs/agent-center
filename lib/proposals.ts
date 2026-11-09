@@ -59,10 +59,10 @@ export const waitsOn = (p: Proposal, open: string[]) => !!p.question && open.inc
 export const decidedForAgent = (all: Proposal[] = []) =>
   all.filter(isDecided).map(p => ({ summary: p.summary, kind: p.kind, status: p.status, key: p.created ?? null }))
 
-// The tickets of yours a new one may go with: the ticket itself, unless it is not yours (a
-// coordinator of yours only), and the children it coordinates.
-export const ticketsOfYours = (state: { key: string; local?: boolean; children?: { key: string }[] }) =>
-  [...(state.local ? [] : [state.key]), ...(state.children ?? []).map(c => c.key)]
+// The tickets of yours a new one may go with: the ticket itself, unless it is not yours, and
+// the ones of its scope that are not sub-tasks.
+export const ticketsOfYours = (state: { key: string; local?: boolean; scope?: { key: string; kind: string }[] }) =>
+  [...(state.local ? [] : [state.key]), ...(state.scope ?? []).filter(t => t.kind !== "subtask").map(t => t.key)]
 
 // The one it goes with: the agent's choice when it is yours, else the first of yours.
 export const anchorOf = (p: Proposal, yours: string[]) => (p.linkTo && yours.includes(p.linkTo) ? p.linkTo : (yours[0] ?? null))

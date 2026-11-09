@@ -12,7 +12,7 @@ export const STAGE_HELP: Partial<Record<Stage, StageHelp>> = {
       "Ask about a question you do not follow",
       "Proposes tickets apart: create or dismiss each one",
       "Warns when the ticket makes a rule of deale-context untrue",
-      "On an epic: one refine for the epic and each story, with every question at once; the stories then start at their plan (Run mine: only yours)",
+      "Takes in everything under the ticket assigned to you (an epic's stories and sub-tasks) as one piece of work; on someone else's ticket, Run mine",
       "Run to review goes on alone up to the review",
     ],
   },

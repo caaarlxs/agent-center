@@ -6,11 +6,17 @@
 // story ready for prod, and one that fails reopens it, with a [Fix] sub-task
 // for each criterion that failed; prod makes it done.
 //
+// A ticket that takes in more (scope.ts: an epic's stories of yours) moves each
+// of its stories so: one whose sub-tasks the plan follows through them, any
+// other by itself; each by the test's results of its own criteria, and the
+// [Fix] of a criterion goes under its story.
+//
 // The team's statuses and names live in <data>/pipeline/stages/jira.json
 // (none there, nothing moves). Only what is assigned to you moves: the rest is
 // a warning that says what to move yourself. Jira never stops the pipeline:
 // what it refuses is a warning too.
 import type { Check } from "./checks"
+import { fixParent, type Story } from "./scope"
 
 export type Status = { id: string; name: string }
 export type Flow = {
@@ -22,9 +28,10 @@ export type Event = "build-started" | "built" | "in-staging" | "tested" | "in-pr
 export type Move = { key: string; to: Status; comment?: string }
 
 type Unit = { subtask?: string | null; subtasks?: string[]; pr?: string | null }
-type Result = { id: string; criterion?: string; status: "pass" | "fail" | "untested" }
+type Result = { id: string; criterion?: string; status: "pass" | "fail" | "untested"; ticket?: string | null }
 // fixOf: the [Fix] sub-task open for each criterion (its id), so that none gets two.
-export type FlowState = { key: string; units?: Unit[]; fixes?: string[]; fixOf?: Record<string, string>; results?: Result[] }
+// stories: the ones that move as a story (scope.ts); none, the ticket itself.
+export type FlowState = { key: string; units?: Unit[]; fixes?: string[]; fixOf?: Record<string, string>; results?: Result[]; stories?: Story[] }
 
 export type Jira = {
   issue: (key: string) => Promise<{ status: string; mine: boolean } | null>
@@ -36,27 +43,41 @@ export type Jira = {
 
 const ofUnit = (u: Unit) => [...new Set([...(u.subtasks ?? []), u.subtask].filter(Boolean))] as string[]
 const subtasksOf = (state: FlowState) => [...new Set([...(state.units ?? []).flatMap(ofUnit), ...(state.fixes ?? [])])]
-const failing = (state: FlowState) => (state.results ?? []).filter(r => r.status === "fail")
+const failing = (results: Result[] = []) => results.filter(r => r.status === "fail")
 // A criterion the test could not try (no data, no device) is no failure: the story waits where it is until a person checks it.
-const untried = (state: FlowState) => (state.results ?? []).filter(r => r.status === "untested")
+const untried = (results: Result[] = []) => results.filter(r => r.status === "untested")
 
-// A story with no sub-tasks has nothing for Jira to follow: the story itself moves.
-function storyMoves(event: Event, state: FlowState, s: Flow["statuses"]): Move[] {
+// The stories that move; with none given, the ticket, with every sub-task the plan follows.
+const storiesIn = (state: FlowState): Story[] => (state.stories?.length ? state.stories : [{ key: state.key, subtasks: subtasksOf(state) }])
+// A story's own results: the ones of its criteria, and the ones of no story (or one not here).
+const resultsOf = (story: Story, state: FlowState, stories: Story[]) =>
+  (state.results ?? []).filter(r => !r.ticket || r.ticket === story.key || !stories.some(s => s.key === r.ticket))
+
+// A story none of whose sub-tasks the plan follows has nothing for Jira to follow: it moves itself.
+function aloneMoves(event: Event, keys: string[], state: FlowState, s: Flow["statuses"]): Move[] {
   const prs = (state.units ?? []).map(u => u.pr).filter(Boolean)
-  if (event === "build-started") return [{ key: state.key, to: s.inProgress }]
-  if (event === "built") return [{ key: state.key, to: s.inReview, ...(prs.length ? { comment: `PRs:\n${prs.map(p => `- ${p}`).join("\n")}` } : {}) }]
-  return [{ key: state.key, to: s.testing }]
+  const comment = prs.length ? { comment: `PRs:\n${prs.map(p => `- ${p}`).join("\n")}` } : {}
+  const to = event === "build-started" ? s.inProgress : event === "built" ? s.inReview : s.testing
+  return keys.map(key => ({ key, to, ...(event === "built" ? comment : {}) }))
+}
+
+function testedMoves(state: FlowState, stories: Story[], s: Flow["statuses"]): Move[] {
+  return stories.flatMap(story => {
+    const own = resultsOf(story, state, stories)
+    return failing(own).length ? [{ key: story.key, to: s.reopened }] : untried(own).length ? [] : [{ key: story.key, to: s.readyForProd }]
+  })
 }
 
 export function movesFor(event: Event, state: FlowState, flow: Flow): Move[] {
   const { statuses: s } = flow
-  const isAlone = !subtasksOf(state).length && (event === "build-started" || event === "built" || event === "in-staging")
-  if (isAlone) return storyMoves(event, state, s)
-  if (event === "build-started") return subtasksOf(state).map(key => ({ key, to: s.inProgress }))
-  if (event === "built") return (state.units ?? []).filter(u => u.pr).flatMap(u => ofUnit(u).map(key => ({ key, to: s.inReview, comment: `PR: ${u.pr}` })))
-  if (event === "in-staging") return subtasksOf(state).map(key => ({ key, to: s.done }))
-  if (event === "tested") return failing(state).length ? [{ key: state.key, to: s.reopened }] : untried(state).length ? [] : [{ key: state.key, to: s.readyForProd }]
-  return [{ key: state.key, to: s.done }]
+  const stories = storiesIn(state)
+  if (event === "tested") return testedMoves(state, stories, s)
+  if (event === "in-prod") return stories.map(st => ({ key: st.key, to: s.done }))
+  const planned = new Set(subtasksOf(state))
+  const alone = aloneMoves(event, stories.filter(st => !st.subtasks.some(k => planned.has(k))).map(st => st.key), state, s)
+  if (event === "build-started") return [...[...planned].map(key => ({ key, to: s.inProgress })), ...alone]
+  if (event === "built") return [...(state.units ?? []).filter(u => u.pr).flatMap(u => ofUnit(u).map(key => ({ key, to: s.inReview, comment: `PR: ${u.pr}` }))), ...alone]
+  return [...[...planned].map(key => ({ key, to: s.done })), ...alone]
 }
 
 const warn = (key: string, label: string, detail: string | null = null): Check => ({ id: `jira-${key}`, label, status: "warn", detail })
@@ -104,13 +125,14 @@ async function openFixes(state: FlowState, flow: Flow, jira: Jira) {
   const fixes: string[] = []
   const fixOf = { ...state.fixOf }
   const checks: Check[] = []
-  for (const r of failing(state)) {
+  const stories = storiesIn(state)
+  for (const r of failing(state.results)) {
     // Its [Fix] still open is the one; one done (it failed again) or gone gets a new one.
     // Jira not answering keeps it: better none new than a second one.
     const old = fixOf[r.id] ? await jira.issue(fixOf[r.id]!).then(i => i ?? "gone", () => "unknown" as const) : "gone"
     if (old === "unknown" || (old !== "gone" && old.status !== flow.statuses.done.id)) continue
     try {
-      const key = await jira.createSubtask(state.key, `${flow.fixPrefix} ${r.criterion ?? r.id}`, flow.subtaskType)
+      const key = await jira.createSubtask(fixParent(r.ticket, stories) ?? state.key, `${flow.fixPrefix} ${r.criterion ?? r.id}`, flow.subtaskType)
       fixes.push(key)
       fixOf[r.id] = key
     } catch (err) {
@@ -126,7 +148,7 @@ export async function followInJira(event: Event, state: FlowState, flow: Flow, j
     const check = await apply(move, flow, jira)
     if (check) checks.push(check)
   }
-  if (event !== "tested" || !failing(state).length) return { checks }
+  if (event !== "tested" || !failing(state.results).length) return { checks }
   const opened = await openFixes(state, flow, jira)
   return { checks: [...checks, ...opened.checks], fixes: [...(state.fixes ?? []), ...opened.fixes], fixOf: opened.fixOf }
 }
