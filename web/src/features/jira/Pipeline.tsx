@@ -795,9 +795,15 @@ function StagePasses({ stage, ...props }: { stage: Stage; state: PipelineState; 
           })}
         </div>
       )}
-      {isPast ? <PastPass stage={stage} run={run!} {...props} /> : <StagePanel stage={stage} {...props} />}
+      {isPast ? <PastPass stage={stage} run={run!} {...props} /> : <StagePanel stage={stage} {...props} state={latestPass(props.state, passes)} />}
     </div>
   )
+}
+
+// With more than one pass, the latest also shows only what it left (its buttons stay).
+const latestPass = (state: PipelineState, passes: Run[]): PipelineState => {
+  const last = passes.at(-1)
+  return passes.length > 1 && last?.kept ? { ...state, ...last.kept } : state
 }
 
 function PastPass({ stage, run, state, preview, onStep }: { stage: Stage; run: Run; state: PipelineState; preview: Release | null; onStep: OnStep }) {
