@@ -702,6 +702,7 @@ function NowActions({ state, preview, onRun, onStep }: { state: PipelineState; p
   if (state.status === "running") return (
     <>
       {isAuto(state) && <StopAuto ticketKey={state.key} />}
+      {!release && <StopAgent path="/api/pipeline/stop" body={{ key: state.key }} />}
       {state.sessionId && <button className="shrink-0 text-xs font-semibold text-text-muted hover:text-text" onClick={() => openLog(state.sessionId!)}>Log</button>}
     </>
   )
@@ -711,6 +712,8 @@ function NowActions({ state, preview, onRun, onStep }: { state: PipelineState; p
       <RollBack state={state} />
       {release && !isRolledBack && <SkipFailed release={release} onAct={onStep} />}
       {!isRolledBack && <Button variant="outline" className="h-7 shrink-0 text-xs" onClick={() => onRun()}>{release ? "Retry" : "Run again"}</Button>}
+      {/* Rolled back, the environment runs the code from before the ticket: it is built again. */}
+      {isRolledBack && <Button className="h-7 shrink-0 text-xs" onClick={() => onRun("build")}>Build again</Button>}
     </>
   )
   // Fixing what the review found starts from its findings.
@@ -735,6 +738,15 @@ function AfterTest({ state, onRun }: { state: PipelineState; onRun: (stage?: Sta
       {isRetest && <Button variant="outline" className="h-7 shrink-0 text-xs" onClick={() => onRun(state.stage)}>{state.stage === "test" ? "Test again" : "Check again"}</Button>}
       {state.stage === "test" && fails > 0 && <Button className="h-7 shrink-0 gap-1.5 text-xs" onClick={() => onRun("build")}><Play size={12} className="fill-current" />Fix {fails} with build</Button>}
     </>
+  )
+}
+
+// Stop the agent at work (it asks once more): the stage (or the job) fails, to run again.
+export function StopAgent({ path, body }: { path: string; body: object }) {
+  const [isAsking, confirm] = useConfirm()
+  return (
+    <button className={cn("shrink-0 text-xs font-semibold transition-colors duration-120", isAsking ? "text-bad" : "text-faint hover:text-text")}
+      onClick={() => confirm(() => void act(path, body, "Stopped"))}>{isAsking ? "Sure? Stop" : "Stop"}</button>
   )
 }
 

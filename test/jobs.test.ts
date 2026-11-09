@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { jobPrompt, nextJobId, prRef, reviewsFor, ticketFromPrs, unitsOfPrs, validJob, type PrInfo } from "../lib/jobs"
+import { isStuckJob, jobPrompt, nextJobId, prRef, reviewsFor, ticketFromPrs, unitsOfPrs, validJob, type PrInfo } from "../lib/jobs"
 
 const pr = (n: number, extra: Partial<PrInfo> = {}): PrInfo => ({ url: `https://github.com/acme/web/pull/${n}`, repo: "web", number: n, title: `PR ${n}`, head: `feat/x-${n}`, base: "master", body: "", worktree: null, ...extra })
 
@@ -102,5 +102,13 @@ describe("reviewsFor", () => {
     const out = reviewsFor([f("F1", null)], units, null)
     expect(out).toHaveLength(1)
     expect(out[0]!.body).toContain("TF1")
+  })
+})
+
+describe("a job that never got its agent", () => {
+  it("fails a while after it was marked at work without one", () => {
+    expect(isStuckJob({ status: "running", pid: null, startedAt: 0 }, 11 * 60_000)).toBe(true)
+    expect(isStuckJob({ status: "running", pid: null, startedAt: 0 }, 5 * 60_000)).toBe(false)
+    expect(isStuckJob({ status: "running", pid: 9, startedAt: 0 }, 11 * 60_000)).toBe(false)
   })
 })

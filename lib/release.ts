@@ -176,7 +176,8 @@ export function rollbackSteps(release: Release, config: DeployConfig): ReleaseSt
     if (s.kind === "execute") return [blank("manual", `${s.repo}: undo what "${s.value}" published, by hand${config.undo?.[s.repo ?? ""] ? ` (${config.undo[s.repo!]})` : ""}`, base)]
     return []
   }
-  return release.steps.filter(s => s.status === "done").reverse().flatMap(undo).map((s, i) => ({ ...s, id: `R${i + 1}` }))
+  // A merge that went is undone even if its deploy failed or you skipped past it (it has a commit).
+  return release.steps.filter(s => s.status === "done" || (s.kind === "merge" && !!s.sha)).reverse().flatMap(undo).map((s, i) => ({ ...s, id: `R${i + 1}` }))
 }
 
 // What waits for you before it starts: in prod, every step but a simulation;

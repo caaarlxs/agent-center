@@ -421,6 +421,16 @@ export function withRun(s: PipelineState): PipelineState {
   return { ...s, history: [...(s.history ?? []).filter(r => r.n !== s.runs), run].sort((a, b) => a.n - b.n) }
 }
 const save = (s: PipelineState) => writeJsonAtomic(join(dirOf(s.key), "state.json"), withRun(s), { pretty: true })
+// One writer of a ticket's state at a time: what reads it, waits and writes it back
+// (a stage's end, a release's tick, your Stop auto or step) takes its turn, so none undoes another.
+const locks = new Map<string, Promise<unknown>>()
+export function locked<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const next = (locks.get(key) ?? Promise.resolve()).catch(() => {}).then(fn)
+  locks.set(key, next.catch(() => {}))
+  return next
+}
+// The tickets a start is under way on (it reads Jira a while before it says so): a second start waits for none.
+const starting = new Set<string>()
 const readText = (path: string) => readFile(path, "utf8").catch(() => null)
 const jsonOf = (text: string | null): any => {
   try {
@@ -499,7 +509,7 @@ const fresh = async (key: string, runs: number, stage: Stage): Promise<PipelineS
   const prev = await stateOf(key)
   // The plan's units and to-do list, and the review's findings, stay with the ticket for the stages after it.
   return { ...EMPTY(key, runs, stage), summary: prev?.summary, history: prev?.history ?? [], units: prev?.units, checklist: prev?.checklist, checked: prev?.checked, scripts: prev?.scripts, contextImpact: prev?.contextImpact,
-    release: prev?.release, deployed: prev?.deployed, fixes: prev?.fixes, fixOf: prev?.fixOf, results: prev?.results, children: prev?.children, parent: prev?.parent, auto: prev?.auto,
+    release: prev?.release, deployed: prev?.deployed, fixes: prev?.fixes, fixOf: prev?.fixOf, results: stage === "test" || stage === "smoke" ? undefined : prev?.results, children: prev?.children, parent: prev?.parent, auto: prev?.auto,
     ...(stage === "review" ? {} : { findings: prev?.findings, fixed: stage === "build" ? [] : prev?.fixed }) }
 }
 // A stage's session is the pipeline's, not yours: once it ends it leaves the
@@ -556,7 +566,7 @@ async function runStage(key: string, runs: number, stage: AgentStage, auto?: boo
   // Figma, when what the stage reads links a design and the team set Figma up.
   const figma = linksFigma(await readText(join(dir, "ticket.md")) ?? "") && existsSync(join(STAGES_DIR, "figma-mcp.json"))
   const pid = await spawnStage(dir, id, promptFor(key, dir, stage, state.children), stage, () => void watch(), figma)
-  await save({ ...state, sessionId: id, pid })
+  await locked(key, async () => save({ ...state, auto: (await stateOf(key))?.auto ?? state.auto, sessionId: id, pid }))
   await applyAction(id, [id], "tickets", { started: [key] })
 }
 
@@ -587,13 +597,20 @@ export const isAlive = (pid: number) => {
 // failed), and their session is put away. Every few seconds, at once when a
 // process the board started ends, and when the board starts.
 const ending = new Set<string>()
+// A stage the board marked at work but whose agent never started (the board
+// restarted while it read the ticket) fails after a while, so it can run again.
+const NO_AGENT_MS = 3 * 60_000
+export const isStuck = (state: Pick<PipelineState, "status" | "pid" | "stage" | "startedAt">, now = Date.now()) =>
+  state.status === "running" && !state.pid && !isRelease(state.stage) && now - state.startedAt > NO_AGENT_MS
 async function watch() {
   for (const state of await pipelines()) {
+    if (isStuck(state) && !starting.has(state.key) && !ending.has(state.key))
+      await locked(state.key, async () => { const now = await stateOf(state.key); if (now && isStuck(now)) await save({ ...now, status: "failed", error: "The agent never started (the board restarted): run it again", endedAt: Date.now() }) })
     if (state.status === "running" && isRelease(state.stage)) void tickRelease(state.key)
     if (state.status !== "running" || !state.pid || isAlive(state.pid) || ending.has(state.key)) continue
     ending.add(state.key)
-    await finish(state.key)
-      .catch(async err => save({ ...((await stateOf(state.key)) ?? state), status: "failed", error: String(err?.message ?? err), endedAt: Date.now() }))
+    await locked(state.key, () => finish(state.key))
+      .catch(async err => locked(state.key, async () => save({ ...((await stateOf(state.key)) ?? state), status: "failed", error: String(err?.message ?? err), endedAt: Date.now() })))
       .finally(() => (ending.delete(state.key), state.sessionId && putAway(state.sessionId)))
   }
 }
@@ -820,7 +837,9 @@ export function stageToRun(state: PipelineState | null, asked?: Stage): Stage {
   const need = NEEDS[stage]
   const isBlocked = (state: PipelineState) => (stage === "staging" && blocking(state.findings).length > 0) || (stage === "prod" && failing(state.results).length + untried(state.results).length > 0)
   const isAfter = (prev: Stage) => state?.stage === prev && state.status === "ready" && !isBlocked(state)
-  if (need && state?.stage !== stage && !need[0].some(isAfter)) throw new Error(need[1])
+  // After a rollback, the ticket can be built again (staging or prod runs the code from before it).
+  const isRolledBack = stage === "build" && !!state?.release?.rollback && isRelease(state.stage) && state.status === "failed"
+  if (need && state?.stage !== stage && !need[0].some(isAfter) && !isRolledBack) throw new Error(need[1])
   return stage
 }
 
@@ -829,6 +848,15 @@ export function stageToRun(state: PipelineState | null, asked?: Stage): Stage {
 // it found (review.fix.json): the findings you chose, else what stops the ticket.
 export async function startPipeline(key: string, take = false, asked?: Stage, chosen?: string[], auto?: boolean) {
   if (!isKey(key)) throw new Error("Not a ticket key")
+  if (starting.has(key)) throw new Error("It is starting already")
+  starting.add(key)
+  try {
+    return await startNow(key, take, asked, chosen, auto)
+  } finally {
+    starting.delete(key)
+  }
+}
+async function startNow(key: string, take: boolean, asked?: Stage, chosen?: string[], auto?: boolean) {
   const state = await stateOf(key)
   if (state?.status === "running") throw new Error("A stage already runs on this ticket")
   const stage = stageToRun(state, asked)
@@ -864,7 +892,8 @@ export async function adoptJob(key: string, from: string, stage: AgentStage, fie
 
 // Criteria the test could not try, checked by you by hand: they pass, and once
 // nothing is failing or left to check, the story is ready for prod in Jira.
-export async function checkByHand(key: string, ids: string[]) {
+export const checkByHand = (key: string, ids: string[]) => locked(key, () => checkNow(key, ids))
+async function checkNow(key: string, ids: string[]) {
   const state = await stateOf(key)
   if (!state || (state.stage !== "test" && state.stage !== "smoke") || state.status !== "ready") throw new Error("No test that ended on this ticket")
   const results = checkedByHand(state.results ?? [], ids, new Date().toISOString().slice(0, 10))
@@ -878,16 +907,29 @@ export async function checkByHand(key: string, ids: string[]) {
 async function writeFixes(key: string, state: PipelineState | null, stage: Stage, chosen?: string[]) {
   const from = stage === "build" && (state?.stage === "review" || state?.stage === "test") ? state.stage : null
   if (from === "test" && !testFix(state!, chosen).length) throw new Error("Nothing failed to fix")
-  for (const f of ["review", "test"] as const) if (f !== from) await rename(join(dirOf(key), `${f}.fix.json`), join(dirOf(key), `${f}.fix.json.prev`)).catch(() => {})
+  const aside = (f: string) => rename(join(dirOf(key), f), join(dirOf(key), `${f}.prev`)).catch(() => {})
+  // The review of a fix, and a build run again, keep what the fix is about.
+  const keeps = stage === "review" || (stage === "build" && state?.stage === "build")
+  if (!keeps) for (const f of ["review", "test"] as const) if (f !== from) await aside(`${f}.fix.json`)
+  // A build that starts anew leaves the last one's progress (it would skip "done" units).
+  if (stage === "build" && state?.stage !== "build") for (const f of ["build.progress.json", "build.checklist.json"]) await aside(f)
   if (from === "review") await writeJsonAtomic(join(dirOf(key), "review.fix.json"), { fix: toFixNow(state!.findings, chosen) }, { pretty: true })
   if (from === "test") await writeJsonAtomic(join(dirOf(key), "test.fix.json"), { fix: testFix(state!, chosen) }, { pretty: true })
 }
 
 // Stop running on its own: the stage at work ends, and the next waits for you.
-export async function stopAuto(key: string) {
+export const stopAuto = (key: string) => locked(key, async () => {
   const state = await stateOf(key)
   if (state) await save({ ...state, auto: false })
-}
+})
+
+// Stop the agent at work: its process group ends, and the stage fails, to run again.
+export const stopPipeline = (key: string) => locked(key, async () => {
+  const state = await stateOf(key)
+  if (state?.status !== "running" || isRelease(state.stage)) throw new Error("No agent at work on this ticket")
+  if (state.pid) try { process.kill(-state.pid, "SIGTERM") } catch { try { process.kill(state.pid, "SIGTERM") } catch {} }
+  await save({ ...state, status: "failed", error: "Stopped by you", endedAt: Date.now() })
+})
 
 // ---------- asking the agent about what it left ----------
 
@@ -1010,6 +1052,18 @@ async function tickRelease(key: string) {
   if (ticking.has(key)) return
   ticking.add(key)
   try {
+    await locked(key, () => tickNow(key))
+  } catch (err) {
+    console.error(`release ${key}:`, err)
+  } finally {
+    ticking.delete(key)
+  }
+}
+// Each release to an environment adds to what it runs (a fix's release takes only the new units).
+export const shippedWith = (before: Release | undefined, release: Release): Release =>
+  ({ ...release, steps: [...(before?.steps ?? []).filter(s => s.status === "done" || !!s.sha), ...release.steps] })
+async function tickNow(key: string) {
+  {
     const state = await stateOf(key)
     if (!state?.release || state.status !== "running" || !isRelease(state.stage)) return
     const ctx = { key, summary: state.summary ?? key, dir: dirOf(key), repos: join(ROOT, "repos"), stages: STAGES_DIR, tested: testedIn(state), config: await deployConfig(), units: state.units ?? [], scripts: state.scripts ?? [], checklist: state.checklist ?? [] }
@@ -1018,19 +1072,22 @@ async function tickRelease(key: string) {
     const release = await judged(state, advanced.release, ctx.config)
     const step = failed ? release.steps.find(s => s.id === failed) : undefined
     if (!isDone) return void (await save({ ...state, release, ...(step ? { status: "failed", error: `${step.title}: ${step.error ?? step.detail ?? "failed"}`, endedAt: Date.now() } : {}) }))
-    await commentOn(key, releaseComment(key, release))
+    // The release is saved as ended first; Jira after, and what it refuses is a warning (a release never hangs on it).
+    const jira = async (what: string, call: () => Promise<unknown>): Promise<Check[]> => call().then(() => [], (err: Error) => [{ id: `jira-release-${what}`, label: `Jira did not take the release's ${what}`, status: "warn" as const, detail: err?.message ?? String(err) }])
     // Rolled back, the environment runs the code from before the ticket: it waits for new PRs.
     if (release.rollback) {
-      await labelTicket(key, [], [LABELS[release.env]])
-      return void (await save({ ...state, release, status: "failed", error: `Rolled back: ${release.env} runs the code from before ${key}`, endedAt: Date.now() }))
+      const { [release.env]: _undone, ...deployed } = state.deployed ?? {}
+      const back: PipelineState = { ...state, release, deployed, status: "failed", error: `Rolled back: ${release.env} runs the code from before ${key}`, endedAt: Date.now() }
+      await save(back)
+      const warned = [...(await jira("comment", () => commentOn(key, releaseComment(key, release)))), ...(await jira("label", () => labelTicket(key, [], [LABELS[release.env]])))]
+      return void (warned.length && (await save({ ...back, checks: withJira([...(back.checks ?? []), ...warned], back.checks) })))
     }
-    await labelTicket(key, [LABELS[release.env]], [LABELS.needsInfo, LABELS.ready, LABELS.planned, LABELS.built, LABELS.reviewed, ...(release.env === "prod" ? [LABELS.staging] : [])])
-    const live: PipelineState = { ...state, release, deployed: { ...state.deployed, [release.env]: release }, status: "ready", endedAt: Date.now() }
-    await save({ ...live, ...(await inJira(release.env === "staging" ? "in-staging" : "in-prod", live)) })
-  } catch (err) {
-    console.error(`release ${key}:`, err)
-  } finally {
-    ticking.delete(key)
+    const live: PipelineState = { ...state, release, deployed: { ...state.deployed, [release.env]: shippedWith(state.deployed?.[release.env], release) }, status: "ready", endedAt: Date.now() }
+    await save(live)
+    const warned = [...(await jira("comment", () => commentOn(key, releaseComment(key, release)))),
+      ...(await jira("label", () => labelTicket(key, [LABELS[release.env]], [LABELS.needsInfo, LABELS.ready, LABELS.planned, LABELS.built, LABELS.reviewed, ...(release.env === "prod" ? [LABELS.staging] : [])])))]
+    const moved = await inJira(release.env === "staging" ? "in-staging" : "in-prod", live)
+    await save({ ...live, ...moved, checks: withJira([...(moved.checks ?? live.checks ?? []), ...warned], live.checks) })
   }
 }
 
@@ -1087,10 +1144,12 @@ export async function rollBackPipeline(key: string, env: Env) {
 
 // You, on the step at hand: go on (a tag of your own, if you write one), past it.
 export async function stepPipeline(key: string, id: string, action: "approve" | "skip", value?: string) {
-  const state = await stateOf(key)
-  if (!state?.release || !isRelease(state.stage)) throw new Error("No release on this ticket")
-  const release = action === "approve" ? approveStep(state.release, id, value) : skipStep(state.release, id)
-  await save({ ...state, release, status: "running", error: null, endedAt: null })
+  await locked(key, async () => {
+    const state = await stateOf(key)
+    if (!state?.release || !isRelease(state.stage)) throw new Error("No release on this ticket")
+    const release = action === "approve" ? approveStep(state.release, id, value) : skipStep(state.release, id)
+    await save({ ...state, release, status: "running", error: null, endedAt: null })
+  })
   void tickRelease(key)
 }
 
@@ -1116,11 +1175,18 @@ async function previewOf(state: PipelineState | null) {
 
 // Your answers, written here: to Jira, and the stage again.
 export async function answerPipeline(key: string, answers: Record<string, string>) {
-  const state = await stateOf(key)
-  if (state?.status !== "needs-info" || isRelease(state.stage)) throw new Error("This ticket waits for no answers")
-  await commentOn(key, answersComment(state.questions, answers))
-  await labelTicket(key, [], [LABELS.needsInfo])
-  void run(key, state.runs + 1, state.stage)
+  if (starting.has(key)) throw new Error("It is starting already")
+  starting.add(key)
+  try {
+    const state = await stateOf(key)
+    if (state?.status !== "needs-info" || isRelease(state.stage)) throw new Error("This ticket waits for no answers")
+    await commentOn(key, answersComment(state.questions, answers))
+    await labelTicket(key, [], [LABELS.needsInfo])
+    await save({ ...(await fresh(key, state.runs + 1, state.stage)), summary: state.summary })
+    void run(key, state.runs + 1, state.stage)
+  } finally {
+    starting.delete(key)
+  }
 }
 
 // From zero: no state, no labels; the comments stay as context.

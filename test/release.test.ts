@@ -203,7 +203,7 @@ describe("advanceRelease", () => {
 describe("rollbackSteps", () => {
   const done = (kind: string, repo: string | null, extra = {}) => ({ id: "", kind, title: `${repo}: ${kind}`, unit: repo === "api-service" ? "U1" : repo === "web-app" ? "U2" : "U3", repo, script: null, status: "done", isApproved: true, detail: null, items: [], links: [], value: null, sha: "m1", since: 1, phase: null, pid: null, report: null, error: null, ...extra }) as never
   it("undoes a release to staging the other way round: each merge reverted, and what only a person can undo said", () => {
-    const staging = { env: "staging", steps: [done("simulate", "api-service", { script: "S1" }), done("manual", null), done("merge", "api-service", { sha: "aaa" }), done("execute", "api-service", { script: "S1", title: "Backfill: run for real", report: "S1-staging-execute.csv" }), done("merge", "mobile-app", { sha: "bbb", value: "no-deploy" }), done("execute", "mobile-app", { value: "pnpm update:preview" }), { ...(done("merge", "web-app") as object), status: "skipped" }] } as never
+    const staging = { env: "staging", steps: [done("simulate", "api-service", { script: "S1" }), done("manual", null), done("merge", "api-service", { sha: "aaa" }), done("execute", "api-service", { script: "S1", title: "Backfill: run for real", report: "S1-staging-execute.csv" }), done("merge", "mobile-app", { sha: "bbb", value: "no-deploy" }), done("execute", "mobile-app", { value: "pnpm update:preview" }), { ...(done("merge", "web-app") as object), status: "skipped", sha: null }] } as never
     const steps = rollbackSteps(staging, { ...config, undo: { "mobile-app": "eas update:republish of the group before" } } as never)
     expect(steps.map(s => [s.id, s.kind, s.repo, s.sha ?? s.value])).toEqual([
       ["R1", "manual", "mobile-app", null],
@@ -353,5 +353,12 @@ describe("a repo's command rehearsed", () => {
     expect(first(ota())).toMatchObject({ kind: "simulate", value: "pnpm update:preview --dry-run" })
     expect(first(ota("pnpm update:preview:check"))).toMatchObject({ kind: "simulate", value: "pnpm update:preview:check" })
     expect(first(ota(false)).kind).toBe("manual")
+  })
+})
+
+describe("a rollback", () => {
+  it("undoes a merge that went even if its deploy failed or was skipped past", () => {
+    const steps = [{ id: "R1", kind: "merge", unit: "U1", repo: "api-service", status: "failed", sha: "abc", links: [], value: null }, { id: "R2", kind: "merge", unit: "U2", repo: "web-app", status: "skipped", sha: null, links: [], value: null }]
+    expect(rollbackSteps({ env: "staging", steps } as never, config).map(s => s.kind)).toEqual(["revert"])
   })
 })

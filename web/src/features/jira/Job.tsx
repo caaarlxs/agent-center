@@ -14,7 +14,7 @@ import { Markdown } from "@/features/conversation/Markdown"
 import { ago, repoDot } from "@/features/session/state"
 import type { Job } from "@server/jobs"
 import type { AgentStage } from "@server/pipeline"
-import { AtWork, BuildPanel, FoldButton, PlanPanel, ReviewPanel, Runs, TestPanel, act, openLog, useConfirm } from "./Pipeline"
+import { AtWork, BuildPanel, FoldButton, PlanPanel, ReviewPanel, Runs, StopAgent, TestPanel, act, openLog, useConfirm } from "./Pipeline"
 import { PipelineMark, liveLine } from "./PipelineMark"
 import { SPECIALISTS, jobLabel } from "./jobs-board"
 import { costOf, dollars } from "./pipeline-board"
@@ -57,6 +57,7 @@ function JobNow({ job, onClose }: { job: Job; onClose: () => void }) {
         <span className="text-[11.5px] text-faint tabular-nums">{ago(isRunning ? job.startedAt : (job.endedAt ?? job.startedAt), now)}{runs.length ? ` · ≈${dollars(costOf(runs))}` : ""}</span>
       </div>
       {!isRunning && <OnInPipeline job={job} onClose={onClose} />}
+      {isRunning && <StopAgent path="/api/jobs/stop" body={{ id: job.id }} />}
       {isRunning ? job.sessionId && <button className="shrink-0 text-xs font-semibold text-text-muted hover:text-text" onClick={() => openLog(job.sessionId!)}>Log</button>
         : <>
             <button className="shrink-0 text-xs font-semibold text-faint hover:text-text" onClick={() => void clear()}>Clear</button>

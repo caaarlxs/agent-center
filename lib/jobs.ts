@@ -81,7 +81,7 @@ const ticketLine = (dir: string) => `El ticket entero (descripción, comentarios
 const criteriaLine = (dir: string, done: Done = {}) =>
   done["refine.md"] ? `Los criterios de aceptación están en el refinamiento del pipeline, ${done["refine.md"]}; el ticket, al día, en ${join(dir, "ticket.md")}: sus comentarios mandan.` : `No hay refinamiento: los criterios de aceptación salen del ticket, ${join(dir, "ticket.md")}.`
 const resultLine = (dir: string, stage: string, schema: string) => `Escribe al final ${join(dir, `${stage}.json`)}: ${schema}`
-const RESULTS = `{"verdict": "ready" | "needs-info", "questions": [...], "results": [{"id": "T1", "criterion": "...", "status": "pass" | "fail", "evidence": "...", "files": [{"path": "evidence/T1-desktop.png", "caption": "..."}]}]}`
+const RESULTS = `{"verdict": "ready" | "needs-info", "questions": [...], "results": [{"id": "T1", "criterion": "...", "status": "pass" | "fail" | "untested", "summary": "...", "evidence": "...", "files": [{"path": "evidence/T1-desktop.png", "caption": "..."}]}]}`
 
 const BRIEF: Record<AgentStage, (dir: string, job: BriefJob) => string> = {
   refine: (dir, { ticket }) => `Eres el refinador del equipo, en un encargo suelto: refinar el ticket ${ticket}. ${LOOSE_NOTE}
@@ -89,7 +89,7 @@ const BRIEF: Record<AgentStage, (dir: string, job: BriefJob) => string> = {
 1. Lee ${join(STAGES_DIR, "refine.md")} y ${join(STAGES_DIR, "environment.md")}, y síguelos. Si el ticket coordina a hijos entregables, sigue ${join(STAGES_DIR, "epic.md")} en lugar de refine.md.
 2. ${ticketLine(dir)}
 3. Escribe el refinamiento en ${join(dir, "refine.md")} y el resumen en ${join(dir, "refine.summary.md")}.
-4. ${resultLine(dir, "refine", `{"verdict": "ready" | "needs-info", "questions": [{"id": "Q1", "question": "...", "proposal": "..."}]}`)}. Solo preguntas de PRODUCTO; las técnicas las decides tú.`,
+4. ${resultLine(dir, "refine", `{"verdict": "ready" | "needs-info", "questions": [{"id": "Q1", "question": "...", "context": "...", "proposal": "..."}]}`)}. Solo preguntas de PRODUCTO; las técnicas las decides tú.`,
   plan: (dir, { ticket, done }) => `Eres el planificador del equipo, en un encargo suelto: planificar el ticket ${ticket}. ${LOOSE_NOTE}
 
 1. Lee ${join(STAGES_DIR, "plan.md")} y ${join(STAGES_DIR, "environment.md")}, y síguelos. Si el ticket cambia datos que ya existen, lee también ${join(STAGES_DIR, "scripts.md")}.
@@ -365,8 +365,13 @@ async function run(start: Job) {
 
 // The jobs whose agent has ended: their result, read; their worktrees, removed.
 const ending = new Set<string>()
+// A job the board marked at work but whose agent never started (the board restarted
+// while it read the PRs and the ticket) fails after a while, so it can run again.
+const NO_AGENT_MS = 10 * 60_000
+export const isStuckJob = (job: Pick<Job, "status" | "pid" | "startedAt">, now = Date.now()) => job.status === "running" && !job.pid && now - job.startedAt > NO_AGENT_MS
 export async function watchJobs() {
   for (const job of await jobs()) {
+    if (isStuckJob(job)) await save(failed(job, "The agent never started (the board restarted): run it again"))
     if (job.status !== "running" || !job.pid || isAlive(job.pid) || ending.has(job.id)) continue
     ending.add(job.id)
     await finish(job)
@@ -385,6 +390,15 @@ async function finish(job: Job) {
     : job.stage === "build" ? { units: result.units, checked: checkedIn(await readText(join(dir, "build.checklist.json"))) }
     : job.stage === "test" || job.stage === "smoke" ? { results: result.results.map(r => ({ ...r, files: keptFiles(dir, r.files ?? []) })) } : {}
   await save({ ...job, ...made, status: result.verdict === "needs-info" ? "needs-info" : "ready", questions: result.questions, findings: result.findings, prs: job.prs.map(p => ({ ...p, worktree: null })), endedAt: Date.now() })
+}
+
+// Stop a job's agent: its process group ends, the job fails, its worktrees go.
+export async function stopJob(id: string) {
+  const job = isJobId(id) ? await stateOf(id) : null
+  if (job?.status !== "running") throw new Error("No agent at work on this job")
+  if (job.pid) try { process.kill(-job.pid, "SIGTERM") } catch { try { process.kill(job.pid, "SIGTERM") } catch {} }
+  await save(failed(job, "Stopped by you"))
+  await removeWorktrees(job)
 }
 
 // A job you are done with leaves the board (its files stay, put aside).

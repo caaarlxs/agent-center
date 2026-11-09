@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { testedIn, askPrompt, askRefusal, fixesNow, isAbout, testFix, unshipped, blocking, checkedByHand, checkedIn, isAdopted, toFixNow, MARK, answeredAfter, answersComment, argsFor, parseResult, pipelineKeyOf, stageToRun, unbuilt, withRun, questionsComment, snapshotOf, prodWarning, autoNext, linksFigma, impactRepos } from "../lib/pipeline"
+import { isStuck, shippedWith, testedIn, askPrompt, askRefusal, fixesNow, isAbout, testFix, unshipped, blocking, checkedByHand, checkedIn, isAdopted, toFixNow, MARK, answeredAfter, answersComment, argsFor, parseResult, pipelineKeyOf, stageToRun, unbuilt, withRun, questionsComment, snapshotOf, prodWarning, autoNext, linksFigma, impactRepos } from "../lib/pipeline"
 
 const questions = [
   { id: "Q1", question: "¿Cuál es el copy?", proposal: "El del ticket" },
@@ -462,3 +462,25 @@ describe("testedIn", () => {
     expect(testedIn({ deployed } as never)).toEqual({ api: "a1" })
   })
 })
+
+describe("a stage that never got its agent", () => {
+  it("fails a while after the board marked it at work without one; a release never", () => {
+    expect(isStuck({ status: "running", pid: null, stage: "build", startedAt: 0 }, 4 * 60_000)).toBe(true)
+    expect(isStuck({ status: "running", pid: null, stage: "build", startedAt: 0 }, 60_000)).toBe(false)
+    expect(isStuck({ status: "running", pid: 12, stage: "build", startedAt: 0 }, 4 * 60_000)).toBe(false)
+    expect(isStuck({ status: "running", pid: null, stage: "staging", startedAt: 0 }, 4 * 60_000)).toBe(false)
+  })
+})
+
+describe("what an environment runs", () => {
+  it("adds each release's steps to the ones before that went", () => {
+    const before = { env: "staging", steps: [{ id: "R1", kind: "merge", unit: "U1", status: "done", sha: "a" }, { id: "R2", kind: "manual", status: "pending" }] } as never
+    const fix = { env: "staging", steps: [{ id: "R1", kind: "merge", unit: "X1", status: "done", sha: "b" }] } as never
+    expect(shippedWith(before, fix).steps.map(s => s.unit)).toEqual(["U1", "X1"])
+  })
+  it("after a rollback, the ticket can be built again", () => {
+    expect(stageToRun({ stage: "staging", status: "failed", release: { env: "staging", rollback: true, steps: [] } } as never, "build")).toBe("build")
+    expect(() => stageToRun({ stage: "staging", status: "failed", release: { env: "staging", steps: [] } } as never, "build")).toThrow()
+  })
+})
+
