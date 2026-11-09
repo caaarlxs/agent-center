@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils"
 import { dialog } from "@/app/open-dialog"
 import { ago } from "@/features/session/state"
 import type { Job } from "@server/jobs"
-import type { AgentStage, PipelineState } from "@server/pipeline"
+import type { AgentStage, PipelineState, Stage } from "@server/pipeline"
 import { isJob, useActivity } from "./Pipeline"
 import { markRead } from "./pipeline-seen"
 import { SPECIALISTS, SPLIT, clampSplit, jobColumn, jobLabel } from "./jobs-board"
@@ -27,7 +27,8 @@ import { StageEffect } from "./StageEffect"
 import { DebtButton } from "./Debt"
 import { effectOf, sceneOf } from "./stage-effects"
 import { PipelineMark, liveLine } from "./PipelineMark"
-import { BUILT, STAGES, boardColumn, childrenLine, costOf, dollars, isCoordinating, isQueued, toFix, waitingStep } from "./pipeline-board"
+import { BUILT, STAGES, STAGE_KEYS, boardColumn, childrenLine, costOf, dollars, isCoordinating, isQueued, toFix, waitingStep } from "./pipeline-board"
+import { StageHelp } from "./StageHelp"
 
 // A ticket opens the ticket; a job, the job.
 // Opened: what it did counts as read (the sidebar's count, pipeline-seen.ts).
@@ -76,7 +77,7 @@ export function TicketCard({ state, card, now, all = [] }: { state: PipelineStat
 
 // A stage's head: its line (flowing while an agent works in it, amber while
 // it waits for you), its number and name, and how many tickets it holds.
-function StageHead({ n, name, tickets }: { n: number; name: string; tickets: PipelineState[] }) {
+function StageHead({ n, name, stage, tickets }: { n: number; name: string; stage: Stage; tickets: PipelineState[] }) {
   const isWorking = tickets.some(t => t.status === "running")
   const isAsking = tickets.some(t => t.status === "needs-info" || toFix(t).length > 0 || !!waitingStep(t))
   return (
@@ -84,6 +85,7 @@ function StageHead({ n, name, tickets }: { n: number; name: string; tickets: Pip
       <i className={cn("block h-[2px] rounded-full", isWorking ? "flow" : isAsking ? "bg-ask" : "bg-line-strong")} />
       <h2 className="m-0 flex items-center gap-2 text-xs font-[650] tracking-[0.04em] text-text-muted uppercase">
         <span className="dot-time font-mono text-faint">{String(n).padStart(2, "0")}</span>{name}
+        <StageHelp stage={stage} name={name} />
         <span className="ml-auto font-medium text-faint">{tickets.length || ""}</span>
       </h2>
     </header>
@@ -218,7 +220,7 @@ export function PipelineView() {
             const here = states.filter(s => boardColumn(s, states) === i)
             return (
               <section key={name} className={cn(COLUMN, i >= BUILT && !here.length && "opacity-50")}>
-                <StageHead n={i + 1} name={name} tickets={here} />
+                <StageHead n={i + 1} name={name} stage={STAGE_KEYS[i]!} tickets={here} />
                 <div className="-m-0.5 flex min-h-0 flex-col gap-2 overflow-y-auto p-0.5">
                   {here.map(s => <TicketCard key={s.key} state={s} card={s.sessionId ? byId.get(s.sessionId) : undefined} now={now} all={states} />)}
                 </div>
