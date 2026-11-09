@@ -20,6 +20,7 @@ Lucide's names, and must be in `web/src/features/guide/icons.ts`.
 - {search} **Search**: `/` or `⌘K` searches every conversation, archived ones too; `⌘↵` opens it in Claude.
 - {plus} **New session**: `N`, then pick a folder and write the prompt; in a git repo it can get its own worktree.
 - {mouse-pointer-click} **Right-click**: anything on the page, for its actions.
+- {undo-2} **Back and forward**: the mouse's side buttons, the window's arrows or `⌘[` `⌘]` walk the places you have been, as a browser does: the view, the conversation open and its tab. · 2026-11-09
 
 ## {bot} Sessions
 
