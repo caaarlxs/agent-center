@@ -2,7 +2,7 @@
 // notes, PR actions, tasks, files sent and dictation.
 
 import { commentOn, connect, disconnect, moveTicket } from "../lib/jira"
-import { actOnDebt, answerPipeline, isStage, resetPipeline, rollBackPipeline, startPipeline, stopAuto, stepPipeline } from "../lib/pipeline"
+import { actOnDebt, answerPipeline, checkByHand, isStage, resetPipeline, rollBackPipeline, startPipeline, stopAuto, stepPipeline } from "../lib/pipeline"
 import { clearJob, continueJob, isLoose, publishReview, startJob } from "../lib/jobs"
 import { chooseIcon, isIcon } from "../lib/app-icon"
 import { choosePet, openPack } from "../lib/pets"
@@ -174,6 +174,9 @@ export async function handleWrite(path: string, body: Record<string, unknown>): 
     // Stop a pipeline that runs on its own: the next stage waits for you.
     case "/api/pipeline/auto":
       return await stopAuto(String(body.key ?? "")).then(() => (refreshSoon(), json({ ok: true })), (err: Error) => json({ error: err.message }, 400))
+    // Criteria the test could not try, checked by you by hand.
+    case "/api/pipeline/checked":
+      return await checkByHand(String(body.key ?? ""), Array.isArray(body.ids) ? body.ids.map(String) : []).then(() => (refreshSoon(), json({ ok: true })), (err: Error) => json({ error: err.message }, 400))
     case "/api/pipeline/answer":
       return await answerPipeline(String(body.key ?? ""), (body.answers ?? {}) as Record<string, string>).then(() => json({ ok: true }), (err: Error) => json({ error: err.message }, 400))
     // A release's step at hand: go on (with a tag of your own), or past it.

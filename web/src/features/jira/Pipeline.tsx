@@ -11,7 +11,7 @@
 // and start the stage again. Start over clears the run and the labels; the
 // comments stay. On someone else's ticket it runs only once you take it
 // (two clicks: it is assigned to you).
-import { AlertTriangle, Check, ChevronRight, Database, FastForward, FlaskConical, ListChecks, Play, RotateCcw, Route, Send, ShieldCheck } from "lucide-react"
+import { AlertTriangle, Check, ChevronRight, CircleHelp, Database, FastForward, FlaskConical, ListChecks, Play, RotateCcw, Route, Send, ShieldCheck } from "lucide-react"
 import { useEffect, useState, type ReactNode } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -548,7 +548,7 @@ const afterOf = (env: Stage, state: PipelineState): After => {
   const agent = env === "staging" ? "test" : "smoke"
   const title = env === "staging" ? "Test in staging" : "Check prod"
   if (state.stage !== agent) return { title, status: "pending" }
-  const status = state.status === "running" ? "running" : state.status === "failed" || failing(state.results).length ? "failed" : state.status === "needs-info" ? "waiting" : "done"
+  const status = state.status === "running" ? "running" : state.status === "failed" || failing(state.results).length ? "failed" : state.status === "needs-info" || (state.results ?? []).some(r => r.status === "untested") ? "waiting" : "done"
   return { title, status }
 }
 const failing = (results: TestResult[] | undefined) => (results ?? []).filter(r => r.status === "fail")
@@ -565,31 +565,46 @@ function ReleasePanel({ ticketKey, release, after, isLive, isPreview, onStep }: 
 
 // What a test (in staging) or a check (in prod) found: how many criteria
 // pass and fail, then each one (its evidence a click away).
-function ResultRow({ result: r, ticketKey }: { result: TestResult; ticketKey: string }) {
+// One the test could not try says why, and you check it by hand (it then passes, saying so).
+const RESULT_MARK = {
+  pass: <Check size={13} strokeWidth={2.6} className="shrink-0 translate-y-[2px] text-work" />,
+  fail: <AlertTriangle size={13} className="shrink-0 translate-y-[2px] text-bad" />,
+  untested: <CircleHelp size={13} className="shrink-0 translate-y-[2px] text-ask" />,
+}
+function ResultRow({ result: r, ticketKey, canCheck }: { result: TestResult; ticketKey: string; canCheck: boolean }) {
   const [isOpen, setOpen] = useState(false)
   return (
     <li className="border-t border-line first:border-t-0">
-      <button className="flex w-full items-baseline gap-2.5 py-2 text-left" onClick={() => setOpen(o => !o)} aria-expanded={isOpen}>
-        {r.status === "pass" ? <Check size={13} strokeWidth={2.6} className="shrink-0 translate-y-[2px] text-work" /> : <AlertTriangle size={13} className="shrink-0 translate-y-[2px] text-bad" />}
-        <span className="text-[13px] leading-[1.45]">{r.criterion}</span>
-      </button>
+      <div className="flex items-baseline gap-2">
+        <button className="flex min-w-0 flex-1 items-baseline gap-2.5 py-2 text-left" onClick={() => setOpen(o => !o)} aria-expanded={isOpen}>
+          {RESULT_MARK[r.status]}
+          <span className="text-[13px] leading-[1.45]">{r.criterion}</span>
+        </button>
+        {r.status === "untested" && canCheck && (
+          <button className="shrink-0 text-xs font-semibold text-text-muted hover:text-text" onClick={() => void act("/api/pipeline/checked", { key: ticketKey, ids: [r.id] }, "Checked by hand")}>Checked by hand</button>
+        )}
+      </div>
       {isOpen && r.evidence && <p className="m-0 ml-6 pb-3 font-mono text-[11.5px] leading-[1.55] break-words whitespace-pre-wrap text-text-muted">{r.evidence}</p>}
       <Evidence ticketKey={ticketKey} files={r.files ?? []} />
     </li>
   )
 }
 
+const RESULT_ORDER: TestResult["status"][] = ["fail", "untested", "pass"]
+const RESULT_TILES: [TestResult["status"], string, string][] = [["pass", "Pass", "text-work"], ["fail", "Fail", "text-bad"], ["untested", "Untested", "text-ask"]]
 export function TestPanel({ state, release }: { state: PipelineState; release: Release | null }) {
   const results = state.results ?? []
-  const pass = results.filter(r => r.status === "pass").length
+  const count = (status: TestResult["status"]) => results.filter(r => r.status === status).length
+  const canCheck = state.status === "ready" && !isJob(state)
   return (
     <div className="flex flex-col gap-3">
       {release && <ReleaseRail release={release} after={afterOf(release.env, state)} />}
-      <div className="grid grid-cols-2 gap-2">
-        <Tile><span className="text-[11.5px] text-faint">Pass</span><span className={cn("text-[20px] leading-none font-semibold tabular-nums", pass ? "text-work" : "text-faint")}>{pass}</span></Tile>
-        <Tile><span className="text-[11.5px] text-faint">Fail</span><span className={cn("text-[20px] leading-none font-semibold tabular-nums", results.length - pass ? "text-bad" : "text-faint")}>{results.length - pass}</span></Tile>
+      <div className="grid grid-cols-3 gap-2">
+        {RESULT_TILES.map(([status, label, tone]) => (
+          <Tile key={status}><span className="text-[11.5px] text-faint">{label}</span><span className={cn("text-[20px] leading-none font-semibold tabular-nums", count(status) ? tone : "text-faint")}>{count(status)}</span></Tile>
+        ))}
       </div>
-      {results.length > 0 && <ol className="m-0 list-none p-0">{[...results].sort((a, b) => (a.status === b.status ? 0 : a.status === "fail" ? -1 : 1)).map(r => <ResultRow key={r.id} result={r} ticketKey={state.key} />)}</ol>}
+      {results.length > 0 && <ol className="m-0 list-none p-0">{[...results].sort((a, b) => RESULT_ORDER.indexOf(a.status) - RESULT_ORDER.indexOf(b.status)).map(r => <ResultRow key={r.id} result={r} ticketKey={state.key} canCheck={canCheck} />)}</ol>}
       {release && <Details label="The deploy"><ReleaseSteps ticketKey={state.key} release={release} after={afterOf(release.env, state)} /></Details>}
     </div>
   )

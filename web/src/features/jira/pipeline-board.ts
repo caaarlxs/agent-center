@@ -12,11 +12,14 @@ export const toFix = (state: PipelineState): Finding[] => (state.stage === "revi
 // What a test (or a check in prod) found failing: it waits for you.
 export const failed = (state: PipelineState): TestResult[] =>
   state.stage === "test" || state.stage === "smoke" ? (state.results ?? []).filter(r => r.status === "fail") : []
+// What it could not try (no data, no device): it waits for you to check it by hand.
+export const untested = (state: PipelineState): TestResult[] =>
+  state.stage === "test" || state.stage === "smoke" ? (state.results ?? []).filter(r => r.status === "untested") : []
 // The stage a ticket done with its own may start now: after a review with
 // something to fix, the build again; after a test with a failure, none (you look first).
 const AFTER: Partial<Record<Stage, Stage>> = { refine: "plan", plan: "build", build: "review", review: "staging", staging: "test", test: "prod", prod: "smoke" }
 export const nextStage = (state: PipelineState): Stage | null =>
-  state.status !== "ready" || failed(state).length || state.children?.length ? null : toFix(state).length ? "build" : (AFTER[state.stage] ?? null)
+  state.status !== "ready" || failed(state).length || untested(state).length || state.children?.length ? null : toFix(state).length ? "build" : (AFTER[state.stage] ?? null)
 
 // A coordinator (lib/coordinator.ts) has no stages of its own after its
 // refinement: it sits in the column of its child furthest behind, and says
@@ -45,7 +48,7 @@ export const isRelease = (stage: Stage) => stage === "staging" || stage === "pro
 
 // Done with its stage (and nothing to fix or failing), a ticket waits at the
 // next one's door (its column). Checked in prod, it is done: it waits for nothing.
-export const isQueued = (state: PipelineState) => state.status === "ready" && !toFix(state).length && !failed(state).length && !!AFTER[state.stage]
+export const isQueued = (state: PipelineState) => state.status === "ready" && !toFix(state).length && !failed(state).length && !untested(state).length && !!AFTER[state.stage]
 export const columnOf = (state: PipelineState) => {
   const next = isQueued(state) ? nextStage(state) : null
   return next ? AT[next] : stageAt(state)
@@ -88,7 +91,7 @@ function toneOf(i: number, at: number, state: PipelineState): Tone {
   if (i < at) return "done"
   if (i > at) return i === at + 1 && isQueued(state) ? "next" : "todo"
   if (state.status === "failed") return "bad"
-  if (state.status === "needs-info" || toFix(state).length || failed(state).length || waitingStep(state)) return "ask"
+  if (state.status === "needs-info" || toFix(state).length || failed(state).length || untested(state).length || waitingStep(state)) return "ask"
   return state.status === "running" ? "work" : "done"
 }
 

@@ -100,3 +100,20 @@ describe("a unit with several sub-tasks", () => {
     expect(movesFor("in-staging", one, flow)).toHaveLength(4)
   })
 })
+
+describe("criteria the test could not try", () => {
+  it("leave the story where it is: they are no failure, and they open no [Fix]", async () => {
+    expect(movesFor("tested", state({ results: [{ id: "T1", status: "pass" }, { id: "T2", status: "untested" }] }), flow)).toEqual([])
+    const { jira, done } = fakeJira({ "PP-10": { status: "10067", mine: true } })
+    const out = await followInJira("tested", state({ fixes: [], results: [{ id: "T2", criterion: "x", status: "untested" }] }), flow, jira)
+    expect(done).toEqual([])
+    expect(out.fixes).toBeUndefined()
+  })
+  it("a failure with its [Fix] already open opens no other one", async () => {
+    const { jira, done } = fakeJira({ "PP-10": { status: "10067", mine: true } })
+    const results = [{ id: "T1", criterion: "Old", status: "fail" }, { id: "T2", criterion: "New", status: "fail" }]
+    const out = await followInJira("tested", state({ fixes: ["PP-20"], fixOf: { T1: "PP-20" }, results }), flow, jira)
+    expect(done).toEqual(["move PP-10 10351", "create PP-10 [Fix] New"])
+    expect(out.fixOf).toEqual({ T1: "PP-20", T2: out.fixes!.at(-1)! })
+  })
+})

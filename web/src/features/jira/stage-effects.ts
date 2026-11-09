@@ -8,7 +8,7 @@ import type { PipelineState, Stage } from "@server/pipeline"
 import { toFix, waitingStep } from "./pipeline-board"
 
 export type Effect = "run" | "wait" | "fail" | "done"
-export type Scene = { nodes: number; marks: number; cells: ("pass" | "fail")[]; tracks: number; glyphs: string; steps: string[] }
+export type Scene = { nodes: number; marks: number; cells: ("pass" | "fail" | "untested")[]; tracks: number; glyphs: string; steps: string[] }
 type Activity = { steps: { text: string; isOpen?: boolean }[] } | null
 
 export function effectOf(state: PipelineState): Effect {
@@ -149,7 +149,7 @@ const test: Draw = ({ x, w, h, t, scene, ink, mark }) => {
   const oy = (h - s * side) / 2
   const filled = Math.floor((t * 4) % (cells.length + 6))
   cells.forEach((c, i) => {
-    x.globalAlpha = i < filled ? 0.9 : 0.15
+    x.globalAlpha = i >= filled ? 0.15 : c === "untested" ? 0.4 : 0.9
     x.fillStyle = i < filled && c === "fail" ? mark : ink
     x.fillRect(ox + (i % side) * s, oy + Math.floor(i / side) * s, s - 3, s - 3)
   })

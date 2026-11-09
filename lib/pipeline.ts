@@ -72,7 +72,8 @@ export type PlanScript = { id: string; unit: string | null; title: string; comma
 export type Severity = "blocker" | "major" | "minor"
 export type Finding = { id: string; unit: string | null; severity: Severity; file: string | null; line: number | null; title: string; detail: string; fix: string }
 // What a test (in staging) or a smoke check (in prod) found of each criterion.
-export type TestResult = { id: string; criterion: string; status: "pass" | "fail"; evidence: string; files?: EvidenceFile[] }
+// untested: the test could not try it (no data, no device), which is no failure: a person checks it by hand.
+export type TestResult = { id: string; criterion: string; status: "pass" | "fail" | "untested"; evidence: string; files?: EvidenceFile[] }
 // A rule of the team's context (its repo) that the ticket makes untrue: the file and the words.
 // quote: the words of today it makes untrue; null for a new code rule, which says what it proposes instead.
 export type ContextImpact = { file: string; quote: string | null; why: string; proposal: string | null }
@@ -104,6 +105,7 @@ export type PipelineState = {
   findings?: Finding[] // the last review's
   fixed?: string[] // the findings a build fixed since
   fixes?: string[] // the [Fix] sub-tasks a failed test opened in Jira
+  fixOf?: Record<string, string> // the one open for each criterion that failed
   children?: Child[] // a coordinator's children, in the order they go (coordinator.ts)
   parent?: string | null // the coordinator a child's pipeline belongs to
   auto?: boolean // runs on by itself, stage after stage, until the review (autoNext)
@@ -184,7 +186,7 @@ const STAGE: Record<AgentStage, StageDef> = {
 2. Los criterios de aceptación y el plan de verificación están en ${join(dir, "refine.md")}; el plan, en ${join(dir, "plan.md")}; lo desplegado, en ${join(dir, "build.json")}.
 3. Solo staging. Nunca prod: ni con STAGE=prod, ni con sus tablas, ni con sus URLs.
 4. Escribe el informe en ${join(dir, "test.md")} y el resumen en ${join(dir, "test.summary.md")}.
-5. Escribe al final ${join(dir, "test.json")}: {"verdict": "ready" | "needs-info", "questions": [...], "results": [{"id": "T1", "criterion": "...", "status": "pass" | "fail", "evidence": "...", "files": [{"path": "evidence/T1-desktop.png", "caption": "..."}]}]}. Guarda la evidencia de cada criterio en ${join(dir, "evidence")}.`,
+5. Escribe al final ${join(dir, "test.json")}: {"verdict": "ready" | "needs-info", "questions": [...], "results": [{"id": "T1", "criterion": "...", "status": "pass" | "fail" | "untested", "evidence": "...", "files": [{"path": "evidence/T1-desktop.png", "caption": "..."}]}]}. Guarda la evidencia de cada criterio en ${join(dir, "evidence")}.`,
   },
   smoke: {
     verb: "comprobar", title: "Comprobación en prod", done: "comprobado en prod", label: LABELS.live, unlabel: [], model: "claude-opus-5-5", effort: "medium", writes: false,
@@ -194,7 +196,7 @@ const STAGE: Record<AgentStage, StageDef> = {
 2. Los criterios de aceptación están en ${join(dir, "refine.md")}; la prueba de staging, en ${join(dir, "test.md")}.
 3. Solo lectura: en prod no creas, cambias ni borras nada.
 4. Escribe el informe en ${join(dir, "smoke.md")} y el resumen en ${join(dir, "smoke.summary.md")}.
-5. Escribe al final ${join(dir, "smoke.json")}: {"verdict": "ready" | "needs-info", "questions": [...], "results": [{"id": "P1", "criterion": "...", "status": "pass" | "fail", "evidence": "...", "files": [{"path": "evidence/P1-desktop.png", "caption": "..."}]}]}. Guarda la evidencia de cada criterio en ${join(dir, "evidence")}.`,
+5. Escribe al final ${join(dir, "smoke.json")}: {"verdict": "ready" | "needs-info", "questions": [...], "results": [{"id": "P1", "criterion": "...", "status": "pass" | "fail" | "untested", "evidence": "...", "files": [{"path": "evidence/P1-desktop.png", "caption": "..."}]}]}. Guarda la evidencia de cada criterio en ${join(dir, "evidence")}.`,
   },
 }
 export const verbOf = (stage: AgentStage) => STAGE[stage].verb
@@ -267,7 +269,7 @@ const orderIn = (v: unknown): OrderItem[] =>
 const resultsIn = (v: unknown): TestResult[] =>
   listOf(v)
     .filter(r => textOf(r?.criterion))
-    .map((r, i) => ({ id: String(r.id ?? `T${i + 1}`), criterion: textOf(r.criterion), status: r.status === "pass" ? ("pass" as const) : ("fail" as const), evidence: textOf(r.evidence), files: filesIn(r.files) }))
+    .map((r, i) => ({ id: String(r.id ?? `T${i + 1}`), criterion: textOf(r.criterion), status: r.status === "pass" || r.status === "untested" ? (r.status as TestResult["status"]) : ("fail" as const), evidence: textOf(r.evidence), files: filesIn(r.files) }))
 // Only with the words it makes untrue: else it is no impact at all.
 const impactIn = (v: unknown): ContextImpact[] =>
   listOf(v).filter(x => textOf(x?.file) && (textOf(x?.quote) || textOf(x?.proposal)))
@@ -279,6 +281,11 @@ export const impactRepos = (impacts: ContextImpact[], repos: string[], contextRe
 ]
 // The criteria a test (or a smoke check) found failing.
 export const failing = (results: TestResult[] | undefined) => (results ?? []).filter(r => r.status === "fail")
+// The criteria it could not try: they wait for a person before prod.
+export const untried = (results: TestResult[] | undefined) => (results ?? []).filter(r => r.status === "untested")
+// Criteria a person checked by hand: they pass, saying so.
+export const checkedByHand = (results: TestResult[], ids: string[], on: string) =>
+  results.map(r => (r.status === "untested" && ids.includes(r.id) ? { ...r, status: "pass" as const, evidence: `Comprobado a mano el ${on}. ${r.evidence}`.trim() } : r))
 // The findings that stop a ticket: they go back to Build.
 export const blocking = (findings: Finding[] | undefined) => (findings ?? []).filter(f => f.severity !== "minor")
 // The findings a build after a review fixes: the ones you chose, else the
@@ -701,9 +708,9 @@ const withJira = (checks: Check[], before: Check[] = [], jira: Check[] = before.
 async function inJira(event: JiraEvent, state: PipelineState): Promise<Partial<PipelineState>> {
   const flow = flowOf(await readText(join(STAGES_DIR, "jira.json")))
   if (!flow) return {}
-  const out = await followInJira(event, state, flow, JIRA).catch(err => ({ checks: [{ id: "jira-flow", label: "Jira did not answer", status: "warn" as const, detail: String(err?.message ?? err) }], fixes: undefined }))
+  const out = await followInJira(event, state, flow, JIRA).catch(err => ({ checks: [{ id: "jira-flow", label: "Jira did not answer", status: "warn" as const, detail: String(err?.message ?? err) }], fixes: undefined, fixOf: undefined }))
   const kept = (state.checks ?? []).filter(c => !c.id.startsWith("jira-"))
-  return { checks: withJira([...kept, ...out.checks], state.checks), ...(out.fixes ? { fixes: out.fixes } : {}) }
+  return { checks: withJira([...kept, ...out.checks], state.checks), ...(out.fixes ? { fixes: out.fixes } : {}), ...(out.fixOf ? { fixOf: out.fixOf } : {}) }
 }
 
 // What the board checks of a run by itself (lib/checks.ts): the repos left
@@ -746,7 +753,7 @@ const NEEDS: Partial<Record<Stage, [Stage[], string]>> = {
 export function stageToRun(state: PipelineState | null, asked?: Stage): Stage {
   const stage = asked ?? state?.stage ?? "refine"
   const need = NEEDS[stage]
-  const isBlocked = (state: PipelineState) => (stage === "staging" && blocking(state.findings).length > 0) || (stage === "prod" && failing(state.results).length > 0)
+  const isBlocked = (state: PipelineState) => (stage === "staging" && blocking(state.findings).length > 0) || (stage === "prod" && failing(state.results).length + untried(state.results).length > 0)
   const isAfter = (prev: Stage) => state?.stage === prev && state.status === "ready" && !isBlocked(state)
   if (need && state?.stage !== stage && !need[0].some(isAfter)) throw new Error(need[1])
   return stage
@@ -787,6 +794,17 @@ export async function adoptJob(key: string, from: string, stage: AgentStage, fie
   for (const f of await readdir(from)) if (isAdopted(f)) await cp(join(from, f), join(dir, f), { recursive: true })
   const done: PipelineState = { ...EMPTY(key, 1, stage), ...fields, stage, status: "ready", endedAt: Date.now() }
   await save(stage === "build" ? { ...done, ...(await inJira("built", done)) } : done)
+}
+
+// Criteria the test could not try, checked by you by hand: they pass, and once
+// nothing is failing or left to check, the story is ready for prod in Jira.
+export async function checkByHand(key: string, ids: string[]) {
+  const state = await stateOf(key)
+  if (!state || (state.stage !== "test" && state.stage !== "smoke") || state.status !== "ready") throw new Error("No test that ended on this ticket")
+  const results = checkedByHand(state.results ?? [], ids, new Date().toISOString().slice(0, 10))
+  const checked: PipelineState = { ...state, results }
+  const isClear = state.stage === "test" && !failing(results).length && !untried(results).length
+  await save(isClear ? { ...checked, ...(await inJira("tested", checked)) } : checked)
 }
 
 // Stop running on its own: the stage at work ends, and the next waits for you.
@@ -950,7 +968,7 @@ export const isPipelineOn = () => existsSync(join(STAGES_DIR, "refine.md"))
 // The steps a release would take, before you start it.
 async function previewOf(state: PipelineState | null) {
   if (!state || state.status !== "ready") return null
-  const env: Env | null = state.stage === "review" && !blocking(state.findings).length ? "staging" : state.stage === "test" && !failing(state.results).length ? "prod" : null
+  const env: Env | null = state.stage === "review" && !blocking(state.findings).length ? "staging" : state.stage === "test" && !failing(state.results).length && !untried(state.results).length ? "prod" : null
   if (!env) return null
   const config = await deployConfig()
   // What a person must have done first, for the repos this release takes there.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { blocking, checkedIn, isAdopted, toFixNow, MARK, answeredAfter, answersComment, argsFor, parseResult, pipelineKeyOf, stageToRun, unbuilt, withRun, questionsComment, snapshotOf, prodWarning, autoNext, linksFigma, impactRepos } from "../lib/pipeline"
+import { blocking, checkedByHand, checkedIn, isAdopted, toFixNow, MARK, answeredAfter, answersComment, argsFor, parseResult, pipelineKeyOf, stageToRun, unbuilt, withRun, questionsComment, snapshotOf, prodWarning, autoNext, linksFigma, impactRepos } from "../lib/pipeline"
 
 const questions = [
   { id: "Q1", question: "¿Cuál es el copy?", proposal: "El del ticket" },
@@ -346,5 +346,19 @@ describe("impactRepos", () => {
   })
   it("names each repo once", () => {
     expect(impactRepos([impact("glossary.md"), impact("deale-context/context/x.md"), impact("deale-frontend/docs/rules/a.md"), impact("deale-frontend/docs/rules/b.md")], repos, "deale-context")).toEqual(["deale-context", "deale-frontend"])
+  })
+})
+
+describe("criteria the test could not try", () => {
+  const results = [{ id: "T1", criterion: "a", status: "pass", evidence: "ok" }, { id: "T2", criterion: "b", status: "untested", evidence: "No hay set de asesor" }] as never
+  it("are read as such, and nothing else passes for them", () => {
+    expect(parseResult(JSON.stringify({ verdict: "ready", results: [{ criterion: "b", status: "untested" }, { criterion: "c", status: "maybe" }] }), "test").results.map(r => r.status)).toEqual(["untested", "fail"])
+  })
+  it("keep prod shut until a person checks them by hand", () => {
+    const tested = { key: "PP-1", stage: "test", status: "ready", results } as never
+    expect(() => stageToRun(tested, "prod")).toThrow()
+    const checked = checkedByHand(results, ["T2"], "2026-11-09")
+    expect(checked[1]).toMatchObject({ status: "pass", evidence: "Comprobado a mano el 2026-11-09. No hay set de asesor" })
+    expect(stageToRun({ ...(tested as object), results: checked } as never, "prod")).toBe("prod")
   })
 })

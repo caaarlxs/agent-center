@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { childrenLine, columnOf, isQueued, journeyOf, nextStage, parentColumn, toFix, waitingStep } from "./pipeline-board"
+import { childrenLine, columnOf, isQueued, journeyOf, nextStage, parentColumn, toFix, untested, waitingStep } from "./pipeline-board"
 
 type At = "refine" | "plan" | "build" | "review" | "staging" | "test" | "prod" | "smoke"
 const at = (stage: At, status: "running" | "needs-info" | "ready" | "failed", findings?: { id: string; severity: string }[], release?: unknown) => ({ stage, status, findings, release }) as never
@@ -114,5 +114,15 @@ describe("a coordinator", () => {
   })
   it("says how many children are at each stage, and how many wait to start", () => {
     expect(childrenLine(parent, states)).toBe("3 tickets: 1 build · 1 review · 1 to start")
+  })
+})
+
+describe("criteria the test could not try", () => {
+  const tested = (statuses: string[]) => ({ stage: "test", status: "ready", results: statuses.map((status, i) => ({ id: `T${i}`, status })) }) as never
+  it("wait for you: the ticket stays at the test, not at prod's door", () => {
+    expect(untested(tested(["pass", "untested"]))).toHaveLength(1)
+    expect(nextStage(tested(["pass", "untested"]))).toBeNull()
+    expect(isQueued(tested(["pass", "untested"]))).toBe(false)
+    expect(nextStage(tested(["pass", "pass"]))).toBe("prod")
   })
 })

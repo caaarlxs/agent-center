@@ -8,7 +8,7 @@ import { useIsDots } from "@/lib/board-style"
 import { cn } from "@/lib/utils"
 import { doingText, orbOf } from "@/features/conversation/session-events"
 import type { PipelineState, PipelineStatus, Stage } from "@server/pipeline"
-import { STAGES, failed, stageAt, toFix, waitingStep } from "./pipeline-board"
+import { STAGES, failed, stageAt, toFix, untested, waitingStep } from "./pipeline-board"
 
 export { STAGES, stageAt } from "./pipeline-board"
 
@@ -21,7 +21,7 @@ const isFix = (stage: Stage, from?: Stage) => stage === "build" && from === "rev
 export const startText = (stage: Stage, from?: Stage) => (isFix(stage, from) ? "Fix with build" : START[stage])
 export const startingText = (stage: Stage, from?: Stage) => `${isFix(stage, from) ? "Fixing" : DOING[stage]}: a session starts`
 // A review with something to fix, or a release step, waits for you like a question does.
-const lookOf = (state: PipelineState): PipelineStatus => (toFix(state).length || failed(state).length || waitingStep(state) ? "needs-info" : state.status)
+const lookOf = (state: PipelineState): PipelineStatus => (toFix(state).length || failed(state).length || untested(state).length || waitingStep(state) ? "needs-info" : state.status)
 export const statusText = (state: PipelineState) =>
   state.status === "running" && state.release?.rollback ? `Rolling back ${state.release.env}` : toFix(state).length ? "To fix" : waitingStep(state) ? "Waiting for you" : state.status === "running" ? DOING[state.stage] : state.status === "ready" ? (state.children?.length ? `Coordinating ${state.children.length} tickets` : NEXT[state.stage]) : state.status === "needs-info" ? "Waiting for you" : "Failed"
 const TONE: Record<PipelineStatus, { text: string; bar: string }> = {
@@ -44,6 +44,8 @@ function reviewLine(state: PipelineState) {
 function testLine(state: PipelineState) {
   const results = state.results ?? []
   const fail = failed(state).length
+  const left = untested(state).length
+  if (!fail && left) return `${left} to check by hand`
   return fail ? `${fail} ${fail === 1 ? "criterion" : "criteria"} failed` : state.stage === "test" ? `Tested: ${results.length} pass` : `Live in prod: ${results.length} checks pass`
 }
 

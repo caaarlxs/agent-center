@@ -22,8 +22,9 @@ export type Event = "build-started" | "built" | "in-staging" | "tested" | "in-pr
 export type Move = { key: string; to: Status; comment?: string }
 
 type Unit = { subtask?: string | null; subtasks?: string[]; pr?: string | null }
-type Result = { id: string; criterion?: string; status: "pass" | "fail" }
-export type FlowState = { key: string; units?: Unit[]; fixes?: string[]; results?: Result[] }
+type Result = { id: string; criterion?: string; status: "pass" | "fail" | "untested" }
+// fixOf: the [Fix] sub-task open for each criterion (its id), so that none gets two.
+export type FlowState = { key: string; units?: Unit[]; fixes?: string[]; fixOf?: Record<string, string>; results?: Result[] }
 
 export type Jira = {
   issue: (key: string) => Promise<{ status: string; mine: boolean } | null>
@@ -36,6 +37,8 @@ export type Jira = {
 const ofUnit = (u: Unit) => [...new Set([...(u.subtasks ?? []), u.subtask].filter(Boolean))] as string[]
 const subtasksOf = (state: FlowState) => [...new Set([...(state.units ?? []).flatMap(ofUnit), ...(state.fixes ?? [])])]
 const failing = (state: FlowState) => (state.results ?? []).filter(r => r.status === "fail")
+// A criterion the test could not try (no data, no device) is no failure: the story waits where it is until a person checks it.
+const untried = (state: FlowState) => (state.results ?? []).filter(r => r.status === "untested")
 
 // A story with no sub-tasks has nothing for Jira to follow: the story itself moves.
 function storyMoves(event: Event, state: FlowState, s: Flow["statuses"]): Move[] {
@@ -52,7 +55,7 @@ export function movesFor(event: Event, state: FlowState, flow: Flow): Move[] {
   if (event === "build-started") return subtasksOf(state).map(key => ({ key, to: s.inProgress }))
   if (event === "built") return (state.units ?? []).filter(u => u.pr).flatMap(u => ofUnit(u).map(key => ({ key, to: s.inReview, comment: `PR: ${u.pr}` })))
   if (event === "in-staging") return subtasksOf(state).map(key => ({ key, to: s.done }))
-  if (event === "tested") return [{ key: state.key, to: failing(state).length ? s.reopened : s.readyForProd }]
+  if (event === "tested") return failing(state).length ? [{ key: state.key, to: s.reopened }] : untried(state).length ? [] : [{ key: state.key, to: s.readyForProd }]
   return [{ key: state.key, to: s.done }]
 }
 
@@ -96,21 +99,24 @@ async function apply(move: Move, flow: Flow, jira: Jira): Promise<Check | null> 
   }
 }
 
-// The [Fix] sub-tasks of a test that failed: one a criterion.
+// The [Fix] sub-tasks of a test that failed: one a criterion, never a second one.
 async function openFixes(state: FlowState, flow: Flow, jira: Jira) {
   const fixes: string[] = []
+  const fixOf = { ...state.fixOf }
   const checks: Check[] = []
-  for (const r of failing(state)) {
+  for (const r of failing(state).filter(r => !fixOf[r.id])) {
     try {
-      fixes.push(await jira.createSubtask(state.key, `${flow.fixPrefix} ${r.criterion ?? r.id}`, flow.subtaskType))
+      const key = await jira.createSubtask(state.key, `${flow.fixPrefix} ${r.criterion ?? r.id}`, flow.subtaskType)
+      fixes.push(key)
+      fixOf[r.id] = key
     } catch (err) {
       checks.push(warn(`${state.key}-${r.id}`, `${state.key}: could not open the [Fix] for ${r.id}`, why(err)))
     }
   }
-  return { fixes, checks }
+  return { fixes, fixOf, checks }
 }
 
-export async function followInJira(event: Event, state: FlowState, flow: Flow, jira: Jira): Promise<{ checks: Check[]; fixes?: string[] }> {
+export async function followInJira(event: Event, state: FlowState, flow: Flow, jira: Jira): Promise<{ checks: Check[]; fixes?: string[]; fixOf?: Record<string, string> }> {
   const checks: Check[] = []
   for (const move of movesFor(event, state, flow)) {
     const check = await apply(move, flow, jira)
@@ -118,7 +124,7 @@ export async function followInJira(event: Event, state: FlowState, flow: Flow, j
   }
   if (event !== "tested" || !failing(state).length) return { checks }
   const opened = await openFixes(state, flow, jira)
-  return { checks: [...checks, ...opened.checks], fixes: [...(state.fixes ?? []), ...opened.fixes] }
+  return { checks: [...checks, ...opened.checks], fixes: [...(state.fixes ?? []), ...opened.fixes], fixOf: opened.fixOf }
 }
 
 // jira.json, if the team has one: else the pipeline leaves the statuses alone.

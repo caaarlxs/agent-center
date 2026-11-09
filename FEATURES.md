@@ -94,6 +94,7 @@ Lucide's names, and must be in `web/src/features/guide/icons.ts`.
 - {git-fork} **Conflicts**: a PR that no longer merges into its base goes to an agent before the merge: it merges the base into the PR's branch, keeps what each side does, runs the tests and pushes. Where it cannot (a conflict only a person decides, tests that fail) the step stops and says why; Retry hands it over again. · 2026-11-06
 - {scale} **Gate agent**: an agent looks at each step that waits for you (a simulation's report, a tag, a release PR) and says go or hold, and why; the yes is still yours.
 - {flask-conical} **Test in staging**: an agent checks each acceptance criterion in staging and marks it pass or fail, with its evidence; a failure stops the way to prod.
+- {flask-conical} **Untested criteria**: a criterion the test could not try (no data for it, no device) is not a failure: it shows in amber with why, opens no [Fix] and keeps prod shut until you press Checked by hand. A failure that already has its [Fix] open never gets a second one. · 2026-11-09
 - {rocket} **Prod**: every step asks first, and the riskiest (merge, tag, run for real) ask twice; where the team set one, a dialog first reminds you what must be done outside the board, like a mobile build sent to the store.
 - {heart-pulse} **Check prod**: after the release, an agent checks in prod that what the ticket asked for works.
 - {undo-2} **Roll back**: Roll back staging or Roll back prod undoes the release the other way round (a revert PR for each merge, the previous tag deployed again); it asks twice.
