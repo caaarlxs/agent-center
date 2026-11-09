@@ -39,7 +39,7 @@ import { Markdown, SessionOf } from "./Markdown"
 import { type Live, orbOf, turnLine, useLiveAnswer } from "./session-events"
 import { useTypewriter } from "./typewriter"
 import { WidgetView } from "./Widget"
-import { actionUrl, answerEnds } from "./response-actions"
+import { actionUrl, answerEnds, answerRuns, viewUrl } from "./response-actions"
 import { type Pending, deliveredOf, dropPending, stampOf, takenBack, usePending, waitingOf } from "./pending"
 import { composerHint, composerQuote, reply, takeBack } from "./send"
 import { dialogAnswer, linesText, nameOf, partsOf, quoteOf } from "./text"
@@ -580,6 +580,40 @@ function AnswerActions({ sessionId, answerKey, actions }: { sessionId: string; a
   )
 }
 
+type Views = { url: string; levels: { id: string; label: string }[]; minChars: number }
+
+// The switch over a long answer: its text as written, or a level drawn by the tool set in settings.json.
+function ViewSwitch({ views, value, onChange }: { views: Views; value: string; onChange: (level: string) => void }) {
+  const options = [{ id: "original", label: "Original" }, ...views.levels]
+  return (
+    <div className="-mb-1 inline-flex self-start rounded-[9px] bg-surface p-0.5 text-[12px]" role="tablist" aria-label="How to read this answer">
+      {options.map(o => (
+        <button key={o.id} role="tab" aria-selected={value === o.id} onClick={() => onChange(o.id)}
+          className={cn("rounded-[7px] px-2.5 py-1 text-text-muted transition-colors hover:text-text", value === o.id && "bg-bg font-semibold text-text shadow-[0_1px_2px_rgba(0,0,0,0.12)]")}>
+          {o.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+// A level of an answer, drawn by the tool in a sandboxed frame. It tells its
+// height, and a reply pressed in it goes to the session as the person's message.
+function AnswerFrame({ src, sessionId }: { src: string; sessionId: string }) {
+  const frame = useRef<HTMLIFrameElement>(null)
+  const [height, setHeight] = useState(120)
+  useEffect(() => {
+    const onMessage = (e: MessageEvent) => {
+      if (e.source !== frame.current?.contentWindow || !e.data?.unfold) return
+      if (typeof e.data.height === "number") setHeight(Math.max(40, e.data.height))
+      if (typeof e.data.reply === "string" && e.data.reply.trim()) reply(sessionId, e.data.reply).catch((err: Error) => toast(err.message || "Could not send it"))
+    }
+    addEventListener("message", onMessage)
+    return () => removeEventListener("message", onMessage)
+  }, [sessionId])
+  return <iframe ref={frame} src={src} sandbox="allow-scripts" title="Answer view" className="block w-full border-0 bg-transparent" style={{ height }} />
+}
+
 const ANSWER_RECEIPT_MS = 12_000 // an answer the session has not taken by then did not reach it
 
 type Asked = { canAnswer: (text: string) => boolean; picks: Record<string, string>; onPick: (text: string, value: string) => void }
@@ -732,6 +766,16 @@ export function ConversationView({ sessionId, card: session, bridge }: { session
   const lastKey = shown.at(-1)?.key
   const answerActions = useLive(l => l.snapshot?.responseActions) ?? []
   const ends = useMemo(() => answerEnds(shown, session?.column === "working"), [shown, session?.column])
+  // Long answers get a switch to read them at another level (settings.json "responseViews").
+  const views = useLive(l => l.snapshot?.responseViews) ?? null
+  const runOf = useMemo(() => {
+    const first = new Map<string, string>()
+    if (!views) return first
+    for (const [key, run] of answerRuns(shown as { key: string; kind: string; text?: string }[], session?.column === "working"))
+      if (run.chars >= views.minChars) for (const k of run.keys) first.set(k, key)
+    return first
+  }, [shown, session?.column, views])
+  const [picked, setPicked] = useState<Record<string, string>>({})
   // Free for your next message (a question in Claude's text too, not a dialog
   // or a permission): the suggestion is asked for.
   const isYourTurn = isLoaded && !!session && ["review", "pending", "asking"].includes(session.column) && !waiting.length && !question && !permission && !session.isLaunching
@@ -778,7 +822,13 @@ export function ConversationView({ sessionId, card: session, bridge }: { session
         {shown.map(item => (
           <Fragment key={item.key}>
             {breaks.has(item.key) && <DaySeparator label={breaks.get(item.key)!} />}
-            <ShownItem item={item} sessionId={sessionId} asked={asked} suggested={suggested} onFork={setForking} />
+            {views && runOf.get(item.key) === item.key && <ViewSwitch views={views} value={picked[item.key] ?? "original"} onChange={level => setPicked(p => ({ ...p, [item.key]: level }))} />}
+            {(() => {
+              const first = runOf.get(item.key)
+              const level = first ? picked[first] ?? "original" : "original"
+              if (level === "original" || !views || !first) return <ShownItem item={item} sessionId={sessionId} asked={asked} suggested={suggested} onFork={setForking} />
+              return first === item.key ? <AnswerFrame src={viewUrl(views.url, sessionId, item.key, level)} sessionId={sessionId} /> : null
+            })()}
             {answerActions.length > 0 && ends.has(item.key) && <AnswerActions sessionId={sessionId} answerKey={item.key} actions={answerActions} />}
           </Fragment>
         ))}

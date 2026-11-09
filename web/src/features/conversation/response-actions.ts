@@ -24,3 +24,31 @@ export function actionUrl(template: string, sessionId: string, answerKey: string
   const message = answerKey.split(":")[0] ?? answerKey
   return template.replaceAll("{session}", encodeURIComponent(sessionId)).replaceAll("{message}", encodeURIComponent(message))
 }
+
+type Texted = Keyed & { text?: string }
+
+/** Each finished turn's answer: the texts at its end with no tool run between, by the first one's key, and their length. */
+export function answerRuns(shown: readonly Texted[], isRunning: boolean): Map<string, { keys: string[]; chars: number }> {
+  const runs = new Map<string, { keys: string[]; chars: number }>()
+  let run: { keys: string[]; chars: number } | null = null
+  let follows = false
+  for (const item of shown) {
+    if (item.kind === "assistant") {
+      if (!run || !follows) run = { keys: [], chars: 0 }
+      run.keys.push(item.key)
+      run.chars += item.text?.length ?? 0
+      follows = true
+    } else if (item.kind === "user") {
+      if (run) runs.set(run.keys[0]!, run)
+      run = null
+      follows = false
+    } else follows = false
+  }
+  if (run && !isRunning) runs.set(run.keys[0]!, run)
+  return runs
+}
+
+/** A level's page for one answer. */
+export function viewUrl(template: string, sessionId: string, answerKey: string, level: string): string {
+  return actionUrl(template, sessionId, answerKey).replaceAll("{level}", encodeURIComponent(level))
+}

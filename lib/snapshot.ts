@@ -13,6 +13,7 @@ import { sessionSaying } from "./saying"
 import { accountLimits } from "./limits"
 import { canRunCommands } from "./commands"
 import { responseActions } from "./response-actions"
+import { responseViews } from "./response-views"
 import { freshness } from "./freshness"
 import { memoryNow, memoryOf } from "./memory"
 import { readDesktop, type DesktopIndex } from "./desktop"
@@ -319,6 +320,7 @@ export async function snapshot() {
     uploadsBytes: await folderSize(),
     canRunCommands: canRunCommands(),
     responseActions: responseActions(settings.responseActions),
+    responseViews: responseViews(settings.responseViews),
     memory: { total: visible.reduce((sum, c) => sum + (c.memory?.total ?? 0), 0), pressure: memory.pressure },
     features: { organizer, pipeline: isPipelineOn() },
     pipelines: await pipelines(),
