@@ -198,6 +198,7 @@ const STAGE: Record<AgentStage, StageDef> = {
 1. Lee ${join(STAGES_DIR, "test.md")} y ${join(STAGES_DIR, "environment.md")}, y síguelos.
 2. Los criterios de aceptación y el plan de verificación están en ${join(dir, "refine.md")}; el plan, en ${join(dir, "plan.md")}; lo desplegado, en ${join(dir, "build.json")}.
 3. Solo staging. Nunca prod: ni con STAGE=prod, ni con sus tablas, ni con sus URLs.
+   Si existe ${join(dir, "retest.json")}, este test sigue a un arreglo: sigue la sección "Después de un arreglo" de test.md.
 4. Escribe el informe en ${join(dir, "test.md")} y el resumen en ${join(dir, "test.summary.md")}.
 5. Escribe al final ${join(dir, "test.json")}: {"verdict": "ready" | "needs-info", "questions": [...], "results": [{"id": "T1", "criterion": "...", "status": "pass" | "fail" | "untested", "summary": "...", "evidence": "...", "files": [{"path": "evidence/T1-desktop.png", "caption": "..."}]}]}. Guarda la evidencia de cada criterio en ${join(dir, "evidence")}.`,
   },
@@ -314,6 +315,16 @@ export const testFix = (state: Pick<PipelineState, "results" | "fixOf" | "thread
     id: r.id, criterion: r.criterion, summary: r.summary ?? null, evidence: r.evidence, subtask: state.fixOf?.[r.id] ?? null,
     asked: (state.threads?.[`result:${r.id}`] ?? []).filter(t => t.a).map(t => ({ q: t.q, a: t.a })),
   }))
+// A test after a fix of a failed test (retest.json): what was fixed, what failed or
+// was not tried before, and the repos the fix's release took to staging.
+export function retestOf(state: Pick<PipelineState, "fixing" | "results" | "units" | "release">) {
+  if (state.fixing?.from !== "test") return null
+  const fixed = state.fixing.ids
+  const before = (state.results ?? []).filter(r => r.status !== "pass" && !fixed.includes(r.id)).map(r => r.id)
+  const repos = [...new Set(releasedUnits(state).map(u => u.repo))]
+  return { fixed, before, repos }
+}
+
 // The [Fix] sub-tasks of what fails now (all of them, before a test has results).
 export const fixesNow = (state: Pick<PipelineState, "results" | "fixOf" | "fixes" | "fixing">) => {
   if (state.fixing?.from === "review") return []
@@ -893,6 +904,10 @@ async function startNow(key: string, take: boolean, asked?: Stage, chosen?: stri
   if (stage === "staging") await stagingWaits(state!)
   if (isRelease(stage)) return startRelease(state!, stage)
   const fixing = await writeFixes(key, state, stage, chosen)
+  // A test after a fix tests deep what the fix is about, and the rest quickly (retest.json); any other, all of it.
+  const retest = stage === "test" && state ? retestOf(state) : null
+  if (retest) await writeJsonAtomic(join(dirOf(key), "retest.json"), retest, { pretty: true })
+  else if (stage === "test") await rename(join(dirOf(key), "retest.json"), join(dirOf(key), "retest.json.prev")).catch(() => {})
   // At work at once, so the board shows it; the run then reads the ticket (it takes a while) and starts the agent.
   await save({ ...(await fresh(key, (state?.runs ?? 0) + 1, stage)), summary: state?.summary, ...(fixing === undefined ? {} : { fixing }) })
   void run(key, (state?.runs ?? 0) + 1, stage, auto)

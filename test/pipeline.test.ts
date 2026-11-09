@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { isStuck, releasedUnits, sessionOf, shippedWith, unitsNow, withUnits, testedIn, askPrompt, askRefusal, fixesNow, isAbout, testFix, unshipped, blocking, checkedByHand, checkedIn, isAdopted, toFixNow, MARK, answeredAfter, answersComment, argsFor, parseResult, pipelineKeyOf, stageToRun, unbuilt, withRun, questionsComment, snapshotOf, prodWarning, autoNext, linksFigma, impactRepos } from "../lib/pipeline"
+import { isStuck, releasedUnits, retestOf, sessionOf, shippedWith, unitsNow, withUnits, testedIn, askPrompt, askRefusal, fixesNow, isAbout, testFix, unshipped, blocking, checkedByHand, checkedIn, isAdopted, toFixNow, MARK, answeredAfter, answersComment, argsFor, parseResult, pipelineKeyOf, stageToRun, unbuilt, withRun, questionsComment, snapshotOf, prodWarning, autoNext, linksFigma, impactRepos } from "../lib/pipeline"
 
 const questions = [
   { id: "Q1", question: "¿Cuál es el copy?", proposal: "El del ticket" },
@@ -513,5 +513,15 @@ describe("sessionOf", () => {
     expect(sessionOf({ sessionId: "now", history }, "finding:F1")).toBe("rev")
     expect(sessionOf({ sessionId: "now", history }, "result:CA3")).toBe("tst")
     expect(sessionOf({ sessionId: "now", history }, "question:Q1")).toBe("now")
+  })
+})
+
+describe("a test after a fix", () => {
+  it("knows what was fixed, what failed or was not tried before, and the repos the fix changed", () => {
+    const state = { fixing: { from: "test", ids: ["CA3"] }, results: [{ id: "CA3", status: "fail" }, { id: "BE4", status: "fail" }, { id: "M1", status: "untested" }, { id: "CA1", status: "pass" }],
+      units: [{ id: "U1", repo: "web" }, { id: "X1", repo: "company-service" }], deployed: { staging: { steps: [{ kind: "merge", unit: "U1", status: "done" }] } },
+      release: { env: "staging", steps: [{ kind: "merge", unit: "X1", status: "done" }] } } as never
+    expect(retestOf(state)).toEqual({ fixed: ["CA3"], before: ["BE4", "M1"], repos: ["company-service"] })
+    expect(retestOf({ results: [] } as never)).toBeNull()
   })
 })
