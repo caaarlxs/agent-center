@@ -1,10 +1,13 @@
 // The stages of a ticket at a glance (journeyOf): a node each, its state in
 // its colour and icon, and the one fact it left ("4 PRs", "1 minor"). A click
-// picks the stage the section shows below.
-import { AlertTriangle, Check, Eye, Hammer, ListTree, Lightbulb, Rocket, Server, type LucideIcon } from "lucide-react"
+// picks the stage the section shows below; the picked one has a (?) that says
+// what the stage is and what you can do there.
+import { AlertTriangle, Check, CircleHelp, Eye, Hammer, ListTree, Lightbulb, Rocket, Server, type LucideIcon } from "lucide-react"
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card"
 import { cn } from "@/lib/utils"
 import type { Stage } from "@server/pipeline"
 import { STAGES, type JourneyNode, type Tone } from "./pipeline-board"
+import { STAGE_HELP } from "./stage-help"
 
 const ICON: Record<Stage, LucideIcon> = { refine: Lightbulb, plan: ListTree, build: Hammer, review: Eye, staging: Server, test: Server, prod: Rocket, smoke: Rocket }
 const DOT: Record<Tone, string> = {
@@ -31,13 +34,36 @@ function Node({ node, name, isPicked, onPick }: { node: JourneyNode; name: strin
   )
 }
 
+function Help({ stage, name }: { stage: Stage; name: string }) {
+  const help = STAGE_HELP[stage]
+  if (!help) return null
+  return (
+    <HoverCard openDelay={150} closeDelay={80}>
+      <HoverCardTrigger asChild>
+        <button className="absolute top-1.5 right-1.5 grid size-5 place-items-center rounded-full text-faint transition-colors duration-120 hover:text-text focus-visible:text-text" aria-label={`What ${name} does`}>
+          <CircleHelp size={13} />
+        </button>
+      </HoverCardTrigger>
+      <HoverCardContent align="start" className="w-72 p-3">
+        <p className="m-0 text-[13px] leading-[1.45] font-semibold text-text">{help.what}</p>
+        <ul className="m-0 mt-2 flex list-disc flex-col gap-1 pl-4 text-[12.5px] leading-[1.45] text-text-muted">
+          {help.can.map(c => <li key={c}>{c}</li>)}
+        </ul>
+      </HoverCardContent>
+    </HoverCard>
+  )
+}
+
 export function Journey({ nodes, picked, onPick }: { nodes: JourneyNode[]; picked: Stage; onPick: (stage: Stage) => void }) {
   return (
     <ol className="m-0 flex list-none items-start p-0">
       {nodes.map((n, i) => (
         <li key={n.stage} className="flex min-w-0 flex-1 items-start">
           {i > 0 && <i className={cn("mt-[25px] h-px w-2 shrink-0", nodes[i - 1]!.tone === "done" ? "bg-work" : "bg-line-strong")} />}
-          <Node node={n} name={STAGES[i]!} isPicked={picked === n.stage} onPick={() => onPick(n.stage)} />
+          <div className="relative flex min-w-0 flex-1">
+            <Node node={n} name={STAGES[i]!} isPicked={picked === n.stage} onPick={() => onPick(n.stage)} />
+            {picked === n.stage && <Help stage={n.stage} name={STAGES[i]!} />}
+          </div>
         </li>
       ))}
     </ol>
