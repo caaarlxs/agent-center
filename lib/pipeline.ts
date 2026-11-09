@@ -528,7 +528,7 @@ const fresh = async (key: string, runs: number, stage: Stage): Promise<PipelineS
   const prev = await stateOf(key)
   // The plan's units and to-do list, and the review's findings, stay with the ticket for the stages after it.
   return { ...EMPTY(key, runs, stage), summary: prev?.summary, history: prev?.history ?? [], units: prev?.units, checklist: prev?.checklist, checked: prev?.checked, scripts: prev?.scripts, contextImpact: prev?.contextImpact,
-    release: prev?.release, deployed: prev?.deployed, fixes: prev?.fixes, fixOf: prev?.fixOf, fixing: ["refine", "plan", "test", "smoke"].includes(stage) ? null : prev?.fixing, results: stage === "test" || stage === "smoke" ? undefined : prev?.results, children: prev?.children, parent: prev?.parent, auto: prev?.auto,
+    release: prev?.release, deployed: prev?.deployed, fixes: prev?.fixes, fixOf: prev?.fixOf, threads: prev?.threads, fixing: ["refine", "plan", "test", "smoke"].includes(stage) ? null : prev?.fixing, results: stage === "test" || stage === "smoke" ? undefined : prev?.results, children: prev?.children, parent: prev?.parent, auto: prev?.auto,
     ...(stage === "review" ? {} : { findings: prev?.findings, fixed: stage === "build" ? [] : prev?.fixed }) }
 }
 // A stage's session is the pipeline's, not yours: once it ends it leaves the
@@ -985,8 +985,15 @@ const ASK_MS = 5 * 60_000
 
 // Why a question cannot be asked now, or null. One a time; one left waiting by a
 // restart of the board lets the next go after a while.
-export function askRefusal(state: Pick<PipelineState, "sessionId" | "status" | "threads"> | null, about: string, q: string, now = Date.now()): string | null {
-  if (!state?.sessionId) return "No run to ask about"
+// The session that wrote what it is about: a finding, the last review's; a result, the last
+// test's (or check in prod); a question, the run that asked it (the one at hand).
+export function sessionOf(state: Pick<PipelineState, "sessionId" | "history">, about: string): string | null {
+  const kind = about.split(":")[0]
+  const by = kind === "finding" ? ["review"] : kind === "result" ? ["test", "smoke"] : null
+  return by ? ([...(state.history ?? [])].reverse().find(r => by.includes(r.stage) && r.sessionId)?.sessionId ?? null) : state.sessionId
+}
+export function askRefusal(state: Pick<PipelineState, "sessionId" | "status" | "threads" | "history"> | null, about: string, q: string, now = Date.now()): string | null {
+  if (!state || !sessionOf(state, about)) return "No run to ask about"
   if (state.status === "running") return "The agent is still at work: ask once it ends"
   if (!isAbout(about) || !q || q.length > 2000) return "Nothing to ask"
   const last = state.threads?.[about]?.at(-1)
@@ -997,11 +1004,12 @@ export async function askPipeline(key: string, about: string, text: string) {
   const state = await stateOf(key)
   const q = text.trim()
   const refusal = askRefusal(state, about, q)
-  if (refusal || !state?.sessionId) throw new Error(refusal ?? "No run to ask about")
+  const session = state && sessionOf(state, about)
+  if (refusal || !state || !session) throw new Error(refusal ?? "No run to ask about")
   const turns = state.threads?.[about] ?? []
   const from = turns.at(-1)?.session ?? null
   await save({ ...state, threads: { ...state.threads, [about]: [...turns, { q, a: null, at: Date.now() }] } })
-  const args = ["-p", "--resume", from ?? state.sessionId, ...(from ? [] : ["--fork-session"]), "--output-format", "json", "--permission-mode", "auto", ...askArgs(state.stage), "--", askPrompt(key, about, q)]
+  const args = ["-p", "--resume", from ?? session, ...(from ? [] : ["--fork-session"]), "--output-format", "json", "--permission-mode", "auto", ...askArgs(state.stage), "--", askPrompt(key, about, q)]
   const proc = spawn(await claudeBinary(), args, { cwd: dirOf(key), env: claudeEnv({ AGENT_CENTER_LAUNCH: "1" }), stdio: ["ignore", "pipe", "pipe"] })
   let out = ""
   proc.stdout?.on("data", d => (out += d))

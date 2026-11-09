@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { isStuck, releasedUnits, shippedWith, unitsNow, withUnits, testedIn, askPrompt, askRefusal, fixesNow, isAbout, testFix, unshipped, blocking, checkedByHand, checkedIn, isAdopted, toFixNow, MARK, answeredAfter, answersComment, argsFor, parseResult, pipelineKeyOf, stageToRun, unbuilt, withRun, questionsComment, snapshotOf, prodWarning, autoNext, linksFigma, impactRepos } from "../lib/pipeline"
+import { isStuck, releasedUnits, sessionOf, shippedWith, unitsNow, withUnits, testedIn, askPrompt, askRefusal, fixesNow, isAbout, testFix, unshipped, blocking, checkedByHand, checkedIn, isAdopted, toFixNow, MARK, answeredAfter, answersComment, argsFor, parseResult, pipelineKeyOf, stageToRun, unbuilt, withRun, questionsComment, snapshotOf, prodWarning, autoNext, linksFigma, impactRepos } from "../lib/pipeline"
 
 const questions = [
   { id: "Q1", question: "¿Cuál es el copy?", proposal: "El del ticket" },
@@ -392,13 +392,14 @@ describe("asking the agent about what it left", () => {
 })
 
 describe("askRefusal", () => {
-  const ended = { sessionId: "s", status: "ready" } as never
+  const history = [{ n: 1, stage: "test", sessionId: "s" }]
+  const ended = { sessionId: "s", status: "ready", history } as never
   it("asks one thing at a time, about something of a run that ended", () => {
     expect(askRefusal(ended, "result:CA3", "¿Qué?")).toBeNull()
     expect(askRefusal(null, "result:CA3", "¿Qué?")).toBe("No run to ask about")
-    expect(askRefusal({ sessionId: "s", status: "running" } as never, "result:CA3", "¿Qué?")).toBe("The agent is still at work: ask once it ends")
+    expect(askRefusal({ sessionId: "s", status: "running", history } as never, "result:CA3", "¿Qué?")).toBe("The agent is still at work: ask once it ends")
     expect(askRefusal(ended, "plan", "¿Qué?")).toBe("Nothing to ask")
-    const waiting = { sessionId: "s", status: "ready", threads: { "result:CA3": [{ q: "a", a: null, at: 1000 }] } } as never
+    const waiting = { sessionId: "s", status: "ready", history, threads: { "result:CA3": [{ q: "a", a: null, at: 1000 }] } } as never
     expect(askRefusal(waiting, "result:CA3", "¿Y?", 2000)).toBe("It is still answering the last question")
     expect(askRefusal(waiting, "result:CA3", "¿Y?", 1000 + 6 * 60_000)).toBeNull()
   })
@@ -503,5 +504,14 @@ describe("Jira after a fix", () => {
   })
   it("a build listing only its new units keeps the ones before", () => {
     expect(withUnits([u("U1"), u("U2")], [{ ...u("U2"), title: "new" }, u("X1")]).map(x => `${x.id}:${x.title}`)).toEqual(["U1:U1", "U2:new", "X1:X1"])
+  })
+})
+
+describe("sessionOf", () => {
+  const history = [{ n: 1, stage: "review", sessionId: "rev" }, { n: 2, stage: "build", sessionId: "bld" }, { n: 3, stage: "test", sessionId: "tst" }] as never
+  it("asks the session that wrote it, whatever stage the ticket is at now", () => {
+    expect(sessionOf({ sessionId: "now", history }, "finding:F1")).toBe("rev")
+    expect(sessionOf({ sessionId: "now", history }, "result:CA3")).toBe("tst")
+    expect(sessionOf({ sessionId: "now", history }, "question:Q1")).toBe("now")
   })
 })

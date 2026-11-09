@@ -48,6 +48,10 @@ const FOLLOW_MS = 5_000
 const IDLE_MS = 30_000
 const CONFIRM_MS = 4_000
 
+// Something changed on the ticket from inside its section: the section reads it again.
+const CHANGED = "pipeline-changed"
+const changed = () => window.dispatchEvent(new Event(CHANGED))
+
 export async function act(path: string, body: object, done: string) {
   try {
     await post(path, body)
@@ -107,7 +111,7 @@ function Decisions({ ticketKey, state, onSent }: { ticketKey: string; state: Pip
   const send = async () => {
     if (isBusy) return
     setBusy(true)
-    if (await act("/api/pipeline/answer", { key: ticketKey, answers: changed }, "Answers sent to Jira: refining again")) onSent()
+    if (await act("/api/pipeline/answer", { key: ticketKey, answers: changed }, "Answers sent to Jira: the stage runs again")) onSent()
     setBusy(false)
   }
   const change = (id: string, text: string | undefined) =>
@@ -306,13 +310,15 @@ function Findings({ state, onFix, onPublish }: { state: PipelineState; onFix: (i
   const fixed = new Set(state.fixed ?? [])
   const published = new Set((state as { published?: string[] }).published ?? [])
   const canChoose = state.stage === "review" && (state.status === "ready" || state.status === "needs-info") && (isJob(state) ? !!onPublish : state.status === "ready")
-  const [chosen, setChosen] = useState(() => new Set(findings.filter(f => f.severity !== "minor").map(f => f.id)))
+  const [picked, setChosen] = useState(() => new Set(findings.filter(f => f.severity !== "minor").map(f => f.id)))
+  // What is published already is never chosen again.
+  const chosen = new Set([...picked].filter(id => !published.has(id)))
   const choose = (id: string) => setChosen(c => (c.has(id) ? new Set([...c].filter(x => x !== id)) : new Set([...c, id])))
   const isBlocking = findings.some(f => chosen.has(f.id) && f.severity !== "minor")
   return (
     <div className="flex flex-col gap-1">
       <ol className="m-0 list-none p-0">
-        {findings.map(f => <FindingRow key={f.id} finding={f} unit={state.units?.find(u => u.id === f.unit)} isFixed={fixed.has(f.id)} isPublished={published.has(f.id)} isChosen={canChoose ? chosen.has(f.id) : null} onChoose={() => choose(f.id)}
+        {findings.map(f => <FindingRow key={f.id} finding={f} unit={state.units?.find(u => u.id === f.unit)} isFixed={fixed.has(f.id)} isPublished={published.has(f.id)} isChosen={canChoose && !published.has(f.id) ? chosen.has(f.id) : null} onChoose={() => choose(f.id)}
           ask={isJob(state) ? undefined : <Ask ticketKey={state.key} about={`finding:${f.id}`} turns={state.threads?.[`finding:${f.id}`]} />} />)}
       </ol>
       {canChoose && chosen.size > 0 && onPublish && <PublishButton n={chosen.size} onGo={() => onPublish([...chosen])} />}
@@ -587,7 +593,7 @@ function ResultRow({ result: r, ticketKey, canCheck, turns }: { result: TestResu
           <span className="text-[13px] leading-[1.45]">{r.criterion}</span>
         </button>
         {r.status === "untested" && canCheck && (
-          <button className="shrink-0 text-xs font-semibold text-text-muted hover:text-text" onClick={() => void act("/api/pipeline/checked", { key: ticketKey, ids: [r.id] }, "Checked by hand")}>Checked by hand</button>
+          <button className="shrink-0 text-xs font-semibold text-text-muted hover:text-text" onClick={() => void act("/api/pipeline/checked", { key: ticketKey, ids: [r.id] }, "Checked by hand").then(ok => ok && changed())}>Checked by hand</button>
         )}
       </div>
       {r.summary && r.status !== "pass" && <p className="m-0 ml-6 pb-2 text-[13px] leading-[1.55] text-text-muted">{r.summary}</p>}
@@ -673,9 +679,10 @@ function StagePanel({ stage, state, preview, onRun, onStep }: { stage: Stage; st
 // that moves it on (Retry and Skip when a release failed; the log of an agent at work).
 function Now({ state, preview, now, onRun, onStep }: { state: PipelineState; preview: Release | null; now: number; onRun: (stage?: Stage) => void; onStep: OnStep }) {
   const card = useLive(l => l.snapshot?.cards.find(c => c.id === state.sessionId))
-  const activity = useActivity(state.key)
   const isRunning = state.status === "running"
   const release = isRelease(state.stage) ? state.release : null
+  // Asked only while an agent works: a release or a stage that ended has no steps to follow.
+  const activity = useActivity(state.key, isRunning && !release, isJob(state))
   const step = isRunning && !release ? (activity?.steps.findLast(s => s.isOpen) ?? activity?.steps.at(-1)) : undefined
   // Done with its stage, it says what comes next (the journey already says what it did).
   const line = step?.text ?? (state.status === "ready" && !toFix(state).length ? statusText(state) : liveLine(state, card))
@@ -846,7 +853,10 @@ export function Pipeline({ ticket, onTaken }: { ticket: Ticket; onTaken: () => v
   useEffect(() => {
     void load()
     const timer = setInterval(() => void load(), isRunning ? FOLLOW_MS : IDLE_MS)
-    return () => clearInterval(timer)
+    // Something you did deep in the section (Checked by hand…): read it again at once.
+    const now = () => void load()
+    window.addEventListener(CHANGED, now)
+    return () => (clearInterval(timer), window.removeEventListener(CHANGED, now))
   }, [ticket.key, isRunning])
   if (!data) return null
   const state = data.state

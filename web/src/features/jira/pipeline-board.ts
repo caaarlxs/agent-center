@@ -77,9 +77,10 @@ function factOf(stage: Stage, state: PipelineState, preview: Release | null): st
   if (stage === "plan") return count(passesOf(state.history ?? [], "plan").at(-1)?.units ?? units.length, "unit")
   if (stage === "build") return count(units.filter(u => u.pr).length, "PR")
   if (stage === "review") {
-    const findings = state.findings ?? []
-    const fix = toFix(state).length
-    return fix ? `${fix} to fix` : findings.length ? `${findings.length} minor` : "Clean"
+    // By their severity, whatever stage the ticket is at now; the ones a build fixed since are not counted.
+    const open = (state.findings ?? []).filter(f => !state.fixed?.includes(f.id))
+    const fix = open.filter(f => f.severity !== "minor").length
+    return fix ? `${fix} to fix` : open.length ? `${open.length} minor` : "Clean"
   }
   if (state.stage === (stage === "staging" ? "test" : "smoke")) return testFact(state)
   const release = state.release?.env === stage ? state.release : preview?.env === stage ? preview : null
