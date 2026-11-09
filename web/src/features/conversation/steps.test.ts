@@ -30,3 +30,8 @@ test("a turn with no answer text, or no steps, folds nothing", () => {
   expect(foldedSteps([ask("u1"), run("t1"), ask("u2")], false).heads.size).toBe(0)
   expect(foldedSteps([ask("u1"), say("a1"), ask("u2")], false).heads.size).toBe(0)
 })
+
+test("test runs fold with the steps", () => {
+  const shown = [ask("u1"), run("t1"), other("x1", "tests"), other("x2", "tests"), say("a1")]
+  expect(foldedSteps(shown, false).heads.get("t1")?.keys).toEqual(["t1", "x1", "x2"])
+})
