@@ -479,7 +479,7 @@ const fresh = async (key: string, runs: number, stage: Stage): Promise<PipelineS
   const prev = await stateOf(key)
   // The plan's units and to-do list, and the review's findings, stay with the ticket for the stages after it.
   return { ...EMPTY(key, runs, stage), summary: prev?.summary, history: prev?.history ?? [], units: prev?.units, checklist: prev?.checklist, checked: prev?.checked, scripts: prev?.scripts, contextImpact: prev?.contextImpact,
-    release: prev?.release, deployed: prev?.deployed, fixes: prev?.fixes, fixOf: prev?.fixOf, children: prev?.children, parent: prev?.parent, auto: prev?.auto,
+    release: prev?.release, deployed: prev?.deployed, fixes: prev?.fixes, fixOf: prev?.fixOf, results: prev?.results, children: prev?.children, parent: prev?.parent, auto: prev?.auto,
     ...(stage === "review" ? {} : { findings: prev?.findings, fixed: stage === "build" ? [] : prev?.fixed }) }
 }
 // A stage's session is the pipeline's, not yours: once it ends it leaves the
@@ -801,6 +801,8 @@ export async function startPipeline(key: string, take = false, asked?: Stage, ch
   if (stage === "staging") await stagingWaits(state!)
   if (isRelease(stage)) return startRelease(state!, stage)
   await writeFixes(key, state, stage, chosen)
+  // At work at once, so the board shows it; the run then reads the ticket (it takes a while) and starts the agent.
+  await save({ ...(await fresh(key, (state?.runs ?? 0) + 1, stage)), summary: state?.summary })
   void run(key, (state?.runs ?? 0) + 1, stage, auto)
 }
 

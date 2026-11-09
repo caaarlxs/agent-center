@@ -767,6 +767,10 @@ const AHEAD = STAGE_KEYS.map(stage => ({ stage, tone: "todo" as const, fact: nul
 const span = (runs: Run[], now: number) => (runs.length ? Math.max(...runs.map(r => r.endedAt ?? now)) - Math.min(...runs.map(r => r.startedAt)) : 0)
 const hours = (ms: number) => (ms < 3_600_000 ? `${Math.max(1, Math.round(ms / 60_000))} min` : `${Math.round(ms / 3_600_000)} h`)
 
+// A stage just started, as the board will have it: at work, from now.
+export const startedState = (state: PipelineState, stage?: Stage): PipelineState =>
+  ({ ...state, stage: stage ?? state.stage, status: "running", startedAt: Date.now(), endedAt: null, error: null, sessionId: null, questions: [] })
+
 // ---------- the section ----------
 
 export function Pipeline({ ticket, onTaken }: { ticket: Ticket; onTaken: () => void }) {
@@ -786,7 +790,14 @@ export function Pipeline({ ticket, onTaken }: { ticket: Ticket; onTaken: () => v
   const state = data.state
   const loadSoon = () => setTimeout(() => void load(), 800)
   const step: OnStep = async (id, action, value) => (await act("/api/pipeline/step", { key: ticket.key, step: id, action, value }, action === "skip" ? "Skipped" : "On it")) && loadSoon()
-  const start = async (stage?: Stage, fix?: string[]) => (await act("/api/pipeline/start", { key: ticket.key, stage, fix }, stage ? startingText(stage, state?.stage) : "A session starts")) && (setPicked(null), loadSoon())
+  // At work at once on screen (the board confirms it a moment later), and back as it was if it refuses.
+  const start = async (stage?: Stage, fix?: string[]) => {
+    const before = data
+    if (state) setData({ ...data, state: startedState(state, stage) })
+    setPicked(null)
+    if (await act("/api/pipeline/start", { key: ticket.key, stage, fix }, stage ? startingText(stage, state?.stage) : "A session starts")) loadSoon()
+    else setData(before)
+  }
   const reset = () => confirmReset(async () => (await act("/api/pipeline/reset", { key: ticket.key }, "Started over: the comments stay in Jira")) && void load())
   const runs = state?.history ?? []
   const toggle = (f: Fold) => setFold(open => (open === f ? null : f))
