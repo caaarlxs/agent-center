@@ -108,6 +108,7 @@ Lucide's names, and must be in `web/src/features/guide/icons.ts`.
 - {plus} **What you hand it**: paste a ticket, its link or PR links, as many times as you like; each turns into a row with its title, and the Reviewer adds what you left out (the ticket the PRs name, or the open PRs that name the ticket or its children). Untick what it should not take; `↵` sends it. · 2026-11-05
 - {git-pull-request} **Publish to the PRs**: in a review job, tick the findings and Publish to the PRs posts them as a review on each PR, each on its line where it has one; it asks twice. · 2026-11-05
 - {circle-arrow-right} **Continue in the pipeline**: a refinement, plan or build job of your ticket goes on in the pipeline where it ended, at the next stage's door, without doing it again; it asks twice. · 2026-11-05
+- {message-circle-question} **Ask the agent**: under each question it asks, each test result that is not a pass and each review finding, Ask opens a short chat with the agent that wrote it, in its own session (it knows the ticket, the code and what it did) and only reading; the answers stay on the ticket. Questions and results also come with a plain-words why. · 2026-11-09
 - {lock} **Limits**: agents never merge, push to main or touch prod: only the board does, step by step. Start over clears the runs and the labels; the comments stay in Jira.
 
 ## {panel-left} Sidebar

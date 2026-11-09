@@ -58,7 +58,8 @@ export const isStage = (v: unknown): v is Stage => STAGE_NAMES.includes(v as Sta
 // The stages the board runs itself: a release to an environment.
 export type AgentStage = Exclude<Stage, Env>
 const isRelease = (stage: Stage): stage is Env => stage === "staging" || stage === "prod"
-export type Question = { id: string; question: string; proposal: string }
+// context: why it is asked and what the answer changes, for a person.
+export type Question = { id: string; question: string; proposal: string; context?: string }
 // A unit of work: one repo, one PR.
 export type Unit = { id: string; repo: string; subtask: string | null; subtasks?: string[]; branch: string; title: string; dependsOn: string[]; status?: "done" | "failed"; pr?: string | null }
 // An item of the plan's to-do list: what gets done, in plain words, and its unit.
@@ -73,7 +74,8 @@ export type Severity = "blocker" | "major" | "minor"
 export type Finding = { id: string; unit: string | null; severity: Severity; file: string | null; line: number | null; title: string; detail: string; fix: string }
 // What a test (in staging) or a smoke check (in prod) found of each criterion.
 // untested: the test could not try it (no data, no device), which is no failure: a person checks it by hand.
-export type TestResult = { id: string; criterion: string; status: "pass" | "fail" | "untested"; evidence: string; files?: EvidenceFile[] }
+// summary: what it tried, expected and found, in plain words; evidence: the technical detail.
+export type TestResult = { id: string; criterion: string; status: "pass" | "fail" | "untested"; evidence: string; summary?: string; files?: EvidenceFile[] }
 // A rule of the team's context (its repo) that the ticket makes untrue: the file and the words.
 // quote: the words of today it makes untrue; null for a new code rule, which says what it proposes instead.
 export type ContextImpact = { file: string; quote: string | null; why: string; proposal: string | null }
@@ -111,7 +113,10 @@ export type PipelineState = {
   auto?: boolean // runs on by itself, stage after stage, until the review (autoNext)
   error: string | null
   history?: Run[] // every run since the last start over, the latest last
+  threads?: Record<string, Turn[]> // what a person asked the agent about a question, result or finding of this run (askPipeline)
 }
+// One question to the agent about what it left, and its answer (null while it thinks).
+export type Turn = { q: string; a: string | null; at: number; error?: string | null; session?: string | null }
 
 export const MARK = "🤖 Agent Center"
 // The first words of a stage's prompt: they tell its session from yours.
@@ -133,7 +138,8 @@ export const AS_AGENT = `Trabajas sin una persona delante:
 - No narres entre pasos ni escribas un mensaje final: tu resultado son los ficheros.
 - Escribe para el siguiente agente: listas, campos y rutas, sin prosa ni repeticiones.
 - Lee solo lo que necesitas: \`git grep -n\` y rangos de líneas (\`git show <ref>:<fichero> | sed -n 'a,bp'\`), no ficheros enteros.
-- El resumen (\`<etapa>.summary.md\`) es lo único para una persona, y va a Jira: lo que debe saber, en 300 palabras como máximo.`
+- El resumen (\`<etapa>.summary.md\`) es lo único para una persona, y va a Jira: lo que debe saber, en 300 palabras como máximo.
+- Lo que lee una persona va en lenguaje normal, sin jerga ni nombres de campos (y si un término técnico hace falta, lo explicas en la misma frase): el resumen, cada pregunta y su \`context\` (por qué lo preguntas y qué cambia según la respuesta), y el \`summary\` de cada resultado de un test (qué probaste, qué esperabas, qué pasó y por qué importa). El detalle técnico va en \`evidence\`.`
 
 // Each stage: its verb in the prompt, what its comments say, the label it
 // leaves when it is done (and the ones it takes off), its model and effort,
@@ -147,7 +153,7 @@ const STAGE: Record<AgentStage, StageDef> = {
 1. Lee ${join(STAGES_DIR, "refine.md")} y ${join(STAGES_DIR, "environment.md")}, y síguelos.
 2. El ticket entero (descripción, comentarios, padre, hijos y links) está en ${join(dir, "ticket.md")}. Las respuestas a preguntas anteriores están en sus comentarios: no vuelvas a preguntar lo que ya está respondido.
 3. Escribe el refinamiento en ${join(dir, "refine.md")} y el resumen en ${join(dir, "refine.summary.md")}.
-4. Escribe al final ${join(dir, "refine.json")}: {"verdict": "ready" | "needs-info", "questions": [{"id": "Q1", "question": "...", "proposal": "..."}]}. Solo preguntas de PRODUCTO; las técnicas las decides tú.`,
+4. Escribe al final ${join(dir, "refine.json")}: {"verdict": "ready" | "needs-info", "questions": [{"id": "Q1", "question": "...", "context": "...", "proposal": "..."}]}. Solo preguntas de PRODUCTO; las técnicas las decides tú.`,
   },
   plan: {
     verb: "planificar", title: "Plan", done: "planificado: listo para construir", label: LABELS.planned, unlabel: [LABELS.ready, LABELS.built, LABELS.reviewed], model: "claude-opus-5-5", effort: "medium", writes: false,
@@ -186,7 +192,7 @@ const STAGE: Record<AgentStage, StageDef> = {
 2. Los criterios de aceptación y el plan de verificación están en ${join(dir, "refine.md")}; el plan, en ${join(dir, "plan.md")}; lo desplegado, en ${join(dir, "build.json")}.
 3. Solo staging. Nunca prod: ni con STAGE=prod, ni con sus tablas, ni con sus URLs.
 4. Escribe el informe en ${join(dir, "test.md")} y el resumen en ${join(dir, "test.summary.md")}.
-5. Escribe al final ${join(dir, "test.json")}: {"verdict": "ready" | "needs-info", "questions": [...], "results": [{"id": "T1", "criterion": "...", "status": "pass" | "fail" | "untested", "evidence": "...", "files": [{"path": "evidence/T1-desktop.png", "caption": "..."}]}]}. Guarda la evidencia de cada criterio en ${join(dir, "evidence")}.`,
+5. Escribe al final ${join(dir, "test.json")}: {"verdict": "ready" | "needs-info", "questions": [...], "results": [{"id": "T1", "criterion": "...", "status": "pass" | "fail" | "untested", "summary": "...", "evidence": "...", "files": [{"path": "evidence/T1-desktop.png", "caption": "..."}]}]}. Guarda la evidencia de cada criterio en ${join(dir, "evidence")}.`,
   },
   smoke: {
     verb: "comprobar", title: "Comprobación en prod", done: "comprobado en prod", label: LABELS.live, unlabel: [], model: "claude-opus-5-5", effort: "medium", writes: false,
@@ -196,7 +202,7 @@ const STAGE: Record<AgentStage, StageDef> = {
 2. Los criterios de aceptación están en ${join(dir, "refine.md")}; la prueba de staging, en ${join(dir, "test.md")}.
 3. Solo lectura: en prod no creas, cambias ni borras nada.
 4. Escribe el informe en ${join(dir, "smoke.md")} y el resumen en ${join(dir, "smoke.summary.md")}.
-5. Escribe al final ${join(dir, "smoke.json")}: {"verdict": "ready" | "needs-info", "questions": [...], "results": [{"id": "P1", "criterion": "...", "status": "pass" | "fail" | "untested", "evidence": "...", "files": [{"path": "evidence/P1-desktop.png", "caption": "..."}]}]}. Guarda la evidencia de cada criterio en ${join(dir, "evidence")}.`,
+5. Escribe al final ${join(dir, "smoke.json")}: {"verdict": "ready" | "needs-info", "questions": [...], "results": [{"id": "P1", "criterion": "...", "status": "pass" | "fail" | "untested", "summary": "...", "evidence": "...", "files": [{"path": "evidence/P1-desktop.png", "caption": "..."}]}]}. Guarda la evidencia de cada criterio en ${join(dir, "evidence")}.`,
   },
 }
 export const verbOf = (stage: AgentStage) => STAGE[stage].verb
@@ -269,7 +275,7 @@ const orderIn = (v: unknown): OrderItem[] =>
 const resultsIn = (v: unknown): TestResult[] =>
   listOf(v)
     .filter(r => textOf(r?.criterion))
-    .map((r, i) => ({ id: String(r.id ?? `T${i + 1}`), criterion: textOf(r.criterion), status: r.status === "pass" || r.status === "untested" ? (r.status as TestResult["status"]) : ("fail" as const), evidence: textOf(r.evidence), files: filesIn(r.files) }))
+    .map((r, i) => ({ id: String(r.id ?? `T${i + 1}`), criterion: textOf(r.criterion), status: r.status === "pass" || r.status === "untested" ? (r.status as TestResult["status"]) : ("fail" as const), evidence: textOf(r.evidence), ...(textOf(r.summary) ? { summary: textOf(r.summary) } : {}), files: filesIn(r.files) }))
 // Only with the words it makes untrue: else it is no impact at all.
 const impactIn = (v: unknown): ContextImpact[] =>
   listOf(v).filter(x => textOf(x?.file) && (textOf(x?.quote) || textOf(x?.proposal)))
@@ -317,7 +323,7 @@ export function parseResult(text: string, stage: Stage): Result {
   if (data?.verdict !== "ready" && data?.verdict !== "needs-info") throw new Error(`${stage}.json has no verdict`)
   const questions: Question[] = listOf(data.questions)
     .filter(q => typeof q?.question === "string" && q.question.trim())
-    .map((q, i) => ({ id: String(q.id ?? `Q${i + 1}`), question: q.question.trim(), proposal: String(q.proposal ?? "").trim() }))
+    .map((q, i) => ({ id: String(q.id ?? `Q${i + 1}`), question: q.question.trim(), proposal: String(q.proposal ?? "").trim(), ...(textOf(q.context) ? { context: textOf(q.context) } : {}) }))
   if (data.verdict === "needs-info" && !questions.length) throw new Error(`${stage}.json needs info but asks nothing`)
   const units = unitsIn(data.units, stage === "build")
   const checklist: ChecklistItem[] = listOf(data.checklist)
@@ -329,7 +335,7 @@ export function parseResult(text: string, stage: Stage): Result {
 
 export const questionsComment = (key: string, questions: Question[], stage: AgentStage) =>
   `${MARK} · ${STAGE[stage].title} de ${key}\n\nAntes de implementar faltan estas decisiones. Cada una trae una propuesta: si vale, basta con responder "ok".\n\n` +
-  questions.map(q => `${q.id}. ${q.question}\nPropuesta: ${q.proposal || "—"}`).join("\n\n")
+  questions.map(q => `${q.id}. ${q.question}${q.context ? `\nPor qué: ${q.context}` : ""}\nPropuesta: ${q.proposal || "—"}`).join("\n\n")
 
 // Your answers: a question left blank takes its proposal.
 export const answersComment = (questions: Question[], answers: Record<string, string>) =>
@@ -811,6 +817,62 @@ export async function checkByHand(key: string, ids: string[]) {
 export async function stopAuto(key: string) {
   const state = await stateOf(key)
   if (state) await save({ ...state, auto: false })
+}
+
+// ---------- asking the agent about what it left ----------
+
+// About one thing the run left: a question it asked, a test's result, a review's finding.
+const ABOUT_WORDS = { question: "la pregunta", result: "el resultado", finding: "el hallazgo" } as const
+export const isAbout = (about: string) => /^(question|result|finding):[\w.-]{1,40}$/.test(about)
+export const askPrompt = (key: string, about: string, text: string) => {
+  const [kind, id] = about.split(":") as [keyof typeof ABOUT_WORDS, string]
+  return `${TAG} ${key} · pregunta
+
+Una persona del equipo te pregunta sobre ${ABOUT_WORDS[kind]} ${id} de lo que dejaste: «${text}».
+
+Contéstale en español, en lenguaje claro y en 150 palabras como máximo. Sin jerga: si usas un término técnico, explícalo en la misma frase. Si no lo sabes, dilo. No cambies nada: solo lee.`
+}
+// The agent answers in the run's own session, forked (the run's stays as it was); a
+// follow-up goes on in that fork. It only reads: no edits, no scripts, no AWS.
+const askArgs = (stage: Stage) => ["--setting-sources", "project,local", "--strict-mcp-config", "--model", isRelease(stage) ? "claude-opus-5-5" : STAGE[stage].model, "--effort", "low",
+  "--disallowedTools", ...NEVER, "Edit", "Write", "NotebookEdit", "Bash(git push:*)", "Bash(git commit:*)", "Bash(gh pr create:*)", "Bash(aws:*)", "Bash(python3 fixtures.py:*)", "Bash(rm:*)"]
+const ASK_MS = 5 * 60_000
+
+// Why a question cannot be asked now, or null. One a time; one left waiting by a
+// restart of the board lets the next go after a while.
+export function askRefusal(state: Pick<PipelineState, "sessionId" | "status" | "threads"> | null, about: string, q: string, now = Date.now()): string | null {
+  if (!state?.sessionId) return "No run to ask about"
+  if (state.status === "running") return "The agent is still at work: ask once it ends"
+  if (!isAbout(about) || !q || q.length > 2000) return "Nothing to ask"
+  const last = state.threads?.[about]?.at(-1)
+  return last && last.a === null && !last.error && now - last.at < ASK_MS ? "It is still answering the last question" : null
+}
+
+export async function askPipeline(key: string, about: string, text: string) {
+  const state = await stateOf(key)
+  const q = text.trim()
+  const refusal = askRefusal(state, about, q)
+  if (refusal || !state?.sessionId) throw new Error(refusal ?? "No run to ask about")
+  const turns = state.threads?.[about] ?? []
+  const from = turns.at(-1)?.session ?? null
+  await save({ ...state, threads: { ...state.threads, [about]: [...turns, { q, a: null, at: Date.now() }] } })
+  const args = ["-p", "--resume", from ?? state.sessionId, ...(from ? [] : ["--fork-session"]), "--output-format", "json", "--permission-mode", "auto", ...askArgs(state.stage), "--", askPrompt(key, about, q)]
+  const proc = spawn(await claudeBinary(), args, { cwd: dirOf(key), env: claudeEnv({ AGENT_CENTER_LAUNCH: "1" }), stdio: ["ignore", "pipe", "pipe"] })
+  let out = ""
+  proc.stdout?.on("data", d => (out += d))
+  const timer = setTimeout(() => proc.kill(), ASK_MS)
+  proc.on("exit", () => void answered(key, about, out).finally(() => clearTimeout(timer)))
+}
+
+// Its answer into the thread (or why there is none); its fork, for the next question.
+async function answered(key: string, about: string, out: string) {
+  const state = await stateOf(key)
+  const turns = state?.threads?.[about]
+  if (!state || !turns?.length) return
+  const data = jsonOf(out.trim().split("\n").at(-1) ?? null)
+  const answer = typeof data?.result === "string" && !data.is_error ? data.result.trim() : null
+  const turn = { ...turns.at(-1)!, a: answer, session: data?.session_id ?? turns.at(-1)!.session ?? null, error: answer ? null : "The agent gave no answer: ask again" }
+  await save({ ...state, threads: { ...state.threads, [about]: [...turns.slice(0, -1), turn] } })
 }
 
 // ---------- the release ----------

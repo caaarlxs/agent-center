@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { blocking, checkedByHand, checkedIn, isAdopted, toFixNow, MARK, answeredAfter, answersComment, argsFor, parseResult, pipelineKeyOf, stageToRun, unbuilt, withRun, questionsComment, snapshotOf, prodWarning, autoNext, linksFigma, impactRepos } from "../lib/pipeline"
+import { askPrompt, askRefusal, isAbout, blocking, checkedByHand, checkedIn, isAdopted, toFixNow, MARK, answeredAfter, answersComment, argsFor, parseResult, pipelineKeyOf, stageToRun, unbuilt, withRun, questionsComment, snapshotOf, prodWarning, autoNext, linksFigma, impactRepos } from "../lib/pipeline"
 
 const questions = [
   { id: "Q1", question: "¿Cuál es el copy?", proposal: "El del ticket" },
@@ -360,5 +360,46 @@ describe("criteria the test could not try", () => {
     const checked = checkedByHand(results, ["T2"], "2026-11-09")
     expect(checked[1]).toMatchObject({ status: "pass", evidence: "Comprobado a mano el 2026-11-09. No hay set de asesor" })
     expect(stageToRun({ ...(tested as object), results: checked } as never, "prod")).toBe("prod")
+  })
+})
+
+describe("what a person reads", () => {
+  it("each question says why it is asked, and each result what happened, in plain words", () => {
+    const r = parseResult(JSON.stringify({ verdict: "needs-info", questions: [{ question: "¿A?", proposal: "Sí", context: "Si es sí, el PDF cambia." }] }), "refine")
+    expect(r.questions[0]).toEqual({ id: "Q1", question: "¿A?", proposal: "Sí", context: "Si es sí, el PDF cambia." })
+    const t = parseResult(JSON.stringify({ verdict: "ready", results: [{ criterion: "c", status: "fail", evidence: "orgType", summary: "El asesor lo ve en inglés." }] }), "test")
+    expect(t.results[0]!.summary).toBe("El asesor lo ve en inglés.")
+  })
+  it("the questions in Jira carry their context", () => {
+    expect(questionsComment("PP-1", [{ id: "Q1", question: "¿A?", proposal: "Sí", context: "Cambia el PDF." }], "refine")).toContain("Q1. ¿A?\nPor qué: Cambia el PDF.\nPropuesta: Sí")
+  })
+})
+
+describe("asking the agent about what it left", () => {
+  it("names what it is about and keeps it to reading", () => {
+    const text = askPrompt("PP-1", "result:CA3", "¿Qué es orgType?")
+    expect(text.startsWith("[Pipeline] PP-1 · pregunta")).toBe(true)
+    expect(text).toContain("el resultado CA3")
+    expect(text).toContain("«¿Qué es orgType?»")
+    expect(text).toContain("No cambies nada")
+  })
+  it("only about what is there", () => {
+    expect(isAbout("question:Q2")).toBe(true)
+    expect(isAbout("finding:F1")).toBe(true)
+    expect(isAbout("result:CA3")).toBe(true)
+    expect(isAbout("plan")).toBe(false)
+  })
+})
+
+describe("askRefusal", () => {
+  const ended = { sessionId: "s", status: "ready" } as never
+  it("asks one thing at a time, about something of a run that ended", () => {
+    expect(askRefusal(ended, "result:CA3", "¿Qué?")).toBeNull()
+    expect(askRefusal(null, "result:CA3", "¿Qué?")).toBe("No run to ask about")
+    expect(askRefusal({ sessionId: "s", status: "running" } as never, "result:CA3", "¿Qué?")).toBe("The agent is still at work: ask once it ends")
+    expect(askRefusal(ended, "plan", "¿Qué?")).toBe("Nothing to ask")
+    const waiting = { sessionId: "s", status: "ready", threads: { "result:CA3": [{ q: "a", a: null, at: 1000 }] } } as never
+    expect(askRefusal(waiting, "result:CA3", "¿Y?", 2000)).toBe("It is still answering the last question")
+    expect(askRefusal(waiting, "result:CA3", "¿Y?", 1000 + 6 * 60_000)).toBeNull()
   })
 })

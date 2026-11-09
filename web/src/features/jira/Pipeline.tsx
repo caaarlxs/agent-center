@@ -30,7 +30,7 @@ import { doingText } from "@/features/conversation/session-events"
 import { ago } from "@/features/session/state"
 import { repoDot } from "@/features/session/state"
 import type { Helper, Step } from "@server/activity"
-import type { ChecklistItem, Finding, PipelineState, PlanScript, Run, Severity, Stage, TestResult, Unit } from "@server/pipeline"
+import type { ChecklistItem, Finding, PipelineState, PlanScript, Run, Severity, Stage, TestResult, Turn, Unit } from "@server/pipeline"
 import type { Check as BoardCheck } from "@server/checks"
 import { MODELS } from "@/features/prompt/Settings"
 import { PipelineMark, liveLine, startText, startingText, statusText } from "./PipelineMark"
@@ -38,6 +38,7 @@ import { STAGE_KEYS, STAGES, costOf, dollars, isRelease, journeyOf, nextStage, s
 import { ReleaseRail, ReleaseSteps, SkipFailed, StepAtHand, type After } from "./Release"
 import { Journey } from "./Journey"
 import { Evidence } from "./Evidence"
+import { Ask, isWaiting } from "./Ask"
 import type { Release } from "@server/release"
 
 type Data = { state: PipelineState | null; refine: string | null; plan: string | null; build: string | null; review: string | null; test: string | null; smoke: string | null; preview: Release | null }
@@ -73,13 +74,14 @@ export const openLog = (id: string) => (dialog.set(null), openSession(id))
 
 // ---------- the decisions ----------
 
-function Decision({ n, question, proposal, text, onChange }: { n: number; question: string; proposal: string; text: string | undefined; onChange: (text: string | undefined) => void }) {
+function Decision({ n, question, context, proposal, text, onChange, ask }: { n: number; question: string; context?: string; proposal: string; text: string | undefined; onChange: (text: string | undefined) => void; ask: ReactNode }) {
   const isChanging = text !== undefined
   return (
     <li className="flex flex-col gap-2.5 border-t border-line py-4 first:border-t-0 first:pt-1">
       <p className="m-0 flex gap-2.5 text-[13.5px] leading-[1.5] text-text">
         <span className="w-4 shrink-0 text-right font-mono text-xs leading-[1.7] text-faint">{n}</span>{question}
       </p>
+      {context && <p className="m-0 ml-[26px] text-[12.5px] leading-[1.55] text-text-muted">{context}</p>}
       <div className="ml-[26px] flex flex-col gap-1.5">
         {isChanging ? (
           <textarea autoFocus value={text} onChange={e => onChange(e.target.value)} rows={2}
@@ -91,6 +93,7 @@ function Decision({ n, question, proposal, text, onChange }: { n: number; questi
           onClick={() => onChange(isChanging ? undefined : proposal)}>
           {isChanging ? "Keep the proposal" : "Change"}
         </button>
+        {ask}
       </div>
     </li>
   )
@@ -113,7 +116,8 @@ function Decisions({ ticketKey, state, onSent }: { ticketKey: string; state: Pip
     <div className="flex flex-col" onKeyDown={e => e.key === "Enter" && (e.metaKey || e.ctrlKey) && (e.preventDefault(), void send())}>
       <h3 className="m-0 mb-2 text-[15px] font-semibold tracking-[-0.01em]">{count} decision{count === 1 ? "" : "s"} for you</h3>
       <ol className="m-0 list-none p-0">
-        {state.questions.map((q, i) => <Decision key={q.id} n={i + 1} question={q.question} proposal={q.proposal} text={changed[q.id]} onChange={t => change(q.id, t)} />)}
+        {state.questions.map((q, i) => <Decision key={q.id} n={i + 1} question={q.question} context={q.context} proposal={q.proposal} text={changed[q.id]} onChange={t => change(q.id, t)}
+          ask={<Ask ticketKey={ticketKey} about={`question:${q.id}`} turns={state.threads?.[`question:${q.id}`]} />} />)}
       </ol>
       <div className="mt-2 flex items-center justify-end gap-2.5">
         <Kbd>⌘↵</Kbd>
@@ -250,7 +254,7 @@ function Scripts({ scripts, units }: { scripts: PlanScript[]; units: Unit[] }) {
 // click shows why and the fix); the ones a build fixed since, ticked.
 const SEVERITY: Record<Severity, { rank: number; dot: string }> = { blocker: { rank: 0, dot: "bg-bad" }, major: { rank: 1, dot: "bg-ask" }, minor: { rank: 2, dot: "bg-line-strong" } }
 
-function FindingRow({ finding: f, unit, isFixed, isPublished = false, isChosen, onChoose }: { finding: Finding; unit: Unit | undefined; isFixed: boolean; isPublished?: boolean; isChosen: boolean | null; onChoose: () => void }) {
+function FindingRow({ finding: f, unit, isFixed, isPublished = false, isChosen, onChoose, ask }: { finding: Finding; unit: Unit | undefined; isFixed: boolean; isPublished?: boolean; isChosen: boolean | null; onChoose: () => void; ask?: ReactNode }) {
   const [isOpen, setOpen] = useState(false)
   const where = f.file ? `${f.file}${f.line ? `:${f.line}` : ""}` : ""
   return (
@@ -274,6 +278,7 @@ function FindingRow({ finding: f, unit, isFixed, isPublished = false, isChosen, 
           {where && <span className="truncate font-mono text-[11px] text-faint">{where}</span>}
           {f.detail && <p className="m-0 text-text-muted">{f.detail}</p>}
           {f.fix && <p className="m-0 border-l-2 border-line-strong pl-3 text-text-muted">{f.fix}</p>}
+          {ask}
           {unit?.pr && <a href={`${unit.pr}/files`} target="_blank" rel="noreferrer" className="self-start text-xs font-semibold text-brand no-underline hover:underline">Open in PR #{unit.pr.split("/").pop()}</a>}
         </div>
       )}
@@ -307,7 +312,8 @@ function Findings({ state, onFix, onPublish }: { state: PipelineState; onFix: (i
   return (
     <div className="flex flex-col gap-1">
       <ol className="m-0 list-none p-0">
-        {findings.map(f => <FindingRow key={f.id} finding={f} unit={state.units?.find(u => u.id === f.unit)} isFixed={fixed.has(f.id)} isPublished={published.has(f.id)} isChosen={canChoose ? chosen.has(f.id) : null} onChoose={() => choose(f.id)} />)}
+        {findings.map(f => <FindingRow key={f.id} finding={f} unit={state.units?.find(u => u.id === f.unit)} isFixed={fixed.has(f.id)} isPublished={published.has(f.id)} isChosen={canChoose ? chosen.has(f.id) : null} onChoose={() => choose(f.id)}
+          ask={isJob(state) ? undefined : <Ask ticketKey={state.key} about={`finding:${f.id}`} turns={state.threads?.[`finding:${f.id}`]} />} />)}
       </ol>
       {canChoose && chosen.size > 0 && onPublish && <PublishButton n={chosen.size} onGo={() => onPublish([...chosen])} />}
       {canChoose && chosen.size > 0 && !onPublish && (
@@ -571,7 +577,7 @@ const RESULT_MARK = {
   fail: <AlertTriangle size={13} className="shrink-0 translate-y-[2px] text-bad" />,
   untested: <CircleHelp size={13} className="shrink-0 translate-y-[2px] text-ask" />,
 }
-function ResultRow({ result: r, ticketKey, canCheck }: { result: TestResult; ticketKey: string; canCheck: boolean }) {
+function ResultRow({ result: r, ticketKey, canCheck, turns }: { result: TestResult; ticketKey: string; canCheck: boolean; turns?: Turn[] }) {
   const [isOpen, setOpen] = useState(false)
   return (
     <li className="border-t border-line first:border-t-0">
@@ -584,7 +590,9 @@ function ResultRow({ result: r, ticketKey, canCheck }: { result: TestResult; tic
           <button className="shrink-0 text-xs font-semibold text-text-muted hover:text-text" onClick={() => void act("/api/pipeline/checked", { key: ticketKey, ids: [r.id] }, "Checked by hand")}>Checked by hand</button>
         )}
       </div>
+      {r.summary && r.status !== "pass" && <p className="m-0 ml-6 pb-2 text-[13px] leading-[1.55] text-text-muted">{r.summary}</p>}
       {isOpen && r.evidence && <p className="m-0 ml-6 pb-3 font-mono text-[11.5px] leading-[1.55] break-words whitespace-pre-wrap text-text-muted">{r.evidence}</p>}
+      {canCheck && r.status !== "pass" && <Ask ticketKey={ticketKey} about={`result:${r.id}`} turns={turns} className="mb-2.5 ml-6" />}
       <Evidence ticketKey={ticketKey} files={r.files ?? []} />
     </li>
   )
@@ -604,7 +612,7 @@ export function TestPanel({ state, release }: { state: PipelineState; release: R
           <Tile key={status}><span className="text-[11.5px] text-faint">{label}</span><span className={cn("text-[20px] leading-none font-semibold tabular-nums", count(status) ? tone : "text-faint")}>{count(status)}</span></Tile>
         ))}
       </div>
-      {results.length > 0 && <ol className="m-0 list-none p-0">{[...results].sort((a, b) => RESULT_ORDER.indexOf(a.status) - RESULT_ORDER.indexOf(b.status)).map(r => <ResultRow key={r.id} result={r} ticketKey={state.key} canCheck={canCheck} />)}</ol>}
+      {results.length > 0 && <ol className="m-0 list-none p-0">{[...results].sort((a, b) => RESULT_ORDER.indexOf(a.status) - RESULT_ORDER.indexOf(b.status)).map(r => <ResultRow key={r.id} result={r} ticketKey={state.key} canCheck={canCheck} turns={state.threads?.[`result:${r.id}`]} />)}</ol>}
       {release && <Details label="The deploy"><ReleaseSteps ticketKey={state.key} release={release} after={afterOf(release.env, state)} /></Details>}
     </div>
   )
@@ -755,7 +763,7 @@ export function Pipeline({ ticket, onTaken }: { ticket: Ticket; onTaken: () => v
   const [picked, setPicked] = useState<Stage | null>(null)
   const [isResetting, confirmReset] = useConfirm()
   const load = () => get<Data>(`/api/pipeline?key=${encodeURIComponent(ticket.key)}`).then(setData, () => {})
-  const isRunning = data?.state?.status === "running"
+  const isRunning = data?.state?.status === "running" || Object.values(data?.state?.threads ?? {}).some(t => isWaiting(t))
   useEffect(() => {
     void load()
     const timer = setInterval(() => void load(), isRunning ? FOLLOW_MS : IDLE_MS)
