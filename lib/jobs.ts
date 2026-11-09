@@ -83,7 +83,9 @@ const ticketLine = (dir: string) => `El ticket entero (descripción, comentarios
 const criteriaLine = (dir: string, done: Done = {}) =>
   done["refine.md"] ? `Los criterios de aceptación están en el refinamiento del pipeline, ${done["refine.md"]}; el ticket, al día, en ${join(dir, "ticket.md")}: sus comentarios mandan.` : `No hay refinamiento: los criterios de aceptación salen del ticket, ${join(dir, "ticket.md")}.`
 const resultLine = (dir: string, stage: string, schema: string) => `Escribe al final ${join(dir, `${stage}.json`)}: ${schema}`
-const RESULTS = `{"verdict": "ready" | "needs-info", "questions": [...], "results": [{"id": "T1", "criterion": "...", "status": "pass" | "fail" | "untested", "summary": "...", "evidence": "...", "files": [{"path": "evidence/T1-desktop.png", "caption": "..."}]}]}`
+// A question as the stages write it (refine.md, «Cómo se escribe una pregunta»).
+const QUESTIONS = `"questions": [{"id": "Q1", "question": "...", "context": "...", "proposal": "..."}]`
+const RESULTS = `{"verdict": "ready" | "needs-info", ${QUESTIONS}, "results": [{"id": "T1", "criterion": "...", "status": "pass" | "fail" | "untested", "summary": "...", "evidence": "...", "files": [{"path": "evidence/T1-desktop.png", "caption": "..."}]}]}`
 
 const BRIEF: Record<AgentStage, (dir: string, job: BriefJob) => string> = {
   refine: (dir, { ticket }) => `Eres el refinador del equipo, en un encargo suelto: refinar el ticket ${ticket}. ${LOOSE_NOTE}
@@ -91,20 +93,20 @@ const BRIEF: Record<AgentStage, (dir: string, job: BriefJob) => string> = {
 1. Lee ${join(STAGES_DIR, "refine.md")} y ${join(STAGES_DIR, "environment.md")}, y síguelos. Si el ticket coordina a hijos entregables, sigue ${join(STAGES_DIR, "epic.md")} en lugar de refine.md.
 2. ${ticketLine(dir)}
 3. Escribe el refinamiento en ${join(dir, "refine.md")} y el resumen en ${join(dir, "refine.summary.md")}.
-4. ${resultLine(dir, "refine", `{"verdict": "ready" | "needs-info", "questions": [{"id": "Q1", "question": "...", "context": "...", "proposal": "..."}]}`)}. Solo preguntas de PRODUCTO; las técnicas las decides tú.`,
+4. ${resultLine(dir, "refine", `{"verdict": "ready" | "needs-info", ${QUESTIONS}}`)}. Solo preguntas de PRODUCTO; las técnicas las decides tú.`,
   plan: (dir, { ticket, done }) => `Eres el planificador del equipo, en un encargo suelto: planificar el ticket ${ticket}. ${LOOSE_NOTE}
 
 1. Lee ${join(STAGES_DIR, "plan.md")} y ${join(STAGES_DIR, "environment.md")}, y síguelos. Si el ticket cambia datos que ya existen, lee también ${join(STAGES_DIR, "scripts.md")}.
 2. ${ticketLine(dir)} ${done?.["refine.md"] ? `El refinamiento del pipeline está en ${done["refine.md"]}: úsalo.` : "No hay refinamiento: saca tú los criterios de aceptación del ticket y ponlos al principio de plan.md. Lo que solo una persona puede decidir va en questions, con su propuesta."}
 3. Escribe el plan en ${join(dir, "plan.md")} y el resumen en ${join(dir, "plan.summary.md")}.
-4. ${resultLine(dir, "plan", `{"verdict": "ready" | "needs-info", "questions": [...], "units": [{"id": "U1", "repo": "...", "subtasks": ["PP-..."], "branch": "...", "title": "...", "dependsOn": []}], "checklist": [{"id": "C1", "text": "...", "unit": "U1"}], "scripts": [...], "release": [...]}`)}.`,
+4. ${resultLine(dir, "plan", `{"verdict": "ready" | "needs-info", ${QUESTIONS}, "units": [{"id": "U1", "repo": "...", "subtasks": ["PP-..."], "branch": "...", "title": "...", "dependsOn": []}], "checklist": [{"id": "C1", "text": "...", "unit": "U1"}], "scripts": [...], "release": [...]}`)}.`,
   build: (dir, { ticket, done }) => `Eres el constructor del equipo, en un encargo suelto: construir el ticket ${ticket}. ${LOOSE_NOTE}
 
 1. Lee ${join(STAGES_DIR, "build.md")} y ${join(STAGES_DIR, "environment.md")}, y síguelos. Si el plan tiene \`scripts\`, lee también ${join(STAGES_DIR, "scripts.md")}.
 2. ${ticketLine(dir)} ${done?.["plan.json"] ? `El plan del pipeline está en ${done["plan.md"] ?? done["plan.json"]} y ${done["plan.json"]}: síguelo.` : `No hay plan: haz primero uno siguiendo ${join(STAGES_DIR, "plan.md")}, escríbelo en ${join(dir, "plan.md")} y ${join(dir, "plan.json")}, y después construye con él.`}
 3. Trabaja en ${join(dir, "work")}. Lo que ya hizo un run anterior está en ${join(dir, "build.progress.json")}: no lo repitas. Marca las tareas de la checklist en ${join(dir, "build.checklist.json")} en cuanto estén hechas.
 4. Escribe el resumen en ${join(dir, "build.summary.md")}.
-5. ${resultLine(dir, "build", `{"verdict": "ready" | "needs-info", "questions": [...], "units": [{"id": "U1", "repo": "...", "title": "...", "branch": "...", "status": "done" | "failed", "pr": "https://github.com/..." | null}]}`)}. Todas las unidades.`,
+5. ${resultLine(dir, "build", `{"verdict": "ready" | "needs-info", ${QUESTIONS}, "units": [{"id": "U1", "repo": "...", "title": "...", "branch": "...", "status": "done" | "failed", "pr": "https://github.com/..." | null}]}`)}. Todas las unidades.`,
   review: (dir, { ticket, prs }) => `Eres el revisor del equipo, en un encargo suelto: revisar ${prs.length === 1 ? "una PR" : `${prs.length} PRs`}${ticket ? ` del ticket ${ticket}` : ""}. No es una etapa del pipeline: no hay refinamiento, plan, build.json, checks.json ni revisión anterior, y lo que review.md dice de ellos no aplica.
 
 1. Lee ${join(STAGES_DIR, "review.md")} y ${join(STAGES_DIR, "environment.md")}, y síguelos.
