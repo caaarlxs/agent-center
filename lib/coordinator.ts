@@ -7,11 +7,13 @@
 import type { PipelineState } from "./pipeline"
 
 export type Child = { key: string; dependsOn: string[] }
-type Tree = { children: { key: string; kind: string }[] }
+type Tree = { children: { key: string; kind: string; isMine?: boolean }[] }
 
 export const MAX_AT_ONCE = 2
 
-export const deliverablesOf = (t: Tree): string[] => t.children.filter(c => c.kind !== "subtask" && c.kind !== "epic").map(c => c.key)
+// On a ticket that is not yours (an epic of the team), only the ones assigned to you.
+export const deliverablesOf = (t: Tree, onlyMine = false): string[] =>
+  t.children.filter(c => c.kind !== "subtask" && c.kind !== "epic" && (!onlyMine || c.isMine)).map(c => c.key)
 
 // The parent's order (its refine.json "children"), only over its own children;
 // any it left out go last, in the ticket's order.

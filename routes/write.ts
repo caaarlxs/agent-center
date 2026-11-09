@@ -2,7 +2,7 @@
 // notes, PR actions, tasks, files sent and dictation.
 
 import { commentOn, connect, disconnect, moveTicket } from "../lib/jira"
-import { actOnDebt, answerPipeline, askPipeline, checkByHand, isStage, stopPipeline, resetPipeline, rollBackPipeline, startPipeline, stopAuto, stepPipeline } from "../lib/pipeline"
+import { actOnDebt, answerPipeline, askPipeline, checkByHand, isStage, stopPipeline, removePipeline, resetPipeline, rollBackPipeline, startPipeline, stopAuto, stepPipeline } from "../lib/pipeline"
 import { clearJob, continueJob, isLoose, publishReview, startJob, stopJob } from "../lib/jobs"
 import { chooseIcon, isIcon } from "../lib/app-icon"
 import { choosePet, openPack } from "../lib/pets"
@@ -165,7 +165,7 @@ export async function handleWrite(path: string, body: Record<string, unknown>): 
     // The pipeline on a ticket of yours (lib/pipeline.ts): start a stage,
     // answer its questions (to Jira, then the stage again), start over.
     case "/api/pipeline/start":
-      return await startPipeline(String(body.key ?? ""), body.take === true, isStage(body.stage) ? body.stage : undefined, Array.isArray(body.fix) ? body.fix.map(String) : undefined, typeof body.auto === "boolean" ? body.auto : undefined).then(() => (refreshSoon(), json({ ok: true })), (err: Error) => json({ error: err.message }, 400))
+      return await startPipeline(String(body.key ?? ""), body.take === true, isStage(body.stage) ? body.stage : undefined, Array.isArray(body.fix) ? body.fix.map(String) : undefined, typeof body.auto === "boolean" ? body.auto : undefined, body.mine === true).then(() => (refreshSoon(), json({ ok: true })), (err: Error) => json({ error: err.message }, 400))
     // Points of debt you chose: into one Jira ticket, dismissed, or open again.
     case "/api/pipeline/debt": {
       const action = body.action === "dismiss" || body.action === "reopen" ? body.action : "ticket"
@@ -204,6 +204,9 @@ export async function handleWrite(path: string, body: Record<string, unknown>): 
       return await stopJob(String(body.id ?? "")).then(() => (refreshSoon(), json({ ok: true })), (err: Error) => json({ error: err.message }, 400))
     case "/api/jobs/clear":
       return await clearJob(String(body.id ?? "")).then(() => (refreshSoon(), json({ ok: true })), (err: Error) => json({ error: err.message }, 400))
+    // Out of the pipeline: the agent stops, the labels go, the run is put aside.
+    case "/api/pipeline/remove":
+      return await removePipeline(String(body.key ?? "")).then(r => (refreshSoon(), json({ ok: true, ...r })), (err: Error) => json({ error: err.message }, 400))
     case "/api/pipeline/reset":
       return await resetPipeline(String(body.key ?? "")).then(() => json({ ok: true }), (err: Error) => json({ error: err.message }, 400))
     case "/api/jira/disconnect":

@@ -26,7 +26,7 @@ export type TicketBrief = { key: string; summary: string; status: string; tone: 
 export type LinkWhy = "started" | "linked" | "branch" | "named"
 export type SessionTicket = TicketBrief & { why: LinkWhy }
 // Another ticket named from this one: its parent, a child, a link.
-export type TicketRef = { key: string; summary: string; type: string | null; kind: TicketKind; status: string; tone: TicketBrief["tone"]; url: string }
+export type TicketRef = { key: string; summary: string; type: string | null; kind: TicketKind; status: string; tone: TicketBrief["tone"]; url: string; isMine?: boolean /* known for what sits in a ticket */ }
 // A ticket in a list: what a card needs, and its type, priority, sprint and
 // last change; what it sits in (its parent) and the epic above it.
 export type TicketRow = TicketBrief & {
@@ -439,7 +439,7 @@ const keyOrThrow = (key: string) => {
   return key
 }
 
-const REF_FIELDS = ["summary", "status", "issuetype"]
+const REF_FIELDS = ["summary", "status", "issuetype", "assignee"]
 const search = (setup: JiraSetup, jql: string, fields: string[], maxResults = 100) =>
   call(setup, "/rest/api/3/search/jql", { method: "POST", body: JSON.stringify({ jql, fields, maxResults }) }).then(r => (r?.issues ?? []) as any[])
 
@@ -452,7 +452,12 @@ export async function ticket(key: string): Promise<Ticket> {
     call(setup, `/rest/api/3/issue/${keyOrThrow(key)}?fields=${fields.join(",")}`),
     search(setup, `parent = ${key} ORDER BY status, rank`, REF_FIELDS, 50).catch(() => []),
   ])
-  return ticketOf(raw, setup.site, await myId(setup), sprint, inside.map(i => refOf(i, setup.site)!).filter(Boolean))
+  const me = await myId(setup)
+  const refs = inside.flatMap(i => {
+    const ref = refOf(i, setup.site)
+    return ref ? [{ ...ref, isMine: !!me && i.fields?.assignee?.accountId === me }] : []
+  })
+  return ticketOf(raw, setup.site, me, sprint, refs)
 }
 
 // The columns of each board of your projects, left to right: asked every ten minutes.

@@ -31,7 +31,7 @@
 import { spawn } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { openSync } from "node:fs"
-import { cp, mkdir, readFile, rename, rm } from "node:fs/promises"
+import { appendFile, cp, mkdir, readFile, rename, rm } from "node:fs/promises"
 import { basename, join } from "node:path"
 import { DATA_DIR } from "./config"
 import { writeJsonAtomic } from "./files"
@@ -112,6 +112,7 @@ export type PipelineState = {
   fixOf?: Record<string, string> // the one open for each criterion that failed
   children?: Child[] // a coordinator's children, in the order they go (coordinator.ts)
   parent?: string | null // the coordinator a child's pipeline belongs to
+  local?: boolean // a ticket not yours (an epic of the team) that only coordinates yours: nothing of it goes to Jira
   auto?: boolean // runs on by itself, stage after stage, until the review (autoNext)
   error: string | null
   history?: Run[] // every run since the last start over, the latest last
@@ -512,11 +513,12 @@ export async function buildProgress(dir: string) {
 // ---------- the stage ----------
 
 // A coordinator's refinement follows epic.md: the whole, not one delivery.
-const asParent = (children: Child[] = []) =>
-  children.length ? `\n\nEste ticket coordina a sus hijos entregables (${children.map(c => c.key).join(", ")}): sigue ${join(STAGES_DIR, "epic.md")} en lugar de refine.md, y escribe los mismos ficheros.` : ""
-const promptFor = (key: string, dir: string, stage: AgentStage, children: Child[] = []) => `${TAG} ${key} · ${STAGE[stage].verb}
+// On a ticket not yours, it coordinates only the children assigned to you; the rest are context.
+const asParent = (children: Child[] = [], local = false) =>
+  children.length ? `\n\nEste ticket coordina a sus hijos entregables (${children.map(c => c.key).join(", ")}): sigue ${join(STAGES_DIR, "epic.md")} en lugar de refine.md, y escribe los mismos ficheros.${local ? " El ticket no es tuyo: solo coordinas esos hijos, los asignados a ti. Los demás hijos son de otras personas: léelos como contexto, pero no los ordenes ni les escribas preguntas." : ""}` : ""
+const promptFor = (key: string, dir: string, stage: AgentStage, children: Child[] = [], local = false) => `${TAG} ${key} · ${STAGE[stage].verb}
 
-${STAGE[stage].brief(key, dir)}${stage === "refine" ? asParent(children) : ""}
+${STAGE[stage].brief(key, dir)}${stage === "refine" ? asParent(children, local) : ""}
 
 ${AS_AGENT}
 
@@ -530,8 +532,9 @@ const AUTO_NEXT: Partial<Record<Stage, AgentStage>> = { refine: "plan", plan: "b
 export const autoNext = (state: PipelineState): AgentStage | null =>
   state.auto && state.status === "ready" && !state.children?.length ? (AUTO_NEXT[state.stage] ?? null) : null
 
+// A ticket taken out of the pipeline meanwhile stays out.
 const run = (key: string, runs: number, stage: AgentStage, auto?: boolean) =>
-  runStage(key, runs, stage, auto).catch(async err => save({ ...(await fresh(key, runs, stage)), status: "failed", error: String(err?.message ?? err), endedAt: Date.now() }))
+  runStage(key, runs, stage, auto).catch(async err => (await stateOf(key)) && save({ ...(await fresh(key, runs, stage)), status: "failed", error: String(err?.message ?? err), endedAt: Date.now() }))
 const EMPTY = (key: string, runs: number, stage: Stage): PipelineState =>
   ({ key, stage, status: "running", sessionId: null, runs, startedAt: Date.now(), endedAt: null, askedAt: null, questions: [], error: null })
 // A new run, with the ticket's history so far.
@@ -539,7 +542,7 @@ const fresh = async (key: string, runs: number, stage: Stage): Promise<PipelineS
   const prev = await stateOf(key)
   // The plan's units and to-do list, and the review's findings, stay with the ticket for the stages after it.
   return { ...EMPTY(key, runs, stage), summary: prev?.summary, history: prev?.history ?? [], units: prev?.units, checklist: prev?.checklist, checked: prev?.checked, scripts: prev?.scripts, contextImpact: prev?.contextImpact,
-    release: prev?.release, deployed: prev?.deployed, fixes: prev?.fixes, fixOf: prev?.fixOf, threads: prev?.threads, fixing: ["refine", "plan", "test", "smoke"].includes(stage) ? null : prev?.fixing, results: stage === "test" || stage === "smoke" ? undefined : prev?.results, children: prev?.children, parent: prev?.parent, auto: prev?.auto,
+    release: prev?.release, deployed: prev?.deployed, fixes: prev?.fixes, fixOf: prev?.fixOf, threads: prev?.threads, fixing: ["refine", "plan", "test", "smoke"].includes(stage) ? null : prev?.fixing, results: stage === "test" || stage === "smoke" ? undefined : prev?.results, children: prev?.children, parent: prev?.parent, auto: prev?.auto, local: prev?.local,
     ...(stage === "review" ? {} : { findings: prev?.findings, fixed: stage === "build" ? [] : prev?.fixed }) }
 }
 // A stage's session is the pipeline's, not yours: once it ends it leaves the
@@ -585,9 +588,12 @@ async function runStage(key: string, runs: number, stage: AgentStage, auto?: boo
   const coordinator = t.parent ? await stateOf(t.parent.key) : null
   const isChild = !!coordinator?.children?.some(c => c.key === key)
   const decided = isChild ? await readText(join(dirOf(t.parent!.key), "refine.md")) : null
-  await Bun.write(join(dir, "ticket.md"), snapshotOf(t, parent, children, await linkedPages(t, parent)) + (decided ? `\n## Decisiones del padre (${t.parent!.key})\n\n${decided}\n` : ""))
+  // A ticket not yours keeps your answers here, not in Jira.
+  const answers = await readText(join(dir, "answers.md"))
+  await Bun.write(join(dir, "ticket.md"), snapshotOf(t, parent, children, await linkedPages(t, parent)) + (decided ? `\n## Decisiones del padre (${t.parent!.key})\n\n${decided}\n` : "") + (answers ? `\n## Respuestas\n\n${answers}\n` : ""))
   await writeContextPages(dir)
-  const kids = stage === "refine" ? deliverablesOf(t) : []
+  const local = !!(await stateOf(key))?.local
+  const kids = stage === "refine" ? deliverablesOf(t, local) : []
   const base = { ...(await fresh(key, runs, stage)), summary: t.summary, ...(isChild ? { parent: t.parent!.key } : {}), ...(auto === undefined ? {} : { auto }) }
   const started = kids.length ? { ...base, children: childrenIn(base.children, kids) } : base
   const state = stage === "build" ? { ...started, ...(await inJira("build-started", started)) } : started
@@ -595,7 +601,7 @@ async function runStage(key: string, runs: number, stage: AgentStage, auto?: boo
   const id = randomUUID()
   // Figma, when what the stage reads links a design and the team set Figma up.
   const figma = linksFigma(await readText(join(dir, "ticket.md")) ?? "") && existsSync(join(STAGES_DIR, "figma-mcp.json"))
-  const pid = await spawnStage(dir, id, promptFor(key, dir, stage, state.children), stage, () => void watch(), figma)
+  const pid = await spawnStage(dir, id, promptFor(key, dir, stage, state.children, local), stage, () => void watch(), figma)
   await locked(key, async () => save({ ...state, auto: (await stateOf(key))?.auto ?? state.auto, sessionId: id, pid }))
   await applyAction(id, [id], "tickets", { started: [key] })
 }
@@ -640,7 +646,10 @@ async function watch() {
     if (state.status !== "running" || !state.pid || isAlive(state.pid) || ending.has(state.key)) continue
     ending.add(state.key)
     await locked(state.key, () => finish(state.key))
-      .catch(async err => locked(state.key, async () => save({ ...((await stateOf(state.key)) ?? state), status: "failed", error: String(err?.message ?? err), endedAt: Date.now() })))
+      .catch(async err => locked(state.key, async () => {
+        const now = await stateOf(state.key)
+        if (now) await save({ ...now, status: "failed", error: String(err?.message ?? err), endedAt: Date.now() })
+      }))
       .finally(() => (ending.delete(state.key), state.sessionId && putAway(state.sessionId)))
   }
 }
@@ -648,8 +657,8 @@ async function watch() {
 // The stage ended: its questions go to Jira, or the ticket is ready for the next.
 async function finish(key: string) {
   const dir = dirOf(key)
-  const state = (await stateOf(key))!
-  if (isRelease(state.stage)) return
+  const state = await stateOf(key)
+  if (!state || isRelease(state.stage)) return // taken out of the pipeline, or a release
   const stage = STAGE[state.stage]
   const text = await readText(join(dir, `${state.stage}.json`))
   if (!text) throw new Error(`The agent left no ${state.stage}.json`)
@@ -657,12 +666,12 @@ async function finish(key: string) {
   await keepDoc(dir, state)
   if (result.verdict === "needs-info") {
     // The questions are the reporter's to answer: Jira tells them.
-    const reporter = await ticket(key).then(t => t.reporterId, () => null)
-    if (state.publishedRun !== state.runs) {
+    const reporter = state.local ? null : await ticket(key).then(t => t.reporterId, () => null)
+    if (state.publishedRun !== state.runs && !state.local) {
       await commentOn(key, questionsComment(key, result.questions, state.stage), reporter ? [reporter] : [])
       await save({ ...state, publishedRun: state.runs })
     }
-    await labelTicket(key, [LABELS.needsInfo], [stage.label])
+    if (!state.local) await labelTicket(key, [LABELS.needsInfo], [stage.label])
     await save({ ...state, publishedRun: state.runs, status: "needs-info", questions: result.questions, askedAt: Date.now(), endedAt: Date.now() })
     return
   }
@@ -677,13 +686,13 @@ async function finish(key: string) {
   // A test's files stay only where they are; they go to Jira with its comment, for QA.
   const shown = { ...result, results: result.results.map(r => ({ ...r, files: keptFiles(dir, r.files ?? []) })) }
   // Once a run: a restart in the middle of an end does not write it to Jira again.
-  const isNew = state.publishedRun !== state.runs
+  const isNew = state.publishedRun !== state.runs && !state.local
   const attached = isNew && (state.stage === "test" || state.stage === "smoke") ? await attachEvidence(key, dir, shown.results) : { line: "", checks: [] }
   if (isNew) {
     await commentOn(key, `${MARK} · ${key} ${stage.done}\n\n${prodWarning(state.stage, result)}${attached.line}${prs ? `${prs}\n\n` : ""}${md.slice(0, COMMENT_CHARS)}${md.length > COMMENT_CHARS ? "\n\n(…recortado)" : ""}`)
     await save({ ...state, publishedRun: state.runs })
   }
-  await labelTicket(key, [stage.label], [LABELS.needsInfo, ...stage.unlabel])
+  if (!state.local) await labelTicket(key, [stage.label], [LABELS.needsInfo, ...stage.unlabel])
   const checklist = state.stage === "plan" ? result.checklist : state.checklist
   const scripts = state.stage === "plan" ? result.scripts : state.scripts
   const checked = state.stage === "build" ? checkedIn(await readText(join(dir, "build.checklist.json"))) : state.checked
@@ -885,22 +894,25 @@ export function stageToRun(state: PipelineState | null, asked?: Stage): Stage {
 // Starts the pipeline on a ticket of yours (or runs a stage again); taking
 // it, when you ask, makes it yours first. A build after a review fixes what
 // it found (review.fix.json): the findings you chose, else what stops the ticket.
-export async function startPipeline(key: string, take = false, asked?: Stage, chosen?: string[], auto?: boolean) {
+// On a ticket not yours with children assigned to you (mine), it runs only those, and writes nothing on it.
+export async function startPipeline(key: string, take = false, asked?: Stage, chosen?: string[], auto?: boolean, mine = false) {
   if (!isKey(key)) throw new Error("Not a ticket key")
   if (starting.has(key)) throw new Error("It is starting already")
   starting.add(key)
   try {
-    return await startNow(key, take, asked, chosen, auto)
+    return await startNow(key, take, asked, chosen, auto, mine)
   } finally {
     starting.delete(key)
   }
 }
-async function startNow(key: string, take: boolean, asked?: Stage, chosen?: string[], auto?: boolean) {
+async function startNow(key: string, take: boolean, asked?: Stage, chosen?: string[], auto?: boolean, mine = false) {
   const state = await stateOf(key)
   if (state?.status === "running") throw new Error("A stage already runs on this ticket")
   const stage = stageToRun(state, asked)
-  if (take) await assignToMe(key)
-  await labelTicket(key, [LABELS.on], []) // also checks that it is yours
+  const local = state ? !!state.local : mine && (await onlyYours(key))
+  if (local && stage !== "refine") throw new Error("This ticket is not yours: it only coordinates yours")
+  if (take && !local) await assignToMe(key)
+  if (!local) await labelTicket(key, [LABELS.on], []) // also checks that it is yours
   if (stage === "staging") await stagingWaits(state!)
   if (isRelease(stage)) return startRelease(state!, stage)
   const fixing = await writeFixes(key, state, stage, chosen)
@@ -909,8 +921,16 @@ async function startNow(key: string, take: boolean, asked?: Stage, chosen?: stri
   if (retest) await writeJsonAtomic(join(dirOf(key), "retest.json"), retest, { pretty: true })
   else if (stage === "test") await rename(join(dirOf(key), "retest.json"), join(dirOf(key), "retest.json.prev")).catch(() => {})
   // At work at once, so the board shows it; the run then reads the ticket (it takes a while) and starts the agent.
-  await save({ ...(await fresh(key, (state?.runs ?? 0) + 1, stage)), summary: state?.summary, ...(fixing === undefined ? {} : { fixing }) })
+  await save({ ...(await fresh(key, (state?.runs ?? 0) + 1, stage)), summary: state?.summary, ...(fixing === undefined ? {} : { fixing }), ...(local ? { local } : {}) })
   void run(key, (state?.runs ?? 0) + 1, stage, auto)
+}
+
+// A ticket not yours runs only for the children assigned to you; one of yours runs as always.
+async function onlyYours(key: string) {
+  const t = await ticket(key)
+  if (t.isMine) return false
+  if (!deliverablesOf(t, true).length) throw new Error(`Nothing under ${key} is assigned to you`)
+  return true
 }
 
 // A job's work (lib/jobs.ts) taken on by the pipeline where it ended: its
@@ -1236,8 +1256,12 @@ export async function answerPipeline(key: string, answers: Record<string, string
   try {
     const state = await stateOf(key)
     if (state?.status !== "needs-info" || isRelease(state.stage)) throw new Error("This ticket waits for no answers")
-    await commentOn(key, answersComment(state.questions, answers))
-    await labelTicket(key, [], [LABELS.needsInfo])
+    // A ticket not yours keeps them here (ticket.md reads them); one of yours, in Jira.
+    if (state.local) await appendFile(join(dirOf(key), "answers.md"), `${answersComment(state.questions, answers)}\n\n`)
+    else {
+      await commentOn(key, answersComment(state.questions, answers))
+      await labelTicket(key, [], [LABELS.needsInfo])
+    }
     await save({ ...(await fresh(key, state.runs + 1, state.stage)), summary: state.summary })
     void run(key, state.runs + 1, state.stage)
   } finally {
@@ -1248,10 +1272,47 @@ export async function answerPipeline(key: string, answers: Record<string, string
 // From zero: no state, no labels; the comments stay as context.
 export async function resetPipeline(key: string) {
   if (!isKey(key)) throw new Error("Not a ticket key")
-  if ((await stateOf(key))?.status === "running") throw new Error("A stage runs: wait for it to end")
-  await labelTicket(key, [], Object.values(LABELS))
+  const state = await stateOf(key)
+  if (state?.status === "running") throw new Error("A stage runs: wait for it to end")
+  if (!state?.local) await labelTicket(key, [], Object.values(LABELS))
   await rename(dirOf(key), `${dirOf(key)}.old-${Date.now()}`).catch(() => {})
 }
+
+// Out of the pipeline: the agent at work stops, the labels go (on a ticket of
+// yours) and the run is put aside (<key>.removed-<ts>, nothing deleted). A
+// coordinator takes its children with it; a child, once out, is not started
+// again by its coordinator. Jira's statuses, the PRs and the code stay as they are.
+export async function removePipeline(key: string, isAlone = true): Promise<{ warnings: string[] }> {
+  if (!isKey(key)) throw new Error("Not a ticket key")
+  const state = await stateOf(key)
+  if (!state) throw new Error(`${key} is not in the pipeline`)
+  const warnings: string[] = []
+  for (const child of state.children ?? [])
+    if ((await stateOf(child.key))?.parent === key) warnings.push(...(await removePipeline(child.key, false)).warnings)
+  warnings.push(...(await takeOut(key)))
+  if (isAlone && state.parent) await keepOut(state.parent, key)
+  return { warnings }
+}
+async function takeOut(key: string): Promise<string[]> {
+  if (starting.has(key)) throw new Error(`${key} is starting: wait a moment`)
+  const state = await locked(key, async () => {
+    const state = await stateOf(key)
+    if (state?.status === "running" && isRelease(state.stage)) throw new Error(`A release is at work on ${key}: wait for it to end first`)
+    if (state?.status === "running" && !state.pid) throw new Error(`${key} is starting: wait a moment`)
+    if (state?.status === "running" && state.pid) try { process.kill(-state.pid, "SIGTERM") } catch { try { process.kill(state.pid, "SIGTERM") } catch {} }
+    await rename(dirOf(key), `${dirOf(key)}.removed-${Date.now()}`)
+    return state
+  })
+  if (state?.local) return []
+  return labelTicket(key, [], Object.values(LABELS)).then(() => [], (err: Error) => [`${key}: its labels stay in Jira (${err.message})`])
+}
+// The coordinator leaves a child taken out where it is (coordinate skips a "child-" check).
+const keepOut = (parent: string, key: string) => locked(parent, async () => {
+  const p = await stateOf(parent)
+  if (!p) return
+  const id = `child-${key}`
+  await save({ ...p, checks: [...(p.checks ?? []).filter(c => c.id !== id), { id, label: `${key} is out of the pipeline`, status: "warn", detail: "Taken out by you: it does not start again on its own" }] })
+})
 
 // Every ticket in the pipeline (not the runs started over), the latest first.
 export async function pipelines(): Promise<PipelineState[]> {
@@ -1264,7 +1325,7 @@ export async function pipelines(): Promise<PipelineState[]> {
 async function poll() {
   for (const state of await pipelines()) {
     if (state.children?.length && state.stage === "refine" && state.status === "ready") void coordinate(state.key)
-    if (state.status !== "needs-info" || !state.askedAt || isRelease(state.stage)) continue
+    if (state.status !== "needs-info" || !state.askedAt || isRelease(state.stage) || state.local) continue
     try {
       const t = await ticket(state.key)
       if (answeredAfter(t.comments, state.askedAt)) {

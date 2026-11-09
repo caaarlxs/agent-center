@@ -9,6 +9,11 @@ describe("deliverablesOf", () => {
     expect(deliverablesOf({ children: [ref("PP-2", "story"), ref("PP-3", "subtask"), ref("PP-4", "bug"), ref("PP-5", "task")] } as never)).toEqual(["PP-2", "PP-4", "PP-5"])
     expect(deliverablesOf({ children: [ref("PP-3", "subtask")] } as never)).toEqual([])
   })
+  it("on a ticket that is not yours, only the ones assigned to you", () => {
+    const epic = { children: [{ ...ref("PP-2", "story"), isMine: false }, { ...ref("PP-4", "story"), isMine: true }, { ...ref("PP-5", "subtask"), isMine: true }] }
+    expect(deliverablesOf(epic as never, true)).toEqual(["PP-4"])
+    expect(deliverablesOf(epic as never)).toEqual(["PP-2", "PP-4"])
+  })
 })
 
 describe("childrenIn", () => {

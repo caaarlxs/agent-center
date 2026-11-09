@@ -11,7 +11,7 @@
 // and start the stage again. Start over clears the run and the labels; the
 // comments stay. On someone else's ticket it runs only once you take it
 // (two clicks: it is assigned to you).
-import { AlertTriangle, Check, ChevronRight, CircleHelp, Database, FastForward, FlaskConical, ListChecks, Play, RotateCcw, Route, Send, ShieldCheck } from "lucide-react"
+import { AlertTriangle, Check, ChevronRight, CircleHelp, Database, FastForward, FlaskConical, ListChecks, LogOut, Play, RotateCcw, Route, Send, ShieldCheck } from "lucide-react"
 import { useEffect, useState, type ReactNode } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -32,6 +32,7 @@ import { repoDot } from "@/features/session/state"
 import type { Helper, Step } from "@server/activity"
 import type { ChecklistItem, Finding, PipelineState, PlanScript, Run, Severity, Stage, TestResult, Turn, Unit } from "@server/pipeline"
 import type { Check as BoardCheck } from "@server/checks"
+import { deliverablesOf } from "@server/coordinator"
 import { MODELS } from "@/features/prompt/Settings"
 import { PipelineMark, liveLine, startText, startingText, statusText } from "./PipelineMark"
 import { STAGE_KEYS, STAGES, costOf, dollars, isRelease, journeyOf, nextStage, passesOf, stageAt, toFix, tokens } from "./pipeline-board"
@@ -376,11 +377,12 @@ function Reminders({ isOpen, label, reminders, onClose, onGo }: { isOpen: boolea
   )
 }
 
-// Run, on yours; on someone else's, take it first (a second click confirms).
 // Run the pipeline, or run it on its own until the review (the PRs done, before
 // any release); on someone else's ticket, take it first (a second click confirms).
 function RunButton({ ticket, onStarted, auto = false }: { ticket: Ticket; onStarted: () => void; auto?: boolean }) {
   const [isAsking, confirm] = useConfirm()
+  const yours = ticket.isMine ? [] : deliverablesOf(ticket, true)
+  if (yours.length) return <RunMine ticket={ticket} count={yours.length} onStarted={onStarted} auto={auto} />
   const run = async () => {
     const done = `${ticket.isMine ? "" : `${ticket.key} is yours: `}refining${auto ? ", then on its own until the review" : ""}`
     if (await act("/api/pipeline/start", { key: ticket.key, take: !ticket.isMine, auto }, done.charAt(0).toUpperCase() + done.slice(1))) onStarted()
@@ -393,6 +395,39 @@ function RunButton({ ticket, onStarted, auto = false }: { ticket: Ticket; onStar
       onClick={() => (ticket.isMine ? void run() : confirm(() => void run()))}>
       <Icon size={13} className="fill-current" />{label}
     </Button>
+  )
+}
+
+// On someone else's ticket (an epic of the team) with children assigned to you:
+// it runs only yours, and nothing of it is assigned or written in Jira.
+function RunMine({ ticket, count, onStarted, auto }: { ticket: Ticket; count: number; onStarted: () => void; auto: boolean }) {
+  const run = async () => (await act("/api/pipeline/start", { key: ticket.key, mine: true, auto }, `Refining ${ticket.key}, then your ${count} ticket${count === 1 ? "" : "s"} in it`)) && onStarted()
+  const Icon = auto ? FastForward : Play
+  return (
+    <Button variant={auto ? "outline" : "default"} className="h-8 gap-1.5 text-xs" onClick={() => void run()}>
+      <Icon size={13} className="fill-current" />{auto ? "Run mine to review" : `Run mine (${count})`}
+    </Button>
+  )
+}
+
+// Out of the pipeline (a second click confirms): the agent stops and the labels go;
+// Jira's statuses, the PRs and the code stay. An epic takes its tickets with it.
+function RemoveButton({ ticketKey, onRemoved }: { ticketKey: string; onRemoved: () => void }) {
+  const [isAsking, confirm] = useConfirm()
+  const remove = () => confirm(async () => {
+    try {
+      const { warnings = [] } = await post<{ warnings?: string[] }>("/api/pipeline/remove", { key: ticketKey })
+      toast(["Out of the pipeline", ...warnings].join(". "))
+      onRemoved()
+    } catch (err) {
+      toast((err as Error).message || "It did not work")
+    }
+  })
+  return (
+    <button className={cn("mt-1 inline-flex h-6 shrink-0 items-center gap-1 rounded-md px-1.5 text-xs font-semibold transition-colors duration-120",
+      isAsking ? "bg-bad-soft text-bad" : "text-faint hover:bg-hover hover:text-text")} onClick={remove} title="Remove from the pipeline: Jira's statuses and the PRs stay">
+      <LogOut size={12} />{isAsking && "Remove from pipeline?"}
+    </button>
   )
 }
 
@@ -885,6 +920,7 @@ export function Pipeline({ ticket, onTaken }: { ticket: Ticket; onTaken: () => v
             <RotateCcw size={12} />{isResetting && "Start over?"}
           </button>
         )}
+        {state && !(isRunning && isRelease(state.stage)) && <RemoveButton ticketKey={ticket.key} onRemoved={() => void load()} />}
       </header>
       <div className="flex flex-col gap-3 px-4 pb-4">
         {!state && (
