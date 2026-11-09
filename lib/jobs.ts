@@ -24,7 +24,8 @@ import { exec } from "./proc"
 import { keptFiles } from "./evidence"
 import { AS_AGENT, MARK, STAGES_DIR, TAG, adoptJob, buildProgress, checkedIn, isAlive, linkedPages, linksFigma, parseResult, putAway, snapshotOf, spawnStage, stateIn, ticketWithFamily, verbOf, withRun, withSpend, writeContextPages, type AgentStage, type Finding, type PipelineState, type Unit } from "./pipeline"
 
-export type PrInfo = { url: string; repo: string; number: number; title: string; head: string; base: string; body: string; worktree: string | null }
+// sha: the commit reviewed (comments go on it, not on whatever the PR has later).
+export type PrInfo = { url: string; repo: string; number: number; title: string; head: string; base: string; body: string; worktree: string | null; sha?: string | null }
 export type JobInput = { ticket: string | null; prs: string[] }
 export type Job = PipelineState & { id: string; loose: true; ticket: string | null; prs: PrInfo[]; done?: Done; published?: string[]; continued?: string }
 
@@ -62,7 +63,8 @@ export function nextJobId(names: string[]): string {
 }
 
 // The ticket the PRs name, of your projects: the first.
-export const ticketFromPrs = (prs: PrInfo[], projects: string[]) => keysIn(prs.flatMap(p => [p.title, p.head, p.body]), projects)[0] ?? null
+// The PRs' titles and branches first: a text may name another ticket in passing ("follows PP-100").
+export const ticketFromPrs = (prs: PrInfo[], projects: string[]) => keysIn([...prs.flatMap(p => [p.title, p.head]), ...prs.map(p => p.body)], projects)[0] ?? null
 
 // Each PR is a unit, as a build's are: the findings say which one they are in.
 export const unitsOfPrs = (prs: PrInfo[]): Unit[] =>
@@ -212,22 +214,24 @@ async function prsNaming(keys: string[]): Promise<string[]> {
 }
 
 // A PR's code, in a worktree of the job's own (its base fetched, to compare): null without the repo here.
-async function checkout(dir: string, p: PrInfo): Promise<string | null> {
+// Each job its own ref: two jobs on one PR never take each other's.
+const refOf = (jobId: string, p: Pick<PrInfo, "number">) => `refs/agent-center/${jobId}-pr-${p.number}`
+async function checkout(dir: string, p: PrInfo): Promise<{ worktree: string | null; sha: string | null }> {
   const repo = join(REPOS, p.repo)
-  if (!existsSync(join(repo, ".git"))) return null
-  const ref = `refs/agent-center/pr-${p.number}`
+  if (!existsSync(join(repo, ".git"))) return { worktree: null, sha: null }
+  const ref = refOf(dir.split("/").pop()!, p)
   const fetched = await exec(["git", "-C", repo, "fetch", "--quiet", "origin", `+refs/pull/${p.number}/head:${ref}`, ...(p.base ? [p.base] : [])], { timeoutMs: 120_000 })
-  if (fetched.code !== 0) return null
+  if (fetched.code !== 0) return { worktree: null, sha: null }
+  const sha = (await exec(["git", "-C", repo, "rev-parse", ref])).stdout.trim() || null
   const path = join(dir, "work", `${p.repo}-${p.number}`)
   const added = await exec(["git", "-C", repo, "worktree", "add", "--detach", "--force", path, ref], { timeoutMs: 60_000 })
-  return added.code === 0 ? path : null
+  return { worktree: added.code === 0 ? path : null, sha }
 }
 async function removeWorktrees(job: Job) {
   for (const p of job.prs) {
-    if (!p.worktree) continue
     const repo = join(REPOS, p.repo)
-    await exec(["git", "-C", repo, "worktree", "remove", "--force", p.worktree], { timeoutMs: 30_000 })
-    await exec(["git", "-C", repo, "update-ref", "-d", `refs/agent-center/pr-${p.number}`])
+    if (p.worktree) await exec(["git", "-C", repo, "worktree", "remove", "--force", p.worktree], { timeoutMs: 30_000 })
+    await exec(["git", "-C", repo, "update-ref", "-d", refOf(job.id, p)])
   }
 }
 
@@ -257,8 +261,11 @@ export async function continueJob(id: string) {
   if (!job || job.status !== "ready" || !job.ticket) throw new Error("Not a job that ended with a ticket")
   if (job.continued) throw new Error(`Already in the pipeline as ${job.continued}`)
   const { units, checklist, checked, scripts, summary, sessionId, startedAt } = job
-  await adoptJob(job.ticket, dirOf(id), job.stage as AgentStage, { units, checklist, checked, scripts, summary, sessionId, startedAt })
+  const notBuilt = job.stage === "build" ? (units ?? []).filter(u => u.status !== "done" || !u.pr) : []
+  if (notBuilt.length) throw new Error(`Not built: ${notBuilt.map(u => u.id).join(", ")}. Run the job again first`)
+  // The worktrees first: a move that fails stops it before anything is written in Jira.
   if (job.stage === "build") await moveWorktrees(join(dirOf(id), "work"), join(ROOT, job.ticket, "work"))
+  await adoptJob(job.ticket, dirOf(id), job.stage as AgentStage, { units, checklist, checked, scripts, summary, sessionId, startedAt })
   await save({ ...job, continued: job.ticket })
   return { key: job.ticket }
 }
@@ -268,7 +275,8 @@ async function moveWorktrees(from: string, to: string) {
   for (const name of await readdir(REPOS).catch(() => [] as string[])) {
     const list = await exec(["git", "-C", join(REPOS, name), "worktree", "list", "--porcelain"])
     for (const path of list.stdout.split("\n").filter(l => l.startsWith(`worktree ${from}/`)).map(l => l.slice(9)))
-      await exec(["git", "-C", join(REPOS, name), "worktree", "move", path, join(to, path.slice(from.length + 1))], { timeoutMs: 60_000 })
+      if ((await exec(["git", "-C", join(REPOS, name), "worktree", "move", path, join(to, path.slice(from.length + 1))], { timeoutMs: 60_000 })).code !== 0)
+        throw new Error(`Could not move the worktree ${path.split("/").pop()} of ${name}`)
   }
 }
 
@@ -279,9 +287,10 @@ async function moveWorktrees(from: string, to: string) {
 const SEVERITY_NAME = { blocker: "Bloqueante", major: "Importante", minor: "Menor" } as const
 const findingText = (f: Finding) => `**${SEVERITY_NAME[f.severity]}** · ${f.title}${f.detail ? `\n\n${f.detail}` : ""}${f.fix ? `\n\nArreglo: ${f.fix}` : ""}`
 export function reviewsFor(findings: Finding[], units: Unit[], ticket: string | null) {
-  const first = units[0]?.id
+  // A finding of no PR goes to the only PR there is; with several, it stays out (it would land on the wrong one).
+  const only = units.length === 1 ? units[0]!.id : null
   return units.map(u => {
-    const here = findings.filter(f => f.unit === u.id || (!units.some(x => x.id === f.unit) && u.id === first))
+    const here = findings.filter(f => f.unit === u.id || (!units.some(x => x.id === f.unit) && u.id === only))
     const inline = here.filter(f => f.file && f.line)
     const loose = here.filter(f => !(f.file && f.line))
     const body = [`${MARK} · Revisión${ticket ? ` de ${ticket}` : ""}: ${here.length} hallazgo${here.length === 1 ? "" : "s"}.`, ...loose.map(findingText)].join("\n\n")
@@ -294,18 +303,25 @@ export function reviewsFor(findings: Finding[], units: Unit[], ticket: string | 
 export async function publishReview(id: string, ids: string[]) {
   const job = isJobId(id) ? await stateOf(id) : null
   if (!job || job.stage !== "review" || job.status === "running" || job.status === "failed") throw new Error("Not a review that ended")
-  const chosen = (job.findings ?? []).filter(f => ids.includes(f.id))
+  // What is published already never goes twice (a retry after a PR that refused it).
+  const chosen = (job.findings ?? []).filter(f => ids.includes(f.id) && !job.published?.includes(f.id))
   if (!chosen.length) throw new Error("Choose the findings to publish")
-  const reviews = reviewsFor(chosen, job.units ?? [], job.ticket)
+  const units = job.units ?? []
+  const reviews = reviewsFor(chosen, units, job.ticket)
+  let published = job.published ?? []
   for (const r of reviews) {
     const ref = prRef(r.pr)!
-    const post = (payload: object) => exec(["gh", "api", "--method", "POST", `repos/${ref.owner}/${ref.repo}/pulls/${ref.number}/reviews`, "--input", "-"], { input: JSON.stringify(payload), timeoutMs: 30_000 })
+    const sha = job.prs.find(p => p.url === r.pr)?.sha
+    const post = (payload: object) => exec(["gh", "api", "--method", "POST", `repos/${ref.owner}/${ref.repo}/pulls/${ref.number}/reviews`, "--input", "-"], { input: JSON.stringify({ ...(sha ? { commit_id: sha } : {}), ...payload }), timeoutMs: 30_000 })
     let sent = await post({ event: "COMMENT", body: r.body, comments: r.comments })
     if (sent.code !== 0 && r.comments.length) sent = await post({ event: "COMMENT", body: [r.body, ...r.comments.map(c => `\`${c.path}:${c.line}\`\n\n${c.body}`)].join("\n\n") })
     if (sent.code !== 0) throw new Error(`${ref.repo} #${ref.number}: ${sent.stderr.trim() || "GitHub refused the review"}`)
+    const unit = units.find(u => u.pr === r.pr)?.id
+    published = [...new Set([...published, ...chosen.filter(f => f.unit === unit || (units.length === 1 && !units.some(x => x.id === f.unit))).map(f => f.id)])]
+    await save({ ...job, published })
   }
-  await save({ ...job, published: [...new Set([...(job.published ?? []), ...chosen.map(f => f.id)])] })
-  return { prs: reviews.length }
+  const left = chosen.filter(f => !published.includes(f.id)).length
+  return { prs: reviews.length, left }
 }
 
 // ---------- the run ----------
@@ -325,7 +341,11 @@ export async function startJob(stage: AgentStage, input: { ticket?: unknown; prs
   const job: Job = { id, key: id, loose: true, ticket, prs: refs.map(r => ({ url: r.url, repo: r.repo, number: r.number, title: "", head: "", base: "", body: "", worktree: null })),
     summary: ticket ?? (refs.length === 1 ? `${refs[0]!.repo} #${refs[0]!.number}` : `${refs.length} PRs`), stage, status: "running", sessionId: null, runs: 1, startedAt: Date.now(), endedAt: null, askedAt: null, questions: [], error: null }
   await save(job)
-  void run(job).catch(async err => save(failed((await stateOf(id)) ?? job, err)))
+  void run(job).catch(async err => {
+    const now = (await stateOf(id)) ?? job
+    await save(failed(now, err))
+    await removeWorktrees(now)
+  })
   return { id }
 }
 
@@ -346,7 +366,7 @@ export async function prepareJob(start: Job): Promise<Job> {
   const urls = prs.length ? [] : await prsNaming([family!.t.key, ...family!.children.map(c => c.key)])
   if (!prs.length && !urls.length) throw new Error(`No open PR names ${ticket} or its children`)
   const all = [...prs, ...(await Promise.all(urls.map(prInfo)))]
-  const checked = await Promise.all(all.map(async p => ({ ...p, worktree: await checkout(dir, p) })))
+  const checked = await Promise.all(all.map(async p => ({ ...p, ...(await checkout(dir, p)) })))
   await writeJsonAtomic(join(dir, "prs.json"), unitsOfPrs(checked).map((u, i) => ({ id: u.id, ...checked[i]! })), { pretty: true })
   const title = family?.t.summary ?? (checked.length === 1 ? checked[0]!.title : `${checked.length} PRs`)
   return { ...start, ticket, prs: checked, units: unitsOfPrs(checked), summary: title }
@@ -406,6 +426,7 @@ export async function clearJob(id: string) {
   const job = isJobId(id) ? await stateOf(id) : null
   if (!job) throw new Error("Not a job")
   if (job.status === "running") throw new Error("The job runs: wait for it to end")
+  await removeWorktrees(job)
   await rename(dirOf(id), `${dirOf(id)}.old-${Date.now()}`)
   // A build's worktrees went with its folder: the repos forget them.
   if (job.stage === "build") for (const name of await readdir(REPOS).catch(() => [] as string[])) await exec(["git", "-C", join(REPOS, name), "worktree", "prune"])

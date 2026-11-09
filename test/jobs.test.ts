@@ -98,10 +98,14 @@ describe("reviewsFor", () => {
     expect(out[0]!.body).not.toContain("TF1")
     expect(out[1]!.body).toContain("TF3")
   })
-  it("a finding of no PR goes in the first one's text; a PR with nothing chosen gets nothing", () => {
-    const out = reviewsFor([f("F1", null)], units, null)
-    expect(out).toHaveLength(1)
-    expect(out[0]!.body).toContain("TF1")
+  it("a finding of no PR goes to the only PR there is; with several it stays out", () => {
+    expect(reviewsFor([f("F1", null)], units, null)).toHaveLength(0)
+    const one = reviewsFor([f("F1", null)], units.slice(0, 1), null)
+    expect(one).toHaveLength(1)
+    expect(one[0]!.body).toContain("TF1")
+  })
+  it("names the ticket by the PRs' titles and branches before their texts", () => {
+    expect(ticketFromPrs([pr(1, { body: "follows PP-100" }), pr(2, { head: "feat/PP-7-x" })], ["PP"])).toBe("PP-7")
   })
 })
 
