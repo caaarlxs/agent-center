@@ -23,6 +23,7 @@ import { SearchPalette } from "@/features/search/SearchPalette"
 import { PanelSlot } from "@/features/session/PanelSlot"
 import { nextAfter, waitingOf } from "@/features/session/waiting"
 import { openNow, openSession, useOpenSession } from "./open-session"
+import { closesPanel } from "./outside"
 import { useAlerts } from "@/features/alerts/useAlerts"
 import { Dialogs } from "./Dialogs"
 import { PetLayer } from "@/features/pets/PetLayer"
@@ -88,19 +89,18 @@ function useLinksOutside() {
   }, [])
 }
 
-// A press anywhere outside the panel only closes it: on a card, a note, a
-// zone or a control it does nothing else. The sidebar on the left works as
-// it does; menus, dialogs and toasts (the panel's, or over it) and the
-// search palette keep it too, and what marks itself so (data-keeps-panel:
-// the bar over selected text). A press on a dialog's backdrop is the
-// dialog's: it closes the dialog, and the panel behind it stays.
-const KEEPS_PANEL = "[data-panel], [data-panel-edge], [data-sidebar], [data-keeps-panel], [role=menu], [role=dialog], [data-slot=dialog-overlay], [role=listbox], [data-sonner-toaster], [data-scrim]"
+// A press on empty space outside the panel closes it, and does nothing else.
+// A press on anything with its own action (a button, a link, another card,
+// a note, a toast's close) does that action and the panel stays; the
+// sidebar, menus, dialogs and the search palette keep it too (outside.ts).
+// A press on a dialog's backdrop is the dialog's: it closes the dialog, and
+// the panel behind it stays.
 function useCloseOnOutside(isOpen: boolean) {
   useEffect(() => {
     if (!isOpen) return
     const swallow = (e: Event) => (e.preventDefault(), e.stopPropagation())
     const onDown = (e: PointerEvent) => {
-      if (e.button !== 0 || (e.target as Element).closest?.(KEEPS_PANEL)) return
+      if (e.button !== 0 || !(e.target instanceof Element) || !closesPanel(e.target)) return
       swallow(e) // no mousedown follows: no drag, no focus
       window.addEventListener("click", swallow, { capture: true, once: true })
       setTimeout(() => window.removeEventListener("click", swallow, true), 600)
