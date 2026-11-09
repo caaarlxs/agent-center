@@ -110,10 +110,21 @@ describe("criteria the test could not try", () => {
     expect(out.fixes).toBeUndefined()
   })
   it("a failure with its [Fix] already open opens no other one", async () => {
-    const { jira, done } = fakeJira({ "PP-10": { status: "10067", mine: true } })
+    const { jira, done } = fakeJira({ "PP-10": { status: "10067", mine: true }, "PP-20": { status: "3", mine: true } })
     const results = [{ id: "T1", criterion: "Old", status: "fail" }, { id: "T2", criterion: "New", status: "fail" }]
     const out = await followInJira("tested", state({ fixes: ["PP-20"], fixOf: { T1: "PP-20" }, results }), flow, jira)
     expect(done).toEqual(["move PP-10 10351", "create PP-10 [Fix] New"])
     expect(out.fixOf).toEqual({ T1: "PP-20", T2: out.fixes!.at(-1)! })
+  })
+})
+
+describe("a criterion that fails again", () => {
+  it("gets a new [Fix] when its old one is already done; keeps the open one otherwise", async () => {
+    const { jira, done } = fakeJira({ "PP-10": { status: "10067", mine: true }, "PP-20": { status: "10020", mine: true }, "PP-21": { status: "3", mine: true } })
+    const results = [{ id: "T1", criterion: "Old", status: "fail" }, { id: "T2", criterion: "Open", status: "fail" }]
+    const out = await followInJira("tested", state({ fixes: ["PP-20", "PP-21"], fixOf: { T1: "PP-20", T2: "PP-21" }, results }), flow, jira)
+    expect(done).toEqual(["move PP-10 10351", "create PP-10 [Fix] Old"])
+    expect(out.fixOf!.T1).not.toBe("PP-20")
+    expect(out.fixOf!.T2).toBe("PP-21")
   })
 })

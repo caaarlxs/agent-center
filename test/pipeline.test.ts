@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { isStuck, shippedWith, testedIn, askPrompt, askRefusal, fixesNow, isAbout, testFix, unshipped, blocking, checkedByHand, checkedIn, isAdopted, toFixNow, MARK, answeredAfter, answersComment, argsFor, parseResult, pipelineKeyOf, stageToRun, unbuilt, withRun, questionsComment, snapshotOf, prodWarning, autoNext, linksFigma, impactRepos } from "../lib/pipeline"
+import { isStuck, releasedUnits, shippedWith, unitsNow, withUnits, testedIn, askPrompt, askRefusal, fixesNow, isAbout, testFix, unshipped, blocking, checkedByHand, checkedIn, isAdopted, toFixNow, MARK, answeredAfter, answersComment, argsFor, parseResult, pipelineKeyOf, stageToRun, unbuilt, withRun, questionsComment, snapshotOf, prodWarning, autoNext, linksFigma, impactRepos } from "../lib/pipeline"
 
 const questions = [
   { id: "Q1", question: "¿Cuál es el copy?", proposal: "El del ticket" },
@@ -484,3 +484,24 @@ describe("what an environment runs", () => {
   })
 })
 
+
+describe("Jira after a fix", () => {
+  const u = (id: string) => ({ id, repo: "r", subtask: null, subtasks: [`S-${id}`], branch: "b", title: id, dependsOn: [] })
+  const results = [{ id: "T2", criterion: "a", status: "fail" }, { id: "T3", criterion: "b", status: "fail" }] as never
+  it("moves only the [Fix] of the criteria you chose to fix", () => {
+    expect(fixesNow({ results, fixOf: { T2: "PP-2", T3: "PP-3" }, fixing: { from: "test", ids: ["T2"] } } as never)).toEqual(["PP-2"])
+    expect(fixesNow({ results, fixOf: { T2: "PP-2", T3: "PP-3" } } as never)).toEqual(["PP-2", "PP-3"])
+    expect(fixesNow({ results, fixOf: { T2: "PP-2" }, fixing: { from: "review", ids: ["F1"] } } as never)).toEqual([])
+  })
+  it("a fix of the review moves only the units its findings are in", () => {
+    const s = { units: [u("U1"), u("U2")], findings: [{ id: "F1", unit: "U2" }, { id: "F2", unit: "U1" }], fixing: { from: "review", ids: ["F1"] } } as never
+    expect(unitsNow(s).map(x => x.id)).toEqual(["U2"])
+  })
+  it("in staging, only the units whose release steps went are done", () => {
+    const s = { units: [u("U1"), u("U2")], release: { env: "staging", steps: [{ unit: "U1", status: "done" }, { unit: "U2", status: "skipped" }] } } as never
+    expect(releasedUnits(s).map(x => x.id)).toEqual(["U1"])
+  })
+  it("a build listing only its new units keeps the ones before", () => {
+    expect(withUnits([u("U1"), u("U2")], [{ ...u("U2"), title: "new" }, u("X1")]).map(x => `${x.id}:${x.title}`)).toEqual(["U1:U1", "U2:new", "X1:X1"])
+  })
+})

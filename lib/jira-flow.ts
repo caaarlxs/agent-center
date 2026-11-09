@@ -104,7 +104,11 @@ async function openFixes(state: FlowState, flow: Flow, jira: Jira) {
   const fixes: string[] = []
   const fixOf = { ...state.fixOf }
   const checks: Check[] = []
-  for (const r of failing(state).filter(r => !fixOf[r.id])) {
+  for (const r of failing(state)) {
+    // Its [Fix] still open is the one; one done (it failed again) or gone gets a new one.
+    // Jira not answering keeps it: better none new than a second one.
+    const old = fixOf[r.id] ? await jira.issue(fixOf[r.id]!).then(i => i ?? "gone", () => "unknown" as const) : "gone"
+    if (old === "unknown" || (old !== "gone" && old.status !== flow.statuses.done.id)) continue
     try {
       const key = await jira.createSubtask(state.key, `${flow.fixPrefix} ${r.criterion ?? r.id}`, flow.subtaskType)
       fixes.push(key)
