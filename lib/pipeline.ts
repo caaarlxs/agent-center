@@ -172,6 +172,7 @@ const STAGE: Record<AgentStage, StageDef> = {
 2. El plan está en ${join(dir, "plan.md")} y ${join(dir, "plan.json")}; el refinamiento, en ${join(dir, "refine.md")}; el ticket, en ${join(dir, "ticket.md")}.
 3. Trabaja en ${join(dir, "work")}. Lo que ya hizo un run anterior está en ${join(dir, "build.progress.json")}: no lo repitas. Marca las tareas de la checklist del plan en ${join(dir, "build.checklist.json")} en cuanto estén hechas.
 4. Si existe ${join(dir, "review.fix.json")}, la revisión ya pasó: este run arregla solo los hallazgos que lista (\`{"fix": ["F1"]}\`; detalle en ${join(dir, "review.md")}), en las mismas ramas y PRs. Sigue la sección "Arreglar la revisión" de build.md.
+   Si existe ${join(dir, "test.fix.json")}, el test en staging falló y las PRs de antes ya están mergeadas y desplegadas: este run arregla solo los criterios que lista (cada uno con lo que encontró el test, su [Fix] en Jira y lo que una persona preguntó sobre él; el informe, en ${join(dir, "test.md")}). Abre PRs nuevas desde la rama por defecto, una por repo que cambias, con rama \`fix/${key}-<criterio>\`; cada unidad nueva con id X1, X2… y en \`subtasks\` las [Fix] de los criterios que arregla. Escribe un test que reproduzca cada fallo antes de arreglarlo. En build.json lista también las unidades de antes, tal cual.
 5. Escribe el resumen en ${join(dir, "build.summary.md")} y al final ${join(dir, "build.json")}: {"verdict": "ready" | "needs-info", "questions": [...], "units": [{"id": "U1", "repo": "...", "title": "...", "branch": "...", "status": "done" | "failed", "pr": "https://github.com/..." | null}], "fixed": ["F1"]}. Todas las unidades, también las que no tocas.`,
   },
   review: {
@@ -180,6 +181,7 @@ const STAGE: Record<AgentStage, StageDef> = {
 
 1. Lee ${join(STAGES_DIR, "review.md")} y ${join(STAGES_DIR, "environment.md")}, y síguelos. Si plan.json tiene \`scripts\`, lee también ${join(STAGES_DIR, "scripts.md")}.
 2. Las PRs están en ${join(dir, "build.json")}; el plan, en ${join(dir, "plan.md")}; el refinamiento y sus criterios de aceptación, en ${join(dir, "refine.md")}; el ticket, en ${join(dir, "ticket.md")}. El código de cada unidad está en su worktree de ${join(dir, "work")}: léelo, no lo cambies.
+   Si existe ${join(dir, "test.fix.json")}, esto es un arreglo de lo que falló en staging: revisa solo las unidades nuevas (X1, X2…) contra los criterios que lista; las de antes ya están mergeadas y desplegadas.
 3. Si existe ${join(dir, "review.json.prev")}, es la revisión anterior: comprueba primero que sus hallazgos están arreglados. Lo que el board ya ha comprobado de cada PR (borrador, rama, base, checks de CI, tests borrados o desactivados) está en ${join(dir, "checks.json")}: no lo repitas; cada aviso que tenga es un hallazgo que confirmas o descartas.
 4. Escribe los hallazgos en ${join(dir, "review.md")} y el resumen en ${join(dir, "review.summary.md")}.
 5. Escribe al final ${join(dir, "review.json")}: {"verdict": "ready" | "needs-info", "questions": [...], "findings": [{"id": "F1", "unit": "U1", "severity": "blocker" | "major" | "minor", "file": "ruta", "line": 12, "title": "...", "detail": "...", "fix": "..."}]}.`,
@@ -298,6 +300,21 @@ export const blocking = (findings: Finding[] | undefined) => (findings ?? []).fi
 // ones that stop the ticket.
 export const toFixNow = (findings: Finding[] | undefined, chosen?: string[]) =>
   (chosen ? (findings ?? []).filter(f => chosen.includes(f.id)) : blocking(findings)).map(f => f.id)
+// What a build after a failed test fixes (test.fix.json): the criteria you chose, else
+// every one that failed; each with what the test found, its [Fix] and what a person asked about it.
+export const testFix = (state: Pick<PipelineState, "results" | "fixOf" | "threads">, chosen?: string[]) =>
+  failing(state.results).filter(r => !chosen || chosen.includes(r.id)).map(r => ({
+    id: r.id, criterion: r.criterion, summary: r.summary ?? null, evidence: r.evidence, subtask: state.fixOf?.[r.id] ?? null,
+    asked: (state.threads?.[`result:${r.id}`] ?? []).filter(t => t.a).map(t => ({ q: t.q, a: t.a })),
+  }))
+// The [Fix] sub-tasks of what fails now (all of them, before a test has results).
+export const fixesNow = (state: Pick<PipelineState, "results" | "fixOf" | "fixes">) =>
+  state.results?.length && state.fixOf ? failing(state.results).map(r => state.fixOf![r.id]).filter((k): k is string => !!k) : (state.fixes ?? [])
+// The units staging does not run yet: the ones a build after a failed test adds.
+export const unshipped = (state: Pick<PipelineState, "units" | "deployed">) => {
+  const shipped = new Set((state.deployed?.staging?.steps ?? []).filter(s => s.kind === "merge" && s.status === "done").map(s => s.unit))
+  return (state.units ?? []).filter(u => !shipped.has(u.id))
+}
 
 // The to-do items the build marked done (build.checklist.json: {"done": [...]} or a list).
 export function checkedIn(text: string | null): string[] {
@@ -714,7 +731,11 @@ const withJira = (checks: Check[], before: Check[] = [], jira: Check[] = before.
 async function inJira(event: JiraEvent, state: PipelineState): Promise<Partial<PipelineState>> {
   const flow = flowOf(await readText(join(STAGES_DIR, "jira.json")))
   if (!flow) return {}
-  const out = await followInJira(event, state, flow, JIRA).catch(err => ({ checks: [{ id: "jira-flow", label: "Jira did not answer", status: "warn" as const, detail: String(err?.message ?? err) }], fixes: undefined, fixOf: undefined }))
+  // A build after a failed test moves only its own sub-tasks (the ones in staging stay
+  // done), and only the [Fix] of the criteria that fail now.
+  const isFixing = event === "build-started" || event === "built" || event === "in-staging"
+  const now = isFixing ? { ...state, units: event === "in-staging" ? state.units : unshipped(state), fixes: fixesNow(state) } : state
+  const out = await followInJira(event, now, flow, JIRA).catch(err => ({ checks: [{ id: "jira-flow", label: "Jira did not answer", status: "warn" as const, detail: String(err?.message ?? err) }], fixes: undefined, fixOf: undefined }))
   const kept = (state.checks ?? []).filter(c => !c.id.startsWith("jira-"))
   return { checks: withJira([...kept, ...out.checks], state.checks), ...(out.fixes ? { fixes: out.fixes } : {}), ...(out.fixOf ? { fixOf: out.fixOf } : {}) }
 }
@@ -749,7 +770,7 @@ async function checksAfter(state: PipelineState, result: Result): Promise<Check[
 // to fix; prod, staging.
 const NEEDS: Partial<Record<Stage, [Stage[], string]>> = {
   plan: [["refine"], "Plan needs the refinement done first"],
-  build: [["plan", "review"], "Build needs the plan done first"],
+  build: [["plan", "review", "test"], "Build needs the plan done first"],
   review: [["build"], "Review needs the build done first"],
   staging: [["review"], "Staging needs a review with nothing to fix"],
   test: [["staging"], "The test needs staging deployed first"],
@@ -777,8 +798,7 @@ export async function startPipeline(key: string, take = false, asked?: Stage, ch
   await labelTicket(key, [LABELS.on], []) // also checks that it is yours
   if (stage === "staging") await stagingWaits(state!)
   if (isRelease(stage)) return startRelease(state!, stage)
-  if (stage === "build" && state?.stage === "review") await writeJsonAtomic(join(dirOf(key), "review.fix.json"), { fix: toFixNow(state.findings, chosen) }, { pretty: true })
-  else if (stage !== "build") await rename(join(dirOf(key), "review.fix.json"), join(dirOf(key), "review.fix.json.prev")).catch(() => {})
+  await writeFixes(key, state, stage, chosen)
   void run(key, (state?.runs ?? 0) + 1, stage, auto)
 }
 
@@ -811,6 +831,16 @@ export async function checkByHand(key: string, ids: string[]) {
   const checked: PipelineState = { ...state, results }
   const isClear = state.stage === "test" && !failing(results).length && !untried(results).length
   await save(isClear ? { ...checked, ...(await inJira("tested", checked)) } : checked)
+}
+
+// A build fixes what the review found (review.fix.json) or what the test found
+// (test.fix.json); any other stage, neither (the ones of before are put aside).
+async function writeFixes(key: string, state: PipelineState | null, stage: Stage, chosen?: string[]) {
+  const from = stage === "build" && (state?.stage === "review" || state?.stage === "test") ? state.stage : null
+  if (from === "test" && !testFix(state!, chosen).length) throw new Error("Nothing failed to fix")
+  for (const f of ["review", "test"] as const) if (f !== from) await rename(join(dirOf(key), `${f}.fix.json`), join(dirOf(key), `${f}.fix.json.prev`)).catch(() => {})
+  if (from === "review") await writeJsonAtomic(join(dirOf(key), "review.fix.json"), { fix: toFixNow(state!.findings, chosen) }, { pretty: true })
+  if (from === "test") await writeJsonAtomic(join(dirOf(key), "test.fix.json"), { fix: testFix(state!, chosen) }, { pretty: true })
 }
 
 // Stop running on its own: the stage at work ends, and the next waits for you.

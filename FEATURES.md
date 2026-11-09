@@ -96,6 +96,7 @@ Lucide's names, and must be in `web/src/features/guide/icons.ts`.
 - {scale} **Gate agent**: an agent looks at each step that waits for you (a simulation's report, a tag, a release PR) and says go or hold, and why; the yes is still yours.
 - {flask-conical} **Test in staging**: an agent checks each acceptance criterion in staging and marks it pass or fail, with its evidence; a failure stops the way to prod.
 - {flask-conical} **Untested criteria**: a criterion the test could not try (no data for it, no device) is not a failure: it shows in amber with why, opens no [Fix] and keeps prod shut until you press Checked by hand. A failure that already has its [Fix] open never gets a second one. · 2026-11-09
+- {hammer} **Fix what failed in staging**: when the test finds failures, Fix with build sends the ticket back to Build: the agent opens new PRs that fix those criteria (with a test that reproduces each one first), then review, staging and the whole test again; the [Fix] sub-tasks follow it in Jira, and staging only takes the new PRs. · 2026-11-09
 - {rocket} **Prod**: every step asks first, and the riskiest (merge, tag, run for real) ask twice; where the team set one, a dialog first reminds you what must be done outside the board, like a mobile build sent to the store.
 - {heart-pulse} **Check prod**: after the release, an agent checks in prod that what the ticket asked for works.
 - {undo-2} **Roll back**: Roll back staging or Roll back prod undoes the release the other way round (a revert PR for each merge, the previous tag deployed again); it asks twice.

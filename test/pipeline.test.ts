@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { askPrompt, askRefusal, isAbout, blocking, checkedByHand, checkedIn, isAdopted, toFixNow, MARK, answeredAfter, answersComment, argsFor, parseResult, pipelineKeyOf, stageToRun, unbuilt, withRun, questionsComment, snapshotOf, prodWarning, autoNext, linksFigma, impactRepos } from "../lib/pipeline"
+import { askPrompt, askRefusal, fixesNow, isAbout, testFix, unshipped, blocking, checkedByHand, checkedIn, isAdopted, toFixNow, MARK, answeredAfter, answersComment, argsFor, parseResult, pipelineKeyOf, stageToRun, unbuilt, withRun, questionsComment, snapshotOf, prodWarning, autoNext, linksFigma, impactRepos } from "../lib/pipeline"
 
 const questions = [
   { id: "Q1", question: "¿Cuál es el copy?", proposal: "El del ticket" },
@@ -401,5 +401,25 @@ describe("askRefusal", () => {
     const waiting = { sessionId: "s", status: "ready", threads: { "result:CA3": [{ q: "a", a: null, at: 1000 }] } } as never
     expect(askRefusal(waiting, "result:CA3", "¿Y?", 2000)).toBe("It is still answering the last question")
     expect(askRefusal(waiting, "result:CA3", "¿Y?", 1000 + 6 * 60_000)).toBeNull()
+  })
+})
+
+describe("a build after a failed test", () => {
+  const results = [{ id: "CA3", criterion: "Asesor: español", status: "fail", evidence: "orgType", summary: "Lo ve en inglés" }, { id: "CA1", criterion: "x", status: "pass", evidence: "" }, { id: "M1", criterion: "m", status: "untested", evidence: "" }] as never
+  const tested = { results, fixOf: { CA3: "PP-3250", CA1: "PP-3249" }, fixes: ["PP-3249", "PP-3250", "PP-3251"], threads: { "result:CA3": [{ q: "¿Qué es orgType?", a: "El papel…", at: 1 }, { q: "¿Y?", a: null, at: 2 }] } } as never
+  it("fixes what failed (not what it could not try), each with what the test found, its [Fix] and what was asked", () => {
+    expect(testFix(tested)).toEqual([{ id: "CA3", criterion: "Asesor: español", summary: "Lo ve en inglés", evidence: "orgType", subtask: "PP-3250", asked: [{ q: "¿Qué es orgType?", a: "El papel…" }] }])
+    expect(testFix(tested, ["CA1"])).toEqual([])
+  })
+  it("moves in Jira only the [Fix] of what fails now", () => {
+    expect(fixesNow(tested)).toEqual(["PP-3250"])
+    expect(fixesNow({ fixes: ["PP-1"] } as never)).toEqual(["PP-1"])
+  })
+  it("adds only the units staging does not run yet", () => {
+    const s = { units: [{ id: "U1" }, { id: "X1" }], deployed: { staging: { steps: [{ kind: "merge", unit: "U1", status: "done" }] } } } as never
+    expect(unshipped(s).map(u => u.id)).toEqual(["X1"])
+  })
+  it("starts from a test only with something that failed", () => {
+    expect(stageToRun({ stage: "test", status: "ready", results } as never, "build")).toBe("build")
   })
 })

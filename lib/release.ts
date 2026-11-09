@@ -120,11 +120,22 @@ function unitSteps(u: Unit, env: Env, config: DeployConfig, state: PipelineState
 // The steps of a release to an environment: its scripts simulated first;
 // then the plan's order (else its units, then its scripts), each script for
 // real in its place, a repo released to prod once.
+// The units and scripts an environment does not run yet (all of them, before a fix's release).
+function notYetIn(state: PipelineState, env: Env) {
+  const before = (state.deployed?.[env]?.steps ?? []).filter(s => s.status === "done")
+  const shipped = new Set(before.filter(s => s.kind === "merge").map(s => s.unit))
+  const ran = new Set(before.filter(s => s.kind === "execute").map(s => s.script))
+  return { units: (state.units ?? []).filter(u => !shipped.has(u.id)), scripts: (state.scripts ?? []).filter(x => !ran.has(x.id)) }
+}
+
 export function releaseSteps(state: PipelineState, env: Env, config: DeployConfig): ReleaseStep[] {
-  const units = state.units ?? []
-  const scripts = state.scripts ?? []
-  const order: OrderItem[] = state.order?.length ? state.order
-    : [...units.map(u => ({ kind: "unit" as const, id: u.id, text: null, envs: [] })), ...scripts.map(x => ({ kind: "script" as const, id: x.id, text: null, envs: [] }))]
+  // What this environment runs already (a release before a fix): only the rest goes.
+  const { units, scripts } = notYetIn(state, env)
+  const asUnit = (u: { id: string }) => ({ kind: "unit" as const, id: u.id, text: null, envs: [] })
+  const planned: OrderItem[] = state.order?.length ? state.order
+    : [...units.map(asUnit), ...scripts.map(x => ({ kind: "script" as const, id: x.id, text: null, envs: [] }))]
+  // A fix's new units, which the plan's order does not know, go after it.
+  const order = [...planned, ...units.filter(u => !planned.some(o => o.kind === "unit" && o.id === u.id)).map(asUnit)]
   const simulations: Omit<ReleaseStep, "id">[] = []
   const steps: Omit<ReleaseStep, "id">[] = []
   const released = new Set<string>()

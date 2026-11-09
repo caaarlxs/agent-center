@@ -301,3 +301,12 @@ describe("conflictsPrompt", () => {
     expect(text).toContain("Nunca rebase, nunca --force")
   })
 })
+
+describe("a release after a fix", () => {
+  const shipped = { env: "staging", steps: [{ id: "R1", kind: "merge", unit: "U1", repo: "api-service", status: "done" }] } as never
+  it("takes the fix's new units after the plan's order, and leaves out what that environment already runs", () => {
+    const fix = { id: "X1", repo: "api-service", subtask: null, subtasks: ["PP-9"], branch: "fix/PP-1-CA3", title: "Fix", dependsOn: [], status: "done", pr: "https://github.com/acme/api-service/pull/8" }
+    const s = state({ units: [units[0], fix], scripts: [], order: [{ kind: "unit", id: "U1", text: null, envs: [] }], deployed: { staging: shipped } })
+    expect(releaseSteps(s, "staging", config).map(x => x.unit)).toEqual(["X1"])
+  })
+})
