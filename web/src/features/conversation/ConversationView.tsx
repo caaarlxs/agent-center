@@ -611,7 +611,7 @@ function AnswerFrame({ src, sessionId }: { src: string; sessionId: string }) {
     addEventListener("message", onMessage)
     return () => removeEventListener("message", onMessage)
   }, [sessionId])
-  return <iframe ref={frame} src={src} sandbox="allow-scripts" title="Answer view" className="block w-full border-0 bg-transparent" style={{ height }} />
+  return <iframe ref={frame} src={src} sandbox="allow-scripts" title="Answer view" className="block w-full shrink-0 border-0 bg-transparent" style={{ height }} />
 }
 
 const ANSWER_RECEIPT_MS = 12_000 // an answer the session has not taken by then did not reach it
