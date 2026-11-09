@@ -398,10 +398,19 @@ export async function stateIn<S extends PipelineState>(dir: string): Promise<S |
 }
 const stateOf = (key: string) => stateIn(dirOf(key))
 // The state with its run in the history: added the first time, then kept up to date.
+// What a build did in its own pass: after a review, the units its fixed findings
+// were in; after a failed test, its new units (staging runs the rest); else all.
+const builtNow = (s: PipelineState) => {
+  const units = s.units ?? []
+  const fixedIn = new Set((s.findings ?? []).filter(f => s.fixed?.includes(f.id)).map(f => f.unit))
+  if (fixedIn.size) return units.filter(u => fixedIn.has(u.id))
+  return s.deployed?.staging ? unshipped(s) : units
+}
 // What a run that ended left, by its stage.
 const keptOf = (s: PipelineState): Kept | undefined => {
   if (s.status !== "ready" && s.status !== "needs-info") return undefined
-  if (s.stage === "plan" || s.stage === "build") return { units: s.units ?? [], ...(s.stage === "plan" && s.checklist ? { checklist: s.checklist } : {}) }
+  if (s.stage === "plan") return { units: s.units ?? [], ...(s.checklist ? { checklist: s.checklist } : {}) }
+  if (s.stage === "build") return { units: builtNow(s) }
   if (s.stage === "review") return { findings: s.findings ?? [] }
   if (s.stage === "test" || s.stage === "smoke") return { results: s.results ?? [] }
   return undefined

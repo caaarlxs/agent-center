@@ -444,3 +444,14 @@ describe("each run keeps what it left", () => {
     expect(at({ stage: "build", status: "running", runs: 5 }).kept).toBeUndefined()
   })
 })
+
+describe("a build's pass keeps only what it did", () => {
+  const u = (id: string) => ({ id, repo: "r", subtask: null, branch: "b", title: id, dependsOn: [], pr: `https://github.com/o/r/pull/${id}` })
+  const base = { key: "PP-1", stage: "build", status: "ready", runs: 9, sessionId: null, startedAt: 1, endedAt: 2, askedAt: null, questions: [], error: null } as const
+  const kept = (extra: object) => (withRun({ ...base, ...extra } as never).history!.at(-1)! as { kept?: { units?: { id: string }[] } }).kept!.units!.map(x => x.id)
+  it("the first, every unit; a fix of the review, the units its findings were in; a fix of staging, its new units", () => {
+    expect(kept({ units: [u("U1"), u("U2")] })).toEqual(["U1", "U2"])
+    expect(kept({ units: [u("U1"), u("U2")], fixed: ["F1"], findings: [{ id: "F1", unit: "U2" }] })).toEqual(["U2"])
+    expect(kept({ units: [u("U1"), u("X1")], deployed: { staging: { steps: [{ kind: "merge", unit: "U1", status: "done" }] } } })).toEqual(["X1"])
+  })
+})
