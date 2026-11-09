@@ -19,11 +19,11 @@ test("the running turn stays open, the last finished one folds", () => {
   expect([...foldedSteps(shown, false).heads.keys()]).toEqual(["t1", "a2"])
 })
 
-test("what you see or answer stays in place: questions, files, edits", () => {
-  const shown = [ask("u1"), run("t1"), other("q1", "question"), run("t2"), other("e1", "edits"), say("a1")]
+test("what you see or answer stays in place: questions, files", () => {
+  const shown = [ask("u1"), run("t1"), other("q1", "question"), run("t2"), other("f1", "files"), say("a1")]
   const { heads, hidden } = foldedSteps(shown, false)
   expect(heads.get("t1")?.keys).toEqual(["t1", "t2"])
-  expect(hidden.has("q1") || hidden.has("e1")).toBe(false)
+  expect(hidden.has("q1") || hidden.has("f1")).toBe(false)
 })
 
 test("a turn with no answer text, or no steps, folds nothing", () => {
@@ -34,4 +34,11 @@ test("a turn with no answer text, or no steps, folds nothing", () => {
 test("test runs fold with the steps", () => {
   const shown = [ask("u1"), run("t1"), other("x1", "tests"), other("x2", "tests"), say("a1")]
   expect(foldedSteps(shown, false).heads.get("t1")?.keys).toEqual(["t1", "x1", "x2"])
+})
+
+test("the files changed box folds too, also after the answer", () => {
+  const shown = [ask("u1"), run("t1"), say("a1"), other("e1", "edits"), ask("u2")]
+  const { heads, hidden } = foldedSteps(shown, false)
+  expect(heads.get("t1")?.keys).toEqual(["t1", "e1"])
+  expect(hidden.has("a1")).toBe(false)
 })

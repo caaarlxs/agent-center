@@ -9,12 +9,13 @@ const WORK = new Set(["tools", "plan", "tests"])
 const STEP = new Set(["assistant", ...WORK])
 
 // One turn's steps: its texts, tool runs, plans and test runs before the
-// answer (the texts at its end). Questions, files and edits stay where they are.
+// answer (the texts at its end), and its "files changed" box wherever it
+// sits. Questions and files sent stay where they are.
 function stepsOf(turn: readonly Item[]): Item[] {
   let answer = turn.length
   while (answer > 0 && !WORK.has(turn[answer - 1]!.kind)) answer--
   const hasAnswer = turn.slice(answer).some(i => i.kind === "assistant")
-  return hasAnswer ? turn.slice(0, answer).filter(i => STEP.has(i.kind)) : []
+  return hasAnswer ? turn.filter((i, n) => (n < answer && STEP.has(i.kind)) || i.kind === "edits") : []
 }
 
 /** Each finished turn's steps, by the first one's key; and every key folded. */
