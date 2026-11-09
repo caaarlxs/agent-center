@@ -20,6 +20,7 @@ import { ago } from "@/features/session/state"
 import type { Job } from "@server/jobs"
 import type { AgentStage, PipelineState } from "@server/pipeline"
 import { isJob, useActivity } from "./Pipeline"
+import { markRead } from "./pipeline-seen"
 import { SPECIALISTS, SPLIT, clampSplit, jobColumn, jobLabel } from "./jobs-board"
 import { JobComposer } from "./JobComposer"
 import { StageEffect } from "./StageEffect"
@@ -29,7 +30,8 @@ import { PipelineMark, liveLine } from "./PipelineMark"
 import { BUILT, STAGES, boardColumn, childrenLine, costOf, dollars, isCoordinating, isQueued, toFix, waitingStep } from "./pipeline-board"
 
 // A ticket opens the ticket; a job, the job.
-const open = (state: PipelineState) => dialog.set(isJob(state) ? { kind: "job", id: state.key } : { kind: "ticket", key: state.key })
+// Opened: what it did counts as read (the sidebar's count, pipeline-seen.ts).
+const open = (state: PipelineState) => (markRead(state.key), dialog.set(isJob(state) ? { kind: "job", id: state.key } : { kind: "ticket", key: state.key }))
 const onOpenKey = (state: PipelineState) => (e: KeyboardEvent) => e.key === "Enter" && e.target === e.currentTarget && open(state)
 const shimmer = "[--color-background:var(--text)] [--color-muted-foreground:var(--text-muted)]"
 

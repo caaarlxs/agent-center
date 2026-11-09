@@ -6,7 +6,7 @@
 import { appIcon } from "@/lib/app-icon"
 import { jiraSetup, loadJira } from "@/features/jira/jira"
 import { BellOff, BookText, CircleHelp, Ticket, Columns3, Inbox, List, PanelLeft, Paperclip, Volume2, VolumeX, Workflow } from "lucide-react"
-import { useEffect, useState, type ReactNode } from "react"
+import { useEffect, useMemo, useState, type ReactNode } from "react"
 import { yours } from "@/features/board/state"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils"
 import { repoDot } from "@/features/session/state"
 import { notify, sound, speech, toggleNotify, toggleSound, toggleSpeech } from "@/features/alerts/prefs"
 import { Limits, SlimLimits } from "@/features/limits/Limits"
+import { usePipelineCounts } from "@/features/jira/pipeline-seen"
 import { CustomizeButton } from "./CustomizeButton"
 import { openDialog } from "./open-dialog"
 import { openSession } from "./open-session"
@@ -39,12 +40,13 @@ const navRow = (isOn: boolean, isSlim: boolean) =>
     isSlim && "justify-center gap-0 px-0",
   )
 
-// A count beside Inbox: what asks you (amber), what is new (brand).
-function Pill({ tone, title, children, isSlim }: { tone: "ask" | "new"; title: string; children: ReactNode; isSlim: boolean }) {
+// A count beside Inbox or Pipeline: what asks you (amber), what is new
+// (brand), agents at work (green).
+function Pill({ tone, title, children, isSlim }: { tone: "ask" | "new" | "work"; title: string; children: ReactNode; isSlim: boolean }) {
   return (
     <span title={title}
       className={cn("inline-flex h-[18px] min-w-5 items-center justify-center rounded-[9px] px-1.5 text-[11px] font-[650] tabular-nums",
-        tone === "ask" ? "bg-ask-soft text-ask" : "bg-brand-soft text-brand",
+        tone === "ask" ? "bg-ask-soft text-ask" : tone === "work" ? "bg-work-soft text-work" : "bg-brand-soft text-brand",
         isSlim && "absolute top-px right-0.5 h-[15px] min-w-4 px-1 text-[10px]")}>
       {children}
     </span>
@@ -154,6 +156,9 @@ export function Sidebar() {
   const repos = useLive(l => l.snapshot?.repos) ?? []
   const cards = yours(useLive(l => l.snapshot?.cards) ?? [])
   const needsYou = useLive(l => l.snapshot?.pipelines.filter(p => p.status === "needs-info").length) ?? 0
+  const pipelines = useLive(l => l.snapshot?.pipelines)
+  const jobs = useLive(l => l.snapshot?.jobs)
+  const agents = usePipelineCounts(useMemo(() => [...(pipelines ?? []), ...(jobs ?? [])], [pipelines, jobs]))
   const version = useLive(l => l.snapshot?.version) // the commit the board runs
   const isConnected = useLive(l => l.isConnected)
   const chosen = repoFilter.use()
@@ -210,8 +215,12 @@ export function Sidebar() {
                   {asking > 0 && <Pill tone="ask" title="Asking you something" isSlim={isSlim}><Num value={asking} /></Pill>}
                 </span>
               )}
-              {v.key === "pipeline" && needsYou > 0 && (
-                <span className={cn(!isSlim && "ml-auto")}><Pill tone="ask" title="Tickets waiting for your answers" isSlim={isSlim}><Num value={needsYou} /></Pill></span>
+              {v.key === "pipeline" && (needsYou > 0 || agents.working > 0 || agents.toRead > 0) && (
+                <span className={cn("flex gap-1", !isSlim && "ml-auto")}>
+                  {agents.working > 0 && !isSlim && <Pill tone="work" title="Agents at work" isSlim={isSlim}><Num value={agents.working} /></Pill>}
+                  {agents.toRead > 0 && <Pill tone="new" title="Agents that finished since you last opened them: open one in the Pipeline to read it" isSlim={isSlim}><Num value={agents.toRead} suffix={isSlim ? "" : " new"} /></Pill>}
+                  {needsYou > 0 && <Pill tone="ask" title="Tickets waiting for your answers" isSlim={isSlim}><Num value={needsYou} /></Pill>}
+                </span>
               )}
             </button>
           ))}
