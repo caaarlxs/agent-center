@@ -71,6 +71,7 @@ export type DeployConfig = {
   gates?: Partial<Record<Env, "person" | "agent">> // who answers a step that waits: you (the agent only advises), or the agent
   gateAgent?: boolean // whether an agent looks at each step that waits, and says go on or hold
   undo?: Record<string, string> // how a person undoes what a repo's own command published (a rollback says it)
+  dryRun?: Record<string, string | false> // a repo's rehearsal of its command, when it is not "--dry-run" on it; false: it has none
   tag: { bump: "major" | "minor" | "patch" }
   setup: Record<string, string> // a repo's command that readies a checkout to run its scripts
   contextRepo?: string // the team's context for agents: changed only when a ticket makes a rule of it untrue
@@ -87,10 +88,14 @@ const prNumber = (url: string | null | undefined) => url?.split("/").pop() ?? ""
 // What a command may say of the ticket: its key, and its title without what a shell reads.
 const filled = (command: string, key: string, summary: string) =>
   command.replaceAll("{key}", key).replaceAll("{summary}", summary.replace(/["'`$\\]/g, "").replace(/\s+/g, " ").trim())
-// A repo's own command (an OTA, a publish): rehearsed first with --dry-run, then for real.
-const commandSteps = (command: string, base: Partial<ReleaseStep>, repo: string): Omit<ReleaseStep, "id">[] => {
+// A repo's own command (an OTA, a publish): rehearsed first, then for real. The
+// rehearsal is --dry-run on the command, unless the repo says its own (deploy.json
+// dryRun: a command, or false where there is none: then a person checks it first).
+const commandSteps = (command: string, base: Partial<ReleaseStep>, repo: string, dryRun?: string | false): Omit<ReleaseStep, "id">[] => {
   const name = command.split(" --")[0]!.trim()
-  return [blank("simulate", `${repo}: ${name} (dry run)`, { ...base, value: `${command} --dry-run` }), blank("execute", `${repo}: ${name}`, { ...base, value: command })]
+  const rehearsal = dryRun === false ? blank("manual", `${repo}: ${name} has no dry run: check what it will publish before it runs`, base)
+    : blank("simulate", `${repo}: ${name} (dry run)`, { ...base, value: dryRun ?? `${command} --dry-run` })
+  return [rehearsal, blank("execute", `${repo}: ${name}`, { ...base, value: command })]
 }
 
 // How a unit gets to an environment, by its repo's way (or ways, in a row) of deploying; none for "skip".
@@ -99,7 +104,7 @@ function deploySteps(u: Unit, env: Env, config: DeployConfig, key: string, summa
   const base = { unit: u.id, repo: u.repo, links: u.pr ? [{ label: `PR #${prNumber(u.pr)}`, url: u.pr }] : [] }
   return ways.flatMap(how => {
     if (how === "skip") return []
-    if (how.startsWith("command:")) return commandSteps(filled(how.slice(8).trim(), key, summary), base, u.repo)
+    if (how.startsWith("command:")) return commandSteps(filled(how.slice(8).trim(), key, summary), base, u.repo, config.dryRun?.[u.repo])
     if (how.startsWith("manual:")) return [blank("manual", `${u.repo}: ${how.slice(7).trim()}`, base)]
     if (how.startsWith("promote:")) return [blank("promote", `${u.repo}: release to ${how.slice(8)}`, { ...base, value: how.slice(8) })]
     if (how === "tag") return [blank("tag", `${u.repo}: tag and deploy`, base)]
@@ -109,9 +114,10 @@ function deploySteps(u: Unit, env: Env, config: DeployConfig, key: string, summa
 }
 
 // A unit's steps to an environment. A repo goes to prod once (by a tag or a
-// branch): a unit whose repo already went keeps only its merges and commands.
+// branch, by its command): a unit whose repo already went keeps only its merge.
 function unitSteps(u: Unit, env: Env, config: DeployConfig, state: PipelineState, released: Set<string>) {
-  const isOnce = (kind: StepKind) => kind !== "merge" && kind !== "simulate" && kind !== "execute"
+  // A repo's own command (an OTA) goes once too: it ships the repo, whatever unit brought it.
+  const isOnce = (kind: StepKind) => kind !== "merge"
   const steps = deploySteps(u, env, config, state.key, state.summary ?? "").filter(s => !isOnce(s.kind) || !released.has(u.repo))
   released.add(u.repo)
   return steps
@@ -266,7 +272,8 @@ export type Ops = {
   secret: (name: string) => Promise<string | null> // from the keychain
   agent: (dir: string, prompt: string, log: string) => Promise<number> // an agent on its own process, that may push to a PR's branch
 }
-export type Ctx = { key: string; summary: string; dir: string; repos: string; stages: string; config: DeployConfig; units: Unit[]; scripts: PlanScript[]; checklist: ChecklistItem[] }
+// tested: the commit staging ran of each repo (its merge), which is what goes to prod.
+export type Ctx = { key: string; summary: string; dir: string; repos: string; stages: string; tested?: Record<string, string>; config: DeployConfig; units: Unit[]; scripts: PlanScript[]; checklist: ChecklistItem[] }
 type Patch = Partial<ReleaseStep>
 
 const slugOf = (url: string | null | undefined) => url?.match(/github\.com\/([^/]+\/[^/]+)\/pull\//)?.[1] ?? null
@@ -287,6 +294,16 @@ const jsonOf = (text: string) => {
 const lines = (text: string) => text.split("\n").map(l => l.trim()).filter(Boolean)
 const defaultBranch = async (slug: string, ops: Ops) => (await ops.sh(["gh", "repo", "view", slug, "--json", "defaultBranchRef", "--jq", ".defaultBranchRef.name"])).out || "master"
 
+// A PR's checks, all told: none yet is pending (they have not started); one that
+// needs a person or did not start is a failure, not a wait.
+const FAILED_CHECKS = ["FAILURE", "ERROR", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE", "STALE"]
+const PASSED_CHECKS = ["SUCCESS", "NEUTRAL", "SKIPPED"]
+export function rollupOf(checks: { conclusion?: string; state?: string; status?: string }[]): "pass" | "pending" | "fail" {
+  const states = checks.map(c => (c.conclusion || c.state || c.status || "").toUpperCase())
+  if (states.some(s => FAILED_CHECKS.includes(s))) return "fail"
+  return states.length && states.every(s => PASSED_CHECKS.includes(s)) ? "pass" : "pending"
+}
+
 // What a step waiting for you shows: what it is about to do.
 async function prepare(step: ReleaseStep, release: Release, ctx: Ctx, ops: Ops): Promise<Patch> {
   if (step.kind === "check") return { items: ctx.checklist.map(c => c.text) }
@@ -298,10 +315,12 @@ async function prepare(step: ReleaseStep, release: Release, ctx: Ctx, ops: Ops):
     const clone = cloneOf(step, ctx)
     await ops.sh(["git", "-C", clone, "fetch", "-q", "--tags", "origin"], { timeoutMs: 60_000 })
     const tag = nextTag(lines((await ops.sh(["git", "-C", clone, "tag", "--list", "v*"])).out), ctx.config.tag.bump)
-    const sha = await must(ops, ["git", "-C", clone, "rev-parse", "origin/HEAD"])
+    // What staging tested goes to prod, not what the default branch has now (other tickets may have merged since).
+    const tested = ctx.tested?.[step.repo ?? ""]
+    const sha = tested ?? (await must(ops, ["git", "-C", clone, "rev-parse", "origin/HEAD"]))
     if (!tag) return { sha, detail: "No vX.Y.Z tag yet: write the first one" }
     const items = lines((await ops.sh(["git", "-C", clone, "log", "--first-parent", "--format=%s", `${tag.latest}..${sha}`, "-n", "30"])).out)
-    return { sha, value: step.value ?? tag.next, previous: tag.latest, items, detail: `${items.length} change${items.length === 1 ? "" : "s"} since ${tag.latest} go to prod` }
+    return { sha, value: step.value ?? tag.next, previous: tag.latest, items, detail: `${items.length} change${items.length === 1 ? "" : "s"} since ${tag.latest} go to prod${tested ? "" : " (staging's commit unknown: the default branch's head)"}` }
   }
   if (step.kind === "promote") {
     const slug = slugOf(prOf(step, ctx))
@@ -397,10 +416,16 @@ async function checkDeploy(step: ReleaseStep, ctx: Ctx, ops: Ops): Promise<Patch
 async function merge(step: ReleaseStep, release: Release, ctx: Ctx, ops: Ops): Promise<Patch> {
   const url = prOf(step, ctx)
   if (!url) throw new Error("The unit has no PR")
-  const view = async () => jsonOf(await must(ops, ["gh", "pr", "view", url, "--json", "state,isDraft,mergeable,headRefName,baseRefName,mergeCommit,mergedAt"])) ?? {}
+  const view = async () => jsonOf(await must(ops, ["gh", "pr", "view", url, "--json", "state,isDraft,mergeable,headRefName,baseRefName,mergeCommit,mergedAt,statusCheckRollup"])) ?? {}
   let pr = await view()
   if (pr.state !== "MERGED" && pr.mergeable === "CONFLICTING") return resolveConflicts(step, release, ctx, ops, { url, repo: step.repo ?? "", head: pr.headRefName, base: pr.baseRefName })
   if (pr.state !== "MERGED" && pr.mergeable === "UNKNOWN") return { detail: "GitHub is working out whether it merges" }
+  // An agent pushed to the PR (its conflicts): its commit merges only once the PR's checks pass.
+  if (pr.state !== "MERGED" && (step.attempts ?? 0) > 0) {
+    const rollup = rollupOf(pr.statusCheckRollup ?? [])
+    if (rollup === "fail") throw new Error("The checks failed on the commit that resolved the conflicts: look at it, then Retry")
+    if (rollup === "pending") return { detail: "Conflicts resolved: waiting for the PR's checks" }
+  }
   if (pr.state !== "MERGED") {
     if (pr.isDraft) await must(ops, ["gh", "pr", "ready", url])
     await must(ops, ["gh", "pr", "merge", url, `--${ctx.config.mergeMethod}`], { timeoutMs: 60_000 })
@@ -453,10 +478,9 @@ async function checkPromote(step: ReleaseStep, ops: Ops): Promise<Patch> {
   if (!url) return { status: "failed", error: "The release PR is gone" }
   const pr = jsonOf(await must(ops, ["gh", "pr", "view", url, "--json", "state,statusCheckRollup,mergeCommit,mergedAt"])) ?? {}
   if (pr.state !== "MERGED") {
-    const checks: { conclusion?: string; state?: string; status?: string }[] = pr.statusCheckRollup ?? []
-    const states = checks.map(c => (c.conclusion || c.state || c.status || "").toUpperCase())
-    if (states.some(s => ["FAILURE", "ERROR", "CANCELLED", "TIMED_OUT"].includes(s))) return { status: "failed", error: "A release check failed" }
-    if (!states.every(s => ["SUCCESS", "NEUTRAL", "SKIPPED"].includes(s))) return {}
+    const rollup = rollupOf(pr.statusCheckRollup ?? [])
+    if (rollup === "fail") return { status: "failed", error: "A release check failed (or needs a person)" }
+    if (rollup === "pending") return {}
     await must(ops, ["gh", "pr", "merge", url, "--merge"], { timeoutMs: 60_000 })
     return { phase: "deploy", since: ops.now(), detail: "Merged: waiting for the deploy", ...(await mergedSha(url, ops)) }
   }

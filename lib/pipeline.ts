@@ -31,7 +31,7 @@
 import { spawn } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { openSync } from "node:fs"
-import { cp, mkdir, readFile, rename } from "node:fs/promises"
+import { cp, mkdir, readFile, rename, rm } from "node:fs/promises"
 import { basename, join } from "node:path"
 import { DATA_DIR } from "./config"
 import { writeJsonAtomic } from "./files"
@@ -565,8 +565,10 @@ async function runStage(key: string, runs: number, stage: AgentStage, auto?: boo
 // ended by watching its process, not by being its parent.
 export async function spawnStage(dir: string, id: string, prompt: string, stage: AgentStage, onExit: () => void, figma = false): Promise<number> {
   const log = openSync(join(dir, `${stage}.log`), "a")
+  // The test in staging reads and writes AWS as its own IAM user, limited to the test data.
+  const aws: Record<string, string> = stage === "test" ? { AWS_PROFILE: "deale-staging-agent", AWS_DEFAULT_PROFILE: "deale-staging-agent" } : {}
   const proc = spawn(await claudeBinary(), ["-p", "--session-id", id, "--output-format", "stream-json", "--verbose", "--permission-mode", "auto", ...argsFor(stage, ROOT, { figma }), "--", prompt],
-    { cwd: dir, env: claudeEnv({ AGENT_CENTER_LAUNCH: "1" }), detached: true, stdio: ["ignore", log, log] })
+    { cwd: dir, env: claudeEnv({ AGENT_CENTER_LAUNCH: "1", ...aws }), detached: true, stdio: ["ignore", log, log] })
   if (!proc.pid) throw new Error("Claude Code did not start")
   proc.on("exit", onExit)
   proc.unref()
@@ -971,6 +973,8 @@ const releaseOps: Ops = {
   // A script runs on its own, like a stage: a restart of the board does not stop it.
   spawn: async (cwd, line, env, log, exit) => {
     await mkdir(join(log, ".."), { recursive: true })
+    // A retry starts clean: an exit left by the last try would end this one at once.
+    await rm(exit, { force: true })
     const out = openSync(log, "a")
     const proc = spawn("/bin/zsh", ["-lc", `${line}; echo $? > ${JSON.stringify(exit)}`],
       { cwd, env: { ...process.env, ...env, PATH: `${cwd}/.venv/bin:${cwd}/node_modules/.bin:${process.env.PATH}` }, detached: true, stdio: ["ignore", out, out] })
@@ -996,6 +1000,10 @@ const releaseOps: Ops = {
   },
 }
 
+// The commit staging ran of each repo (its last merge there): what goes to prod.
+export const testedIn = (state: Pick<PipelineState, "deployed">) =>
+  Object.fromEntries((state.deployed?.staging?.steps ?? []).filter(s => s.kind === "merge" && s.status === "done" && s.repo && s.sha).map(s => [s.repo!, s.sha!]))
+
 // Takes a ticket's release as far as it goes now; done, it goes to Jira.
 const ticking = new Set<string>()
 async function tickRelease(key: string) {
@@ -1004,7 +1012,7 @@ async function tickRelease(key: string) {
   try {
     const state = await stateOf(key)
     if (!state?.release || state.status !== "running" || !isRelease(state.stage)) return
-    const ctx = { key, summary: state.summary ?? key, dir: dirOf(key), repos: join(ROOT, "repos"), stages: STAGES_DIR, config: await deployConfig(), units: state.units ?? [], scripts: state.scripts ?? [], checklist: state.checklist ?? [] }
+    const ctx = { key, summary: state.summary ?? key, dir: dirOf(key), repos: join(ROOT, "repos"), stages: STAGES_DIR, tested: testedIn(state), config: await deployConfig(), units: state.units ?? [], scripts: state.scripts ?? [], checklist: state.checklist ?? [] }
     const advanced = await advanceRelease(state.release, ctx, releaseOps)
     const { isDone, failed } = advanced
     const release = await judged(state, advanced.release, ctx.config)

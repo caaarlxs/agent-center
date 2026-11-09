@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import { conflictsPrompt } from "../lib/conflicts"
-import { DEFAULT_CONFIG, rollbackSteps, approveStep, deployState, isGated, nextTag, releaseSteps, reportOf, skipStep, retryStep, advanceRelease, type Ops, type Release } from "../lib/release"
+import { DEFAULT_CONFIG, rollbackSteps, approveStep, deployState, isGated, nextTag, releaseSteps, reportOf, skipStep, retryStep, advanceRelease, type Ops, type Release, rollupOf } from "../lib/release"
 
 const unit = (id: string, repo: string, n: number) => ({ id, repo, subtask: null, branch: `feat/${id}`, title: id, dependsOn: [], status: "done" as const, pr: `https://github.com/acme/${repo}/pull/${n}` })
 const units = [unit("U1", "api-service", 7), unit("U2", "web-app", 8), unit("U3", "mobile-app", 9)]
@@ -261,7 +261,7 @@ describe("a PR with conflicts", () => {
     r = await advanceRelease(r.release, ctx, ops)
     expect(r.release.steps[0]).toMatchObject({ status: "running", phase: "conflicts" })
     ops.readText = async path => (path === "/d/PP-1/conflicts/R1-1.json" ? `{"resolved": true, "reason": "Kept both"}` : null)
-    answers["pr view"] = view("MERGEABLE")
+    answers["pr view"] = JSON.stringify({ ...JSON.parse(view("MERGEABLE")), statusCheckRollup: [{ conclusion: "SUCCESS" }] })
     r = await advanceRelease(r.release, ctx, ops)
     r = await advanceRelease(r.release, ctx, ops)
     expect(calls).toContain("gh pr merge https://github.com/acme/api-service/pull/7 --merge")
@@ -308,5 +308,50 @@ describe("a release after a fix", () => {
     const fix = { id: "X1", repo: "api-service", subtask: null, subtasks: ["PP-9"], branch: "fix/PP-1-CA3", title: "Fix", dependsOn: [], status: "done", pr: "https://github.com/acme/api-service/pull/8" }
     const s = state({ units: [units[0], fix], scripts: [], order: [{ kind: "unit", id: "U1", text: null, envs: [] }], deployed: { staging: shipped } })
     expect(releaseSteps(s, "staging", config).map(x => x.unit)).toEqual(["X1"])
+  })
+})
+
+describe("what reaches prod", () => {
+  it("a release PR merges only once its checks are there and pass; one that needs a person fails", () => {
+    expect(rollupOf([])).toBe("pending")
+    expect(rollupOf([{ conclusion: "SUCCESS" }, { state: "SKIPPED" }])).toBe("pass")
+    expect(rollupOf([{ conclusion: "SUCCESS" }, { status: "IN_PROGRESS" }])).toBe("pending")
+    expect(rollupOf([{ conclusion: "ACTION_REQUIRED" }])).toBe("fail")
+    expect(rollupOf([{ conclusion: "STARTUP_FAILURE" }])).toBe("fail")
+  })
+  it("tags what staging ran for that repo, not the default branch's head", async () => {
+    const { calls, ops } = fake({ "tag --list": "v0.16.1", "log --first-parent": "Merge pull request #7" })
+    const release: Release = { env: "prod", steps: releaseSteps(state({ units: [units[0]], scripts: [] }), "prod", config) }
+    const r = await advanceRelease(release, { ...ctx, tested: { "api-service": "sha-in-staging" } }, ops)
+    expect(r.release.steps[0]).toMatchObject({ kind: "tag", status: "waiting", sha: "sha-in-staging" })
+    expect(calls.some(c => c.includes("rev-parse origin/HEAD"))).toBe(false)
+  })
+  it("a merge after an agent resolved its conflicts waits for the PR's checks", async () => {
+    const view = (rollup: unknown[]) => JSON.stringify({ state: "OPEN", isDraft: false, mergeable: "MERGEABLE", statusCheckRollup: rollup })
+    const answers: Record<string, string> = { "pr view": view([{ status: "IN_PROGRESS" }]) }
+    const { calls, ops } = fake(answers)
+    const resolved: Release = { env: "staging", steps: releaseSteps(state({ units: [units[0]], scripts: [] }), "staging", config).map(s => ({ ...s, attempts: 1 })) }
+    let r = await advanceRelease(resolved, ctx, ops)
+    expect(calls.some(c => c.includes("pr merge"))).toBe(false)
+    expect(r.release.steps[0]!.status).toBe("pending")
+    answers["pr view"] = view([{ conclusion: "SUCCESS" }])
+    r = await advanceRelease(r.release, ctx, ops)
+    expect(calls.some(c => c.includes("pr merge"))).toBe(true)
+  })
+  it("a repo's own command runs once a release, however many of its units go", () => {
+    const ota = { ...config, repos: { "mobile-app": { staging: ["command:pnpm update:preview"] } } }
+    const two = [units[2], { ...units[2], id: "U4", pr: "https://github.com/acme/mobile-app/pull/10" }]
+    const steps = releaseSteps(state({ units: two, scripts: [] }), "staging", ota as never)
+    expect(steps.filter(s => s.kind === "execute")).toHaveLength(1)
+  })
+})
+
+describe("a repo's command rehearsed", () => {
+  const ota = (dryRun?: unknown) => ({ ...config, repos: { "mobile-app": { staging: ["command:pnpm update:preview"] } }, ...(dryRun === undefined ? {} : { dryRun: { "mobile-app": dryRun } }) }) as never
+  const first = (c: never) => releaseSteps(state({ units: [units[2]], scripts: [] }), "staging", c)[0]!
+  it("with --dry-run by default, the repo's own rehearsal, or a person where it has none", () => {
+    expect(first(ota())).toMatchObject({ kind: "simulate", value: "pnpm update:preview --dry-run" })
+    expect(first(ota("pnpm update:preview:check"))).toMatchObject({ kind: "simulate", value: "pnpm update:preview:check" })
+    expect(first(ota(false)).kind).toBe("manual")
   })
 })

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { askPrompt, askRefusal, fixesNow, isAbout, testFix, unshipped, blocking, checkedByHand, checkedIn, isAdopted, toFixNow, MARK, answeredAfter, answersComment, argsFor, parseResult, pipelineKeyOf, stageToRun, unbuilt, withRun, questionsComment, snapshotOf, prodWarning, autoNext, linksFigma, impactRepos } from "../lib/pipeline"
+import { testedIn, askPrompt, askRefusal, fixesNow, isAbout, testFix, unshipped, blocking, checkedByHand, checkedIn, isAdopted, toFixNow, MARK, answeredAfter, answersComment, argsFor, parseResult, pipelineKeyOf, stageToRun, unbuilt, withRun, questionsComment, snapshotOf, prodWarning, autoNext, linksFigma, impactRepos } from "../lib/pipeline"
 
 const questions = [
   { id: "Q1", question: "¿Cuál es el copy?", proposal: "El del ticket" },
@@ -453,5 +453,12 @@ describe("a build's pass keeps only what it did", () => {
     expect(kept({ units: [u("U1"), u("U2")] })).toEqual(["U1", "U2"])
     expect(kept({ units: [u("U1"), u("U2")], fixed: ["F1"], findings: [{ id: "F1", unit: "U2" }] })).toEqual(["U2"])
     expect(kept({ units: [u("U1"), u("X1")], deployed: { staging: { steps: [{ kind: "merge", unit: "U1", status: "done" }] } } })).toEqual(["X1"])
+  })
+})
+
+describe("testedIn", () => {
+  it("is the commit staging ran of each repo: its merge that went", () => {
+    const deployed = { staging: { steps: [{ kind: "merge", repo: "api", sha: "a1", status: "done" }, { kind: "merge", repo: "web", sha: "w1", status: "failed" }, { kind: "manual", repo: "app", status: "done" }] } }
+    expect(testedIn({ deployed } as never)).toEqual({ api: "a1" })
   })
 })
