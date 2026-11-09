@@ -19,7 +19,10 @@ describe("deliverablesOf", () => {
 describe("childrenIn", () => {
   it("reads the parent's order, keeps only its own children, and adds any it left out, last", () => {
     const order = [{ key: "PP-4", dependsOn: ["PP-2"] }, { key: "PP-2", dependsOn: [] }, { key: "PP-9", dependsOn: [] }]
-    expect(childrenIn(order, ["PP-2", "PP-4", "PP-5"])).toEqual([{ key: "PP-4", dependsOn: ["PP-2"] }, { key: "PP-2", dependsOn: [] }, { key: "PP-5", dependsOn: [] }])
+    expect(childrenIn(order, ["PP-2", "PP-4", "PP-5"])).toEqual([{ key: "PP-4", dependsOn: ["PP-2"], refined: true }, { key: "PP-2", dependsOn: [], refined: true }, { key: "PP-5", dependsOn: [] }])
+  })
+  it("a child the parent refined starts at its plan; one it says is too big refines on its own", () => {
+    expect(childrenIn([{ key: "PP-2", dependsOn: [], refined: false }, { key: "PP-4" }], ["PP-2", "PP-4"]).map(c => c.refined)).toEqual([false, true])
   })
   it("keeps the ticket order when the agent gave none", () => {
     expect(childrenIn(undefined, ["PP-2", "PP-4"])).toEqual([{ key: "PP-2", dependsOn: [] }, { key: "PP-4", dependsOn: [] }])

@@ -780,7 +780,8 @@ async function settle(done: PipelineState, result: Result) {
 
 const coordinating = new Set<string>()
 const childStates = async (children: Child[]) => Object.fromEntries(await Promise.all(children.map(async c => [c.key, await stateOf(c.key)] as const)))
-// Starts the children it can now; one that will not start (not yours) is a
+// Starts the children it can now: one it refined (children/<KEY>/) at its plan's
+// door, any other with its own refine. One that will not start (not yours) is a
 // warning in the coordinator's checks, and is not tried again.
 async function coordinate(key: string) {
   if (coordinating.has(key)) return
@@ -791,12 +792,35 @@ async function coordinate(key: string) {
     const refused = new Set((parent.checks ?? []).filter(c => c.id.startsWith("child-")).map(c => c.id.slice(6)))
     const children = parent.children.filter(c => !refused.has(c.key))
     const failed: Check[] = []
-    for (const child of toStart(children, await childStates(children)))
-      await startPipeline(child, false, undefined, undefined, parent.auto).catch((err: Error) => failed.push({ id: `child-${child}`, label: `${child} did not start`, status: "warn", detail: err.message }))
+    // Again while some start: one it refined waits at its plan (no agent), so the next can start too.
+    const tried = new Set<string>()
+    for (let next = toStart(children, await childStates(children)); next.length; next = toStart(children, await childStates(children)).filter(k => !tried.has(k))) {
+      for (const child of next) {
+        tried.add(child)
+        await startChild(parent, children.find(c => c.key === child)!).catch((err: Error) => failed.push({ id: `child-${child}`, label: `${child} did not start`, status: "warn", detail: err.message }))
+      }
+    }
     if (failed.length) await save({ ...parent, checks: [...(parent.checks ?? []), ...failed] })
   } finally {
     coordinating.delete(key)
   }
+}
+
+// One it refined (and left its refinement for) at its plan's door; any other with its own refine.
+const startChild = (parent: PipelineState, child: Child) =>
+  child.refined && existsSync(join(dirOf(parent.key), "children", child.key, "refine.md"))
+    ? adoptRefined(parent, child.key)
+    : startPipeline(child.key, false, undefined, undefined, parent.auto)
+
+// A child its coordinator refined: that refinement is its own, in Jira as well, and
+// it waits at its plan's door (it goes on by itself when the coordinator does).
+async function adoptRefined(parent: PipelineState, key: string) {
+  const summary = await ticket(key).then(t => t.summary, () => undefined)
+  await adoptJob(key, join(dirOf(parent.key), "children", key), "refine", { parent: parent.key, summary, auto: parent.auto })
+  const md = (await readText(join(dirOf(key), "refine.summary.md"))) ?? (await readText(join(dirOf(key), "refine.md"))) ?? ""
+  await commentOn(key, `${MARK} · ${key} ${STAGE.refine.done} (desde ${parent.key})\n\n${md.slice(0, COMMENT_CHARS)}`)
+  await locked(key, async () => save({ ...(await stateOf(key))!, publishedRun: 1 }))
+  if (parent.auto) await startPipeline(key, false, "plan")
 }
 
 // A child goes to staging once what it depends on is there.

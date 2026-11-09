@@ -1,12 +1,15 @@
 // A ticket with children delivered on their own (an epic's stories, a story's
 // tasks) runs as their coordinator: it is refined once, as a whole (whether
-// its children cover what it asks, in what order they go, the questions they
-// share), and then each child runs its own pipeline, a few at a time, in that
-// order. A child goes to staging only once what it depends on is there. Sub-
-// tasks are never children here: they are their story's own split of the work.
+// its children cover what it asks, in what order they go, every question at
+// once) and that one refine also refines each child (children/<KEY>/). Each
+// child then starts at its plan, a few at a time, in that order; only a child
+// too big to refine from there runs a refine of its own. A child goes to
+// staging only once what it depends on is there. Sub-tasks are never children
+// here: they are their story's own split of the work.
 import type { PipelineState } from "./pipeline"
 
-export type Child = { key: string; dependsOn: string[] }
+// refined: the coordinator's refine left its refinement (children/<KEY>/): it starts at its plan.
+export type Child = { key: string; dependsOn: string[]; refined?: boolean }
 type Tree = { children: { key: string; kind: string; isMine?: boolean }[] }
 
 export const MAX_AT_ONCE = 2
@@ -20,7 +23,7 @@ export const deliverablesOf = (t: Tree, onlyMine = false): string[] =>
 export function childrenIn(order: unknown, keys: string[]): Child[] {
   const given = (Array.isArray(order) ? order : [])
     .filter((c: any) => keys.includes(String(c?.key)))
-    .map((c: any) => ({ key: String(c.key), dependsOn: (Array.isArray(c.dependsOn) ? c.dependsOn : []).map(String).filter((k: string) => keys.includes(k) && k !== c.key) }))
+    .map((c: any) => ({ key: String(c.key), dependsOn: (Array.isArray(c.dependsOn) ? c.dependsOn : []).map(String).filter((k: string) => keys.includes(k) && k !== c.key), refined: c.refined !== false }))
   const seen = new Set(given.map(c => c.key))
   return [...given, ...keys.filter(k => !seen.has(k)).map(key => ({ key, dependsOn: [] }))]
 }
