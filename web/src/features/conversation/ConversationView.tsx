@@ -827,7 +827,7 @@ export function ConversationView({ sessionId, card: session, bridge }: { session
               const first = runOf.get(item.key)
               const level = first ? picked[first] ?? "original" : "original"
               if (level === "original" || !views || !first) return <ShownItem item={item} sessionId={sessionId} asked={asked} suggested={suggested} onFork={setForking} />
-              return first === item.key ? <AnswerFrame src={viewUrl(views.url, sessionId, item.key, level)} sessionId={sessionId} /> : null
+              return first === item.key ? <AnswerFrame src={viewUrl(views.url, sessionId, item.key, level, document.documentElement.dataset.theme === "dark" ? "dark" : "light")} sessionId={sessionId} /> : null
             })()}
             {answerActions.length > 0 && ends.has(item.key) && <AnswerActions sessionId={sessionId} answerKey={item.key} actions={answerActions} />}
           </Fragment>

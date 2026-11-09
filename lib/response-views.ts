@@ -2,11 +2,11 @@
 // answer at several levels; the chat shows a switch over each long answer
 // and, on a level, that tool's page in place of the text:
 //   "responseViews": {
-//     "url": "http://127.0.0.1:7790/view?session={session}&message={message}&level={level}&embed=1",
+//     "url": "http://127.0.0.1:7790/view?session={session}&message={message}&level={level}&theme={theme}&embed=1",
 //     "levels": [{ "id": "concept", "label": "High level" }, { "id": "complete", "label": "Complete" }],
 //     "minChars": 1500
 //   }
-// The page runs sandboxed. It may tell its height ({ height }) and a reply
+// {theme} is the board's: "light" or "dark". The page runs sandboxed. It may tell its height ({ height }) and a reply
 // the person pressed ({ reply }), which goes to the session as their message.
 
 export type ResponseViews = { url: string; levels: { id: string; label: string }[]; minChars: number }
