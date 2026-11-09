@@ -4,7 +4,8 @@
 import { useEffect } from "react"
 import { post } from "@/lib/api"
 import { useOpenSession } from "@/app/open-session"
-import { overrides, useBoardCards } from "./state"
+import { useLive } from "@/lib/live"
+import { overrides } from "./state"
 
 const SEEN_MS = 3000
 const posted = new Map<string, number>()
@@ -21,7 +22,8 @@ function markSeen(id: string) {
 
 export function useMarkSeen() {
   const open = useOpenSession()
-  const cards = useBoardCards()
+  // Every session, the one off the views too (Customize Agent Center opens it).
+  const cards = useLive(l => l.snapshot?.cards) ?? []
   const id = open?.id ?? null
   // Opening it again ends a "Mark to review".
   useEffect(() => void (id && keptUnread.delete(id)), [id])
