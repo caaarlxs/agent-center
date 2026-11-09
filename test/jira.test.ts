@@ -1,7 +1,7 @@
 // What is a ticket, and what Jira answers, in the board's words (lib/jira.ts).
 import { describe, expect, it } from "bun:test"
 import { ticketsAfter } from "../lib/board"
-import { briefOf, docOf, jqlOf, keysIn, kindOf, markdownOf, pickColumns, rowOf, sessionKeys, siteOf, ticketOf, userKeys } from "../lib/jira"
+import { briefOf, docOf, jqlOf, keysIn, kindOf, markdownOf, mentionCounts, pickColumns, rowOf, sessionKeys, siteOf, ticketOf, userKeys } from "../lib/jira"
 
 describe("keysIn", () => {
   it("finds a project's keys in branches and titles, once, in order", () => {
@@ -137,9 +137,22 @@ describe("sessionKeys", () => {
     expect(sessionKeys({ started: ["PP-7"], linked: ["PP-8"] }, [], mentions, ["PP"]).map(l => l.why)).toEqual(["started", "linked", "named"])
   })
   it("leaves out the ones you unlinked, and names three at most beyond yours", () => {
-    expect(sessionKeys({ off: ["PP-1"] }, ["PP-1"], new Map([["PP-2", 1]]), ["PP"])).toEqual([{ key: "PP-2", why: "named" }])
+    expect(sessionKeys({ off: ["PP-1"] }, ["PP-1"], new Map([["PP-2", 2]]), ["PP"])).toEqual([{ key: "PP-2", why: "named" }])
     expect(sessionKeys({}, [], new Map([["PP-1", 5], ["PP-2", 4], ["PP-3", 3], ["PP-4", 2]]), ["PP"])).toHaveLength(3)
     expect(sessionKeys({ started: ["PP-1", "PP-2", "PP-3", "PP-4"] }, [], new Map([["PP-5", 9]]), ["PP"])).toHaveLength(4)
+  })
+  it("leaves out a ticket named once in passing", () => {
+    expect(sessionKeys({}, [], new Map([["PP-1", 1]]), ["PP"])).toEqual([])
+  })
+})
+
+describe("mentionCounts", () => {
+  const you = (content: string, extra = {}) => JSON.stringify({ type: "user", message: { content }, ...extra })
+  it("weighs your first message as two: it says what the session is for", () => {
+    expect([...mentionCounts([you("Fix PP-1"), you("Like in PP-2")])]).toEqual([["PP-1", 2], ["PP-2", 1]])
+  })
+  it("counts each later message once", () => {
+    expect([...mentionCounts([you("Hi"), you("PP-2 now"), you("PP-2 again")])]).toEqual([["PP-2", 2]])
   })
 })
 
@@ -163,6 +176,7 @@ describe("userKeys", () => {
     expect(userKeys(JSON.stringify({ type: "user", isMeta: true, message: { content: "PP-9" } }))).toEqual([])
     expect(userKeys(JSON.stringify({ type: "user", message: { content: "<command-name>/brief</command-name> PP-9" } }))).toEqual([])
     expect(userKeys(JSON.stringify({ type: "user", message: { content: "PP-1 PP-2 PP-3 PP-4" } }))).toEqual([])
+    expect(userKeys(JSON.stringify({ type: "user", isCompactSummary: true, message: { content: "PP-9" } }))).toEqual([])
     expect(userKeys("not json")).toEqual([])
   })
 })

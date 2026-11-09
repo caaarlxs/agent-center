@@ -77,7 +77,8 @@ export function keysIn(texts: (string | null | undefined)[], projects: string[])
 
 // The tickets a session works on, and why: those it was started from or you
 // linked, those its branch or title names, then those you named in your own
-// messages, the most named first (three of these at most); none you unlinked.
+// messages more than in passing (mentionCounts), the most named first (three
+// of these at most); none you unlinked.
 export function sessionKeys(
   links: { started?: string[]; linked?: string[]; off?: string[] },
   named: string[], mentions: Map<string, number>, projects: string[],
@@ -90,32 +91,55 @@ export function sessionKeys(
   add(links.linked ?? [], "linked")
   add(named, "branch")
   const hand = out.size
-  add([...mentions].filter(([k]) => wanted.has(k.split("-")[0]!)).sort((a, b) => b[1] - a[1]).map(([k]) => k), "named")
+  add([...mentions].filter(([k, n]) => n >= 2 && wanted.has(k.split("-")[0]!)).sort((a, b) => b[1] - a[1]).map(([k]) => k), "named")
   return [...out].slice(0, Math.max(hand, 3)).map(([key, why]) => ({ key, why }))
 }
 
-// The ticket keys a transcript line names in your own words: a message you
-// wrote, not Claude's answers nor what tools gave back (a git log or a daily
-// brief names many tickets nobody works on). A message naming more than
-// three is a list, not work on them.
-export function userKeys(line: string): string[] {
+// What you wrote yourself in a transcript line: a message of yours, not
+// Claude's answers, what tools gave back, injected context or the summary
+// left when the conversation was compacted. Null for any other line.
+function userText(line: string): string | null {
   let d: any
   try {
     d = JSON.parse(line)
   } catch {
-    return []
+    return null
   }
-  if (d?.isMeta || d?.type !== "user") return []
+  if (d?.isMeta || d?.isCompactSummary || d?.type !== "user") return null
   const content = d?.message?.content
   const text = typeof content === "string" ? content : Array.isArray(content) ? content.filter((b: any) => b?.type === "text").map((b: any) => b.text).join("\n") : ""
-  if (/^\s*<(command-|local-command|system-reminder|task-notification)/.test(text)) return []
+  if (!text.trim() || /^\s*<(command-|local-command|system-reminder|task-notification)/.test(text)) return null
+  return text
+}
+
+// The ticket keys a transcript line names in your own words (a git log or a
+// daily brief names many tickets nobody works on). A message naming more than
+// three is a list, not work on them.
+export function userKeys(line: string): string[] {
+  const text = userText(line)
+  if (text === null) return []
   const keys = [...new Set([...text.matchAll(KEY)].map(m => m[1]!))]
   return keys.length > 3 ? [] : keys
 }
 const KEY = /(?<![A-Za-z0-9])([A-Z][A-Z0-9]{1,9}-\d{1,6})(?![0-9])/g
 
-// In how many of your messages each ticket key shows: read once, then only what they add.
-const mentionScans = new Map<string, { offset: number; counts: Map<string, number> }>()
+// In how many of your messages each ticket key shows. Your first message
+// weighs as two: it says what the session is for. A ticket needs two to be
+// linked (sessionKeys), so one named once in passing later stays out.
+type Scan = { counts: Map<string, number>; hasFirst: boolean }
+export function mentionCounts(lines: string[], scan: Scan = { counts: new Map(), hasFirst: false }) {
+  for (const line of lines) {
+    if (scan.hasFirst && !/[A-Z]-\d/.test(line)) continue
+    if (userText(line) === null) continue
+    const weight = scan.hasFirst ? 1 : 2
+    scan.hasFirst = true
+    for (const k of userKeys(line)) scan.counts.set(k, (scan.counts.get(k) ?? 0) + weight)
+  }
+  return scan.counts
+}
+
+// Read once, then only what the transcript adds.
+const mentionScans = new Map<string, Scan & { offset: number }>()
 export async function mentionsIn(ids: string[]): Promise<Map<string, number>> {
   const total = new Map<string, number>()
   for (const id of ids) {
@@ -123,14 +147,9 @@ export async function mentionsIn(ids: string[]): Promise<Map<string, number>> {
     if (!path) continue
     const { size } = await stat(path).catch(() => ({ size: 0 }))
     let scan = mentionScans.get(id)
-    if (!scan || size < scan.offset) mentionScans.set(id, (scan = { offset: 0, counts: new Map() }))
+    if (!scan || size < scan.offset) mentionScans.set(id, (scan = { offset: 0, counts: new Map(), hasFirst: false }))
     const s = scan
-    s.offset = await readAppended(path, s.offset, size, text => {
-      for (const line of text.split("\n")) {
-        if (!/[A-Z]-\d/.test(line)) continue
-        for (const k of userKeys(line)) s.counts.set(k, (s.counts.get(k) ?? 0) + 1)
-      }
-    })
+    s.offset = await readAppended(path, s.offset, size, text => void mentionCounts(text.split("\n"), s))
     for (const [k, n] of s.counts) total.set(k, (total.get(k) ?? 0) + n)
   }
   return total
