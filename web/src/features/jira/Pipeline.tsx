@@ -705,10 +705,13 @@ function NowActions({ state, preview, onRun, onStep }: { state: PipelineState; p
       {!isRolledBack && <Button variant="outline" className="h-7 shrink-0 text-xs" onClick={() => onRun()}>{release ? "Retry" : "Run again"}</Button>}
     </>
   )
-  // Fixing what the review found starts from its findings.
+  // Fixing what the review found starts from its findings. A test (or a check
+  // in prod) that found something can run again: after a fix, or with new data.
+  const isRetest = (state.stage === "test" || state.stage === "smoke") && (state.results ?? []).some(r => r.status !== "pass")
   return (
     <>
       <RollBack state={state} />
+      {isRetest && <Button variant="outline" className="h-7 shrink-0 text-xs" onClick={() => onRun(state.stage)}>{state.stage === "test" ? "Test again" : "Check again"}</Button>}
       {next && !(state.stage === "review" && next === "build") ? <StartButton stage={next} from={state.stage} reminders={preview?.env === next ? preview.reminders : undefined} onRun={onRun} /> : null}
     </>
   )
