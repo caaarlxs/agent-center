@@ -95,7 +95,7 @@ describe("comments", () => {
   it("asks each question with its proposal, marked as the agent's", () => {
     const text = questionsComment("PP-1", questions, "refine")
     expect(text.startsWith(MARK)).toBe(true)
-    expect(text).toContain("Q1. ¿Cuál es el copy?\nPropuesta: El del ticket")
+    expect(text).toContain("Q1. ¿Cuál es el copy?\n\nPropuesta:\nEl del ticket")
     expect(text).toContain("Q2. ¿Se quita la frase?")
     expect(questionsComment("PP-1", questions, "plan")).toContain("Plan de PP-1")
   })
@@ -370,8 +370,9 @@ describe("what a person reads", () => {
     const t = parseResult(JSON.stringify({ verdict: "ready", results: [{ criterion: "c", status: "fail", evidence: "orgType", summary: "El asesor lo ve en inglés." }] }), "test")
     expect(t.results[0]!.summary).toBe("El asesor lo ve en inglés.")
   })
-  it("the questions in Jira carry their context", () => {
-    expect(questionsComment("PP-1", [{ id: "Q1", question: "¿A?", proposal: "Sí", context: "Cambia el PDF." }], "refine")).toContain("Q1. ¿A?\nPor qué: Cambia el PDF.\nPropuesta: Sí")
+  it("the questions in Jira carry their context and their steps, each in its own block", () => {
+    const q = { id: "Q1", question: "¿A?", proposal: "1. Uno.\n2. Dos.", context: "Trata de:\n\n- el PDF" }
+    expect(questionsComment("PP-1", [q], "refine")).toContain("Q1. ¿A?\n\nTrata de:\n\n- el PDF\n\nPropuesta:\n1. Uno.\n2. Dos.")
   })
 })
 

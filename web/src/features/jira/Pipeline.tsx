@@ -87,13 +87,13 @@ function Decision({ n, question, context, proposal, text, onChange, ask }: { n: 
       <p className="m-0 flex gap-2.5 text-[13.5px] leading-[1.5] text-text">
         <span className="w-4 shrink-0 text-right font-mono text-xs leading-[1.7] text-faint">{n}</span>{question}
       </p>
-      {context && <p className="m-0 ml-[26px] text-[12.5px] leading-[1.55] text-text-muted">{context}</p>}
+      {context && <Markdown className="ml-[26px] text-[13px] text-text-muted">{context}</Markdown>}
       <div className="ml-[26px] flex flex-col gap-1.5">
         {isChanging ? (
           <textarea autoFocus value={text} onChange={e => onChange(e.target.value)} rows={2}
             className="max-h-[280px] min-h-[60px] resize-none rounded-[8px] border border-brand bg-surface px-3 py-2 text-[13px] leading-[1.55] outline-none [field-sizing:content] focus:shadow-[0_0_0_3px_var(--brand-soft)]" />
         ) : (
-          <p className="m-0 border-l-2 border-line-strong pl-3 text-[13px] leading-[1.55] text-text-muted">{proposal || "No proposal"}</p>
+          <Markdown className="border-l-2 border-line-strong pl-3 text-[13px] text-text-muted">{proposal || "No proposal"}</Markdown>
         )}
         <button className="self-start text-xs font-semibold text-faint transition-colors duration-120 hover:text-text"
           onClick={() => onChange(isChanging ? undefined : proposal)}>

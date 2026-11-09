@@ -386,7 +386,8 @@ export function parseResult(text: string, stage: Stage): Result {
 
 export const questionsComment = (key: string, questions: Question[], stage: AgentStage) =>
   `${MARK} · ${STAGE[stage].title} de ${key}\n\nAntes de implementar faltan estas decisiones. Cada una trae una propuesta: si vale, basta con responder "ok".\n\n` +
-  questions.map(q => `${q.id}. ${q.question}${q.context ? `\nPor qué: ${q.context}` : ""}\nPropuesta: ${q.proposal || "—"}`).join("\n\n")
+  // The context and the proposal are short Markdown (lists, steps): each in its own block.
+  questions.map(q => `${q.id}. ${q.question}${q.context ? `\n\n${q.context}` : ""}\n\nPropuesta:\n${q.proposal || "—"}`).join("\n\n")
 
 // Your answers: a question left blank takes its proposal.
 export const answersComment = (questions: Question[], answers: Record<string, string>) =>

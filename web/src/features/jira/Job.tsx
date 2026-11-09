@@ -97,7 +97,13 @@ function JobResult({ job }: { job: Job }) {
       <StagePanel job={job} />
       {job.questions.length > 0 && (
         <ol className="m-0 flex list-none flex-col gap-2 p-0 text-[13px]">
-          {job.questions.map(q => <li key={q.id}><span className="font-semibold">{q.question}</span>{q.proposal && <span className="block text-text-muted">{q.proposal}</span>}</li>)}
+          {job.questions.map(q => (
+            <li key={q.id} className="flex flex-col gap-1.5">
+              <span className="font-semibold">{q.question}</span>
+              {q.context && <Markdown className="text-[13px] text-text-muted">{q.context}</Markdown>}
+              {q.proposal && <Markdown className="border-l-2 border-line-strong pl-3 text-[13px] text-text-muted">{q.proposal}</Markdown>}
+            </li>
+          ))}
         </ol>
       )}
     </>
