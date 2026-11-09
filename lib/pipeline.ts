@@ -81,7 +81,9 @@ export type TestResult = { id: string; criterion: string; status: "pass" | "fail
 export type ContextImpact = { file: string; quote: string | null; why: string; proposal: string | null }
 export type Result = { verdict: "ready" | "needs-info"; questions: Question[]; units: Unit[]; checklist: ChecklistItem[]; findings: Finding[]; fixed: string[]; scripts: PlanScript[]; order: OrderItem[]; results: TestResult[]; contextImpact: ContextImpact[]; children?: unknown; debt: DebtItem[] }
 export type PipelineStatus = "running" | "needs-info" | "ready" | "failed"
-export type Run = { n: number; stage: Stage; sessionId: string | null; startedAt: number; endedAt: number | null; status: PipelineStatus; questions: number; units: number; findings?: number; error: string | null; spend?: Spend | null }
+// kept: what the run left, to see each pass of a stage apart (a plan's or a build's units, a review's findings, a test's results).
+export type Kept = { units?: Unit[]; checklist?: ChecklistItem[]; findings?: Finding[]; results?: TestResult[] }
+export type Run = { n: number; stage: Stage; sessionId: string | null; startedAt: number; endedAt: number | null; status: PipelineStatus; questions: number; units: number; findings?: number; error: string | null; spend?: Spend | null; kept?: Kept }
 export type PipelineState = {
   key: string
   summary?: string // the ticket's title, when the run started
@@ -396,8 +398,17 @@ export async function stateIn<S extends PipelineState>(dir: string): Promise<S |
 }
 const stateOf = (key: string) => stateIn(dirOf(key))
 // The state with its run in the history: added the first time, then kept up to date.
+// What a run that ended left, by its stage.
+const keptOf = (s: PipelineState): Kept | undefined => {
+  if (s.status !== "ready" && s.status !== "needs-info") return undefined
+  if (s.stage === "plan" || s.stage === "build") return { units: s.units ?? [], ...(s.stage === "plan" && s.checklist ? { checklist: s.checklist } : {}) }
+  if (s.stage === "review") return { findings: s.findings ?? [] }
+  if (s.stage === "test" || s.stage === "smoke") return { results: s.results ?? [] }
+  return undefined
+}
 export function withRun(s: PipelineState): PipelineState {
-  const run: Run = { n: s.runs, stage: s.stage, sessionId: s.sessionId, startedAt: s.startedAt, endedAt: s.endedAt, status: s.status, questions: s.questions.length, units: s.units?.length ?? 0, ...(s.stage === "review" ? { findings: s.findings?.length ?? 0 } : {}), error: s.error }
+  const kept = keptOf(s)
+  const run: Run = { n: s.runs, stage: s.stage, sessionId: s.sessionId, startedAt: s.startedAt, endedAt: s.endedAt, status: s.status, questions: s.questions.length, units: s.units?.length ?? 0, ...(s.stage === "review" ? { findings: s.findings?.length ?? 0 } : {}), error: s.error, ...(kept ? { kept } : {}) }
   return { ...s, history: [...(s.history ?? []).filter(r => r.n !== s.runs), run].sort((a, b) => a.n - b.n) }
 }
 const save = (s: PipelineState) => writeJsonAtomic(join(dirOf(s.key), "state.json"), withRun(s), { pretty: true })
@@ -585,6 +596,7 @@ async function finish(key: string) {
   const text = await readText(join(dir, `${state.stage}.json`))
   if (!text) throw new Error(`The agent left no ${state.stage}.json`)
   const result = parseResult(text, state.stage)
+  await keepDoc(dir, state)
   if (result.verdict === "needs-info") {
     // The questions are the reporter's to answer: Jira tells them.
     const reporter = await ticket(key).then(t => t.reporterId, () => null)
@@ -617,6 +629,19 @@ async function finish(key: string) {
   const done: PipelineState = { ...state, status: "ready", questions: [], units, checklist, checked, scripts, ...found, ...tested, ...context, checks: withJira([...checks, ...attached.checks], state.checks), endedAt: Date.now() }
   await recordDebt(key, result.debt)
   await settle({ ...done, checks: withJira([...(done.checks ?? []), ...graveDebt(result.debt)], []) }, result)
+}
+
+// Each run's document, apart (runs/<n>-<stage>.md), to read each pass of a stage.
+async function keepDoc(dir: string, state: PipelineState) {
+  const text = (await readText(join(dir, `${state.stage}.md`))) ?? (await readText(join(dir, `${state.stage}.summary.md`)))
+  if (text === null) return
+  await mkdir(join(dir, "runs"), { recursive: true })
+  await Bun.write(join(dir, "runs", `${state.runs}-${state.stage}.md`), text)
+}
+export async function runDoc(key: string, n: number) {
+  const run = (await stateOf(key))?.history?.find(r => r.n === n)
+  if (!isKey(key) || !run) throw new Error("No such run")
+  return readText(join(dirOf(key), "runs", `${n}-${run.stage}.md`))
 }
 
 // ---------- the team's code debt (debt.ts) ----------

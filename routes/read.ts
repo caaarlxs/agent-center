@@ -3,7 +3,7 @@
 // the person decided.
 
 import { jiraSetup, searchTickets, ticket, ticketRows, transitionsOf } from "../lib/jira"
-import { debtRegister, pipelineActivity, pipelineEvidence, pipelineOf, pipelineReport } from "../lib/pipeline"
+import { debtRegister, pipelineActivity, pipelineEvidence, pipelineOf, pipelineReport, runDoc } from "../lib/pipeline"
 import { jobActivity, jobOf, resolveJob } from "../lib/jobs"
 import { reportOf } from "../lib/release"
 import { namedBy, repoPage, sessionCommits, sessionRepos } from "../lib/session-commits"
@@ -329,6 +329,7 @@ export async function handleRead(url: URL): Promise<Response | null> {
       (err: Error) => json({ error: err.message }, 400))
   }
   // The team's code debt the agents saw and left alone, every ticket's (lib/debt.ts).
+  if (path === "/api/pipeline/run-doc") return await runDoc(url.searchParams.get("key") ?? "", Number(url.searchParams.get("n"))).then(doc => json({ doc }), (err: Error) => json({ error: err.message }, 400))
   if (path === "/api/pipeline/debt") return await debtRegister().then(d => json({ debt: d }), (err: Error) => json({ error: err.message }, 400))
   if (path === "/api/pipeline/report") {
     const file = url.searchParams.get("file") ?? ""

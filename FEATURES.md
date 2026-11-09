@@ -110,6 +110,7 @@ Lucide's names, and must be in `web/src/features/guide/icons.ts`.
 - {git-pull-request} **Publish to the PRs**: in a review job, tick the findings and Publish to the PRs posts them as a review on each PR, each on its line where it has one; it asks twice. · 2026-11-05
 - {circle-arrow-right} **Continue in the pipeline**: a refinement, plan or build job of your ticket goes on in the pipeline where it ended, at the next stage's door, without doing it again; it asks twice. · 2026-11-05
 - {message-circle-question} **Ask the agent**: under each question it asks, each test result that is not a pass and each review finding, Ask opens a short chat with the agent that wrote it, in its own session (it knows the ticket, the code and what it did) and only reading; the answers stay on the ticket. Questions and results also come with a plain-words why. · 2026-11-09
+- {rows-3} **Passes**: a stage run more than once (a fix, a test again) shows a row of its passes above its panel; the latest at first, and a click shows an earlier one as it left it (its units, findings or results, and its document). · 2026-11-09
 - {lock} **Limits**: agents never merge, push to main or touch prod: only the board does, step by step. Start over clears the runs and the labels; the comments stay in Jira.
 
 ## {panel-left} Sidebar

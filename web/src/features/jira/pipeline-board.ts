@@ -1,6 +1,6 @@
 // Where a ticket stands on the pipeline's board: the column of the stage it
 // is at, or, once that stage is done, the next one's, waiting at its door.
-import type { Finding, PipelineState, Stage, TestResult } from "@server/pipeline"
+import type { Finding, PipelineState, Run, Stage, TestResult } from "@server/pipeline"
 import type { Release, ReleaseStep } from "@server/release"
 
 export const STAGES = ["Refine", "Plan", "Build", "Review", "Staging", "Prod"]
@@ -74,7 +74,7 @@ function factOf(stage: Stage, state: PipelineState, preview: Release | null): st
     const asked = (state.history ?? []).filter(r => (r.stage ?? "refine") === "refine").reduce((n, r) => n + r.questions, 0)
     return asked ? count(asked, "decision") : "Refined"
   }
-  if (stage === "plan") return count(units.length, "unit")
+  if (stage === "plan") return count(passesOf(state.history ?? [], "plan").at(-1)?.units ?? units.length, "unit")
   if (stage === "build") return count(units.filter(u => u.pr).length, "PR")
   if (stage === "review") {
     const findings = state.findings ?? []
@@ -108,3 +108,9 @@ export function journeyOf(state: PipelineState, preview: Release | null): Journe
 export const tokens = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1000 ? `${Math.round(n / 1000)}k` : String(n))
 export const dollars = (n: number) => (n < 10 ? `$${n.toFixed(2)}` : `$${Math.round(n)}`)
 export const costOf = (runs: { spend?: { cost: number } | null }[]) => runs.reduce((sum, r) => sum + (r.spend?.cost ?? 0), 0)
+
+// The passes of a stage of the board: each run of its agent that ended, oldest first
+// (Staging's are the test's; Prod's, the check's). A release is no pass.
+const AGENT_OF: Partial<Record<Stage, Stage>> = { staging: "test", prod: "smoke" }
+export const passesOf = (history: Run[], stage: Stage) =>
+  history.filter(r => (r.stage ?? "refine") === (AGENT_OF[stage] ?? stage) && r.status !== "running")

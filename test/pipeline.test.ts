@@ -432,3 +432,15 @@ describe("the catalog of test data, by stage", () => {
     expect(argsFor("smoke", "/d").some(a => a.includes("fixtures.py"))).toBe(false)
   })
 })
+
+describe("each run keeps what it left", () => {
+  const base = { key: "PP-1", sessionId: null, startedAt: 1, endedAt: 2, askedAt: null, questions: [], error: null } as const
+  const units = [{ id: "U1", repo: "a", title: "t", pr: "https://github.com/o/a/pull/1" }]
+  it("a plan and a build their units; a review its findings; a test its results; nothing while it runs", () => {
+    const at = (extra: object) => withRun({ ...base, units, findings: [{ id: "F1" }], results: [{ id: "T1" }], ...extra } as never).history!.at(-1)! as { kept?: unknown }
+    expect(at({ stage: "build", status: "ready", runs: 2 }).kept).toEqual({ units })
+    expect(at({ stage: "review", status: "ready", runs: 3 }).kept).toEqual({ findings: [{ id: "F1" }] })
+    expect(at({ stage: "test", status: "ready", runs: 4 }).kept).toEqual({ results: [{ id: "T1" }] })
+    expect(at({ stage: "build", status: "running", runs: 5 }).kept).toBeUndefined()
+  })
+})

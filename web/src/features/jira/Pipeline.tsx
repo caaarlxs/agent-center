@@ -34,7 +34,7 @@ import type { ChecklistItem, Finding, PipelineState, PlanScript, Run, Severity, 
 import type { Check as BoardCheck } from "@server/checks"
 import { MODELS } from "@/features/prompt/Settings"
 import { PipelineMark, liveLine, startText, startingText, statusText } from "./PipelineMark"
-import { STAGE_KEYS, STAGES, costOf, dollars, isRelease, journeyOf, nextStage, stageAt, toFix, tokens } from "./pipeline-board"
+import { STAGE_KEYS, STAGES, costOf, dollars, isRelease, journeyOf, nextStage, passesOf, stageAt, toFix, tokens } from "./pipeline-board"
 import { ReleaseRail, ReleaseSteps, SkipFailed, StepAtHand, type After } from "./Release"
 import { Journey } from "./Journey"
 import { Evidence } from "./Evidence"
@@ -771,6 +771,50 @@ const hours = (ms: number) => (ms < 3_600_000 ? `${Math.max(1, Math.round(ms / 6
 export const startedState = (state: PipelineState, stage?: Stage): PipelineState =>
   ({ ...state, stage: stage ?? state.stage, status: "running", startedAt: Date.now(), endedAt: null, error: null, sessionId: null, questions: [] })
 
+// A stage run more than once (a fix, a test again) shows each pass apart: the
+// latest at first; an earlier one as it left it (its units, findings or results,
+// and its document), only to read: no button acts on a past pass.
+function StagePasses({ stage, ...props }: { stage: Stage; state: PipelineState; preview: Release | null; onRun: (stage?: Stage, fix?: string[]) => void; onStep: OnStep }) {
+  const passes = passesOf(props.state.history ?? [], stage)
+  const [picked, setPicked] = useState<number | null>(null)
+  const run = passes.find(r => r.n === picked)
+  const isPast = !!run && run !== passes.at(-1) && !!run.kept
+  return (
+    <div className="flex flex-col gap-3">
+      {passes.length > 1 && (
+        <div className="flex flex-wrap items-center gap-1.5" role="tablist" aria-label="Passes">
+          {passes.map((r, i) => {
+            const isOn = r.n === (isPast ? run!.n : passes.at(-1)!.n)
+            return (
+              <button key={r.n} role="tab" aria-selected={isOn} disabled={!r.kept && i < passes.length - 1} onClick={() => setPicked(i === passes.length - 1 ? null : r.n)}
+                title={`Run ${r.n} · ${new Date(r.startedAt).toLocaleString()}`}
+                className={cn("h-6 rounded-md px-2 text-[11.5px] font-semibold transition-colors duration-100 disabled:opacity-40", isOn ? "bg-surface text-text" : "text-faint hover:text-text")}>
+                Pass {i + 1}{i === passes.length - 1 ? " · latest" : ""}
+              </button>
+            )
+          })}
+        </div>
+      )}
+      {isPast ? <PastPass stage={stage} run={run!} {...props} /> : <StagePanel stage={stage} {...props} />}
+    </div>
+  )
+}
+
+function PastPass({ stage, run, state, preview, onStep }: { stage: Stage; run: Run; state: PipelineState; preview: Release | null; onStep: OnStep }) {
+  const [doc, setDoc] = useState<string | null>(null)
+  const [isOpen, setOpen] = useState(false)
+  useEffect(() => void get<{ doc: string | null }>(`/api/pipeline/run-doc?key=${encodeURIComponent(state.key)}&n=${run.n}`).then(r => setDoc(r.doc), () => {}), [state.key, run.n])
+  // As that pass left it; "failed" keeps every button of the panels away.
+  const past: PipelineState = { ...state, ...run.kept, stage: run.stage, status: "failed", threads: {} }
+  return (
+    <div className="flex flex-col gap-3">
+      <StagePanel stage={stage} state={past} preview={preview} onRun={() => {}} onStep={onStep} />
+      {doc && <FoldButton label="This pass's document" isOpen={isOpen} onToggle={() => setOpen(o => !o)} />}
+      {isOpen && doc && <Markdown className="text-[13px]">{doc}</Markdown>}
+    </div>
+  )
+}
+
 // ---------- the section ----------
 
 export function Pipeline({ ticket, onTaken }: { ticket: Ticket; onTaken: () => void }) {
@@ -824,7 +868,7 @@ export function Pipeline({ ticket, onTaken }: { ticket: Ticket; onTaken: () => v
         {state && <Now state={state} preview={data.preview} now={now} onRun={stage => void start(stage)} onStep={step} />}
         {state?.checks?.length && state.status !== "running" ? <Checks checks={state.checks} /> : null}
         {state?.status === "needs-info" ? <Decisions key={state.askedAt} ticketKey={ticket.key} state={state} onSent={() => void load()} />
-          : state && <StagePanel key={shown} stage={shown} state={state} preview={data.preview} onRun={(stage, fix) => void start(stage, fix)} onStep={step} />}
+          : state && <StagePasses key={shown} stage={shown} state={state} preview={data.preview} onRun={(stage, fix) => void start(stage, fix)} onStep={step} />}
       </div>
       {(docs.length > 0 || runs.length > 0) && (
         <footer className="border-t border-line px-4 py-2.5">

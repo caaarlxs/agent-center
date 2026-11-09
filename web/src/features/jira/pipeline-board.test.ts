@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { childrenLine, columnOf, isQueued, journeyOf, nextStage, parentColumn, toFix, untested, waitingStep } from "./pipeline-board"
+import { childrenLine, columnOf, isQueued, journeyOf, nextStage, parentColumn, passesOf, toFix, untested, waitingStep } from "./pipeline-board"
 
 type At = "refine" | "plan" | "build" | "review" | "staging" | "test" | "prod" | "smoke"
 const at = (stage: At, status: "running" | "needs-info" | "ready" | "failed", findings?: { id: string; severity: string }[], release?: unknown) => ({ stage, status, findings, release }) as never
@@ -124,5 +124,19 @@ describe("criteria the test could not try", () => {
     expect(nextStage(tested(["pass", "untested"]))).toBeNull()
     expect(isQueued(tested(["pass", "untested"]))).toBe(false)
     expect(nextStage(tested(["pass", "pass"]))).toBe("prod")
+  })
+})
+
+describe("the passes of a stage", () => {
+  const run = (n: number, stage: string, status = "ready", units = 3) => ({ n, stage, status, units, questions: 0, startedAt: n, endedAt: n + 1, sessionId: null, error: null })
+  const history = [run(1, "refine"), run(2, "plan"), run(3, "build"), run(4, "review"), run(5, "staging"), run(6, "test"), run(7, "build", "ready", 4), run(8, "review", "running")]
+  it("are the runs of its agent that ended, the test's in Staging, oldest first", () => {
+    expect(passesOf(history as never, "build").map(r => r.n)).toEqual([3, 7])
+    expect(passesOf(history as never, "staging").map(r => r.n)).toEqual([6])
+    expect(passesOf(history as never, "review").map(r => r.n)).toEqual([4])
+  })
+  it("a plan says the units it planned, not the ones a fix added later", () => {
+    const state = { stage: "build", status: "ready", units: Array(4).fill({ pr: "x" }), history } as never
+    expect(journeyOf(state, null).find(n => n.stage === "plan")!.fact).toBe("3 units")
   })
 })
