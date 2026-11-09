@@ -5,10 +5,10 @@ import {
   Activity, BellRing, BookText, Bot, CircleArrowRight, CircleCheck, Clock, Code, Columns3, Command, CopyX,
   Download, Eye, FastForward, FileDiff, FileText, FlaskConical, Folder, Frame, Gauge, GitCommitHorizontal, GitFork,
   GitPullRequest, Hammer, HeartPulse, Inbox, Kanban, Keyboard, LayoutGrid, Lightbulb, Link, ListChecks,
-  ListTodo, ListTree, Lock, Map as MapIcon, MessageCircleQuestion, MessageSquare, MessagesSquare, MousePointerClick, Move,
+  ListTodo, ListTree, Lock, LogOut, Map as MapIcon, MessageCircleQuestion, MessageSquare, MessagesSquare, MousePointerClick, Move,
   Orbit, Palette, PanelLeft, PanelRight, PawPrint, Play, Plus, RefreshCw, Reply, Rocket, Rows3, Scale, Search, Server,
   Settings, Shapes, ShieldCheck, SlidersHorizontal, Sparkles, SquareCheck, SquareTerminal, StickyNote,
-  Terminal, Ticket, TicketCheck, Timer, Undo2, WandSparkles, Workflow, Wrench,
+  Terminal, Ticket, TicketCheck, Timer, Trash2, Undo2, UserCheck, WandSparkles, Workflow, Wrench,
 } from "lucide-react"
 
 export const ICONS: Record<string, LucideIcon | undefined> = {
@@ -47,6 +47,7 @@ export const ICONS: Record<string, LucideIcon | undefined> = {
   "list-todo": ListTodo,
   "list-tree": ListTree,
   "lock": Lock,
+  "log-out": LogOut,
   "map": MapIcon,
   "message-circle-question": MessageCircleQuestion,
   "message-square": MessageSquare,
@@ -79,7 +80,9 @@ export const ICONS: Record<string, LucideIcon | undefined> = {
   "ticket": Ticket,
   "ticket-check": TicketCheck,
   "timer": Timer,
+  "trash-2": Trash2,
   "undo-2": Undo2,
+  "user-check": UserCheck,
   "wand-sparkles": WandSparkles,
   "workflow": Workflow,
   "wrench": Wrench,

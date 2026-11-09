@@ -11,7 +11,7 @@
 // and start the stage again. Start over clears the run and the labels; the
 // comments stay. On someone else's ticket it runs only once you take it
 // (two clicks: it is assigned to you).
-import { AlertTriangle, Check, ChevronRight, CircleHelp, Database, FastForward, FlaskConical, ListChecks, LogOut, Play, RotateCcw, Route, Send, ShieldCheck } from "lucide-react"
+import { AlertTriangle, Check, ChevronRight, CircleHelp, Database, FastForward, FlaskConical, ListChecks, LogOut, Play, RotateCcw, Route, Send, ShieldCheck, Trash2 } from "lucide-react"
 import { useEffect, useState, type ReactNode } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -33,6 +33,7 @@ import type { Helper, Step } from "@server/activity"
 import type { ChecklistItem, Finding, PipelineState, PlanScript, Run, Severity, Stage, TestResult, Turn, Unit } from "@server/pipeline"
 import type { Check as BoardCheck } from "@server/checks"
 import { deliverablesOf } from "@server/coordinator"
+import type { Leftover } from "@server/cleanup"
 import { MODELS } from "@/features/prompt/Settings"
 import { PipelineMark, liveLine, startText, startingText, statusText } from "./PipelineMark"
 import { STAGE_KEYS, STAGES, costOf, dollars, isRelease, journeyOf, nextStage, passesOf, stageAt, toFix, tokens } from "./pipeline-board"
@@ -42,7 +43,7 @@ import { Evidence } from "./Evidence"
 import { Ask, isWaiting } from "./Ask"
 import type { Release } from "@server/release"
 
-type Data = { state: PipelineState | null; refine: string | null; plan: string | null; build: string | null; review: string | null; test: string | null; smoke: string | null; preview: Release | null }
+type Data = { putAside: number; state: PipelineState | null; refine: string | null; plan: string | null; build: string | null; review: string | null; test: string | null; smoke: string | null; preview: Release | null }
 type OnStep = (step: string, action: "approve" | "skip", value?: string) => void
 type Fold = Stage | "runs"
 const FOLLOW_MS = 5_000
@@ -428,6 +429,71 @@ function RemoveButton({ ticketKey, onRemoved }: { ticketKey: string; onRemoved: 
       isAsking ? "bg-bad-soft text-bad" : "text-faint hover:bg-hover hover:text-text")} onClick={remove} title="Remove from the pipeline: Jira's statuses and the PRs stay">
       <LogOut size={12} />{isAsking && "Remove from pipeline?"}
     </button>
+  )
+}
+
+// What runs put aside left (worktrees, local branches, the runs' folders): you
+// see it all and pick; nothing goes until you press Delete.
+function CleanUp({ ticketKey, count, onDone }: { ticketKey: string; count: number; onDone: () => void }) {
+  const [items, setItems] = useState<Leftover[] | null>(null)
+  const [picked, setPicked] = useState<Set<string>>(new Set())
+  const [isBusy, setBusy] = useState(false)
+  const open = async () => {
+    try {
+      const { items } = await get<{ items: Leftover[] }>(`/api/pipeline/leftovers?key=${encodeURIComponent(ticketKey)}`)
+      setItems(items)
+      setPicked(new Set(items.filter(i => i.isPicked).map(i => i.id)))
+    } catch (err) {
+      toast((err as Error).message || "It did not work")
+    }
+  }
+  const toggle = (id: string) => setPicked(now => (now.has(id) ? new Set([...now].filter(x => x !== id)) : new Set([...now, id])))
+  const remove = async () => {
+    setBusy(true)
+    try {
+      const { failed = [] } = await post<{ failed?: string[] }>("/api/pipeline/cleanup", { key: ticketKey, ids: [...picked] })
+      toast(failed.length ? `Some of it stays: ${failed.join("; ")}` : `Deleted ${picked.size}`)
+      setItems(null)
+      onDone()
+    } catch (err) {
+      toast((err as Error).message || "It did not work")
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <>
+      <button className="mt-1 inline-flex h-6 shrink-0 items-center gap-1 rounded-md px-1.5 text-xs font-semibold text-faint transition-colors duration-120 hover:bg-hover hover:text-text"
+        onClick={() => void open()} title="Clean up what the runs put aside left">
+        <Trash2 size={12} />{count}
+      </button>
+      {items && (
+        <Dialog open onOpenChange={o => !o && setItems(null)}>
+          <DialogContent className="flex max-h-[min(80vh,640px)] w-[min(560px,calc(100vw-32px))] flex-col gap-3">
+            <DialogTitle className="m-0 text-[15px] font-[620]">Clean up {ticketKey}</DialogTitle>
+            {items.length ? (
+              <ul className="m-0 flex min-h-0 list-none flex-col gap-1.5 overflow-auto p-0">
+                {items.map(i => (
+                  <li key={i.id}>
+                    <label className="flex cursor-pointer items-start gap-2 text-[13px]">
+                      <input type="checkbox" checked={picked.has(i.id)} onChange={() => toggle(i.id)} className="mt-[3px] size-3.5 shrink-0 accent-(--brand)" />
+                      <span className="min-w-0">
+                        <span className="block truncate">{i.label}</span>
+                        {(i.detail || i.warn) && <span className={cn("block text-xs", i.warn ? "text-bad" : "text-faint")}>{i.warn ?? i.detail}</span>}
+                      </span>
+                    </label>
+                  </li>
+                ))}
+              </ul>
+            ) : <p className="m-0 text-[13px] text-text-muted">Nothing is left.</p>}
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" className="h-8 text-xs" onClick={() => setItems(null)}>Cancel</Button>
+              <Button variant="destructive" className="h-8 text-xs" disabled={!picked.size || isBusy} onClick={() => void remove()}>Delete {picked.size}</Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+    </>
   )
 }
 
@@ -921,6 +987,7 @@ export function Pipeline({ ticket, onTaken }: { ticket: Ticket; onTaken: () => v
           </button>
         )}
         {state && !(isRunning && isRelease(state.stage)) && <RemoveButton ticketKey={ticket.key} onRemoved={() => void load()} />}
+        {data.putAside > 0 && <CleanUp ticketKey={ticket.key} count={data.putAside} onDone={() => void load()} />}
       </header>
       <div className="flex flex-col gap-3 px-4 pb-4">
         {!state && (

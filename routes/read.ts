@@ -3,7 +3,7 @@
 // the person decided.
 
 import { jiraSetup, searchTickets, ticket, ticketRows, transitionsOf } from "../lib/jira"
-import { debtRegister, pipelineActivity, pipelineEvidence, pipelineOf, pipelineReport, runDoc } from "../lib/pipeline"
+import { debtRegister, leftovers, pipelineActivity, pipelineEvidence, pipelineOf, pipelineReport, runDoc } from "../lib/pipeline"
 import { jobActivity, jobOf, resolveJob } from "../lib/jobs"
 import { reportOf } from "../lib/release"
 import { namedBy, repoPage, sessionCommits, sessionRepos } from "../lib/session-commits"
@@ -337,6 +337,8 @@ export async function handleRead(url: URL): Promise<Response | null> {
       text => (text === null ? json({ error: "No such report" }, 404) : url.searchParams.has("view") ? json(reportOf(text, 8)) : new Response(text, { headers: { "content-type": file.endsWith(".csv") ? "text/csv; charset=utf-8" : "text/plain; charset=utf-8", ...(file.endsWith(".csv") ? { "content-disposition": `attachment; filename="${file}"` } : {}) } })),
       (err: Error) => json({ error: err.message }, 400))
   }
+  // What a ticket leaves once out of the pipeline, to clean up.
+  if (path === "/api/pipeline/leftovers") return await leftovers(url.searchParams.get("key") ?? "").then(items => json({ items }), (err: Error) => json({ error: err.message }, 400))
   if (path === "/api/pipeline") return await pipelineOf(url.searchParams.get("key") ?? "").then(r => json(r), (err: Error) => json({ error: err.message }, 400))
   if (path === "/api/jira/ticket") return await ticket(url.searchParams.get("key") ?? "").then(t => json(t), (err: Error) => json({ error: err.message }, 400))
   if (path === "/api/jira/search") {

@@ -38,6 +38,7 @@ import { writeJsonAtomic } from "./files"
 import { assignToMe, attachTo, commentOn, createIssue, confluenceIds, confluencePage, createSubtask, issueState, remoteLinks, type ConfluencePage, labelTicket, moveToStatus, openStatuses, ticket, type Ticket, type TicketComment } from "./jira"
 import { flowOf, followInJira, type Event as JiraEvent } from "./jira-flow"
 import { childrenIn, deliverablesOf, toStart, waitsFor, type Child } from "./coordinator"
+import { archiveOf, cleanupSteps, keptAfter, leftoversOf, wantedBranches, worktreesIn, type Archive, type Clone, type Found, type Kept as KeptBranch } from "./cleanup"
 import { evidenceType, filesIn, keptFiles, type EvidenceFile } from "./evidence"
 import { debtIn, merged as debtMerged, ticketOf as debtTicket, type DebtEntry, type DebtItem } from "./debt"
 import { claudeBinary, running } from "./launch"
@@ -487,7 +488,9 @@ export async function pipelineOf(key: string) {
   }
   // A stage's document; the build has only its summary.
   const doc = async (stage: Stage) => (state ? ((await readText(join(dirOf(key), `${stage}.md`))) ?? readText(join(dirOf(key), `${stage}.summary.md`))) : null)
-  return { state: state && (await withSpend(state)), refine: await doc("refine"), plan: await doc("plan"), build: await doc("build"), review: await doc("review"), test: await doc("test"), smoke: await doc("smoke"), preview: await previewOf(state) }
+  // What runs put aside left: their folders, and the branches you kept when one went.
+  const putAside = (await archivesOf(key)).length + (await keptBranchesOf(key)).length
+  return { putAside, state: state && (await withSpend(state)), refine: await doc("refine"), plan: await doc("plan"), build: await doc("build"), review: await doc("review"), test: await doc("test"), smoke: await doc("smoke"), preview: await previewOf(state) }
 }
 
 // What the running stage does now: its session's steps and subagents, and,
@@ -1313,6 +1316,61 @@ const keepOut = (parent: string, key: string) => locked(parent, async () => {
   const id = `child-${key}`
   await save({ ...p, checks: [...(p.checks ?? []).filter(c => c.id !== id), { id, label: `${key} is out of the pipeline`, status: "warn", detail: "Taken out by you: it does not start again on its own" }] })
 })
+
+// ---------- what a ticket leaves once out (cleanup.ts) ----------
+
+const archivesOf = async (key: string): Promise<Archive[]> => {
+  const names = await readdir(ROOT).catch(() => [] as string[])
+  const found = names.flatMap(name => {
+    const a = archiveOf(name, key)
+    return a ? [{ name, path: join(ROOT, name), at: a.at }] : []
+  })
+  return Promise.all(found.map(async a => ({ ...a, state: jsonOf(await readText(join(a.path, "state.json"))) as PipelineState | null })))
+}
+const KEPT = join(ROOT, "kept-branches.json")
+const keptBranchesOf = async (key: string): Promise<KeptBranch[]> => jsonOf(await readText(KEPT))?.[key] ?? []
+async function keepBranches(key: string, kept: KeptBranch[]) {
+  const all = jsonOf(await readText(KEPT)) ?? {}
+  await writeJsonAtomic(KEPT, { ...all, [key]: kept.length ? kept : undefined }, { pretty: true })
+}
+async function cloneOf(key: string, repo: string, archives: Archive[], kept: KeptBranch[]): Promise<Clone> {
+  const sh = (cmd: string[]) => releaseOps.sh(cmd, { cwd: join(ROOT, "repos", repo) })
+  const worktrees = worktreesIn((await sh(["git", "worktree", "list", "--porcelain"])).out).map(w => ({ ...w, exists: existsSync(w.path) }))
+  const local = (await sh(["git", "for-each-ref", "--format=%(refname:short)", "refs/heads"])).out.split("\n").filter(Boolean)
+  const branches = await Promise.all(wantedBranches(key, archives, repo, local, kept).map(async name => ({ name, unpushed: Number((await sh(["git", "rev-list", "--count", name, "--not", "--remotes"])).out) || 0 })))
+  return { repo, worktrees, branches }
+}
+async function foundFor(key: string): Promise<Found> {
+  if (!isKey(key)) throw new Error("Not a ticket key")
+  const [archives, kept] = await Promise.all([archivesOf(key), keptBranchesOf(key)])
+  const repos = (await readdir(join(ROOT, "repos"), { withFileTypes: true }).catch(() => [])).filter(d => d.isDirectory()).map(d => d.name)
+  return { key, liveDir: dirOf(key), live: await stateOf(key), archives, kept, clones: await Promise.all(repos.map(r => cloneOf(key, r, archives, kept))) }
+}
+// A kept branch deleted by hand meanwhile is forgotten.
+export async function leftovers(key: string) {
+  const found = await foundFor(key)
+  const items = leftoversOf(found)
+  const kept = (found.kept ?? []).filter(k => items.some(i => i.id === `branch:${k.repo}:${k.branch}`))
+  if (kept.length !== found.kept?.length) await keepBranches(key, kept)
+  return items
+}
+// Only what you picked, and only if it is still left now; what fails is said, the rest goes on.
+export async function cleanUp(key: string, ids: string[]) {
+  const found = await foundFor(key)
+  const all = leftoversOf(found)
+  const picked = all.filter(l => ids.includes(l.id))
+  if (!picked.length) throw new Error("Nothing of that is left")
+  await keepBranches(key, keptAfter(all, picked))
+  const failed: string[] = []
+  for (const step of cleanupSteps(picked, join(ROOT, "repos"), found.archives)) {
+    if ("remove" in step) await rm(step.remove, { recursive: true, force: true }).catch((err: Error) => failed.push(`${basename(step.remove)}: ${err.message}`))
+    else {
+      const r = await releaseOps.sh(step.cmd, { cwd: step.cwd })
+      if (!r.ok) failed.push(`${basename(step.cwd)}: ${step.cmd.slice(1, 3).join(" ")} ${step.cmd.at(-1)}: ${r.err}`)
+    }
+  }
+  return { failed }
+}
 
 // Every ticket in the pipeline (not the runs started over), the latest first.
 export async function pipelines(): Promise<PipelineState[]> {
