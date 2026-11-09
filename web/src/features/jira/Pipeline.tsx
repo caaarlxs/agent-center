@@ -34,7 +34,7 @@ import type { ChecklistItem, Finding, PipelineState, PlanScript, Run, Severity, 
 import type { Check as BoardCheck } from "@server/checks"
 import { deliverablesOf } from "@server/coordinator"
 import type { Leftover } from "@server/cleanup"
-import { anchorOf, ticketsOfYours, type Proposal } from "@server/proposals"
+import { anchorOf, ticketsOfYours, waitsOn, type Proposal } from "@server/proposals"
 import { MODELS } from "@/features/prompt/Settings"
 import { PipelineMark, liveLine, startText, startingText, statusText } from "./PipelineMark"
 import { STAGE_KEYS, STAGES, costOf, dollars, isRelease, journeyOf, nextStage, passesOf, stageAt, toFix, tokens } from "./pipeline-board"
@@ -81,7 +81,7 @@ export const openLog = (id: string) => (dialog.set(null), openSession(id))
 
 // ---------- the decisions ----------
 
-function Decision({ n, question, context, proposal, text, onChange, ask }: { n: number; question: string; context?: string; proposal: string; text: string | undefined; onChange: (text: string | undefined) => void; ask: ReactNode }) {
+function Decision({ n, question, context, proposal, tickets = [], text, onChange, ask }: { n: number; question: string; context?: string; proposal: string; tickets?: Proposal[]; text: string | undefined; onChange: (text: string | undefined) => void; ask: ReactNode }) {
   const isChanging = text !== undefined
   return (
     <li className="flex flex-col gap-2.5 border-t border-line py-4 first:border-t-0 first:pt-1">
@@ -96,6 +96,7 @@ function Decision({ n, question, context, proposal, text, onChange, ask }: { n: 
         ) : (
           <Markdown className="border-l-2 border-line-strong pl-3 text-[13px] text-text-muted">{proposal || "No proposal"}</Markdown>
         )}
+        {tickets.length > 0 && <TicketsIfAgreed tickets={tickets} />}
         <button className="self-start text-xs font-semibold text-faint transition-colors duration-120 hover:text-text"
           onClick={() => onChange(isChanging ? undefined : proposal)}>
           {isChanging ? "Keep the proposal" : "Change"}
@@ -123,7 +124,7 @@ function Decisions({ ticketKey, state, onSent }: { ticketKey: string; state: Pip
     <div className="flex flex-col" onKeyDown={e => e.key === "Enter" && (e.metaKey || e.ctrlKey) && (e.preventDefault(), void send())}>
       <h3 className="m-0 mb-2 text-[15px] font-semibold tracking-[-0.01em]">{count} decision{count === 1 ? "" : "s"} for you</h3>
       <ol className="m-0 list-none p-0">
-        {state.questions.map((q, i) => <Decision key={q.id} n={i + 1} question={q.question} context={q.context} proposal={q.proposal} text={changed[q.id]} onChange={t => change(q.id, t)}
+        {state.questions.map((q, i) => <Decision key={q.id} n={i + 1} question={q.question} context={q.context} proposal={q.proposal} tickets={(state.proposals ?? []).filter(p => p.question === q.id && p.status === "proposed")} text={changed[q.id]} onChange={t => change(q.id, t)}
           ask={<Ask ticketKey={ticketKey} about={`question:${q.id}`} turns={state.threads?.[`question:${q.id}`]} />} />)}
       </ol>
       <div className="mt-2 flex items-center justify-end gap-2.5">
@@ -754,11 +755,25 @@ function Checks({ checks }: { checks: BoardCheck[] }) {
   )
 }
 
+// The tickets an answer would bring: they wait in their question until you answer it.
+function TicketsIfAgreed({ tickets }: { tickets: Proposal[] }) {
+  return (
+    <div className="flex flex-col gap-1 rounded-[8px] bg-surface px-3 py-2">
+      <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-text-muted"><TicketPlus size={12} />With this proposal, also these tickets</span>
+      <ul className="m-0 flex list-none flex-col gap-0.5 p-0 text-[12.5px] text-text">
+        {tickets.map(t => <li key={t.id}><span className="text-text-muted">{KIND_WORD[t.kind]} · </span>{t.summary}</li>)}
+      </ul>
+    </div>
+  )
+}
+
 // Tickets the stages proposed: you create each one (yours, linked to a ticket
 // of yours; a second click confirms) or dismiss it. Nothing is created alone.
 const KIND_WORD: Record<Proposal["kind"], string> = { bug: "Bug", story: "Story", task: "Task", subtask: "Sub-task" }
 function Proposed({ state }: { state: PipelineState }) {
-  const shown = (state.proposals ?? []).filter(p => p.status !== "dismissed")
+  // One that waits on a question still open shows in that question, not here.
+  const open = state.status === "needs-info" ? state.questions.map(q => q.id) : []
+  const shown = (state.proposals ?? []).filter(p => p.status !== "dismissed" && !waitsOn(p, open))
   if (!shown.length) return null
   return (
     <div className="flex flex-col gap-2">

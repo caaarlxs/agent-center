@@ -38,7 +38,7 @@ import { writeJsonAtomic } from "./files"
 import { relateTickets, assignToMe, attachTo, commentOn, createIssue, confluenceIds, confluencePage, createSubtask, issueState, remoteLinks, type ConfluencePage, labelTicket, moveToStatus, openStatuses, ticket, type Ticket, type TicketComment } from "./jira"
 import { flowOf, followInJira, type Event as JiraEvent } from "./jira-flow"
 import { childrenIn, deliverablesOf, toStart, waitsFor, type Child } from "./coordinator"
-import { anchorOf, newDescription, proposalsIn, ticketsOfYours, withProposals, type Proposal } from "./proposals"
+import { anchorOf, decidedForAgent, newDescription, proposalsIn, ticketsOfYours, waitsOn, withProposals, type Proposal } from "./proposals"
 import { archiveOf, cleanupSteps, keptAfter, leftoversOf, wantedBranches, worktreesIn, type Archive, type Clone, type Found, type Kept as KeptBranch } from "./cleanup"
 import { evidenceType, filesIn, keptFiles, type EvidenceFile } from "./evidence"
 import { debtIn, merged as debtMerged, ticketOf as debtTicket, type DebtEntry, type DebtItem } from "./debt"
@@ -585,20 +585,28 @@ export async function ticketWithFamily(key: string) {
   return { t, parent, children }
 }
 
+// What the agent reads: the ticket with its family (a child, also what its coordinator decided;
+// a ticket not yours, your answers kept here), the team's pages, and the tickets you already
+// created or dismissed, so it does not propose them again.
+async function writeInputs(key: string, dir: string) {
+  const { t, parent, children } = await ticketWithFamily(key)
+  const coordinator = t.parent ? await stateOf(t.parent.key) : null
+  const isChild = !!coordinator?.children?.some(c => c.key === key)
+  const decided = isChild ? await readText(join(dirOf(t.parent!.key), "refine.md")) : null
+  const answers = await readText(join(dir, "answers.md"))
+  await Bun.write(join(dir, "ticket.md"), snapshotOf(t, parent, children, await linkedPages(t, parent)) + (decided ? `\n## Decisiones del padre (${t.parent!.key})\n\n${decided}\n` : "") + (answers ? `\n## Respuestas\n\n${answers}\n` : ""))
+  await writeContextPages(dir)
+  const before = await stateOf(key)
+  await writeJsonAtomic(join(dir, "proposals.json"), decidedForAgent(before?.proposals), { pretty: true })
+  return { t, isChild, before }
+}
+
 async function runStage(key: string, runs: number, stage: AgentStage, auto?: boolean) {
   const dir = dirOf(key)
   await mkdir(dir, { recursive: true })
   for (const f of [`${stage}.json`, `${stage}.md`, `${stage}.summary.md`]) await rename(join(dir, f), join(dir, `${f}.prev`)).catch(() => {})
-  const { t, parent, children } = await ticketWithFamily(key)
-  // A child of a coordinator reads what its parent decided for all of them.
-  const coordinator = t.parent ? await stateOf(t.parent.key) : null
-  const isChild = !!coordinator?.children?.some(c => c.key === key)
-  const decided = isChild ? await readText(join(dirOf(t.parent!.key), "refine.md")) : null
-  // A ticket not yours keeps your answers here, not in Jira.
-  const answers = await readText(join(dir, "answers.md"))
-  await Bun.write(join(dir, "ticket.md"), snapshotOf(t, parent, children, await linkedPages(t, parent)) + (decided ? `\n## Decisiones del padre (${t.parent!.key})\n\n${decided}\n` : "") + (answers ? `\n## Respuestas\n\n${answers}\n` : ""))
-  await writeContextPages(dir)
-  const local = !!(await stateOf(key))?.local
+  const { t, isChild, before } = await writeInputs(key, dir)
+  const local = !!before?.local
   const kids = stage === "refine" ? deliverablesOf(t, local) : []
   const base = { ...(await fresh(key, runs, stage)), summary: t.summary, ...(isChild ? { parent: t.parent!.key } : {}), ...(auto === undefined ? {} : { auto }) }
   const started = kids.length ? { ...base, children: childrenIn(base.children, kids) } : base
@@ -678,7 +686,7 @@ async function finish(key: string) {
       await save({ ...state, publishedRun: state.runs })
     }
     if (!state.local) await labelTicket(key, [LABELS.needsInfo], [stage.label])
-    await save({ ...state, publishedRun: state.runs, status: "needs-info", questions: result.questions, proposals: withProposals(state.proposals, proposalsIn(result.tickets, state.runs)), askedAt: Date.now(), endedAt: Date.now() })
+    await save({ ...state, publishedRun: state.runs, status: "needs-info", questions: result.questions, proposals: withProposals(state.proposals, proposalsIn(result.tickets, state.runs, state.stage), state.stage), askedAt: Date.now(), endedAt: Date.now() })
     return
   }
   const checks = await checksAfter(state, result)
@@ -708,7 +716,7 @@ async function finish(key: string) {
   const found = state.stage === "review" ? { findings: result.findings, fixed: [] } : state.stage === "build" ? { fixed: result.fixed } : {}
   const tested = state.stage === "test" || state.stage === "smoke" ? { results: shown.results } : {}
   const context = state.stage === "refine" ? { contextImpact: result.contextImpact } : {}
-  const proposals = withProposals(state.proposals, proposalsIn(result.tickets, state.runs))
+  const proposals = withProposals(state.proposals, proposalsIn(result.tickets, state.runs, state.stage), state.stage)
   const done: PipelineState = { ...state, publishedRun: state.runs, status: "ready", questions: [], proposals, units, checklist, checked, scripts, ...found, ...tested, ...context, checks: withJira([...checks, ...attached.checks], state.checks), endedAt: Date.now() }
   await recordDebt(key, result.debt)
   await settle({ ...done, checks: withJira([...(done.checks ?? []), ...graveDebt(result.debt)], []) }, result)
@@ -1329,6 +1337,7 @@ export const createProposed = (key: string, id: string) => locked(key, async () 
   const state = await stateOf(key)
   const p = state?.proposals?.find(x => x.id === id)
   if (!state || p?.status !== "proposed") throw new Error("No such proposal")
+  if (waitsOn(p, state.status === "needs-info" ? state.questions.map(q => q.id) : [])) throw new Error(`It waits for your answer to ${p.question}`)
   const anchor = anchorOf(p, ticketsOfYours(state))
   if (!anchor) throw new Error("No ticket of yours to link it to")
   const { created, warning } = await createInJira(p, anchor, newDescription(p, key))
