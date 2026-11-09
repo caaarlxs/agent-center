@@ -39,6 +39,7 @@ import { Markdown, SessionOf } from "./Markdown"
 import { type Live, orbOf, turnLine, useLiveAnswer } from "./session-events"
 import { useTypewriter } from "./typewriter"
 import { WidgetView } from "./Widget"
+import { actionUrl, answerEnds } from "./response-actions"
 import { type Pending, deliveredOf, dropPending, stampOf, takenBack, usePending, waitingOf } from "./pending"
 import { composerHint, composerQuote, reply, takeBack } from "./send"
 import { dialogAnswer, linesText, nameOf, partsOf, quoteOf } from "./text"
@@ -566,6 +567,19 @@ function TurnLine({ live }: { live: Live | null }) {
   )
 }
 
+// The buttons set in settings.json ("responseActions"), under a finished answer.
+function AnswerActions({ sessionId, answerKey, actions }: { sessionId: string; answerKey: string; actions: { label: string; url: string }[] }) {
+  return (
+    <div className="-mt-2 flex flex-wrap gap-1.5">
+      {actions.map(a => (
+        <Button key={a.label} variant="ghost" size="sm" className="h-7 gap-1 px-2 text-[12px] text-text-muted hover:text-text" asChild>
+          <a href={actionUrl(a.url, sessionId, answerKey)} target="_blank" rel="noreferrer">{a.label} <Anim.ArrowUpRight size={12} /></a>
+        </Button>
+      ))}
+    </div>
+  )
+}
+
 const ANSWER_RECEIPT_MS = 12_000 // an answer the session has not taken by then did not reach it
 
 type Asked = { canAnswer: (text: string) => boolean; picks: Record<string, string>; onPick: (text: string, value: string) => void }
@@ -716,6 +730,8 @@ export function ConversationView({ sessionId, card: session, bridge }: { session
   const stick = useRef(true)
   const [hasNew, setHasNew] = useState(false)
   const lastKey = shown.at(-1)?.key
+  const answerActions = useLive(l => l.snapshot?.responseActions) ?? []
+  const ends = useMemo(() => answerEnds(shown, session?.column === "working"), [shown, session?.column])
   // Free for your next message (a question in Claude's text too, not a dialog
   // or a permission): the suggestion is asked for.
   const isYourTurn = isLoaded && !!session && ["review", "pending", "asking"].includes(session.column) && !waiting.length && !question && !permission && !session.isLaunching
@@ -763,6 +779,7 @@ export function ConversationView({ sessionId, card: session, bridge }: { session
           <Fragment key={item.key}>
             {breaks.has(item.key) && <DaySeparator label={breaks.get(item.key)!} />}
             <ShownItem item={item} sessionId={sessionId} asked={asked} suggested={suggested} onFork={setForking} />
+            {answerActions.length > 0 && ends.has(item.key) && <AnswerActions sessionId={sessionId} answerKey={item.key} actions={answerActions} />}
           </Fragment>
         ))}
         {writing && <Markdown isStreaming>{writing}</Markdown>}

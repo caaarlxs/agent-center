@@ -4,7 +4,7 @@
 
 import { jiraSetup, keysIn, mentionsIn, sessionKeys, sessionTickets } from "./jira"
 import { stat } from "node:fs/promises"
-import { HOME } from "./config"
+import { HOME, settings } from "./config"
 import { backgroundOf } from "./background"
 import { board, itemOf, keepAcrossAccounts, type BoardItem } from "./board"
 import { doingOf, status as bridgeStatus, type Permission } from "./bridge"
@@ -12,6 +12,7 @@ import { retryingOf } from "./retrying"
 import { sessionSaying } from "./saying"
 import { accountLimits } from "./limits"
 import { canRunCommands } from "./commands"
+import { responseActions } from "./response-actions"
 import { freshness } from "./freshness"
 import { memoryNow, memoryOf } from "./memory"
 import { readDesktop, type DesktopIndex } from "./desktop"
@@ -317,6 +318,7 @@ export async function snapshot() {
     limits: accountLimits(built.map(c => c.bridge.limits)),
     uploadsBytes: await folderSize(),
     canRunCommands: canRunCommands(),
+    responseActions: responseActions(settings.responseActions),
     memory: { total: visible.reduce((sum, c) => sum + (c.memory?.total ?? 0), 0), pressure: memory.pressure },
     features: { organizer, pipeline: isPipelineOn() },
     pipelines: await pipelines(),
