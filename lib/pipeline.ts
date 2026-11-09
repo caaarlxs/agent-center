@@ -227,6 +227,8 @@ const deniedFor = (stage: AgentStage, root: string) => [
 // The test in staging loads its test data and cleans it up with this script
 // (<data>/pipeline/fixtures), run from its folder; its IAM user can write only that data.
 const FIXTURES = "Bash(python3 fixtures.py:*)"
+// The other stages only read the catalog: what it has, a scenario checked, the users' real contexts (nothing written).
+const FIXTURES_READ = ["Bash(python3 fixtures.py catalog:*)", "Bash(python3 fixtures.py plan:*)", "Bash(python3 fixtures.py contexts:*)"]
 // Figma, for the stages that read a design (not the check in prod), when the ticket
 // links one: the team's Figma connection (stages/figma-mcp.json), with only the
 // tools that read; the ones that write in Figma are denied.
@@ -240,7 +242,7 @@ export const linksFigma = (text: string) => /figma\.com\/(design|file|proto|boar
 export const argsFor = (stage: AgentStage, root = ROOT, opts: { figma?: boolean } = {}) => {
   const s = STAGE[stage]
   const figma = !!opts.figma && FIGMA_STAGES.includes(stage)
-  const allowed = [...(stage === "test" ? [FIXTURES] : []), ...(figma ? figmaTools(FIGMA_READ) : [])]
+  const allowed = [...(stage === "test" ? [FIXTURES] : ["refine", "plan", "build", "review"].includes(stage) ? FIXTURES_READ : []), ...(figma ? figmaTools(FIGMA_READ) : [])]
   return ["--setting-sources", "project,local", "--strict-mcp-config", "--model", s.model, "--effort", s.effort, ...(s.writes ? ["--add-dir", join(root, "repos")] : []),
     "--disallowedTools", ...deniedFor(stage, root), ...(figma ? figmaTools(FIGMA_WRITE) : []),
     ...(allowed.length ? ["--allowedTools", ...allowed] : []), ...(figma ? ["--mcp-config", join(root, "stages", "figma-mcp.json")] : [])]

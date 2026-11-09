@@ -423,3 +423,12 @@ describe("a build after a failed test", () => {
     expect(stageToRun({ stage: "test", status: "ready", results } as never, "build")).toBe("build")
   })
 })
+
+describe("the catalog of test data, by stage", () => {
+  it("the test writes its data; refine, plan, build and review only read the catalog; the check in prod, nothing", () => {
+    expect(argsFor("test", "/d")).toContain("Bash(python3 fixtures.py:*)")
+    expect(argsFor("build", "/d")).toContain("Bash(python3 fixtures.py contexts:*)")
+    expect(argsFor("build", "/d")).not.toContain("Bash(python3 fixtures.py:*)")
+    expect(argsFor("smoke", "/d").some(a => a.includes("fixtures.py"))).toBe(false)
+  })
+})
