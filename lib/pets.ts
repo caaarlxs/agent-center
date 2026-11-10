@@ -3,7 +3,7 @@
 // from the start; each one, when it arrives, draws when the next will (some
 // time between 4 and 30 hours on), so nobody knows, the page included (it is
 // never told), and packs left closed pile up. A pet out on the board grows
-// with your work (lib/pet-levels.ts): every fifth level it reaches brings a
+// with your work (lib/pet-levels.ts): every 20th level it reaches brings a
 // pack too. A pack holds three pets, the last of them rare or
 // better: pets of codex-pets.net, rated by community-pets.ts. Each PR a
 // session opens brings the next pack a day nearer: counted once, and only
@@ -135,7 +135,7 @@ export function newlyMerged(s: Pick<State, "wasOpen" | "mergedSeen">, prs: Opene
 }
 
 // XP for the pets out on the board (the one a page names, if it is out), and
-// a pack for each fifth level one of them reaches.
+// a pack for each 20th level one of them reaches.
 export function grow(s: Pick<State, "xp" | "packs" | "active" | "buddy">, kind: XpKind, condition: Condition, only?: string) {
   const out = [s.active, s.buddy].filter((p): p is string => !!p && (!only || p === only))
   for (const pet of out) {

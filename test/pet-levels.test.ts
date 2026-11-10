@@ -12,7 +12,7 @@ describe("levelOf", () => {
   })
   it("grows a stage at 5, 10, 20 and 35", () => {
     const xpFor = (level: number) => { let xp = 0; while (levelOf(xp).level < level) xp += 5; return xp }
-    expect(STAGES.map(s => levelOf(xpFor(s.from)).stage)).toEqual(["baby", "young", "grown", "elite", "legend"])
+    expect(STAGES.map(s => levelOf(xpFor(s.from)).stage)).toEqual(["baby", "young", "grown", "elite", "legend", "mythic"])
   })
   it("stops at the top level", () => {
     expect(levelOf(10_000_000)).toMatchObject({ level: 60, into: 0, need: 0 })
@@ -28,10 +28,10 @@ describe("award", () => {
 })
 
 describe("packsBetween", () => {
-  it("gives a pack for every fifth level reached", () => {
-    expect(packsBetween(3, 4)).toBe(0)
-    expect(packsBetween(4, 5)).toBe(1)
-    expect(packsBetween(4, 11)).toBe(2)
+  it("gives a pack for every 20th level reached", () => {
+    expect(packsBetween(3, 19)).toBe(0)
+    expect(packsBetween(19, 20)).toBe(1)
+    expect(packsBetween(4, 41)).toBe(2)
   })
 })
 

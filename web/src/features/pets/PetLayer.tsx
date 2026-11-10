@@ -24,7 +24,7 @@ import { cn } from "@/lib/utils"
 import { openDialog } from "@/app/open-dialog"
 import { openSession } from "@/app/open-session"
 import { canNotify, showNotice } from "@/features/alerts/prefs"
-import { STAGES, levelOf, stageOf } from "@server/pet-levels"
+import { PACK_EVERY, STAGES, levelOf, stageOf } from "@server/pet-levels"
 import { PetArt, RARITY_COLOR, petName } from "./art"
 import { nextWaiting, turnsEnded } from "./board-sense"
 import { FOODS, careOf, cares, energyOf, fullnessOf, setCare } from "./care"
@@ -35,7 +35,7 @@ type Mode = "idle" | "walk" | "sleep" | "drag" | "cheer" | "alert" | "eat" | "wo
 const FOCUS_MS = 25 * 60_000
 // Where each pet out is, so the other can come and say hello.
 const where = new Map<string, { x: number; y: number }>()
-const GROW: Record<string, number> = { baby: 0.84, young: 1, grown: 1.1, elite: 1.18, legend: 1.26 }
+const GROW: Record<string, number> = { baby: 0.84, young: 1, grown: 1.1, elite: 1.18, legend: 1.26, mythic: 1.32 }
 const SIZE = 60
 const SPEED = 52 // px a second
 const RUSH = 150 // to its session's card
@@ -182,6 +182,7 @@ function Walker({ id, slot, other, color }: { id: string; slot: "active" | "budd
   const lv = levelOf(xp)
   const lastLevel = useRef(lv.level)
   const [grew, setGrew] = useState(0) // a burst when it levels up
+  const [isTransforming, setTransforming] = useState(false) // a new stage from elite on: its aura flares
   // A session to bring you (Bring me what waits), and a focus block running.
   const deliverTo = useRef<string | null>(null)
   const focusUntil = care.focusUntil && care.focusUntil > now ? care.focusUntil : null
@@ -526,9 +527,13 @@ function Walker({ id, slot, other, color }: { id: string; slot: "active" | "budd
     const isNewStage = stageOf(lv.level).stage !== stageOf(lastLevel.current).stage
     lastLevel.current = lv.level
     setGrew(g => g + 1)
+    if (isNewStage && STAGES.findIndex(s => s.stage === lv.stage) >= 3) {
+      setTransforming(true)
+      later(1700, () => setTransforming(false))
+    }
     moment("cheer", isNewStage ? `I'm ${stageOf(lv.level).name} now!` : `Level ${lv.level}!`, 2200)
     toast(isNewStage ? `${name} grew: ${stageOf(lv.level).name}, level ${lv.level}` : `${name} reached level ${lv.level}`, {
-      icon: <PetArt id={id} size={26} />, description: lv.level % 5 === 0 ? "Every fifth level brings a pack 📦" : undefined,
+      icon: <PetArt id={id} size={26} />, description: lv.level % PACK_EVERY === 0 ? "A pack for this level 📦" : undefined,
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lv.level])
@@ -733,9 +738,10 @@ function Walker({ id, slot, other, color }: { id: string; slot: "active" | "budd
   const isUp = pos.current.y < 330 // near the top: the menu opens below
   const shift = Math.min(innerWidth - 126, Math.max(126, pos.current.x)) - pos.current.x // and stays in the window
   return (
-    <div ref={el} data-mode={mode === "deliver" ? "walk" : mode} data-mood={isSad ? "sad" : undefined} data-stage={lv.stage} className="pet-walker fixed top-0 left-0 z-[42] select-none"
+    <div ref={el} data-mode={mode === "deliver" ? "walk" : mode} data-mood={isSad ? "sad" : undefined} data-stage={lv.stage} className={cn("pet-walker fixed top-0 left-0 z-[42] select-none", isTransforming && "is-transforming")}
       style={{ width: SIZE, height: SIZE, "--rarity": color, "--grow": GROW[lv.stage] } as React.CSSProperties}>
       <Evolution stage={lv.stage} />
+      {isTransforming && <i className="pet-transform-flash" aria-hidden />}
       {grew > 0 && <div key={grew} className="pet-levelup" aria-hidden>{Array.from({ length: 10 }, (_, i) => <i key={i} style={{ "--a": `${i * 36}deg` } as React.CSSProperties} />)}</div>}
       {bubble && !isMenuOpen && <div className="pet-bubble">{bubble}</div>}
       {mode === "sleep" && <div className="pet-zzz" aria-hidden><i>z</i><i>z</i><i>z</i></div>}
@@ -743,7 +749,7 @@ function Walker({ id, slot, other, color }: { id: string; slot: "active" | "budd
       {focus && !isMenuOpen && focusCard && <div className="pet-tag" title={focusCard.title}>{focusCard.title}</div>}
       {focusUntil && !focus && !isMenuOpen && <div className="pet-tag tabular-nums" title="Focus block">⏱ <Countdown until={focusUntil} /></div>}
       <div className="pet-body-wrap cursor-pointer active:cursor-grabbing" title={`${name} · click for its menu, drag to move it`} onPointerDown={onPointerDown}>
-        <div className="pet-grow">{lv.stage === "legend" && <Crown />}<PetArt id={id} size={SIZE} doing={mode === "fetch" || mode === "carry" || mode === "deliver" ? "walk" : mode === "shoved" ? "alert" : isSad && mode === "idle" ? "sad" : mode} facing={face} /></div>
+        <div className="pet-grow">{(lv.stage === "legend" || lv.stage === "mythic") && <Crown />}<PetArt id={id} size={SIZE} doing={mode === "fetch" || mode === "carry" || mode === "deliver" ? "walk" : mode === "shoved" ? "alert" : isSad && mode === "idle" ? "sad" : mode} facing={face} /></div>
       </div>
       {(mode === "work" || mode === "wait" || (focusUntil && mode === "idle")) && <Desk isTyping={mode === "work" || !!focusUntil} />}
       {food && <div className="pet-food" aria-hidden>{food}</div>}
@@ -768,15 +774,29 @@ function Walker({ id, slot, other, color }: { id: string; slot: "active" | "budd
   )
 }
 
-// How far it has grown, around it: a glow on the ground (grown), two sparks
-// circling it (elite), and a crown (legend, drawn on its head).
+// How far it has grown, around and behind it: a glow on the ground (grown);
+// a blue aura of energy, embers rising and two sparks circling (elite); the aura gold and larger, a pulse of power now and then
+// (legend); violet and crackling with lightning, the pet floating
+// (mythic). All transform and opacity, under the pet.
 function Evolution({ stage }: { stage: string }) {
   const at = STAGES.findIndex(s => s.stage === stage)
   if (at < 2) return null
   return (
     <div className="pet-evo" aria-hidden>
       <i className="pet-evo-glow" />
-      {at >= 3 && <><i className="pet-evo-spark" /><i className="pet-evo-spark" style={{ animationDelay: "-1.6s" }} /></>}
+      {at >= 3 && (
+        <>
+          <div className="pet-aura">{[0, 1, 2].map(k => <i key={k} className="pet-flame" style={{ animationDelay: `${-k * 0.17}s`, "--x": `${(k - 1) * 8}px` } as React.CSSProperties} />)}</div>
+          {[0, 1, 2, 3, 4].map(k => <i key={k} className="pet-ember" style={{ left: `${16 + k * 7}px`, animationDelay: `${-k * 0.31}s`, "--dx": `${(k % 2 ? 1 : -1) * (4 + k * 2)}px` } as React.CSSProperties} />)}
+          <i className="pet-evo-spark" /><i className="pet-evo-spark" style={{ animationDelay: "-1.6s" }} />
+        </>
+      )}
+      {at >= 4 && <i className="pet-power-ring" />}
+      {at >= 5 && (
+        <svg className="pet-bolts" viewBox="0 0 80 90" width="80" height="90">
+          <path d="M14 18 L22 34 L15 38 L26 56" /><path d="M66 22 L57 40 L65 44 L53 62" />
+        </svg>
+      )}
     </div>
   )
 }

@@ -76,7 +76,7 @@ test("a merged PR counts once, only one the pets saw open", () => {
   expect(newlyMerged(s, null)).toBe(0)
 })
 
-test("the pets out grow; the one a page names, alone; each fifth level brings a pack", () => {
+test("the pets out grow; the one a page names, alone; each 20th level brings a pack", () => {
   const s = { xp: {} as Record<string, number>, packs: 0, active: "a", buddy: "b" }
   grow(s, "turn", "ok")
   expect(s.xp).toEqual({ a: XP.turn, b: XP.turn })
@@ -85,7 +85,7 @@ test("the pets out grow; the one a page names, alone; each fifth level brings a 
   expect(grow(s, "fed", "ok", "away")).toBe(false) // not out: nothing
   s.xp.a = 0
   for (let i = 0; i < 100; i++) grow(s, "prMerged", "ok", "a")
-  expect(s.packs).toBe(Math.floor(levelOf(s.xp.a!).level / 5))
+  expect(s.packs).toBe(Math.floor(levelOf(s.xp.a!).level / 20))
 })
 
 test("a page's events: known kinds only, never the PRs the server counts itself", () => {

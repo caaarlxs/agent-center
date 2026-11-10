@@ -1,7 +1,7 @@
 // How a pet grows: the XP each thing it does with you is worth, its level,
 // its stage and the luck it brings to packs. A level needs a little more than the one before (50, 75, 100…),
 // so the first come within a day of work and the last take weeks; a stage
-// changes how it looks on the board; every fifth level brings a pack. Pure,
+// changes how it looks on the board; every 20th level brings a pack. Pure,
 // and shared with the page (web/src/features/pets).
 
 export const MAX_LEVEL = 60
@@ -19,13 +19,14 @@ export type Condition = "well" | "ok" | "poorly"
 const BY: Record<Condition, number> = { well: 1.5, ok: 1, poorly: 0.5 }
 export const award = (kind: XpKind, condition: Condition) => Math.round(XP[kind] * BY[condition])
 
-export type Stage = "baby" | "young" | "grown" | "elite" | "legend"
+export type Stage = "baby" | "young" | "grown" | "elite" | "legend" | "mythic"
 export const STAGES: { stage: Stage; from: number; name: string }[] = [
   { stage: "baby", from: 1, name: "Baby" },
   { stage: "young", from: 5, name: "Young" },
   { stage: "grown", from: 10, name: "Grown" },
   { stage: "elite", from: 20, name: "Elite" },
   { stage: "legend", from: 35, name: "Legend" },
+  { stage: "mythic", from: 50, name: "Mythic" },
 ]
 export const stageOf = (level: number) => [...STAGES].reverse().find(s => level >= s.from)!
 
@@ -43,8 +44,9 @@ export function levelOf(xp: number) {
   return { level, into: top ? 0 : left, need: top ? 0 : needFor(level), stage: stageOf(level).stage }
 }
 
-/** The packs a pet earns going from one level to another: one for every fifth. */
-export const packsBetween = (from: number, to: number) => Math.floor(to / 5) - Math.floor(from / 5)
+/** The packs a pet earns going from one level to another: one for every 20th. */
+export const PACK_EVERY = 20
+export const packsBetween = (from: number, to: number) => Math.floor(to / PACK_EVERY) - Math.floor(from / PACK_EVERY)
 
 // Luck: the higher the level of the pet on the board, the likelier the
 // better pets come out of a pack. Common stays as it is; rare gains a little,

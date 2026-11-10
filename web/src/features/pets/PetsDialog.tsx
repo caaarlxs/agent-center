@@ -46,7 +46,7 @@ export function PetsDialog({ onClose }: { onClose: () => void }) {
             <DialogTitle className="text-base font-[650]">Pets</DialogTitle>
             <p className="m-0 text-[12.5px] text-text-muted">
               Packs hold pets of <a className="underline" href="https://codex-pets.net" target="_blank" rel="noreferrer">codex-pets.net</a>, as rare as the community loves them (anime girls are the commonest of all).
-              Packs turn up by chance, never more than 30 hours apart; every PR you open brings the next one six hours nearer, and every fifth level a pet reaches brings one. The higher the level of the pet on the board, the better the pets that come out.
+              Packs turn up by chance, never more than 30 hours apart; every PR you open brings the next one six hours nearer, and every 20th level a pet reaches brings one. The higher the level of the pet on the board, the better the pets that come out.
             </p>
           </div>
         </div>
@@ -172,7 +172,7 @@ function Packs({ state, onSee }: { state: Pets; onSee: () => void }) {
       <div className="flex min-h-full flex-col items-center justify-center gap-4 py-6 text-center">
         <div className="opacity-30 grayscale"><PackArt /></div>
         <div className="text-[15px] font-[650]">No packs right now</div>
-        <p className="m-0 max-w-[400px] text-[13px] text-text-muted">Another one turns up on its own within 30 hours. A PR brings it nearer, and a pet's every fifth level brings one.</p>
+        <p className="m-0 max-w-[400px] text-[13px] text-text-muted">Another one turns up on its own within 30 hours. A PR brings it nearer, and a pet's every 20th level brings one.</p>
       </div>
     )
 

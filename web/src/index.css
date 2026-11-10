@@ -672,6 +672,37 @@ button:hover > .coll-buddy, .coll-buddy:focus-visible { opacity: 1; }
 .pet-evo-glow { position: absolute; left: 50%; bottom: -3px; width: 64px; height: 12px; translate: -50% 0; border-radius: 50%; background: radial-gradient(closest-side, color-mix(in srgb, var(--rarity) 55%, transparent), transparent); animation: pet-glow 2.6s ease-in-out infinite; }
 .pet-evo-spark { position: absolute; left: 50%; top: 45%; width: 5px; height: 5px; margin: -2.5px; border-radius: 50%; background: #fff; box-shadow: 0 0 6px 2px var(--rarity); animation: pet-orbit 3.2s linear infinite; }
 .pet-walker[data-stage=legend] .pet-evo-glow { width: 80px; animation-duration: 1.8s; }
+/* Powered up (--aura: the colour of its energy). The pet over its aura. */
+.pet-body-wrap { position: relative; z-index: 1; }
+.pet-walker[data-stage=elite] { --aura: #5cc8ff; }
+.pet-walker[data-stage=legend] { --aura: #ffc83d; }
+.pet-walker[data-stage=mythic] { --aura: #c39bff; }
+.pet-walker[data-stage=grown] .pet-grow { filter: drop-shadow(0 0 2px color-mix(in srgb, var(--rarity) 70%, transparent)); }
+.pet-walker[data-stage=elite] .pet-grow { filter: drop-shadow(0 0 3px var(--aura)); }
+.pet-walker[data-stage=legend] .pet-grow { filter: drop-shadow(0 0 3px #ffd65a) brightness(1.08) saturate(1.15); }
+.pet-walker[data-stage=mythic] .pet-grow { filter: drop-shadow(0 0 4px #e6d4ff) brightness(1.12) saturate(1.1); animation: pet-levitate 2.4s ease-in-out infinite; }
+@keyframes pet-levitate { 50% { translate: 0 -6px; } }
+.pet-aura { position: absolute; left: 50%; bottom: 0; width: 0; height: 0; }
+.pet-flame { position: absolute; bottom: -4px; left: calc(-27px + var(--x)); width: 54px; height: 76px; border-radius: 50% 50% 42% 42% / 72% 72% 28% 28%;
+  background: radial-gradient(ellipse at 50% 88%, color-mix(in srgb, var(--aura) 70%, #fff) 0%, color-mix(in srgb, var(--aura) 65%, transparent) 38%, transparent 70%);
+  filter: blur(2px); opacity: 0.75; transform-origin: 50% 100%; animation: pet-flame 0.5s ease-in-out infinite alternate; }
+.pet-walker[data-stage=legend] .pet-flame { left: calc(-32px + var(--x)); width: 64px; height: 94px; animation-duration: 0.32s; }
+.pet-walker[data-stage=mythic] .pet-flame { left: calc(-34px + var(--x)); width: 68px; height: 104px; animation-duration: 0.26s; }
+@keyframes pet-flame { from { transform: scale(1.04, 0.86) skewX(-5deg); opacity: 0.55; } to { transform: scale(0.94, 1.14) skewX(5deg); opacity: 0.9; } }
+.pet-ember { position: absolute; bottom: 8px; width: 3px; height: 3px; border-radius: 50%; background: color-mix(in srgb, var(--aura) 55%, #fff); box-shadow: 0 0 5px var(--aura); animation: pet-ember 1.4s ease-out infinite; }
+@keyframes pet-ember { from { transform: translate(0, 0); opacity: 1; } to { transform: translate(var(--dx), -64px); opacity: 0; } }
+.pet-power-ring { position: absolute; left: 50%; top: 55%; width: 70px; height: 70px; margin: -35px; border-radius: 50%; border: 2px solid var(--aura); box-shadow: 0 0 10px var(--aura); opacity: 0; animation: pet-power 3.2s ease-out infinite; }
+@keyframes pet-power { 0% { transform: scale(0.4); opacity: 0.9; } 22% { transform: scale(1.6); opacity: 0; } 100% { opacity: 0; } }
+.pet-bolts { position: absolute; left: 50%; bottom: -6px; translate: -50% 0; fill: none; stroke: #f6efff; stroke-width: 2; stroke-linejoin: round; filter: drop-shadow(0 0 3px #b07cff); }
+.pet-bolts path { opacity: 0; animation: pet-bolt 1.9s steps(1) infinite; }
+.pet-bolts path + path { animation-delay: -0.9s; }
+@keyframes pet-bolt { 0% { opacity: 1; } 5% { opacity: 0; } 9% { opacity: 0.9; } 13%, 100% { opacity: 0; } }
+/* A new stage: the aura flares and a flash of light, once. */
+.pet-walker.is-transforming .pet-flame { animation-duration: 0.12s; scale: 1.5; }
+.pet-transform-flash { position: absolute; left: 50%; top: 50%; width: 120px; height: 120px; margin: -60px; border-radius: 50%; pointer-events: none; z-index: 2;
+  background: radial-gradient(circle, #fff, color-mix(in srgb, var(--aura, var(--rarity)) 70%, transparent) 45%, transparent 70%); animation: pet-transform 1.6s ease-out forwards; }
+@keyframes pet-transform { 0% { transform: scale(0.2); opacity: 0; } 15% { opacity: 1; } 40% { transform: scale(1.6); opacity: 0.85; } 100% { transform: scale(2.4); opacity: 0; } }
+.pet-grow:has(.pet-sprite) .pet-crown { top: -17px; } /* a sheet's pet stands taller than its box */
 .pet-crown { position: absolute; left: 50%; top: -2px; translate: -50% 0; z-index: 1; filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.3)); animation: pet-crown 2.4s ease-in-out infinite; }
 @keyframes pet-glow { 50% { opacity: 0.55; scale: 0.9; } }
 @keyframes pet-orbit { from { transform: rotate(0) translateX(34px) scale(1); } 50% { transform: rotate(180deg) translateX(34px) scale(0.6); } to { transform: rotate(360deg) translateX(34px) scale(1); } }
@@ -703,7 +734,7 @@ button:hover > .coll-buddy, .coll-buddy:focus-visible { opacity: 1; }
 @keyframes parade-trail { from { transform: translate(0, 0) scale(1); opacity: 0.95; } to { transform: translate(calc(var(--dx) - 30px), 34px) scale(0); opacity: 0; } }
 @keyframes parade-flag { from { transform: skewY(-6deg) scaleX(0.92); } to { transform: skewY(6deg) scaleX(1); } }
 @keyframes parade-fall { 0% { transform: translateY(0) rotate(0); opacity: 0; } 5% { opacity: 1; } 100% { transform: translateY(105vh) rotate(540deg); opacity: 1; } }
-@media (prefers-reduced-motion: reduce) { .pet-evo *, .pet-crown, .pet-levelup { animation: none !important; } .pet-levelup { display: none; } .pet-parade, .parade-sky { display: none; } }
+@media (prefers-reduced-motion: reduce) { .pet-evo *, .pet-crown, .pet-levelup, .pet-grow, .pet-transform-flash { animation: none !important; } .pet-transform-flash, .pet-bolts { display: none; } .pet-levelup { display: none; } .pet-parade, .parade-sky { display: none; } }
 /* ---------- Pets: the big moments (features/pets/PetsDialog.tsx) ---------- */
 /* The tell: a pack holding an epic or a legendary glows in its colour, light leaking out of it. */
 .pack-telling { animation: pack-tell-shake 0.12s linear infinite; filter: drop-shadow(0 0 22px var(--rarity)) drop-shadow(0 0 44px var(--rarity)) brightness(1.15); }
