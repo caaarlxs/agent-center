@@ -10,9 +10,12 @@ const BOUNCE = 0.5
 const MAX_SPEED = 2600
 const THROW = 350 // slower than this, it was put down, not thrown
 
-/** The throw a drag ends with, from its last moments (pointer samples, ms): null when let go slowly. */
-export function flingOf(trail: { x: number; y: number; t: number }[]): { vx: number; vy: number } | null {
-  const [first, last] = [trail[0], trail.at(-1)]
+const RECENT_MS = 90 // only how it moved just before it was let go counts
+
+/** The throw a drag ends with, from the pointer's samples (ms) and when it was let go: null when let go slowly or held still. */
+export function flingOf(trail: { x: number; y: number; t: number }[], at: number): { vx: number; vy: number } | null {
+  const recent = trail.filter(p => p.t >= at - RECENT_MS)
+  const [first, last] = [recent[0], recent.at(-1)]
   if (!first || !last || last === first) return null
   const span = Math.max(16, last.t - first.t) / 1000
   let [vx, vy] = [(last.x - first.x) / span, (last.y - first.y) / span]

@@ -739,7 +739,7 @@ function Walker({ id, slot, other, color }: { id: string; slot: "active" | "budd
       node.removeEventListener("pointerup", up)
       node.removeEventListener("pointercancel", up)
       lastActive.current = Date.now()
-      const throw_ = isDragging && !isStill ? flingOf(trail) : null
+      const throw_ = isDragging && !isStill ? flingOf(trail, performance.now()) : null
       if (throw_) {
         if (focusRef.current) setCare(id, { focus: null })
         if (careOf(id).isAsleep) setCare(id, { isAsleep: false })

@@ -29,10 +29,15 @@ test("it tumbles the way it flies", () => {
 
 test("a drag let go slowly is not a throw; a quick one is, capped", () => {
   const t = (ms: number, x: number, y: number) => ({ x, y, t: ms })
-  expect(flingOf([t(0, 0, 0), t(80, 10, 0)])).toBeNull()
-  const quick = flingOf([t(0, 0, 0), t(50, 60, -40)])!
+  expect(flingOf([t(0, 0, 0), t(80, 10, 0)], 80)).toBeNull()
+  const quick = flingOf([t(0, 0, 0), t(50, 60, -40)], 50)!
   expect(quick.vx).toBeCloseTo(1200)
   expect(quick.vy).toBeCloseTo(-800)
-  const wild = flingOf([t(0, 0, 0), t(10, 500, 0)])!
+  const wild = flingOf([t(0, 0, 0), t(10, 500, 0)], 10)!
   expect(Math.hypot(wild.vx, wild.vy)).toBeCloseTo(2600)
+})
+
+test("moved fast, then held still before letting go: not a throw", () => {
+  const t = (ms: number, x: number, y: number) => ({ x, y, t: ms })
+  expect(flingOf([t(0, 0, 0), t(50, 300, 0)], 250)).toBeNull()
 })
