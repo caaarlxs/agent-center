@@ -1,7 +1,11 @@
-// Pets: the packs to open and the collection. A pack shakes; when it holds
-// something good it glows in that colour first (the tell), then its top tears
-// off and it lays its pets face down, a rare one's back glinting in its
-// colour. Each turns over with a click (and a flick of sound): an epic or a
+// Pets: the packs to open and the collection. A pack floats and tilts under
+// the pointer, its foil catching the light. Pressed, it charges: a tear line
+// runs across its top, light leaks through, it trembles harder (meanwhile
+// the board draws its pets). When it holds something good it glows in that
+// colour first (the tell); then its top rips off, light pours out and its
+// cards fly out into a fan, face down, each tilting under the pointer, a
+// rare one's back glinting, the last one breathing. Each turns over with a
+// click, lifting, flipping with a flash and a note higher than the last: an epic or a
 // legendary takes the whole screen (Spotlight). The collection is every pet
 // a pack can hold, codex-pets.net's, the ones you lack as a shadow; a click
 // on one you have sends it out on the board, its paw sends it out as the
@@ -69,7 +73,23 @@ export function PetsDialog({ onClose }: { onClose: () => void }) {
 
 // ---------- packs ----------
 
-type Stage = "ready" | "shaking" | "tell" | "tear" | "open"
+type Stage = "ready" | "charging" | "tell" | "tear" | "open"
+const CHARGE_MS = 950
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
+
+// Under the pointer: an element tilts toward it and its foil follows (CSS
+// variables set on the element itself, no render).
+function tilt(e: React.PointerEvent<HTMLElement>, max = 14) {
+  const el = e.currentTarget
+  const r = el.getBoundingClientRect()
+  const x = (e.clientX - r.left) / r.width
+  const y = (e.clientY - r.top) / r.height
+  el.style.setProperty("--rx", `${(0.5 - y) * max}deg`)
+  el.style.setProperty("--ry", `${(x - 0.5) * max}deg`)
+  el.style.setProperty("--mx", `${x * 100}%`)
+  el.style.setProperty("--my", `${y * 100}%`)
+}
+const untilt = (e: React.PointerEvent<HTMLElement>) => ["--rx", "--ry", "--mx", "--my"].forEach(v => e.currentTarget.style.removeProperty(v))
 
 function Packs({ state, onSee }: { state: Pets; onSee: () => void }) {
   const [stage, setStage] = useState<Stage>("ready")
@@ -81,9 +101,9 @@ function Packs({ state, onSee }: { state: Pets; onSee: () => void }) {
 
   const open = async () => {
     if (stage !== "ready" || state.packs < 1) return
-    setStage("shaking")
+    setStage("charging")
     try {
-      const [got] = await Promise.all([openPack(), new Promise(r => setTimeout(r, 1100))])
+      const [got] = await Promise.all([openPack(), sleep(CHARGE_MS)])
       const top = got.reduce<Rarity>((b, p) => (RANK[p.rarity] > RANK[b] ? p.rarity : b), "common")
       setBest(top)
       setPulls(got)
@@ -95,26 +115,37 @@ function Packs({ state, onSee }: { state: Pets; onSee: () => void }) {
         await new Promise(r => setTimeout(r, top === "legendary" ? 2200 : 1500))
       }
       setStage("tear")
-      flick(0.5)
-      await new Promise(r => setTimeout(r, 520))
+      rip()
+      await sleep(620)
       setStage("open")
+      setRevealed(0)
+      flick(0.18) // the cards fly out
     } catch (err) {
       setStage("ready")
       toast((err as Error).message)
     }
   }
+  // Each card turned sounds a note higher than the one before.
+  const [revealed, setRevealed] = useState(0)
   const turn = (i: number) => {
     const pull = pulls[i]!
+    if (shown.has(i)) return
     if (RANK[pull.rarity] >= 2) return setSpot({ pull, index: i })
-    if (pull.rarity === "rare") fanfare(1)
-    else flick()
+    note(revealed, pull.rarity === "rare")
+    setRevealed(n => n + 1)
     setShown(prev => new Set(prev).add(i))
   }
-  // All at once: the small ones turn, the first big one gets its moment.
-  const turnAll = () => {
+  // One after another, the small ones first; the first big one gets its moment.
+  const turnAll = async () => {
+    const small = pulls.map((_, i) => i).filter(i => !shown.has(i) && RANK[pulls[i]!.rarity] < 2)
+    for (const [k, i] of small.entries()) {
+      note(revealed + k, pulls[i]!.rarity === "rare")
+      setShown(prev => new Set(prev).add(i))
+      await sleep(260)
+    }
+    setRevealed(n => n + small.length)
     const big = pulls.findIndex((p, i) => !shown.has(i) && RANK[p.rarity] >= 2)
-    setShown(new Set(pulls.map((_, i) => i).filter(i => shown.has(i) || RANK[pulls[i]!.rarity] < 2)))
-    if (big >= 0) turn(big)
+    if (big >= 0) setSpot({ pull: pulls[big]!, index: big })
   }
   const again = () => (setPulls([]), setShown(new Set()), setBest("common"), setStage("ready"))
 
@@ -123,7 +154,8 @@ function Packs({ state, onSee }: { state: Pets; onSee: () => void }) {
       <div className="flex min-h-full flex-col items-center justify-center gap-6 py-4">
         <div className="flex flex-wrap items-end justify-center gap-5">
           {pulls.map((p, i) => (
-            <PetCard key={i} pull={p} isShown={shown.has(i)} onTurn={() => turn(i)} delay={i * 130} isOut={state.active === p.id || state.buddy === p.id} hasOut={!!state.active} />
+            <PetCard key={i} pull={p} isShown={shown.has(i)} onTurn={() => turn(i)} delay={i * 150} from={(pulls.length - 1) / 2 - i} isLast={i === pulls.length - 1}
+              isOut={state.active === p.id || state.buddy === p.id} hasOut={!!state.active} />
           ))}
         </div>
         <div className="flex items-center gap-2">
@@ -131,7 +163,7 @@ function Packs({ state, onSee }: { state: Pets; onSee: () => void }) {
           {isDone && state.packs > 0 && <Button onClick={again}>Open the next one ({state.packs})</Button>}
           {isDone && <Button variant={state.packs > 0 ? "outline" : "default"} onClick={onSee}>See your collection</Button>}
         </div>
-        {spot && <Spotlight pull={spot.pull} onDone={() => (setShown(prev => new Set(prev).add(spot.index)), setSpot(null))} />}
+        {spot && <Spotlight pull={spot.pull} onDone={() => (setShown(prev => new Set(prev).add(spot.index)), setRevealed(n => n + 1), setSpot(null))} />}
       </div>
     )
 
@@ -150,21 +182,36 @@ function Packs({ state, onSee }: { state: Pets; onSee: () => void }) {
         {stage === "tell" && <div className="pack-tell" style={{ "--rarity": RARITY_COLOR[best] } as React.CSSProperties} aria-hidden><i /><i /><i /><i /><i /><i /><i /><i /></div>}
         {state.packs > 1 && stage === "ready" && <div className="absolute top-2 left-3 -rotate-6 opacity-60"><PackArt /></div>}
         {state.packs > 2 && stage === "ready" && <div className="absolute top-1 left-1.5 -rotate-3 opacity-80"><PackArt /></div>}
-        <button className={cn("pack-btn relative", stage === "shaking" && "pack-shaking", stage === "tell" && `pack-telling tell-${best}`, stage === "tear" && "pack-tearing")} onClick={open} title="Open this pack"
-          style={{ "--rarity": RARITY_COLOR[best] } as React.CSSProperties}>
-          {stage === "tear" ? <><span className="pack-top"><PackArt /></span><span className="pack-rest"><PackArt /></span></> : <PackArt />}
-        </button>
+        <div className={cn("pack-float", stage !== "ready" && "is-still")}>
+          <button className={cn("pack-btn relative", stage === "charging" && "pack-charging", stage === "tell" && `pack-telling tell-${best}`, stage === "tear" && "pack-tearing")}
+            onPointerDown={e => e.button === 0 && void open()} onPointerMove={e => stage === "ready" && tilt(e)} onPointerLeave={untilt}
+            onKeyDown={e => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), void open())} title="Open this pack"
+            style={{ "--rarity": RARITY_COLOR[stage === "tear" ? best : "common"] } as React.CSSProperties}>
+            {stage === "tear" ? (
+              <>
+                <span className="pack-top"><PackArt /></span><span className="pack-rest"><PackArt /></span>
+                <i className="pack-light" aria-hidden />
+              </>
+            ) : (
+              <span className="pack-3d">
+                <PackArt />
+                <i className="pack-holo" aria-hidden />
+                <i className="pack-tearline" aria-hidden />
+              </span>
+            )}
+          </button>
+        </div>
         {state.packs > 1 && stage === "ready" && <span className="absolute -top-2 -right-3 rounded-full bg-brand px-2 py-0.5 text-[12px] font-bold text-white shadow-pop tabular-nums">×{state.packs}</span>}
       </div>
       <div className="text-center">
         {stage === "tell" ? (
           <div className="pack-tell-text text-[17px] font-[800] tracking-wide" style={{ color: RARITY_COLOR[best] }}>{best === "legendary" ? "Something LEGENDARY is inside…" : "Something epic is inside…"}</div>
-        ) : stage === "shaking" || stage === "tear" ? (
+        ) : stage === "charging" || stage === "tear" ? (
           <div className="text-[15px] font-[650]">Opening…</div>
         ) : (
           <>
             <div className="text-[15px] font-[650]">{state.packs === 1 ? "You have a pack" : `You have ${state.packs} packs`}</div>
-            <p className="m-0 mt-1 text-[13px] text-text-muted">{state.perPack} pets in each, the last one at least rare. Click it to open.</p>
+            <p className="m-0 mt-1 text-[13px] text-text-muted">{state.perPack} pets in each, the last one at least rare. Press it to tear it open.</p>
           </>
         )}
       </div>
@@ -212,20 +259,27 @@ const PACK_PATH = (() => {
 
 const nameOf = (p: Pull) => p.name ?? petName(p.id)
 
-function PetCard({ pull, isShown, onTurn, delay, isOut, hasOut }: { pull: Pull; isShown: boolean; onTurn: () => void; delay: number; isOut: boolean; hasOut: boolean }) {
+// A card out of the pack: it flies from the pack (`from`: how many places
+// it lands from the middle) into its place, tilts under the pointer, and
+// turns over with a lift, a flash and its NEW stamped on.
+function PetCard({ pull, isShown, onTurn, delay, from, isLast, isOut, hasOut }: { pull: Pull; isShown: boolean; onTurn: () => void; delay: number; from: number; isLast: boolean; isOut: boolean; hasOut: boolean }) {
   const color = RARITY_COLOR[pull.rarity]
   return (
-    <div className="pet-card-deal" style={{ animationDelay: `${delay}ms` }}>
-      <button className={cn("pet-card", isShown && "is-shown", `rarity-${pull.rarity}`)} onClick={onTurn} disabled={isShown} style={{ "--rarity": color } as React.CSSProperties}
-        title={isShown ? undefined : "Turn it over"}>
+    <div className="pet-card-deal" style={{ animationDelay: `${delay}ms`, "--from": from, "--spin": `${from * 14}deg` } as React.CSSProperties}>
+      <div className={cn("card-pop", isShown && "is-on")}>
+      <button className={cn("pet-card", isShown && "is-shown", isLast && "is-last", `rarity-${pull.rarity}`)} onClick={onTurn} disabled={isShown} style={{ "--rarity": color } as React.CSSProperties}
+        onPointerMove={e => tilt(e, 18)} onPointerLeave={untilt} title={isShown ? undefined : "Turn it over"}>
         <div className="pet-card-inner">
           <div className={cn("pet-card-back", pull.rarity !== "common" && "has-glint")}>
             <PawPrint className="size-9 text-white/90" />
+            <i className="card-holo" aria-hidden />
           </div>
           <div className="pet-card-front">
+            {isShown && <i className="card-flash" aria-hidden />}
+            {pull.rarity !== "common" && <i className="card-holo is-front" aria-hidden />}
             {pull.rarity !== "common" && <div className="pet-card-rays" aria-hidden />}
             {isShown && pull.rarity !== "common" && <Burst color={color} count={pull.rarity === "rare" ? 14 : 24} />}
-            {pull.isNew && <span className="absolute top-2 left-2 z-[1] rounded-full bg-brand px-1.5 py-px text-[10px] font-bold tracking-wide text-white">NEW</span>}
+            {pull.isNew && <span className="card-new absolute top-2 left-2 z-[1] rounded-full bg-brand px-1.5 py-px text-[10px] font-bold tracking-wide text-white">NEW</span>}
             {pull.category && <span className="absolute top-2 right-2 z-[1] rounded-full bg-black/25 px-1.5 py-px text-[9.5px] font-semibold text-white">{pull.category}</span>}
             <PetArt id={pull.id} size={104} className="relative" doing={isShown ? "cheer" : "idle"} />
             <div className="relative mt-1 w-full truncate px-2 text-center text-[13.5px] font-[650] text-text" title={nameOf(pull)}>{nameOf(pull)}</div>
@@ -233,6 +287,7 @@ function PetCard({ pull, isShown, onTurn, delay, isOut, hasOut }: { pull: Pull; 
           </div>
         </div>
       </button>
+      </div>
       <div className={cn("mt-2 flex h-7 justify-center transition-opacity", isShown ? "opacity-100" : "pointer-events-none opacity-0")}>
         {isOut ? <span className="self-center text-[12px] text-text-muted">On the board</span> : (
           <div className="flex gap-1.5">
@@ -309,7 +364,63 @@ function Spotlight({ pull, onDone }: { pull: Pull; onDone: () => void }) {
   )
 }
 
-// A card turning over, or a pack tearing: a short flick of noise, if the board's sound is on.
+// A card turned: the nth one a step up a bright scale, a rare one with a
+// sparkle on top, if the board's sound is on.
+const SCALE = [523, 659, 784, 1047, 1319]
+function note(nth: number, isRare: boolean) {
+  if (sound.get() !== "on") return
+  flick(0.14)
+  try {
+    const ctx = new AudioContext()
+    const play = (f: number, at: number, length: number) => {
+      const o = ctx.createOscillator()
+      const g = ctx.createGain()
+      o.type = "sine"
+      o.frequency.value = f
+      const t = ctx.currentTime + at
+      g.gain.setValueAtTime(0, t)
+      g.gain.linearRampToValueAtTime(0.1, t + 0.015)
+      g.gain.exponentialRampToValueAtTime(0.001, t + length)
+      o.connect(g).connect(ctx.destination)
+      o.start(t)
+      o.stop(t + length + 0.05)
+    }
+    play(SCALE[Math.min(nth, SCALE.length - 1)]!, 0.05, 0.35)
+    if (isRare) [1568, 2093].forEach((f, i) => play(f, 0.14 + i * 0.07, 0.3))
+    setTimeout(() => void ctx.close(), 1200)
+  } catch {
+    // no sound, no matter
+  }
+}
+
+// The pack tearing: noise swept up through a filter, a rip, if the board's sound is on.
+function rip() {
+  if (sound.get() !== "on") return
+  try {
+    const ctx = new AudioContext()
+    const length = 0.32
+    const buf = ctx.createBuffer(1, ctx.sampleRate * length, ctx.sampleRate)
+    const data = buf.getChannelData(0)
+    for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (0.6 + 0.4 * Math.random() * (i % 400 < 200 ? 1 : 0.3))
+    const src = ctx.createBufferSource()
+    const filter = ctx.createBiquadFilter()
+    const g = ctx.createGain()
+    filter.type = "bandpass"
+    filter.Q.value = 1.2
+    filter.frequency.setValueAtTime(900, ctx.currentTime)
+    filter.frequency.exponentialRampToValueAtTime(5200, ctx.currentTime + length)
+    g.gain.setValueAtTime(0.5, ctx.currentTime)
+    g.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + length)
+    src.buffer = buf
+    src.connect(filter).connect(g).connect(ctx.destination)
+    src.start()
+    setTimeout(() => void ctx.close(), 800)
+  } catch {
+    // no sound, no matter
+  }
+}
+
+// A card turning over, or flying out: a short flick of noise, if the board's sound is on.
 function flick(volume = 0.25) {
   if (sound.get() !== "on") return
   try {

@@ -539,13 +539,11 @@ html[data-theme-switch]::view-transition-new(root) { animation: theme-curtain 60
 .pack-btn:hover { transform: translateY(-4px) rotate(-1.5deg) scale(1.03); }
 .pack-sheen { animation: pack-sheen 3.2s ease-in-out infinite; }
 @keyframes pack-sheen { 0%, 40% { transform: skewX(-18deg) translateX(0); } 100% { transform: skewX(-18deg) translateX(330px); } }
-.pack-shaking { animation: pack-wobble 0.5s ease-in-out infinite; filter: brightness(1.1); } /* until its pets are home */
-@keyframes pack-wobble { 0%, 100% { transform: rotate(0) scale(1.04); } 25% { transform: rotate(-6deg) scale(1.08); } 75% { transform: rotate(6deg) scale(1.08); } }
 /* A pet's card: dealt, then turned over with a click. */
-.pet-card-deal { animation: pet-deal 0.5s cubic-bezier(0.2, 1.3, 0.5, 1) both; }
-@keyframes pet-deal { from { opacity: 0; transform: translateY(60px) scale(0.6) rotate(-8deg); } }
+.pet-card-deal { animation: card-fly 0.75s cubic-bezier(0.2, 0.8, 0.3, 1.08) both; }
 .pet-card { width: 168px; height: 228px; perspective: 900px; border-radius: 16px; }
-.pet-card:not(.is-shown):hover .pet-card-inner { transform: rotateY(180deg) translateY(-5px) rotateZ(-1.5deg); }
+.pet-card { transform: perspective(800px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)); transition: transform 0.18s ease-out; }
+.pet-card:not(.is-shown):hover .pet-card-inner { transform: rotateY(180deg) translateY(-6px); }
 .pet-card-inner { position: relative; width: 100%; height: 100%; transform-style: preserve-3d; transition: transform 0.65s cubic-bezier(0.3, 1.3, 0.5, 1); transform: rotateY(180deg); }
 .pet-card.is-shown .pet-card-inner { transform: rotateY(0deg); }
 .pet-card-back, .pet-card-front { position: absolute; inset: 0; border-radius: 16px; backface-visibility: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; }
@@ -577,7 +575,51 @@ html[data-theme-switch]::view-transition-new(root) { animation: theme-curtain 60
 @keyframes card-glint { 50% { box-shadow: inset 0 0 0 2px var(--rarity), 0 0 22px color-mix(in srgb, var(--rarity) 70%, transparent); } }
 .coll-buddy { opacity: 0; transition: opacity 0.15s; }
 button:hover > .coll-buddy, .coll-buddy:focus-visible { opacity: 1; }
-@media (prefers-reduced-motion: reduce) { .pack-sheen, .pet-card-rays, .pet-card-deal, .pack-shaking, .pack-top, .pack-rest, .pet-card-back.has-glint { animation: none !important; } }
+/* The pack before it opens: it floats, tilts toward the pointer (--rx, --ry)
+   and its foil catches the light where the pointer is (--mx, --my). */
+.pack-float { animation: pack-float 3.4s ease-in-out infinite; }
+.pack-float.is-still { animation: none; }
+@keyframes pack-float { 50% { transform: translateY(-8px); } }
+.pack-3d { position: relative; display: block; transform: perspective(700px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)); transition: transform 0.18s ease-out; }
+.pack-holo, .card-holo { position: absolute; pointer-events: none; mix-blend-mode: color-dodge; transition: opacity 0.3s;
+  background: radial-gradient(circle at var(--mx, 50%) var(--my, 30%), #ffffffb0, transparent 38%), linear-gradient(115deg, transparent 20%, #ff4fd85c 36%, #4fe0ff5c 50%, #f8ff4f52 64%, transparent 80%);
+  background-size: 100% 100%, 260% 260%; background-position: 0 0, var(--mx, 50%) var(--my, 50%); }
+.pack-holo { inset: 6px 0; opacity: 0.25; }
+.pack-btn:hover .pack-holo { opacity: 0.75; }
+/* Pressed: a tear line runs across its top, light leaks, it trembles harder and harder. */
+.pack-tearline { position: absolute; left: 4px; right: 4px; top: 24px; height: 3px; border-radius: 2px; background: linear-gradient(90deg, #fff, #fff3b0); transform: scaleX(0); transform-origin: 0 50%; opacity: 0; }
+.pack-charging .pack-tearline { animation: pack-tearline 0.95s cubic-bezier(0.55, 0, 0.8, 0.4) forwards; }
+.pack-charging { animation: pack-charge 0.95s linear forwards, pack-charged 0.08s linear 0.95s infinite; }
+@keyframes pack-tearline { 0% { transform: scaleX(0); opacity: 1; box-shadow: 0 0 4px #fff; } 100% { transform: scaleX(1); opacity: 1; box-shadow: 0 0 12px #fff, 0 0 30px #ffe58a, 0 0 60px #ffc83d; } }
+@keyframes pack-charge {
+  10% { transform: rotate(-0.6deg); } 20% { transform: rotate(0.8deg); } 30% { transform: rotate(-1.2deg) scale(1.01); } 40% { transform: rotate(1.6deg) scale(1.02); }
+  50% { transform: rotate(-2.2deg) scale(1.03); } 60% { transform: rotate(2.8deg) scale(1.04); } 70% { transform: rotate(-3.4deg) scale(1.05); } 80% { transform: rotate(4deg) scale(1.06); }
+  90% { transform: rotate(-4.6deg) scale(1.07); } 100% { transform: rotate(0) scale(1.08); } }
+@keyframes pack-charged { 25% { transform: translate(-2px, 1px) rotate(-2deg) scale(1.08); } 75% { transform: translate(2px, -1px) rotate(2deg) scale(1.08); } }
+/* Torn: light pours out of the top. */
+.pack-light { position: absolute; left: 50%; top: 20px; width: 150px; height: 280px; translate: -50% -100%; transform-origin: 50% 100%; pointer-events: none;
+  background: linear-gradient(to top, color-mix(in srgb, var(--rarity) 45%, #fff), transparent 85%); clip-path: polygon(38% 100%, 62% 100%, 100% 0, 0 0); filter: blur(3px); opacity: 0; animation: pack-light 0.62s ease-out forwards; }
+@keyframes pack-light { 0% { opacity: 0; transform: scaleY(0.15); } 30% { opacity: 1; } 100% { opacity: 0; transform: scaleY(1.15); } }
+/* The cards fly out of the pack into a fan (--from: places from the middle). */
+@keyframes card-fly {
+  0% { transform: translate(calc(var(--from) * 188px), 110px) scale(0.3) rotate(var(--spin)); opacity: 0; }
+  18% { opacity: 1; }
+  60% { transform: translate(calc(var(--from) * 50px), -46px) scale(1.06) rotate(calc(var(--spin) * -0.4)); }
+  100% { transform: none; opacity: 1; } }
+.card-holo { inset: 0; border-radius: inherit; opacity: 0.3; }
+.card-holo.is-front { opacity: 0.4; z-index: 1; }
+.pet-card:hover .card-holo { opacity: 0.7; }
+.pet-card.is-last:not(.is-shown) .pet-card-back { animation: card-glint 1.6s ease-in-out infinite, card-breathe 1.8s ease-in-out infinite; }
+@keyframes card-breathe { 50% { scale: 1.035; } }
+/* Turned: it lifts, flashes, and its NEW is stamped on. */
+.card-pop.is-on { animation: card-pop 0.7s cubic-bezier(0.3, 1.5, 0.5, 1); }
+@keyframes card-pop { 35% { transform: translateY(-18px) scale(1.1); } }
+.card-flash { position: absolute; inset: 0; z-index: 3; pointer-events: none; border-radius: inherit; opacity: 0;
+  background: radial-gradient(circle at 50% 45%, #fff, color-mix(in srgb, var(--rarity) 55%, transparent) 55%, transparent 80%); animation: card-flash 0.6s ease-out 0.22s; }
+@keyframes card-flash { 25% { opacity: 0.95; } }
+.card-new { animation: card-stamp 0.45s cubic-bezier(0.3, 1.6, 0.5, 1) 0.6s both; }
+@keyframes card-stamp { from { transform: scale(2.4) rotate(-14deg); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .pack-sheen, .pet-card-rays, .pet-card-deal, .pack-charging, .pack-tearline, .pack-float, .pack-light, .pack-top, .pack-rest, .pet-card-back, .card-pop, .card-flash, .card-new { animation: none !important; } .pack-3d, .pet-card { transform: none !important; } }
 /* Pets: its mood, its menu, the session it works with, its desk and its food. */
 .pet-walker[data-mood=sad] .pet-eyes { transform: scaleY(0.7) translateY(0.6px); animation: none; }
 .pet-walker[data-mood=sad] .pet-tail { animation-duration: 3s; }
