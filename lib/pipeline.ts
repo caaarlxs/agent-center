@@ -35,10 +35,10 @@ import { appendFile, cp, mkdir, readFile, rename, rm } from "node:fs/promises"
 import { basename, join } from "node:path"
 import { DATA_DIR } from "./config"
 import { writeJsonAtomic } from "./files"
-import { relateTickets, assignToMe, attachTo, commentOn, createIssue, confluenceIds, confluencePage, createSubtask, issueState, remoteLinks, type ConfluencePage, labelTicket, moveToStatus, openStatuses, ticket, type Ticket, type TicketComment } from "./jira"
+import { descendantsOf, relateTickets, assignToMe, attachTo, commentOn, createIssue, confluenceIds, confluencePage, createSubtask, issueState, remoteLinks, type ConfluencePage, labelTicket, moveToStatus, openStatuses, ticket, type Ticket, type TicketComment } from "./jira"
 import { flowOf, followInJira, type Event as JiraEvent } from "./jira-flow"
-import { childrenIn, deliverablesOf, toStart, waitsFor, type Child } from "./coordinator"
-import { anchorOf, newDescription, proposalsIn, ticketsOfYours, withProposals, type Proposal } from "./proposals"
+import { scopeLines, scopeOf, storiesOf, type TreeTicket } from "./scope"
+import { anchorOf, decidedForAgent, newDescription, proposalsIn, ticketsOfYours, waitsOn, withProposals, type Proposal } from "./proposals"
 import { archiveOf, cleanupSteps, keptAfter, leftoversOf, wantedBranches, worktreesIn, type Archive, type Clone, type Found, type Kept as KeptBranch } from "./cleanup"
 import { evidenceType, filesIn, keptFiles, type EvidenceFile } from "./evidence"
 import { debtIn, merged as debtMerged, ticketOf as debtTicket, type DebtEntry, type DebtItem } from "./debt"
@@ -77,11 +77,11 @@ export type Finding = { id: string; unit: string | null; severity: Severity; fil
 // What a test (in staging) or a smoke check (in prod) found of each criterion.
 // untested: the test could not try it (no data, no device), which is no failure: a person checks it by hand.
 // summary: what it tried, expected and found, in plain words; evidence: the technical detail.
-export type TestResult = { id: string; criterion: string; status: "pass" | "fail" | "untested"; evidence: string; summary?: string; files?: EvidenceFile[] }
+export type TestResult = { id: string; criterion: string; status: "pass" | "fail" | "untested"; evidence: string; summary?: string; files?: EvidenceFile[]; ticket?: string | null /* the ticket of the scope its criterion is of */ }
 // A rule of the team's context (its repo) that the ticket makes untrue: the file and the words.
 // quote: the words of today it makes untrue; null for a new code rule, which says what it proposes instead.
 export type ContextImpact = { file: string; quote: string | null; why: string; proposal: string | null }
-export type Result = { verdict: "ready" | "needs-info"; questions: Question[]; units: Unit[]; checklist: ChecklistItem[]; findings: Finding[]; fixed: string[]; scripts: PlanScript[]; order: OrderItem[]; results: TestResult[]; contextImpact: ContextImpact[]; children?: unknown; debt: DebtItem[]; tickets?: unknown }
+export type Result = { verdict: "ready" | "needs-info"; questions: Question[]; units: Unit[]; checklist: ChecklistItem[]; findings: Finding[]; fixed: string[]; scripts: PlanScript[]; order: OrderItem[]; results: TestResult[]; contextImpact: ContextImpact[]; debt: DebtItem[]; tickets?: unknown }
 export type PipelineStatus = "running" | "needs-info" | "ready" | "failed"
 // kept: what the run left, to see each pass of a stage apart (a plan's or a build's units, a review's findings, a test's results).
 export type Kept = { units?: Unit[]; checklist?: ChecklistItem[]; findings?: Finding[]; results?: TestResult[] }
@@ -112,10 +112,9 @@ export type PipelineState = {
   fixed?: string[] // the findings a build fixed since
   fixes?: string[] // the [Fix] sub-tasks a failed test opened in Jira
   fixOf?: Record<string, string> // the one open for each criterion that failed
-  children?: Child[] // a coordinator's children, in the order they go (coordinator.ts)
-  parent?: string | null // the coordinator a child's pipeline belongs to
+  scope?: TreeTicket[] // everything under it assigned to you: the same piece of work (scope.ts)
   proposals?: Proposal[] // tickets the stages proposed, for you to create (proposals.ts)
-  local?: boolean // a ticket not yours (an epic of the team) that only coordinates yours: nothing of it goes to Jira
+  local?: boolean // a ticket not yours (an epic of the team) run for what of it is yours: nothing is written on it
   auto?: boolean // runs on by itself, stage after stage, until the review (autoNext)
   error: string | null
   history?: Run[] // every run since the last start over, the latest last
@@ -289,7 +288,7 @@ const orderIn = (v: unknown): OrderItem[] =>
 const resultsIn = (v: unknown): TestResult[] =>
   listOf(v)
     .filter(r => textOf(r?.criterion))
-    .map((r, i) => ({ id: String(r.id ?? `T${i + 1}`), criterion: textOf(r.criterion), status: r.status === "pass" || r.status === "untested" ? (r.status as TestResult["status"]) : ("fail" as const), evidence: textOf(r.evidence), ...(textOf(r.summary) ? { summary: textOf(r.summary) } : {}), files: filesIn(r.files) }))
+    .map((r, i) => ({ id: String(r.id ?? `T${i + 1}`), criterion: textOf(r.criterion), status: r.status === "pass" || r.status === "untested" ? (r.status as TestResult["status"]) : ("fail" as const), evidence: textOf(r.evidence), ...(textOf(r.summary) ? { summary: textOf(r.summary) } : {}), ...(/^[A-Z][A-Z0-9]+-\d+$/.test(textOf(r.ticket)) ? { ticket: textOf(r.ticket) } : {}), files: filesIn(r.files) }))
 // Only with the words it makes untrue: else it is no impact at all.
 const impactIn = (v: unknown): ContextImpact[] =>
   listOf(v).filter(x => textOf(x?.file) && (textOf(x?.quote) || textOf(x?.proposal)))
@@ -383,7 +382,7 @@ export function parseResult(text: string, stage: Stage): Result {
     .filter(c => typeof c?.text === "string" && c.text.trim())
     .map((c, i) => ({ id: String(c.id ?? `C${i + 1}`), text: c.text.trim(), unit: typeof c.unit === "string" && c.unit ? c.unit : null }))
   if (stage === "plan" && data.verdict === "ready" && !units.length) throw new Error("plan.json is ready but has no units")
-  return { verdict: data.verdict, questions, units, checklist, findings: findingsIn(data.findings), fixed: listOf(data.fixed).map(String), scripts: scriptsIn(data.scripts), order: orderIn(data.release), results: resultsIn(data.results), contextImpact: impactIn(data.contextImpact), children: data.children, debt: debtIn(data.debt), tickets: data.tickets }
+  return { verdict: data.verdict, questions, units, checklist, findings: findingsIn(data.findings), fixed: listOf(data.fixed).map(String), scripts: scriptsIn(data.scripts), order: orderIn(data.release), results: resultsIn(data.results), contextImpact: impactIn(data.contextImpact), debt: debtIn(data.debt), tickets: data.tickets }
 }
 
 export const questionsComment = (key: string, questions: Question[], stage: AgentStage) =>
@@ -518,13 +517,12 @@ export async function buildProgress(dir: string) {
 
 // ---------- the stage ----------
 
-// A coordinator's refinement follows epic.md: the whole, not one delivery.
-// On a ticket not yours, it coordinates only the children assigned to you; the rest are context.
-const asParent = (children: Child[] = [], local = false) =>
-  children.length ? `\n\nEste ticket coordina a sus hijos entregables (${children.map(c => c.key).join(", ")}): sigue ${join(STAGES_DIR, "epic.md")} en lugar de refine.md, y escribe los mismos ficheros.${local ? " El ticket no es tuyo: solo coordinas esos hijos, los asignados a ti. Los demás hijos son de otras personas: léelos como contexto, pero no los ordenes ni les escribas preguntas." : ""}` : ""
-const promptFor = (key: string, dir: string, stage: AgentStage, children: Child[] = [], local = false) => `${TAG} ${key} · ${STAGE[stage].verb}
+// A ticket that takes in more (its scope): all of it is one piece of work.
+const asScope = (scope: TreeTicket[] = []) =>
+  scope.length ? `\n\nEl trabajo es todo el alcance de ticket.md («Tu alcance»): esos tickets son una sola pieza de trabajo, con un solo resultado. Si es grande, reparte con subagentes a tu criterio y junta tú el resultado.` : ""
+const promptFor = (key: string, dir: string, stage: AgentStage, scope: TreeTicket[] = []) => `${TAG} ${key} · ${STAGE[stage].verb}
 
-${STAGE[stage].brief(key, dir)}${stage === "refine" ? asParent(children, local) : ""}
+${STAGE[stage].brief(key, dir)}${asScope(scope)}
 
 ${AS_AGENT}
 
@@ -536,7 +534,7 @@ No escribas en Jira${STAGE[stage].writes ? "" : " ni en los repos"}: el board pu
 // always started by a person.
 const AUTO_NEXT: Partial<Record<Stage, AgentStage>> = { refine: "plan", plan: "build", build: "review" }
 export const autoNext = (state: PipelineState): AgentStage | null =>
-  state.auto && state.status === "ready" && !state.children?.length ? (AUTO_NEXT[state.stage] ?? null) : null
+  state.auto && state.status === "ready" ? (AUTO_NEXT[state.stage] ?? null) : null
 
 // A ticket taken out of the pipeline meanwhile stays out.
 const run = (key: string, runs: number, stage: AgentStage, auto?: boolean) =>
@@ -548,7 +546,7 @@ const fresh = async (key: string, runs: number, stage: Stage): Promise<PipelineS
   const prev = await stateOf(key)
   // The plan's units and to-do list, and the review's findings, stay with the ticket for the stages after it.
   return { ...EMPTY(key, runs, stage), summary: prev?.summary, history: prev?.history ?? [], units: prev?.units, checklist: prev?.checklist, checked: prev?.checked, scripts: prev?.scripts, contextImpact: prev?.contextImpact,
-    release: prev?.release, deployed: prev?.deployed, fixes: prev?.fixes, fixOf: prev?.fixOf, threads: prev?.threads, fixing: ["refine", "plan", "test", "smoke"].includes(stage) ? null : prev?.fixing, results: stage === "test" || stage === "smoke" ? undefined : prev?.results, children: prev?.children, parent: prev?.parent, auto: prev?.auto, local: prev?.local, proposals: prev?.proposals,
+    release: prev?.release, deployed: prev?.deployed, fixes: prev?.fixes, fixOf: prev?.fixOf, threads: prev?.threads, fixing: ["refine", "plan", "test", "smoke"].includes(stage) ? null : prev?.fixing, results: stage === "test" || stage === "smoke" ? undefined : prev?.results, scope: prev?.scope, auto: prev?.auto, local: prev?.local, proposals: prev?.proposals,
     ...(stage === "review" ? {} : { findings: prev?.findings, fixed: stage === "build" ? [] : prev?.fixed }) }
 }
 // A stage's session is the pipeline's, not yours: once it ends it leaves the
@@ -585,29 +583,37 @@ export async function ticketWithFamily(key: string) {
   return { t, parent, children }
 }
 
+// What the agent reads: the ticket with its family, its scope (everything under it assigned to
+// you, the ones deeper than its children whole too), your answers kept here (a ticket not
+// yours), the team's pages, and the tickets you already created or dismissed.
+const MAX_DEEPER = 20
+async function writeInputs(key: string, dir: string) {
+  const [{ t, parent, children }, tree] = await Promise.all([ticketWithFamily(key), descendantsOf(key).catch(() => [])])
+  const scope = scopeOf(tree)
+  const deeper = await Promise.all(scope.filter(s => !children.some(c => c.key === s.key)).slice(0, MAX_DEEPER).map(s => ticket(s.key).catch(() => null)))
+  const answers = await readText(join(dir, "answers.md"))
+  await Bun.write(join(dir, "ticket.md"), snapshotOf(t, parent, children, await linkedPages(t, parent)) + scopeSection(t, scope, deeper.filter((d): d is Ticket => !!d)) + (answers ? `\n## Respuestas\n\n${answers}\n` : ""))
+  await writeContextPages(dir)
+  const before = await stateOf(key)
+  await writeJsonAtomic(join(dir, "proposals.json"), decidedForAgent(before?.proposals), { pretty: true })
+  return { t, scope, before }
+}
+// The scope, for the agent: which tickets are the work, and the deeper ones whole.
+const scopeSection = (t: Ticket, scope: TreeTicket[], deeper: Ticket[]) =>
+  scope.length ? `\n## Tu alcance\n\nEstos tickets son el trabajo, todos juntos (los demás son contexto):\n\n${scopeLines(t, scope)}\n${deeper.map(d => `\n### ${d.key} · ${d.summary} (${d.status})\n\n${d.description || "(sin descripción)"}\n`).join("")}` : ""
+
 async function runStage(key: string, runs: number, stage: AgentStage, auto?: boolean) {
   const dir = dirOf(key)
   await mkdir(dir, { recursive: true })
   for (const f of [`${stage}.json`, `${stage}.md`, `${stage}.summary.md`]) await rename(join(dir, f), join(dir, `${f}.prev`)).catch(() => {})
-  const { t, parent, children } = await ticketWithFamily(key)
-  // A child of a coordinator reads what its parent decided for all of them.
-  const coordinator = t.parent ? await stateOf(t.parent.key) : null
-  const isChild = !!coordinator?.children?.some(c => c.key === key)
-  const decided = isChild ? await readText(join(dirOf(t.parent!.key), "refine.md")) : null
-  // A ticket not yours keeps your answers here, not in Jira.
-  const answers = await readText(join(dir, "answers.md"))
-  await Bun.write(join(dir, "ticket.md"), snapshotOf(t, parent, children, await linkedPages(t, parent)) + (decided ? `\n## Decisiones del padre (${t.parent!.key})\n\n${decided}\n` : "") + (answers ? `\n## Respuestas\n\n${answers}\n` : ""))
-  await writeContextPages(dir)
-  const local = !!(await stateOf(key))?.local
-  const kids = stage === "refine" ? deliverablesOf(t, local) : []
-  const base = { ...(await fresh(key, runs, stage)), summary: t.summary, ...(isChild ? { parent: t.parent!.key } : {}), ...(auto === undefined ? {} : { auto }) }
-  const started = kids.length ? { ...base, children: childrenIn(base.children, kids) } : base
+  const { t, scope } = await writeInputs(key, dir)
+  const started = { ...(await fresh(key, runs, stage)), summary: t.summary, scope, ...(auto === undefined ? {} : { auto }) }
   const state = stage === "build" ? { ...started, ...(await inJira("build-started", started)) } : started
   await save(state)
   const id = randomUUID()
   // Figma, when what the stage reads links a design and the team set Figma up.
   const figma = linksFigma(await readText(join(dir, "ticket.md")) ?? "") && existsSync(join(STAGES_DIR, "figma-mcp.json"))
-  const pid = await spawnStage(dir, id, promptFor(key, dir, stage, state.children, local), stage, () => void watch(), figma)
+  const pid = await spawnStage(dir, id, promptFor(key, dir, stage, scope), stage, () => void watch(), figma)
   await locked(key, async () => save({ ...state, auto: (await stateOf(key))?.auto ?? state.auto, sessionId: id, pid }))
   await applyAction(id, [id], "tickets", { started: [key] })
 }
@@ -678,7 +684,7 @@ async function finish(key: string) {
       await save({ ...state, publishedRun: state.runs })
     }
     if (!state.local) await labelTicket(key, [LABELS.needsInfo], [stage.label])
-    await save({ ...state, publishedRun: state.runs, status: "needs-info", questions: result.questions, proposals: withProposals(state.proposals, proposalsIn(result.tickets, state.runs)), askedAt: Date.now(), endedAt: Date.now() })
+    await save({ ...state, publishedRun: state.runs, status: "needs-info", questions: result.questions, proposals: withProposals(state.proposals, proposalsIn(result.tickets, state.runs, state.stage), state.stage), askedAt: Date.now(), endedAt: Date.now() })
     return
   }
   const checks = await checksAfter(state, result)
@@ -708,10 +714,10 @@ async function finish(key: string) {
   const found = state.stage === "review" ? { findings: result.findings, fixed: [] } : state.stage === "build" ? { fixed: result.fixed } : {}
   const tested = state.stage === "test" || state.stage === "smoke" ? { results: shown.results } : {}
   const context = state.stage === "refine" ? { contextImpact: result.contextImpact } : {}
-  const proposals = withProposals(state.proposals, proposalsIn(result.tickets, state.runs))
+  const proposals = withProposals(state.proposals, proposalsIn(result.tickets, state.runs, state.stage), state.stage)
   const done: PipelineState = { ...state, publishedRun: state.runs, status: "ready", questions: [], proposals, units, checklist, checked, scripts, ...found, ...tested, ...context, checks: withJira([...checks, ...attached.checks], state.checks), endedAt: Date.now() }
   await recordDebt(key, result.debt)
-  await settle({ ...done, checks: withJira([...(done.checks ?? []), ...graveDebt(result.debt)], []) }, result)
+  await settle({ ...done, checks: withJira([...(done.checks ?? []), ...graveDebt(result.debt)], []) })
 }
 
 // Each run's document, apart (runs/<n>-<stage>.md), to read each pass of a stage.
@@ -756,47 +762,13 @@ export async function actOnDebt(keys: string[], action: "ticket" | "dismiss" | "
   return { jira }
 }
 
-// A stage done: Jira follows it, a coordinator keeps its children's order and
-// starts them, and a pipeline that runs on its own starts the next stage.
-async function settle(done: PipelineState, result: Result) {
+// A stage done: Jira follows it, and a pipeline that runs on its own starts the next stage.
+async function settle(done: PipelineState) {
   const event = done.stage === "build" ? "built" : done.stage === "test" ? "tested" : null
-  const ordered = done.stage === "refine" && done.children?.length ? { children: childrenIn(result.children, done.children.map(c => c.key)) } : {}
-  const saved: PipelineState = event ? { ...done, ...(await inJira(event, done)) } : { ...done, ...ordered }
+  const saved: PipelineState = event ? { ...done, ...(await inJira(event, done)) } : done
   await save(saved)
-  if (ordered.children) void coordinate(done.key)
   const next = autoNext(saved)
   if (next) void startPipeline(done.key, false, next).catch(err => console.error(`auto ${done.key} → ${next}:`, err))
-}
-
-// ---------- a coordinator's children (coordinator.ts) ----------
-
-const coordinating = new Set<string>()
-const childStates = async (children: Child[]) => Object.fromEntries(await Promise.all(children.map(async c => [c.key, await stateOf(c.key)] as const)))
-// Starts the children it can now; one that will not start (not yours) is a
-// warning in the coordinator's checks, and is not tried again.
-async function coordinate(key: string) {
-  if (coordinating.has(key)) return
-  coordinating.add(key)
-  try {
-    const parent = await stateOf(key)
-    if (!parent?.children?.length || parent.stage !== "refine" || parent.status !== "ready") return
-    const refused = new Set((parent.checks ?? []).filter(c => c.id.startsWith("child-")).map(c => c.id.slice(6)))
-    const children = parent.children.filter(c => !refused.has(c.key))
-    const failed: Check[] = []
-    for (const child of toStart(children, await childStates(children)))
-      await startPipeline(child, false, undefined, undefined, parent.auto).catch((err: Error) => failed.push({ id: `child-${child}`, label: `${child} did not start`, status: "warn", detail: err.message }))
-    if (failed.length) await save({ ...parent, checks: [...(parent.checks ?? []), ...failed] })
-  } finally {
-    coordinating.delete(key)
-  }
-}
-
-// A child goes to staging once what it depends on is there.
-async function stagingWaits(state: PipelineState) {
-  const coordinator = state.parent ? await stateOf(state.parent) : null
-  if (!coordinator?.children) return
-  const waits = waitsFor(state.key, coordinator.children, await childStates(coordinator.children))
-  if (waits.length) throw new Error(`Staging waits for ${waits.join(", ")} in staging first`)
 }
 
 // A test's files, attached to the ticket (the first few, as Jira takes them):
@@ -845,10 +817,15 @@ async function inJira(event: JiraEvent, state: PipelineState): Promise<Partial<P
   // done), and only the [Fix] of the criteria that fail now.
   const isFixing = event === "build-started" || event === "built" || event === "in-staging"
   const now = isFixing ? { ...state, units: event === "in-staging" ? releasedUnits(state) : unitsNow(state), fixes: fixesNow(state) } : state
-  const out = await followInJira(event, now, flow, JIRA).catch(err => ({ checks: [{ id: "jira-flow", label: "Jira did not answer", status: "warn" as const, detail: String(err?.message ?? err) }], fixes: undefined, fixOf: undefined }))
+  const out = await followInJira(event, { ...now, stories: storiesFor(state) }, flow, JIRA).catch(err => ({ checks: [{ id: "jira-flow", label: "Jira did not answer", status: "warn" as const, detail: String(err?.message ?? err) }], fixes: undefined, fixOf: undefined }))
   const kept = (state.checks ?? []).filter(c => !c.id.startsWith("jira-"))
   return { checks: withJira([...kept, ...out.checks], state.checks), ...(out.fixes ? { fixes: out.fixes } : {}), ...(out.fixOf ? { fixOf: out.fixOf } : {}) }
 }
+
+// The stories that move in Jira: with a scope that takes in tickets of their own (an epic's
+// stories), each of yours (the ticket too when yours); else the ticket itself, as always.
+const storiesFor = (state: PipelineState) =>
+  state.scope?.some(t => t.kind !== "subtask") ? storiesOf({ key: state.key, isMine: !state.local }, state.scope) : undefined
 
 // What the board checks of a run by itself (lib/checks.ts): the repos left
 // as they were by the stages that only read; each PR of a build; the team's
@@ -916,27 +893,37 @@ async function startNow(key: string, take: boolean, asked?: Stage, chosen?: stri
   const state = await stateOf(key)
   if (state?.status === "running") throw new Error("A stage already runs on this ticket")
   const stage = stageToRun(state, asked)
-  const local = state ? !!state.local : mine && (await onlyYours(key))
-  if (local && stage !== "refine") throw new Error("This ticket is not yours: it only coordinates yours")
-  if (take && !local) await assignToMe(key)
-  if (!local) await labelTicket(key, [LABELS.on], []) // also checks that it is yours
-  if (stage === "staging") await stagingWaits(state!)
+  const local = await takeOn(key, state, take, mine)
   if (isRelease(stage)) return startRelease(state!, stage)
   const fixing = await writeFixes(key, state, stage, chosen)
-  // A test after a fix tests deep what the fix is about, and the rest quickly (retest.json); any other, all of it.
-  const retest = stage === "test" && state ? retestOf(state) : null
-  if (retest) await writeJsonAtomic(join(dirOf(key), "retest.json"), retest, { pretty: true })
-  else if (stage === "test") await rename(join(dirOf(key), "retest.json"), join(dirOf(key), "retest.json.prev")).catch(() => {})
+  if (stage === "test") await writeRetest(key, state)
   // At work at once, so the board shows it; the run then reads the ticket (it takes a while) and starts the agent.
   await save({ ...(await fresh(key, (state?.runs ?? 0) + 1, stage)), summary: state?.summary, ...(fixing === undefined ? {} : { fixing }), ...(local ? { local } : {}) })
   void run(key, (state?.runs ?? 0) + 1, stage, auto)
 }
 
-// A ticket not yours runs only for the children assigned to you; one of yours runs as always.
+// Whose the ticket is: yours (taken first when you ask, and labelled, which checks it is yours),
+// or someone else's run for what of it is yours (local: nothing written on it).
+async function takeOn(key: string, state: PipelineState | null, take: boolean, mine: boolean) {
+  const local = state ? !!state.local : mine && (await onlyYours(key))
+  if (local) return true
+  if (take) await assignToMe(key)
+  await labelTicket(key, [LABELS.on], [])
+  return false
+}
+
+// A test after a fix tests deep what the fix is about, and the rest quickly (retest.json); any other, all of it.
+async function writeRetest(key: string, state: PipelineState | null) {
+  const retest = state ? retestOf(state) : null
+  if (retest) await writeJsonAtomic(join(dirOf(key), "retest.json"), retest, { pretty: true })
+  else await rename(join(dirOf(key), "retest.json"), join(dirOf(key), "retest.json.prev")).catch(() => {})
+}
+
+// A ticket not yours runs for what under it is assigned to you (its scope); one of yours runs as always.
 async function onlyYours(key: string) {
   const t = await ticket(key)
   if (t.isMine) return false
-  if (!deliverablesOf(t, true).length) throw new Error(`Nothing under ${key} is assigned to you`)
+  if (!scopeOf(await descendantsOf(key)).length) throw new Error(`Nothing under ${key} is assigned to you`)
   return true
 }
 
@@ -1156,7 +1143,8 @@ async function tickNow(key: string) {
     const step = failed ? release.steps.find(s => s.id === failed) : undefined
     if (!isDone) return void (await save({ ...state, release, ...(step ? { status: "failed", error: `${step.title}: ${step.error ?? step.detail ?? "failed"}`, endedAt: Date.now() } : {}) }))
     // The release is saved as ended first; Jira after, and what it refuses is a warning (a release never hangs on it).
-    const jira = async (what: string, call: () => Promise<unknown>): Promise<Check[]> => call().then(() => [], (err: Error) => [{ id: `jira-release-${what}`, label: `Jira did not take the release's ${what}`, status: "warn" as const, detail: err?.message ?? String(err) }])
+    // On a ticket not yours (local), nothing is written on it.
+    const jira = async (what: string, call: () => Promise<unknown>): Promise<Check[]> => state.local ? [] : call().then(() => [], (err: Error) => [{ id: `jira-release-${what}`, label: `Jira did not take the release's ${what}`, status: "warn" as const, detail: err?.message ?? String(err) }])
     // Rolled back, the environment runs the code from before the ticket: it waits for new PRs.
     if (release.rollback) {
       const { [release.env]: _undone, ...deployed } = state.deployed ?? {}
@@ -1286,40 +1274,31 @@ export async function resetPipeline(key: string) {
 }
 
 // Out of the pipeline: the agent at work stops, the labels go (on a ticket of
-// yours) and the run is put aside (<key>.removed-<ts>, nothing deleted). A
-// coordinator takes its children with it; a child, once out, is not started
-// again by its coordinator. Jira's statuses, the PRs and the code stay as they are.
-export async function removePipeline(key: string, isAlone = true): Promise<{ warnings: string[] }> {
+// yours) and the run is put aside (<key>.removed-<ts>, nothing deleted).
+// Jira's statuses, the PRs and the code stay as they are.
+export async function removePipeline(key: string): Promise<{ warnings: string[] }> {
   if (!isKey(key)) throw new Error("Not a ticket key")
-  const state = await stateOf(key)
-  if (!state) throw new Error(`${key} is not in the pipeline`)
-  const warnings: string[] = []
-  for (const child of state.children ?? [])
-    if ((await stateOf(child.key))?.parent === key) warnings.push(...(await removePipeline(child.key, false)).warnings)
-  warnings.push(...(await takeOut(key)))
-  if (isAlone && state.parent) await keepOut(state.parent, key)
-  return { warnings }
+  if (!(await stateOf(key))) throw new Error(`${key} is not in the pipeline`)
+  return { warnings: await takeOut(key) }
+}
+// Its agent stops, and it is put aside as stopped: nothing reads it as at work any more.
+async function stopToTakeOut(state: PipelineState) {
+  if (isRelease(state.stage)) throw new Error(`A release is at work on ${state.key}: wait for it to end first`)
+  if (!state.pid) throw new Error(`${state.key} is starting: wait a moment`)
+  try { process.kill(-state.pid, "SIGTERM") } catch { try { process.kill(state.pid, "SIGTERM") } catch {} }
+  await save({ ...state, status: "failed", error: "Taken out of the pipeline", endedAt: Date.now() })
 }
 async function takeOut(key: string): Promise<string[]> {
   if (starting.has(key)) throw new Error(`${key} is starting: wait a moment`)
   const state = await locked(key, async () => {
     const state = await stateOf(key)
-    if (state?.status === "running" && isRelease(state.stage)) throw new Error(`A release is at work on ${key}: wait for it to end first`)
-    if (state?.status === "running" && !state.pid) throw new Error(`${key} is starting: wait a moment`)
-    if (state?.status === "running" && state.pid) try { process.kill(-state.pid, "SIGTERM") } catch { try { process.kill(state.pid, "SIGTERM") } catch {} }
+    if (state?.status === "running") await stopToTakeOut(state)
     await rename(dirOf(key), `${dirOf(key)}.removed-${Date.now()}`)
     return state
   })
   if (state?.local) return []
   return labelTicket(key, [], Object.values(LABELS)).then(() => [], (err: Error) => [`${key}: its labels stay in Jira (${err.message})`])
 }
-// The coordinator leaves a child taken out where it is (coordinate skips a "child-" check).
-const keepOut = (parent: string, key: string) => locked(parent, async () => {
-  const p = await stateOf(parent)
-  if (!p) return
-  const id = `child-${key}`
-  await save({ ...p, checks: [...(p.checks ?? []).filter(c => c.id !== id), { id, label: `${key} is out of the pipeline`, status: "warn", detail: "Taken out by you: it does not start again on its own" }] })
-})
 
 // ---------- tickets the stages propose (proposals.ts) ----------
 
@@ -1329,6 +1308,7 @@ export const createProposed = (key: string, id: string) => locked(key, async () 
   const state = await stateOf(key)
   const p = state?.proposals?.find(x => x.id === id)
   if (!state || p?.status !== "proposed") throw new Error("No such proposal")
+  if (waitsOn(p, state.status === "needs-info" ? state.questions.map(q => q.id) : [])) throw new Error(`It waits for your answer to ${p.question}`)
   const anchor = anchorOf(p, ticketsOfYours(state))
   if (!anchor) throw new Error("No ticket of yours to link it to")
   const { created, warning } = await createInJira(p, anchor, newDescription(p, key))
@@ -1419,7 +1399,6 @@ export async function pipelines(): Promise<PipelineState[]> {
 // Answers written in Jira (by you or anyone): the stage runs again.
 async function poll() {
   for (const state of await pipelines()) {
-    if (state.children?.length && state.stage === "refine" && state.status === "ready") void coordinate(state.key)
     if (state.status !== "needs-info" || !state.askedAt || isRelease(state.stage) || state.local) continue
     try {
       const t = await ticket(state.key)

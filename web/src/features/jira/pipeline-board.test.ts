@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { childrenLine, columnOf, isQueued, journeyOf, nextStage, parentColumn, passesOf, toFix, untested, waitingStep } from "./pipeline-board"
+import { columnOf, isQueued, journeyOf, nextStage, passesOf, toFix, untested, waitingStep } from "./pipeline-board"
 
 type At = "refine" | "plan" | "build" | "review" | "staging" | "test" | "prod" | "smoke"
 const at = (stage: At, status: "running" | "needs-info" | "ready" | "failed", findings?: { id: string; severity: string }[], release?: unknown) => ({ stage, status, findings, release }) as never
@@ -99,21 +99,6 @@ describe("what runs spent", () => {
     expect([tokens(3_687_970), tokens(55_157), tokens(706)]).toEqual(["3.7M", "55k", "706"])
     expect([dollars(4.1), dollars(12.4)]).toEqual(["$4.10", "$12"])
     expect(costOf([{ spend: { cost: 1.5 } }, { spend: null }, {}])).toBe(1.5)
-  })
-})
-
-describe("a coordinator", () => {
-  const parent = { stage: "refine", status: "ready", findings: [], children: [{ key: "PP-2", dependsOn: [] }, { key: "PP-3", dependsOn: [] }, { key: "PP-4", dependsOn: [] }] } as never
-  const states = [{ key: "PP-2", ...(at("build", "running") as object) }, { key: "PP-3", ...(at("review", "ready") as object) }] as never
-  it("starts nothing itself: its children do", () => {
-    expect(nextStage(parent)).toBeNull()
-  })
-  it("sits in the column of its child furthest behind", () => {
-    expect(parentColumn(parent, states)).toBe(2)
-    expect(parentColumn(parent, [] as never)).toBe(0)
-  })
-  it("says how many children are at each stage, and how many wait to start", () => {
-    expect(childrenLine(parent, states)).toBe("3 tickets: 1 build · 1 review · 1 to start")
   })
 })
 

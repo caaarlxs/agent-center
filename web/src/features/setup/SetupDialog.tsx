@@ -16,6 +16,7 @@ import { type CodeThemeOption, chosenKey, codeTheme, useCodeThemes, useIsDark, u
 import { cn } from "@/lib/utils"
 import { type Status, setupStatus } from "./status"
 import { type ThemeChoice, chooseTheme, themeChoice } from "@/lib/theme"
+import { foldSteps } from "@/features/conversation/fold-steps"
 import { notify, shake, sound, speech, toggleNotify, toggleSound, type Speech } from "@/features/alerts/prefs"
 import { CopyMark, useCopyMoment } from "@/components/icona/marks"
 import { SwapText } from "@/components/watermelon/SwapText"
@@ -309,6 +310,17 @@ function Alerts() {
   )
 }
 
+// Finished turns: the steps folded into one line, or every step in view.
+function FoldSteps() {
+  const isOn = foldSteps.use() === "on"
+  return (
+    <Row title="Fold steps" need="Preference" isDone={isOn} state={isOn ? <Done label="On" /> : <Todo label="Off" />}
+      actions={<Button variant={isOn ? "outline" : "default"} onClick={() => foldSteps.set(isOn ? "off" : "on")}>{isOn ? "Turn off" : "Turn on"}</Button>}>
+      <p className={text}>When a turn ends, what Claude said and ran on the way folds into one line, and the answer stays. While it works, every step shows.</p>
+    </Row>
+  )
+}
+
 // The sections, in groups down the left side, as Claude's own settings.
 type Section = "setup" | "alerts" | "look" | "jira" | "help"
 const SECTION: Record<Section, { label: string; Icon: typeof Bell }> = {
@@ -441,6 +453,7 @@ export function SetupDialog({ onClose }: { onClose: () => void }) {
               {section === "look" && (
                 <>
                   <Appearance />
+                  <FoldSteps />
                   <StyleChoice />
                   <IconChoice />
                   <CodeColours />

@@ -48,7 +48,7 @@ export function answerRuns(shown: readonly Texted[], isRunning: boolean): Map<st
   return runs
 }
 
-/** A level's page for one answer. */
-export function viewUrl(template: string, sessionId: string, answerKey: string, level: string): string {
-  return actionUrl(template, sessionId, answerKey).replaceAll("{level}", encodeURIComponent(level))
+/** A level's page for one answer, in the board's theme ({theme}: "light" or "dark"). */
+export function viewUrl(template: string, sessionId: string, answerKey: string, level: string, theme: string): string {
+  return actionUrl(template, sessionId, answerKey).replaceAll("{level}", encodeURIComponent(level)).replaceAll("{theme}", encodeURIComponent(theme))
 }

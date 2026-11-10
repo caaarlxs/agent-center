@@ -1,0 +1,38 @@
+// The steps of a finished turn: what Claude said and ran on the way to its
+// answer. Folded into one line under the "Fold steps" setting, so a finished
+// turn reads as your message and the answer. Pure: tested on its own.
+
+type Item = { key: string; kind: string; actions?: readonly unknown[] }
+export type Fold = { keys: string[]; actions: number }
+
+const WORK = new Set(["tools", "plan", "tests"])
+const STEP = new Set(["assistant", ...WORK])
+
+// One turn's steps: its texts, tool runs, plans and test runs before the
+// answer (the texts at its end), and its "files changed" box wherever it
+// sits. Questions and files sent stay where they are.
+function stepsOf(turn: readonly Item[]): Item[] {
+  let answer = turn.length
+  while (answer > 0 && !WORK.has(turn[answer - 1]!.kind)) answer--
+  const hasAnswer = turn.slice(answer).some(i => i.kind === "assistant")
+  return hasAnswer ? turn.filter((i, n) => (n < answer && STEP.has(i.kind)) || i.kind === "edits") : []
+}
+
+/** Each finished turn's steps, by the first one's key; and every key folded. */
+export function foldedSteps(shown: readonly Item[], isRunning: boolean): { heads: Map<string, Fold>; hidden: Set<string> } {
+  const heads = new Map<string, Fold>()
+  const hidden = new Set<string>()
+  const fold = (turn: Item[]) => {
+    const steps = stepsOf(turn)
+    if (!steps.length) return
+    heads.set(steps[0]!.key, { keys: steps.map(s => s.key), actions: steps.reduce((n, s) => n + (s.actions?.length ?? 0), 0) })
+    for (const s of steps) hidden.add(s.key)
+  }
+  let turn: Item[] = []
+  for (const item of shown) {
+    if (item.kind === "user") (fold(turn), (turn = []))
+    else turn.push(item)
+  }
+  if (!isRunning) fold(turn)
+  return { heads, hidden }
+}

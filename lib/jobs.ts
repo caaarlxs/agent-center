@@ -90,7 +90,7 @@ const RESULTS = `{"verdict": "ready" | "needs-info", ${QUESTIONS}, "results": [{
 const BRIEF: Record<AgentStage, (dir: string, job: BriefJob) => string> = {
   refine: (dir, { ticket }) => `Eres el refinador del equipo, en un encargo suelto: refinar el ticket ${ticket}. ${LOOSE_NOTE}
 
-1. Lee ${join(STAGES_DIR, "refine.md")} y ${join(STAGES_DIR, "environment.md")}, y síguelos. Si el ticket coordina a hijos entregables, sigue ${join(STAGES_DIR, "epic.md")} en lugar de refine.md.
+1. Lee ${join(STAGES_DIR, "refine.md")} y ${join(STAGES_DIR, "environment.md")}, y síguelos.
 2. ${ticketLine(dir)}
 3. Escribe el refinamiento en ${join(dir, "refine.md")} y el resumen en ${join(dir, "refine.summary.md")}.
 4. ${resultLine(dir, "refine", `{"verdict": "ready" | "needs-info", ${QUESTIONS}}`)}. Solo preguntas de PRODUCTO; las técnicas las decides tú.`,

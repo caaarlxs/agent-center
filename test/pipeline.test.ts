@@ -314,9 +314,6 @@ describe("autoNext", () => {
     expect(autoNext(at("refine", "running"))).toBeNull()
     expect(autoNext(at("refine", "ready", { auto: false }))).toBeNull()
   })
-  it("leaves a coordinator to its children", () => {
-    expect(autoNext(at("refine", "ready", { children: [{ key: "PP-2", dependsOn: [] }] }))).toBeNull()
-  })
 })
 
 describe("a unit's sub-tasks", () => {

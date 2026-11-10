@@ -11,6 +11,7 @@
 // and an API token (kept in the macOS keychain, never in a file), and the
 // keys of the projects to look for, so a word like "UTF-8" is never a ticket.
 
+import type { TreeTicket } from "./scope"
 import { stat } from "node:fs/promises"
 import { settings } from "./config"
 import { readAppended } from "./files"
@@ -461,6 +462,27 @@ const keyOrThrow = (key: string) => {
 const REF_FIELDS = ["summary", "status", "issuetype", "assignee"]
 const search = (setup: JiraSetup, jql: string, fields: string[], maxResults = 100) =>
   call(setup, "/rest/api/3/search/jql", { method: "POST", body: JSON.stringify({ jql, fields, maxResults }) }).then(r => (r?.issues ?? []) as any[])
+
+// Everything under a ticket, at any depth (an epic's stories, their sub-tasks), level by
+// level: each with its kind, its parent, and whether it is yours.
+const DEPTH = 3
+const MAX_TREE = 150
+const treeTicketOf = (raw: any, me: string | null): TreeTicket => {
+  const f = raw?.fields ?? {}
+  return { key: String(raw.key), kind: kindOf(f.issuetype), parent: f.parent?.key ? String(f.parent.key) : null, summary: String(f.summary ?? ""), isMine: !!me && f.assignee?.accountId === me }
+}
+export async function descendantsOf(key: string): Promise<TreeTicket[]> {
+  const setup = setupOrThrow()
+  const me = await myId(setup)
+  const out: TreeTicket[] = []
+  for (let level = [keyOrThrow(key)], depth = 0; level.length && depth < DEPTH && out.length < MAX_TREE; depth++) {
+    const found = await search(setup, `parent in (${level.join(",")}) ORDER BY rank`, [...REF_FIELDS, "parent"], 100)
+    const next = found.map(i => treeTicketOf(i, me))
+    out.push(...next.filter(n => !out.some(o => o.key === n.key)))
+    level = next.filter(n => n.kind !== "subtask").map(n => n.key)
+  }
+  return out.slice(0, MAX_TREE)
+}
 
 // A ticket whole: and what sits in it (its sub-tasks, or an epic's tickets).
 export async function ticket(key: string): Promise<Ticket> {

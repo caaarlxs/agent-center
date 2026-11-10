@@ -10,7 +10,7 @@
 // push, open the PR…). A "New messages" pill shows when more arrives
 // while you read further up; a line marks where each day starts, and a map
 // beside a long one shows where your messages, questions and failures are.
-import { ArrowDown, ChevronDown, ChevronRight, Download, FileText, FlaskConical, GitFork, Globe, ListChecks, Square, Terminal, Bot, Wrench } from "lucide-react"
+import { ArrowDown, ChevronDown, ChevronRight, Download, FileText, FlaskConical, GitFork, Globe, ListChecks, ListTree, Square, Terminal, Bot, Wrench } from "lucide-react"
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 import { FileIcon } from "@/components/common/FileIcon"
@@ -40,6 +40,8 @@ import { type Live, orbOf, turnLine, useLiveAnswer } from "./session-events"
 import { useTypewriter } from "./typewriter"
 import { WidgetView } from "./Widget"
 import { actionUrl, answerEnds, answerRuns, viewUrl } from "./response-actions"
+import { type Fold, foldedSteps } from "./steps"
+import { foldSteps } from "./fold-steps"
 import { type Pending, deliveredOf, dropPending, stampOf, takenBack, usePending, waitingOf } from "./pending"
 import { composerHint, composerQuote, reply, takeBack } from "./send"
 import { dialogAnswer, linesText, nameOf, partsOf, quoteOf } from "./text"
@@ -202,6 +204,19 @@ function Tools({ actions }: { actions: Action[] }) {
         </ul>
       )}
     </div>
+  )
+}
+
+// A finished turn's steps in one line (Settings: Fold steps); a click unfolds them in place.
+function Steps({ fold, isOpen, onToggle }: { fold: Fold; isOpen: boolean; onToggle: () => void }) {
+  const steps = fold.keys.length
+  return (
+    <button className="-ml-1.5 flex items-center gap-1.5 self-start rounded-md px-1.5 py-[3px] text-xs text-text-muted hover:bg-hover hover:text-text" onClick={onToggle} aria-expanded={isOpen}>
+      {isOpen ? <ChevronDown className="size-3 shrink-0" /> : <ChevronRight className="size-3 shrink-0" />}
+      <ListTree className="size-3 shrink-0" />
+      <span className="font-[550]">{steps === 1 ? "1 step" : `${steps} steps`}</span>
+      {fold.actions > 0 && <span className="text-faint">{fold.actions === 1 ? "1 action" : `${fold.actions} actions`}</span>}
+    </button>
   )
 }
 
@@ -611,7 +626,7 @@ function AnswerFrame({ src, sessionId }: { src: string; sessionId: string }) {
     addEventListener("message", onMessage)
     return () => removeEventListener("message", onMessage)
   }, [sessionId])
-  return <iframe ref={frame} src={src} sandbox="allow-scripts" title="Answer view" className="block w-full border-0 bg-transparent" style={{ height }} />
+  return <iframe ref={frame} src={src} sandbox="allow-scripts" title="Answer view" className="block w-full shrink-0 border-0 bg-transparent" style={{ height }} />
 }
 
 const ANSWER_RECEIPT_MS = 12_000 // an answer the session has not taken by then did not reach it
@@ -776,6 +791,11 @@ export function ConversationView({ sessionId, card: session, bridge }: { session
     return first
   }, [shown, session?.column, views])
   const [picked, setPicked] = useState<Record<string, string>>({})
+  // Finished turns fold their steps, the answer left in view (Settings: Fold steps).
+  const isFolding = foldSteps.use() === "on"
+  const folds = useMemo(() => (isFolding ? foldedSteps(shown, session?.column === "working") : null), [isFolding, shown, session?.column])
+  const headOf = useMemo(() => new Map(folds ? [...folds.heads].flatMap(([head, f]) => f.keys.map(k => [k, head] as const)) : []), [folds])
+  const [unfolded, setUnfolded] = useState<Record<string, boolean>>({})
   // Free for your next message (a question in Claude's text too, not a dialog
   // or a permission): the suggestion is asked for.
   const isYourTurn = isLoaded && !!session && ["review", "pending", "asking"].includes(session.column) && !waiting.length && !question && !permission && !session.isLaunching
@@ -822,14 +842,17 @@ export function ConversationView({ sessionId, card: session, bridge }: { session
         {shown.map(item => (
           <Fragment key={item.key}>
             {breaks.has(item.key) && <DaySeparator label={breaks.get(item.key)!} />}
+            {folds?.heads.has(item.key) && <Steps fold={folds.heads.get(item.key)!} isOpen={!!unfolded[item.key]} onToggle={() => setUnfolded(u => ({ ...u, [item.key]: !u[item.key] }))} />}
+            {headOf.has(item.key) && !unfolded[headOf.get(item.key)!] ? null : <>
             {views && runOf.get(item.key) === item.key && <ViewSwitch views={views} value={picked[item.key] ?? "original"} onChange={level => setPicked(p => ({ ...p, [item.key]: level }))} />}
             {(() => {
               const first = runOf.get(item.key)
               const level = first ? picked[first] ?? "original" : "original"
               if (level === "original" || !views || !first) return <ShownItem item={item} sessionId={sessionId} asked={asked} suggested={suggested} onFork={setForking} />
-              return first === item.key ? <AnswerFrame src={viewUrl(views.url, sessionId, item.key, level)} sessionId={sessionId} /> : null
+              return first === item.key ? <AnswerFrame src={viewUrl(views.url, sessionId, item.key, level, document.documentElement.dataset.theme === "dark" ? "dark" : "light")} sessionId={sessionId} /> : null
             })()}
             {answerActions.length > 0 && ends.has(item.key) && <AnswerActions sessionId={sessionId} answerKey={item.key} actions={answerActions} />}
+            </>}
           </Fragment>
         ))}
         {writing && <Markdown isStreaming>{writing}</Markdown>}

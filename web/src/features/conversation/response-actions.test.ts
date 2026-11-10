@@ -28,5 +28,5 @@ test("a turn's answer is its texts at the end, with no tool run between", () => 
 })
 
 test("a level's URL carries the level too", () => {
-  expect(viewUrl("http://h/view?s={session}&m={message}&l={level}", "s", "m:0", "concept")).toBe("http://h/view?s=s&m=m&l=concept")
+  expect(viewUrl("http://h/view?s={session}&m={message}&l={level}&t={theme}", "s", "m:0", "concept", "dark")).toBe("http://h/view?s=s&m=m&l=concept&t=dark")
 })
