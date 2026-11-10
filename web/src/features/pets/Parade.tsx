@@ -1,24 +1,27 @@
-// The arrow code (↑ ↑ ↓ ↓ ← → ← →, not while you type): your pets march
-// across the bottom of the window, the rarest first, eight at most, hopping
-// in a wave over a band of drifting colour and twinkling stars, each leaving
-// sparks of its rarity behind, the first with a pennant; confetti falls as
+// The arrow code (↑ ↑ ↓ ↓ ← → ← →, not while you type): your pets, the
+// rarest first and eight at most, come in on foot over a band of drifting
+// colour, take off, loop the loop in the middle of the window, dive and land
+// on the right, one after another like a flock (flight.ts), hopping, each
+// shedding dust of its rarity, the first with a pennant; confetti falls as
 // the last one reaches the middle, and a little march plays if the board's
 // sound is on. Their sheets are loaded and decoded before the first step,
 // and everything moves by transform and opacity alone (the compositor's
 // work), so the board keeps its frames.
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { sound } from "@/features/alerts/prefs"
 import { PetArt, RARITY_COLOR, isCommunity } from "./art"
 import { ARROWS, arrowStep } from "./arrow-code"
+import { flightPath } from "./flight"
 import { rarityOf, type Pets } from "./pets"
 
 const MAX = 8
-const GAP_S = 0.55
-const CROSS_S = 9
+const GAP_S = 0.42
+const CROSS_S = 10
+const SIZE = 56
 const RANK = { common: 0, rare: 1, epic: 2, legendary: 3 } as const
 const TRAIL = 5 // sparks behind each pet
-const STARS = 18
+const STARS = 26
 const CONFETTI = 46
 const COLORS = ["#ffd45c", "#ff7ad9", "#7fe3ff", "#9dff8a", "#b98cff", "#fff3b0"]
 const rand = (a: number, b: number) => a + Math.random() * (b - a)
@@ -65,13 +68,23 @@ export function Parade({ state, onDone }: { state: Pets; onDone: () => void }) {
     return () => void (alive = false)
   }, [list, onDone])
   const total = CROSS_S + list.length * GAP_S
+  // Each pet along the flight, a little after the one before: transform
+  // keyframes run by the compositor (Web Animations).
+  const flyers = useRef<(HTMLDivElement | null)[]>([])
+  useEffect(() => {
+    if (!isReady) return
+    const path = flightPath(innerWidth, innerHeight)
+    const frames = path.map(p => ({ transform: `translate(${p.x - SIZE / 2}px, ${p.y - SIZE}px) rotate(${p.a}deg)`, offset: p.offset }))
+    const runs = flyers.current.map((el, i) => el?.animate(frames, { duration: CROSS_S * 1000, delay: i * GAP_S * 1000, fill: "both", easing: "linear" }))
+    return () => runs.forEach(r => r?.cancel())
+  }, [isReady])
   useEffect(() => {
     if (!isReady) return
     march()
     const t = setTimeout(onDone, total * 1000 + 300)
     return () => clearTimeout(t)
   }, [isReady, total, onDone])
-  const [stars] = useState(() => Array.from({ length: STARS }, () => ({ x: rand(2, 98), y: rand(30, 120), d: rand(0, 3), s: rand(0.6, 1.4) })))
+  const [stars] = useState(() => Array.from({ length: STARS }, () => ({ x: rand(2, 98), y: rand(8, 92), d: rand(0, 3), s: rand(0.6, 1.4) })))
   const finale = (list.length - 1) * GAP_S + CROSS_S / 2 // the last one in the middle
   const [confetti] = useState(() => Array.from({ length: CONFETTI }, () => ({ x: rand(0, 100), d: rand(2.2, 3.6), delay: finale + rand(0, 0.8), r: rand(0, 360), w: rand(5, 9), c: COLORS[Math.floor(Math.random() * COLORS.length)] })))
   if (!isReady) return null
@@ -79,14 +92,14 @@ export function Parade({ state, onDone }: { state: Pets; onDone: () => void }) {
     <>
       <div className="pet-parade" style={{ "--total": `${total}s` } as React.CSSProperties} aria-hidden>
         <div className="parade-aurora" />
-        {stars.map((st, i) => <i key={i} className="parade-star" style={{ left: `${st.x}%`, bottom: st.y, animationDelay: `${st.d}s, 0s`, scale: st.s }} />)}
+        {stars.map((st, i) => <i key={i} className="parade-star" style={{ left: `${st.x}%`, bottom: `${st.y}%`, animationDelay: `${st.d}s, 0s`, scale: st.s }} />)}
         {list.map((id, i) => (
-          <div key={id} className="pet-parade-one" style={{ animationDelay: `${i * GAP_S}s`, animationDuration: `${CROSS_S}s`, "--rarity": RARITY_COLOR[rarityOf(state, id)] } as React.CSSProperties}>
-            {Array.from({ length: TRAIL }, (_, k) => <i key={k} className="parade-trail" style={{ animationDelay: `${-(k / TRAIL) * 1.1}s`, "--dy": `${-6 - ((k * 7) % 20)}px` } as React.CSSProperties} />)}
+          <div key={id} ref={el => void (flyers.current[i] = el)} className="pet-parade-one" style={{ "--rarity": RARITY_COLOR[rarityOf(state, id)] } as React.CSSProperties}>
+            {Array.from({ length: TRAIL }, (_, k) => <i key={k} className="parade-trail" style={{ animationDelay: `${-(k / TRAIL) * 1.1}s`, "--dx": `${((k * 13) % 30) - 15}px` } as React.CSSProperties} />)}
             <div className="parade-hop" style={{ animationDelay: `${-i * 0.13}s` }}>
               <i className="parade-glow" />
               {i === 0 && <Pennant />}
-              <PetArt id={id} size={56} doing="walk" facing={1} />
+              <PetArt id={id} size={SIZE} doing="walk" facing={1} />
             </div>
           </div>
         ))}
