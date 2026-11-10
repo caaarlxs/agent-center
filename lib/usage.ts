@@ -21,9 +21,12 @@ const PRICES: Record<string, { input: number; output: number; read: number }> = 
   "claude-haiku-5-5": { input: 0.1, output: 0.5, read: 0.01 },
 }
 
-function priceOf(model: string) {
+// A model newer than the list (Fable 5.2) costs as its family's newest here.
+export function priceOf(model: string) {
   const id = model.replace(/\[.*\]$/, "").replace(/-\d{8}$/, "")
-  return PRICES[id] ?? PRICES["claude-opus-5-5"]!
+  const family = /^claude-[a-z]+-/.exec(id)?.[0]
+  const kin = family && Object.keys(PRICES).find(k => k.startsWith(family))
+  return PRICES[id] ?? (kin ? PRICES[kin] : undefined) ?? PRICES["claude-opus-5-5"]!
 }
 
 type Usage = {

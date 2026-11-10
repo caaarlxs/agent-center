@@ -12,7 +12,7 @@ import { Anim } from "@/components/icons/animated"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 import { EffortSlider } from "./EffortSlider"
-import { EFFORTS, MODELS, type Option, pill } from "./Settings"
+import { EFFORTS, type Option, pill, useModels } from "./Settings"
 
 const OPEN = { type: "spring", stiffness: 520, damping: 34, mass: 0.7 } as const
 const SWAP = { duration: 0.16, ease: [0.23, 1, 0.32, 1] } as const
@@ -33,9 +33,10 @@ export function ModelEffort({ model, effort, title, defaults, isEffortLocked, is
   const [view, setView] = useState<"main" | "models">("main")
   const step = EFFORTS.findIndex(([e]) => e === effort)
   const effortLabel = labelOf(EFFORTS, effort)
-  const modelLabel = labelOf(MODELS, model) ?? "Model"
-  // A model the list does not know (a newer one) still shows, first.
-  const models = model && !MODELS.some(([m]) => m === model) ? [[model, model] as Option, ...MODELS] : MODELS
+  const known = useModels()
+  const modelLabel = labelOf(known, model) ?? "Model"
+  // A model the list does not know (an older one) still shows, first.
+  const models = model && !known.some(([m]) => m === model) ? [[model, model] as Option, ...known] : known
   const isDefault = !!defaults && defaults.model === model && defaults.effort === effort
   const slider = <EffortSlider step={step} labels={EFFORTS.map(([, l]) => l)} isLocked={isEffortLocked} onStep={i => onEffort?.(EFFORTS[i][0])} />
   return (

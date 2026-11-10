@@ -13,6 +13,7 @@ import { sessionSaying } from "./saying"
 import { accountLimits } from "./limits"
 import { canRunCommands } from "./commands"
 import { responseActions } from "./response-actions"
+import { installedModels } from "./models"
 import { responseViews } from "./response-views"
 import { freshness } from "./freshness"
 import { memoryNow, memoryOf } from "./memory"
@@ -321,6 +322,7 @@ export async function snapshot() {
     canRunCommands: canRunCommands(),
     responseActions: responseActions(settings.responseActions),
     responseViews: responseViews(settings.responseViews),
+    models: await installedModels(), // the newest of each family Claude desktop ships
     memory: { total: visible.reduce((sum, c) => sum + (c.memory?.total ?? 0), 0), pressure: memory.pressure },
     features: { organizer, pipeline: isPipelineOn() },
     pipelines: await pipelines(),

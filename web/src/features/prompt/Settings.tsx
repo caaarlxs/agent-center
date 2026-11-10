@@ -1,3 +1,6 @@
+import { useMemo } from "react"
+import { useLive } from "@/lib/live"
+
 // The session's permission modes, models and efforts, each with its hint,
 // and the quiet pill the reply box's pickers share (ModePicker, ModelEffort).
 export type Option = readonly [value: string, label: string, hint?: string]
@@ -9,12 +12,22 @@ export const MODES: readonly Option[] = [
   ["auto", "Auto", "A classifier decides what to allow without asking you"],
   ["bypassPermissions", "Bypass permissions", "Asks nothing: use it with care"],
 ]
+// The models before the board says which Claude desktop ships (useModels).
 export const MODELS: readonly Option[] = [
   ["claude-fable-5-1", "Fable 5.1", "The most capable"],
   ["claude-opus-5-5", "Opus 5.5", "Very capable, for complex work"],
   ["claude-sonnet-5-5", "Sonnet 5.5", "Fast and capable"],
   ["claude-haiku-5-5", "Haiku 5.5", "The fastest and cheapest"],
 ]
+const HINTS: Record<string, string> = Object.fromEntries(MODELS.map(([id, , hint]) => [id.split("-")[1]!, hint!]))
+
+// The models a session can use: the newest of each family that Claude desktop
+// ships (the board reads them from its Claude Code), with what each is good at.
+export function useModels(): readonly Option[] {
+  const live = useLive(l => l.snapshot?.models)
+  return useMemo(() => (live?.length ? live.map(m => [m.id, m.name, HINTS[m.id.split("-")[1]!]] as Option) : MODELS), [live])
+}
+
 export const EFFORTS: readonly Option[] = [["low", "Low"], ["medium", "Medium"], ["high", "High"], ["xhigh", "Extra high"], ["max", "Max"]]
 export const modelKey = (model: string | null | undefined) => MODELS.find(([id]) => model?.startsWith(id))?.[0] ?? model ?? ""
 
