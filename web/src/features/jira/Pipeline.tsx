@@ -46,6 +46,7 @@ import type { Proposal } from "@server/proposals"
 export { useConfirm }
 import { Evidence } from "./Evidence"
 import { Ask, isWaiting } from "./Ask"
+import { SendBack } from "./SendBack"
 import type { Release } from "@server/release"
 
 type Data = { putAside: number; state: PipelineState | null; refine: string | null; plan: string | null; build: string | null; review: string | null; test: string | null; smoke: string | null; preview: Release | null }
@@ -98,7 +99,7 @@ function Decisions({ ticketKey, state, onSent }: { ticketKey: string; state: Pip
   const send = async () => {
     if (isBusy) return
     setBusy(true)
-    if (await act("/api/pipeline/answer", { key: ticketKey, answers: changed }, "Answers sent to Jira: the stage runs again")) onSent()
+    if (await act("/api/pipeline/answer", { key: ticketKey, answers: changed }, `Answers sent: ${STAGES[stageAt(state)]} goes on with them`)) onSent()
     setBusy(false)
   }
   const change = (id: string, text: string | undefined) =>
@@ -112,7 +113,7 @@ function Decisions({ ticketKey, state, onSent }: { ticketKey: string; state: Pip
       </ol>
       <div className="mt-2 flex items-center justify-end gap-2.5">
         <Kbd>⌘↵</Kbd>
-        <Button className="h-8 text-xs" disabled={isBusy} onClick={() => void send()}>Send to Jira and continue</Button>
+        <Button className="h-8 text-xs" disabled={isBusy} onClick={() => void send()}>Send answers · {STAGES[stageAt(state)]} goes on</Button>
       </div>
     </div>
   )
@@ -499,7 +500,7 @@ export function Runs({ history, now }: { history: Run[]; now: number }) {
         return (
           <li key={r.n} className="grid grid-cols-[1.5rem_minmax(0,1fr)_auto_2rem] items-baseline gap-x-2 gap-y-0.5">
             <span className="font-mono text-faint">#{r.n}</span>
-            <span className={cn("truncate", r.status === "failed" ? "text-bad" : "text-text-muted")}>{sayRun(r, doingText(card?.doing))}</span>
+            <span className={cn("truncate", r.status === "failed" ? "text-bad" : "text-text-muted")} title={r.cause ?? undefined}>{r.cause && <span className="text-faint">{r.cause.split(":")[0]} · </span>}{sayRun(r, doingText(card?.doing))}</span>
             <span className="text-faint tabular-nums">{minutes((r.endedAt ?? now) - r.startedAt)} · {ago(r.endedAt ?? r.startedAt, now)}</span>
             {r.sessionId ? <button className="text-right font-semibold text-text-muted hover:text-text" onClick={() => openLog(r.sessionId!)}>Log</button> : <span />}
             {r.spend && <span className="col-span-3 col-start-2 truncate text-[11.5px] text-faint tabular-nums">{spendText(r)}</span>}
@@ -774,16 +775,17 @@ function Now({ state, preview, now, onRun, onStep }: { state: PipelineState; pre
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         {isRunning ? <Shimmer as="span" duration={2.2} className="truncate text-[13.5px] font-semibold [--color-background:var(--text)] [--color-muted-foreground:var(--text-muted)]">{line}</Shimmer>
           : <span className={cn("truncate text-[13.5px] font-semibold", isFailed ? "text-bad" : isAsking ? "text-ask" : "text-text")}>{line}</span>}
-        <span className="text-[11.5px] text-faint tabular-nums">{STAGES[stageAt(state)]} · {ago(isRunning ? state.startedAt : (state.endedAt ?? state.startedAt), now)}{isAuto(state) ? " · on its own until the review" : ""}</span>
+        <span className="text-[11.5px] text-faint tabular-nums">{STAGES[stageAt(state)]} · {ago(isRunning ? state.startedAt : (state.endedAt ?? state.startedAt), now)}{isAuto(state) ? " · on its own" : ""}
+          {state.news?.comments.length ? <span className="font-semibold text-ask"> · {state.news.comments.length} new in Jira</span> : null}</span>
       </div>
-      <NowActions state={state} preview={preview} onRun={onRun} onStep={onStep} />
+      <NowActions state={state} preview={preview} now={now} onRun={onRun} onStep={onStep} />
     </div>
   )
 }
 
 // The log of an agent at work; Retry (and Skip, in a release) when it failed;
 // else the button that starts what comes next.
-function NowActions({ state, preview, onRun, onStep }: { state: PipelineState; preview: Release | null; onRun: (stage?: Stage) => void; onStep: OnStep }) {
+function NowActions({ state, preview, now, onRun, onStep }: { state: PipelineState; preview: Release | null; now: number; onRun: (stage?: Stage) => void; onStep: OnStep }) {
   const release = isRelease(state.stage) ? state.release : null
   const next = nextStage(state)
   if (state.status === "running") return (
@@ -794,8 +796,11 @@ function NowActions({ state, preview, onRun, onStep }: { state: PipelineState; p
     </>
   )
   const isRolledBack = !!release?.rollback && release.steps.every(s => s.status === "done" || s.status === "skipped")
+  // Back to an earlier stage, from wherever it waits (not a job's: it has no stages before).
+  const back = isJob(state) ? null : <SendBack state={state} now={now} />
   if (state.status === "failed") return (
     <>
+      {back}
       <RollBack state={state} />
       {release && !isRolledBack && <SkipFailed release={release} onAct={onStep} />}
       {!isRolledBack && <Button variant="outline" className="h-7 shrink-0 text-xs" onClick={() => onRun()}>{release ? "Retry" : "Run again"}</Button>}
@@ -806,6 +811,7 @@ function NowActions({ state, preview, onRun, onStep }: { state: PipelineState; p
   // Fixing what the review found starts from its findings.
   return (
     <>
+      {back}
       <RollBack state={state} />
       <AfterTest state={state} onRun={onRun} />
       {next && !(state.stage === "review" && next === "build") ? <StartButton stage={next} from={state.stage} reminders={preview?.env === next ? preview.reminders : undefined} onRun={onRun} /> : null}
@@ -837,8 +843,9 @@ export function StopAgent({ path, body }: { path: string; body: object }) {
   )
 }
 
-// Running on its own, until the review (lib/pipeline.ts autoNext); a click stops it there.
-const isAuto = (state: PipelineState) => !!state.auto && ["refine", "plan", "build"].includes(state.stage) && state.status !== "failed"
+// Running on its own (lib/pipeline.ts autoNext): up to the review, fixing what it finds, and the
+// test once staging is deployed; it stops where you decide. A click stops it there.
+const isAuto = (state: PipelineState) => !!state.auto && state.status === "running"
 function StopAuto({ ticketKey }: { ticketKey: string }) {
   return <button className="shrink-0 text-xs font-semibold text-faint hover:text-text" onClick={() => void act("/api/pipeline/auto", { key: ticketKey }, "It stops after this stage")}>Stop auto</button>
 }

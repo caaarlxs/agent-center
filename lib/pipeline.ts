@@ -10,8 +10,10 @@
 // blockers and majors go back to Build, on the same branches. Staging and
 // Prod: no agent, the board itself takes the PRs there step by step (see
 // lib/release.ts), and waits for you wherever it matters. What
-// only a person decides goes to Jira as questions, each with a proposal; the
-// answers (here or in Jira) start the stage again, with them in the snapshot.
+// only a person decides goes to Jira as questions, each with a proposal; with the
+// answers (here or in Jira) the stage goes on. Each stage keeps one session per
+// ticket: every run of it (answers, a fix, Run again, Send back) goes on in it,
+// with all it knew. Send back takes a ticket to an earlier stage from anywhere.
 //
 // The agent only reads and leaves its result in files; the board does the
 // writing in Jira (comments, labels, and the statuses of jira.json: see
@@ -46,13 +48,14 @@ import { claudeBinary, running } from "./launch"
 import { claudeEnv } from "./proc"
 import { applyAction } from "./board"
 import { sessionSpend, type Spend } from "./usage"
+import { transcriptPath } from "./transcript"
 import { activityOf } from "./activity"
 import { existsSync } from "node:fs"
 import { exec } from "./proc"
 import { overLimits, prChecks, reposClean, type Check } from "./checks"
 import { canJudge, gatePrompt, parseAdvice } from "./gate"
 import { readdir } from "node:fs/promises"
-import { DEFAULT_CONFIG, advanceRelease, approveStep, releaseSteps, retryStep, rollbackSteps, skipStep, type DeployConfig, type OrderItem, type Ops, type Release, type ReleaseStep } from "./release"
+import { DEFAULT_CONFIG, tookUnit, advanceRelease, approveStep, releaseSteps, retryStep, rollbackSteps, skipStep, type DeployConfig, type OrderItem, type Ops, type Release, type ReleaseStep } from "./release"
 
 export type Stage = "refine" | "plan" | "build" | "review" | "staging" | "test" | "prod" | "smoke"
 const STAGE_NAMES: Stage[] = ["refine", "plan", "build", "review", "staging", "test", "prod", "smoke"]
@@ -85,7 +88,11 @@ export type Result = { verdict: "ready" | "needs-info"; questions: Question[]; u
 export type PipelineStatus = "running" | "needs-info" | "ready" | "failed"
 // kept: what the run left, to see each pass of a stage apart (a plan's or a build's units, a review's findings, a test's results).
 export type Kept = { units?: Unit[]; checklist?: ChecklistItem[]; findings?: Finding[]; results?: TestResult[] }
-export type Run = { n: number; stage: Stage; sessionId: string | null; startedAt: number; endedAt: number | null; status: PipelineStatus; questions: number; units: number; findings?: number; error: string | null; spend?: Spend | null; kept?: Kept }
+// cause: why it ran, in a word or two (Sent back, Your answers…); base: what its session had spent
+// before it (a stage's session goes on run after run: a run's spend is what it added).
+export type Run = { n: number; stage: Stage; sessionId: string | null; startedAt: number; endedAt: number | null; status: PipelineStatus; questions: number; units: number; findings?: number; error: string | null; spend?: Spend | null; kept?: Kept; cause?: string | null; base?: Spend | null }
+// What a person wrote in Jira since the last run read the ticket.
+export type News = { comments: { author: string; at: number; body: string }[] }
 export type PipelineState = {
   key: string
   summary?: string // the ticket's title, when the run started
@@ -121,6 +128,12 @@ export type PipelineState = {
   threads?: Record<string, Turn[]> // what a person asked the agent about a question, result or finding of this run (askPipeline)
   fixing?: Fixing | null // what a build after a review or a failed test fixes, until the next test
   publishedRun?: number // the run whose end is already in Jira (a restart in the middle never writes it twice)
+  sessions?: Partial<Record<AgentStage, string>> // each stage's own session: every run of it goes on in it, with all it knew
+  cause?: string | null // why this run, in a word or two (shown in the runs)
+  base?: Spend | null // what this run's session had spent when it started
+  readAt?: number // when the last run read the ticket: what people wrote after it is news
+  news?: News | null // what people wrote in Jira since then, for you to send it back with
+  autoFixes?: number // the fixes a pipeline on its own started since the plan (a few, then it waits for you)
 }
 export type Fixing = { from: "review" | "test"; ids: string[] }
 // One question to the agent about what it left, and its answer (null while it thinks).
@@ -347,8 +360,8 @@ export const releasedUnits = (state: Pick<PipelineState, "units" | "release">) =
 }
 // The units staging does not run yet: the ones a build after a failed test adds.
 export const unshipped = (state: Pick<PipelineState, "units" | "deployed">) => {
-  const shipped = new Set((state.deployed?.staging?.steps ?? []).filter(s => s.kind === "merge" && s.status === "done").map(s => s.unit))
-  return (state.units ?? []).filter(u => !shipped.has(u.id))
+  const merged = (state.deployed?.staging?.steps ?? []).filter(s => s.kind === "merge" && s.status === "done")
+  return (state.units ?? []).filter(u => !tookUnit(merged, u))
 }
 
 // The to-do items the build marked done (build.checklist.json: {"done": [...]} or a list).
@@ -391,14 +404,31 @@ export const questionsComment = (key: string, questions: Question[], stage: Agen
   `${MARK} · ${STAGE[stage].title} de ${key}\n\nAntes de implementar faltan **${questions.length} ${questions.length === 1 ? "decisión" : "decisiones"}**. Cada una trae una propuesta: si vale, basta con responder "ok" (o "ok a todas").\n\n` +
   questions.map(q => `---\n\n### ${q.id}. ${q.question}${q.context ? `\n\n${q.context}` : ""}\n\n**Propuesta**\n\n${q.proposal || "—"}`).join("\n\n")
 
+// Your answers, for the agent: each with what you talked over with it about the question first.
+export function answersWhy(state: Pick<PipelineState, "questions" | "threads">, answers: Record<string, string>) {
+  const talk = (id: string) => (state.threads?.[`question:${id}`] ?? []).filter(t => t.a).map(t => `  - La persona preguntó: ${t.q}\n    Respondiste: ${t.a}`).join("\n")
+  return `Te han contestado las preguntas (también están en ticket.md):\n\n` + state.questions.map(q => {
+    const said = talk(q.id)
+    return `${q.id}. ${q.question}\n→ ${answers[q.id]?.trim() || `${q.proposal || "—"} (tu propuesta, aceptada)`}${said ? `\n  Lo que hablasteis antes en una copia de tu sesión:\n${said}` : ""}`
+  }).join("\n\n") + `\n\nSi algo sigue sin estar claro, pregunta otra vez (needs-info); si no, sigue.`
+}
+
 // Your answers: a question left blank takes its proposal.
 export const answersComment = (questions: Question[], answers: Record<string, string>) =>
   `Respuestas a las preguntas del pipeline\n\n` +
   questions.map(q => `${q.id}. ${q.question}\n→ ${answers[q.id]?.trim() || q.proposal || "—"}`).join("\n\n")
 
+// What a person wrote, not the board: its marked comments, its answers, the PRs it links.
+const BOARD_WORDS = [MARK, "Respuestas a las preguntas del pipeline", "PR: ", "PRs:"]
+export const isPersons = (c: TicketComment) => !BOARD_WORDS.some(w => c.body.trimStart().startsWith(w))
 // A person wrote in the ticket after the questions.
 export const answeredAfter = (comments: TicketComment[], since: number) =>
-  comments.some(c => c.at > since && !c.body.trimStart().startsWith(MARK))
+  comments.some(c => c.at > since && isPersons(c))
+// What people wrote since the last run read the ticket.
+export const newsOf = (comments: TicketComment[], since: number): News | null => {
+  const found = comments.filter(c => c.at > since && isPersons(c)).map(c => ({ author: c.author, at: c.at, body: c.body }))
+  return found.length ? { comments: found } : null
+}
 
 const date = (at: number) => (at ? new Date(at).toISOString().slice(0, 10) : "—")
 
@@ -452,7 +482,7 @@ const keptOf = (s: PipelineState): Kept | undefined => {
 }
 export function withRun(s: PipelineState): PipelineState {
   const kept = keptOf(s)
-  const run: Run = { n: s.runs, stage: s.stage, sessionId: s.sessionId, startedAt: s.startedAt, endedAt: s.endedAt, status: s.status, questions: s.questions.length, units: s.units?.length ?? 0, ...(s.stage === "review" ? { findings: s.findings?.length ?? 0 } : {}), error: s.error, ...(kept ? { kept } : {}) }
+  const run: Run = { n: s.runs, stage: s.stage, sessionId: s.sessionId, startedAt: s.startedAt, endedAt: s.endedAt, status: s.status, questions: s.questions.length, units: s.units?.length ?? 0, ...(s.stage === "review" ? { findings: s.findings?.length ?? 0 } : {}), error: s.error, ...(kept ? { kept } : {}), ...(s.cause ? { cause: s.cause } : {}), ...(s.base ? { base: s.base } : {}) }
   return { ...s, history: [...(s.history ?? []).filter(r => r.n !== s.runs), run].sort((a, b) => a.n - b.n) }
 }
 const save = (s: PipelineState) => writeJsonAtomic(join(dirOf(s.key), "state.json"), withRun(s), { pretty: true })
@@ -476,8 +506,18 @@ const jsonOf = (text: string | null): any => {
 }
 // Each run with what its session spent, read from its transcript (only what
 // was added since the last look): never saved, so it is always the session's own.
-export const withSpend = async <S extends PipelineState>(s: S): Promise<S> =>
-  ({ ...s, history: await Promise.all((s.history ?? []).map(async r => ({ ...r, spend: r.sessionId ? await sessionSpend(r.sessionId) : null }))) })
+// A session that goes on run after run: each run's is what it added, up to where the next one started.
+export const withSpend = async <S extends PipelineState>(s: S): Promise<S> => {
+  const history = s.history ?? []
+  const totals = new Map(await Promise.all([...new Set(history.map(r => r.sessionId).filter((id): id is string => !!id))].map(async id => [id, await sessionSpend(id)] as const)))
+  return { ...s, history: history.map(r => ({ ...r, spend: r.sessionId ? spentIn(r, history, totals.get(r.sessionId) ?? null) : null })) }
+}
+export function spentIn(r: Run, history: Run[], total: Spend | null): Spend | null {
+  const next = history.find(x => x.n > r.n && x.sessionId === r.sessionId && x.base)
+  return minus(next?.base ?? total, r.base ?? null)
+}
+const minus = (a: Spend | null, b: Spend | null): Spend | null =>
+  a && b ? { ...a, input: a.input - b.input, output: a.output - b.output, cacheRead: a.cacheRead - b.cacheRead, cacheWrite: a.cacheWrite - b.cacheWrite, cost: a.cost - b.cost } : a
 
 // The state and each stage's document, for the ticket's view. A run whose
 // session is gone without a result (the board restarted) is a failed one.
@@ -521,32 +561,55 @@ export async function buildProgress(dir: string) {
 // A ticket that takes in more (its scope): all of it is one piece of work.
 const asScope = (scope: TreeTicket[] = []) =>
   scope.length ? `\n\nEl trabajo es todo el alcance de ticket.md («Tu alcance»): esos tickets son una sola pieza de trabajo, con un solo resultado. Si es grande, reparte con subagentes a tu criterio y junta tú el resultado.` : ""
-const promptFor = (key: string, dir: string, stage: AgentStage, scope: TreeTicket[] = []) => `${TAG} ${key} · ${STAGE[stage].verb}
+// What every prompt of a stage ends with: what it asks, the scope, how agents work, and no Jira.
+const askOf = (key: string, dir: string, stage: AgentStage, scope: TreeTicket[], why: string | null = null) =>
+  `${STAGE[stage].brief(key, dir)}${asScope(scope)}${why ? `\n\nPor qué esta etapa ahora:\n${why}` : ""}\n\n${AS_AGENT}\n\nNo escribas en Jira${STAGE[stage].writes ? "" : " ni en los repos"}: el board publica lo que dejas en tus ficheros.`
+const promptFor = (key: string, dir: string, stage: AgentStage, scope: TreeTicket[] = [], why: string | null = null) =>
+  `${TAG} ${key} · ${STAGE[stage].verb}\n\n${askOf(key, dir, stage, scope, why)}`
+// The same stage again, in its own session: it knows the ticket, the code and what it decided;
+// it reads what changed and redoes only that.
+export const continuePrompt = (key: string, dir: string, stage: AgentStage, scope: TreeTicket[] = [], why: string | null = null) => `${TAG} ${key} · ${STAGE[stage].verb} (continúa)
 
-${STAGE[stage].brief(key, dir)}${asScope(scope)}
+Vuelves a la etapa de ${STAGE[stage].title.toLowerCase()} de ${key}. Es la misma conversación de tus runs anteriores: ya conoces el ticket, el código y lo que decidiste, y por qué.
 
-${AS_AGENT}
+Por qué vuelves:
+${why ?? "Las etapas de antes han vuelto a pasar o el ticket ha cambiado: revisa qué cambia."}
 
-No escribas en Jira${STAGE[stage].writes ? "" : " ni en los repos"}: el board publica lo que dejas en tus ficheros.`
+Antes de nada:
+- Lee otra vez ${join(dir, "ticket.md")}: el board lo acaba de escribir al día (comentarios, respuestas, alcance).
+- Tus ficheros del último run están con .prev (${stage}.json.prev, ${stage}.md.prev, ${stage}.summary.md.prev). Parte de ellos: rehaz solo lo que cambia y mantén lo que sigue valiendo. Los de las etapas de antes pueden haber cambiado también.
+- Escribe otra vez todos tus ficheros de salida, enteros.
+
+Lo que pide tu etapa, por si lo necesitas:
+${askOf(key, dir, stage, scope)}`
 
 // Runs a stage; whatever fails before the session starts leaves a failed state.
 // Run on its own: each stage, once done, starts the next, until the review (the
 // PRs done). A stage that asks waits for the answers, then goes on; a release is
 // always started by a person.
-const AUTO_NEXT: Partial<Record<Stage, AgentStage>> = { refine: "plan", plan: "build", build: "review" }
-export const autoNext = (state: PipelineState): AgentStage | null =>
-  state.auto && state.status === "ready" ? (AUTO_NEXT[state.stage] ?? null) : null
+// On its own it also fixes what a review or a test found (a few times since the plan, then it
+// waits for you), and tests staging once deployed (and checks prod). It stops where a person
+// decides: a question, a release, a criterion nobody could try, a run that failed.
+const AUTO_NEXT: Partial<Record<Stage, AgentStage>> = { refine: "plan", plan: "build", build: "review", staging: "test", prod: "smoke" }
+export const AUTO_FIXES = 2
+export const autoNext = (state: PipelineState): AgentStage | null => {
+  if (!state.auto || state.status !== "ready") return null
+  const hasToFix = (state.stage === "review" && blocking(state.findings).length > 0) || (state.stage === "test" && failing(state.results).length > 0)
+  if (hasToFix) return (state.autoFixes ?? 0) < AUTO_FIXES ? "build" : null
+  return AUTO_NEXT[state.stage] ?? null
+}
 
 // A ticket taken out of the pipeline meanwhile stays out.
-const run = (key: string, runs: number, stage: AgentStage, auto?: boolean) =>
-  runStage(key, runs, stage, auto).catch(async err => (await stateOf(key)) && save({ ...(await fresh(key, runs, stage)), status: "failed", error: String(err?.message ?? err), endedAt: Date.now() }))
+const run = (key: string, runs: number, stage: AgentStage, auto?: boolean, why?: Why) =>
+  runStage(key, runs, stage, auto, why).catch(async err => (await stateOf(key)) && save({ ...(await fresh(key, runs, stage)), status: "failed", error: String(err?.message ?? err), endedAt: Date.now() }))
 const EMPTY = (key: string, runs: number, stage: Stage): PipelineState =>
   ({ key, stage, status: "running", sessionId: null, runs, startedAt: Date.now(), endedAt: null, askedAt: null, questions: [], error: null })
 // A new run, with the ticket's history so far.
 const fresh = async (key: string, runs: number, stage: Stage): Promise<PipelineState> => {
   const prev = await stateOf(key)
   // The plan's units and to-do list, and the review's findings, stay with the ticket for the stages after it.
-  return { ...EMPTY(key, runs, stage), summary: prev?.summary, history: prev?.history ?? [], units: prev?.units, checklist: prev?.checklist, checked: prev?.checked, scripts: prev?.scripts, contextImpact: prev?.contextImpact,
+  return { ...EMPTY(key, runs, stage), summary: prev?.summary, history: prev?.history ?? [], sessions: prev?.sessions, readAt: prev?.readAt, news: prev?.news, order: prev?.order,
+    autoFixes: stage === "refine" || stage === "plan" ? 0 : prev?.autoFixes, units: prev?.units, checklist: prev?.checklist, checked: prev?.checked, scripts: prev?.scripts, contextImpact: prev?.contextImpact,
     release: prev?.release, deployed: prev?.deployed, fixes: prev?.fixes, fixOf: prev?.fixOf, threads: prev?.threads, fixing: ["refine", "plan", "test", "smoke"].includes(stage) ? null : prev?.fixing, results: stage === "test" || stage === "smoke" ? undefined : prev?.results, scope: prev?.scope, auto: prev?.auto, local: prev?.local, proposals: prev?.proposals,
     ...(stage === "review" ? {} : { findings: prev?.findings, fixed: stage === "build" ? [] : prev?.fixed }) }
 }
@@ -603,30 +666,44 @@ async function writeInputs(key: string, dir: string) {
 const scopeSection = (t: Ticket, scope: TreeTicket[], deeper: Ticket[]) =>
   scope.length ? `\n## Tu alcance\n\nEstos tickets son el trabajo, todos juntos (los demás son contexto):\n\n${scopeLines(t, scope)}\n${deeper.map(d => `\n### ${d.key} · ${d.summary} (${d.status})\n\n${d.description || "(sin descripción)"}\n`).join("")}` : ""
 
-async function runStage(key: string, runs: number, stage: AgentStage, auto?: boolean) {
+// Why a run: a word or two for the runs list, and what the agent is told.
+export type Why = { cause: string; text: string | null }
+// The session a stage goes on in: its own, else (a ticket from before) its last run's; only one whose transcript is there.
+export async function sessionToResume(state: Pick<PipelineState, "sessions" | "history"> | null, stage: AgentStage): Promise<string | null> {
+  const id = state?.sessions?.[stage] ?? [...(state?.history ?? [])].reverse().find(r => r.stage === stage && r.sessionId)?.sessionId ?? null
+  return id && (await transcriptPath(id)) ? id : null
+}
+async function runStage(key: string, runs: number, stage: AgentStage, auto?: boolean, why?: Why) {
   const dir = dirOf(key)
   await mkdir(dir, { recursive: true })
   for (const f of [`${stage}.json`, `${stage}.md`, `${stage}.summary.md`]) await rename(join(dir, f), join(dir, `${f}.prev`)).catch(() => {})
-  const { t, scope } = await writeInputs(key, dir)
-  const started = { ...(await fresh(key, runs, stage)), summary: t.summary, scope, ...(auto === undefined ? {} : { auto }) }
+  const readAt = Date.now()
+  const { t, scope, before } = await writeInputs(key, dir)
+  const resumed = await sessionToResume(before, stage)
+  const started: PipelineState = { ...(await fresh(key, runs, stage)), summary: t.summary, scope, readAt, news: null, cause: why?.cause ?? null, ...(auto === undefined ? {} : { auto }) }
   const state = stage === "build" ? { ...started, ...(await inJira("build-started", started)) } : started
   await save(state)
-  const id = randomUUID()
+  const id = resumed ?? randomUUID()
+  const base = resumed ? await sessionSpend(resumed) : null
   // Figma, when what the stage reads links a design and the team set Figma up.
   const figma = linksFigma(await readText(join(dir, "ticket.md")) ?? "") && existsSync(join(STAGES_DIR, "figma-mcp.json"))
-  const pid = await spawnStage(dir, id, promptFor(key, dir, stage, scope), stage, () => void watch(), figma)
-  await locked(key, async () => save({ ...state, auto: (await stateOf(key))?.auto ?? state.auto, sessionId: id, pid }))
+  const prompt = resumed ? continuePrompt(key, dir, stage, scope, why?.text ?? null) : promptFor(key, dir, stage, scope, why?.text ?? null)
+  const pid = await spawnStage(dir, id, prompt, stage, () => void watch(), figma, !!resumed)
+  await locked(key, async () => {
+    const now = await stateOf(key)
+    await save({ ...state, auto: now?.auto ?? state.auto, sessionId: id, pid, base, sessions: { ...state.sessions, [stage]: id } })
+  })
   await applyAction(id, [id], "tickets", { started: [key] })
 }
 
 // A stage's session, started on its own (its own process group, its output to
 // <stage>.log), so restarting the board never stops it: the board learns it
 // ended by watching its process, not by being its parent.
-export async function spawnStage(dir: string, id: string, prompt: string, stage: AgentStage, onExit: () => void, figma = false): Promise<number> {
+export async function spawnStage(dir: string, id: string, prompt: string, stage: AgentStage, onExit: () => void, figma = false, resume = false): Promise<number> {
   const log = openSync(join(dir, `${stage}.log`), "a")
   // The test in staging reads and writes AWS as its own IAM user, limited to the test data.
   const aws: Record<string, string> = stage === "test" ? { AWS_PROFILE: "deale-staging-agent", AWS_DEFAULT_PROFILE: "deale-staging-agent" } : {}
-  const proc = spawn(await claudeBinary(), ["-p", "--session-id", id, "--output-format", "stream-json", "--verbose", "--permission-mode", "auto", ...argsFor(stage, ROOT, { figma }), "--", prompt],
+  const proc = spawn(await claudeBinary(), ["-p", ...(resume ? ["--resume", id] : ["--session-id", id]), "--output-format", "stream-json", "--verbose", "--permission-mode", "auto", ...argsFor(stage, ROOT, { figma }), "--", prompt],
     { cwd: dir, env: claudeEnv({ AGENT_CENTER_LAUNCH: "1", ...aws }), detached: true, stdio: ["ignore", log, log] })
   if (!proc.pid) throw new Error("Claude Code did not start")
   proc.on("exit", onExit)
@@ -708,6 +785,7 @@ async function finish(key: string) {
   if (!state.local) await labelTicket(key, [stage.label], [LABELS.needsInfo, ...stage.unlabel])
   const checklist = state.stage === "plan" ? result.checklist : state.checklist
   const scripts = state.stage === "plan" ? result.scripts : state.scripts
+  const order = state.stage === "plan" ? result.order : state.order
   const checked = state.stage === "build" ? checkedIn(await readText(join(dir, "build.checklist.json"))) : state.checked
   // Only a plan and a build leave units; the stages after them keep theirs.
   // A build after a fix may list only its new units: the ones before stay, each as its last build left it.
@@ -716,7 +794,7 @@ async function finish(key: string) {
   const tested = state.stage === "test" || state.stage === "smoke" ? { results: shown.results } : {}
   const context = state.stage === "refine" ? { contextImpact: result.contextImpact } : {}
   const proposals = withProposals(state.proposals, proposalsIn(result.tickets, state.runs, state.stage), state.stage)
-  const done: PipelineState = { ...state, publishedRun: state.runs, status: "ready", questions: [], proposals, units, checklist, checked, scripts, ...found, ...tested, ...context, checks: withJira([...checks, ...attached.checks], state.checks), endedAt: Date.now() }
+  const done: PipelineState = { ...state, publishedRun: state.runs, status: "ready", questions: [], proposals, units, checklist, checked, scripts, order, ...found, ...tested, ...context, checks: withJira([...checks, ...attached.checks], state.checks), endedAt: Date.now() }
   await recordDebt(key, result.debt)
   await settle({ ...done, checks: withJira([...(done.checks ?? []), ...graveDebt(result.debt)], []) })
 }
@@ -768,8 +846,15 @@ async function settle(done: PipelineState) {
   const event = done.stage === "build" ? "built" : done.stage === "test" ? "tested" : null
   const saved: PipelineState = event ? { ...done, ...(await inJira(event, done)) } : done
   await save(saved)
-  const next = autoNext(saved)
-  if (next) void startPipeline(done.key, false, next).catch(err => console.error(`auto ${done.key} → ${next}:`, err))
+  goOnAlone(saved)
+}
+// A pipeline on its own starts what comes next; a fix it starts counts (a few, then it waits for you).
+function goOnAlone(state: PipelineState) {
+  const next = autoNext(state)
+  if (!next) return
+  const isFix = next === "build" && (state.stage === "review" || state.stage === "test")
+  const counted = isFix ? save({ ...state, autoFixes: (state.autoFixes ?? 0) + 1 }) : Promise.resolve()
+  void counted.then(() => startPipeline(state.key, false, next)).catch(err => console.error(`auto ${state.key} → ${next}:`, err))
 }
 
 // A test's files, attached to the ticket (the first few, as Jira takes them):
@@ -900,7 +985,16 @@ async function startNow(key: string, take: boolean, asked?: Stage, chosen?: stri
   if (stage === "test") await writeRetest(key, state)
   // At work at once, so the board shows it; the run then reads the ticket (it takes a while) and starts the agent.
   await save({ ...(await fresh(key, (state?.runs ?? 0) + 1, stage)), summary: state?.summary, ...(fixing === undefined ? {} : { fixing }), ...(local ? { local } : {}) })
-  void run(key, (state?.runs ?? 0) + 1, stage, auto)
+  void run(key, (state?.runs ?? 0) + 1, stage, auto, whyStart(state, stage))
+}
+// Why a stage starts: again after a run that did not end, to fix what a review or a test
+// found, or (no word) the next stage.
+export function whyStart(state: PipelineState | null, stage: AgentStage): Why | undefined {
+  if (state?.stage === stage && state.status === "failed")
+    return { cause: "Run again", text: `Tu último run no terminó (${state.error ?? "sin motivo"}). Sigue donde lo dejaste: lo que ya está hecho, no lo repitas.` }
+  if (stage === "build" && state?.stage === "review") return { cause: "Fix the review", text: "La revisión encontró hallazgos: arregla los de review.fix.json." }
+  if (stage === "build" && state?.stage === "test") return { cause: "Fix the test", text: "El test en staging falló: arregla los criterios de test.fix.json." }
+  return undefined
 }
 
 // Whose the ticket is: yours (taken first when you ask, and labelled, which checks it is yours),
@@ -993,6 +1087,51 @@ export const stopPipeline = (key: string) => locked(key, async () => {
   if (state.pid) try { process.kill(-state.pid, "SIGTERM") } catch { try { process.kill(state.pid, "SIGTERM") } catch {} }
   await save({ ...state, status: "failed", error: "Stopped by you", endedAt: Date.now() })
 })
+
+// ---------- sending it back ----------
+
+// Back to an earlier stage (refine, plan or build), from wherever it waits: the stage goes on in
+// its own session with what you say and what people wrote since, and then the ones after it,
+// as always (on its own, if it runs so). What runs in staging or prod stays: the change goes in new PRs.
+export const BACK: AgentStage[] = ["refine", "plan", "build"]
+const BEFORE: Partial<Record<AgentStage, AgentStage>> = { plan: "refine", build: "plan" }
+export function backRefusal(state: PipelineState | null, stage: Stage): string | null {
+  if (!state) return "Not a ticket of the pipeline"
+  if (!BACK.includes(stage as AgentStage)) return "It goes back to Refine, Plan or Build"
+  if (state.status === "running") return "A stage runs: wait for it to end, or stop it"
+  const need = BEFORE[stage as AgentStage]
+  if (need && !(state.history ?? []).some(r => r.stage === need && r.status === "ready")) return `${STAGE[stage as AgentStage].title} needs ${STAGE[need].title.toLowerCase()} done first`
+  return null
+}
+export function backWhy(state: PipelineState, stage: AgentStage, note: string): Why {
+  const said = note.trim() ? `Lo que dice la persona que te devuelve aquí:\n${note.trim()}` : "La persona no ha dicho nada más: mira qué ha cambiado en ticket.md."
+  const news = state.news?.comments.length ? `\n\nLo escrito en Jira desde tu último run (también en ticket.md):\n${state.news.comments.map(c => `- ${c.author}, ${date(c.at)}: ${c.body.replace(/\s+/g, " ").slice(0, 600)}`).join("\n")}` : ""
+  const envs = (Object.keys(state.deployed ?? {}) as Env[])
+  const shipped = envs.length && stage !== "refine"
+    ? `\n\nYa está desplegado en ${envs.join(" y ")}. Sus PRs están mergeadas: no las toques. Lo que cambia va en unidades nuevas, con ids que no existían, ramas nuevas desde la rama por defecto y PRs nuevas. En plan.json/build.json lista también las unidades de antes, tal cual.`
+    : ""
+  return { cause: `Sent back${note.trim() ? `: ${note.trim().slice(0, 60)}` : ""}`, text: `Te devuelven a esta etapa.\n\n${said}${news}${shipped}` }
+}
+export async function sendBack(key: string, stage: Stage, note = "") {
+  if (!isKey(key)) throw new Error("Not a ticket key")
+  if (starting.has(key)) throw new Error("It is starting already")
+  starting.add(key)
+  try {
+    const state = await stateOf(key)
+    const refusal = backRefusal(state, stage)
+    if (refusal || !state) throw new Error(refusal ?? "Not a ticket of the pipeline")
+    const to = stage as AgentStage
+    // What a review or a test asked to fix is not this: it starts from what you say.
+    const aside = (f: string) => rename(join(dirOf(key), f), join(dirOf(key), `${f}.prev`)).catch(() => {})
+    for (const f of ["review.fix.json", "test.fix.json", ...(to === "build" ? ["build.progress.json", "build.checklist.json"] : [])]) await aside(f)
+    if (!state.local && state.status === "needs-info") await labelTicket(key, [], [LABELS.needsInfo]).catch(() => {})
+    const why = backWhy(state, to, note)
+    await save({ ...(await fresh(key, state.runs + 1, to)), summary: state.summary, fixing: null, autoFixes: 0 })
+    void run(key, state.runs + 1, to, undefined, why)
+  } finally {
+    starting.delete(key)
+  }
+}
 
 // ---------- asking the agent about what it left ----------
 
@@ -1159,7 +1298,9 @@ async function tickNow(key: string) {
     const warned = [...(await jira("comment", () => commentOn(key, releaseComment(key, release)))),
       ...(await jira("label", () => labelTicket(key, [LABELS[release.env]], [LABELS.needsInfo, LABELS.ready, LABELS.planned, LABELS.built, LABELS.reviewed, ...(release.env === "prod" ? [LABELS.staging] : [])])))]
     const moved = await inJira(release.env === "staging" ? "in-staging" : "in-prod", live)
-    await save({ ...live, ...moved, checks: withJira([...(moved.checks ?? live.checks ?? []), ...warned], live.checks) })
+    const after: PipelineState = { ...live, ...moved, checks: withJira([...(moved.checks ?? live.checks ?? []), ...warned], live.checks) }
+    await save(after)
+    goOnAlone(after)
   }
 }
 
@@ -1259,7 +1400,7 @@ export async function answerPipeline(key: string, answers: Record<string, string
       await labelTicket(key, [], [LABELS.needsInfo])
     }
     await save({ ...(await fresh(key, state.runs + 1, state.stage)), summary: state.summary })
-    void run(key, state.runs + 1, state.stage)
+    void run(key, state.runs + 1, state.stage, undefined, { cause: "Your answers", text: answersWhy(state, answers) })
   } finally {
     starting.delete(key)
   }
@@ -1270,6 +1411,8 @@ export async function resetPipeline(key: string) {
   if (!isKey(key)) throw new Error("Not a ticket key")
   const state = await stateOf(key)
   if (state?.status === "running") throw new Error("A stage runs: wait for it to end")
+  const live = Object.keys(state?.deployed ?? {})
+  if (live.length) throw new Error(`It runs in ${live.join(" and ")}: starting over would lose its rollback. Send it back to a stage instead`)
   if (!state?.local) await labelTicket(key, [], Object.values(LABELS))
   await rename(dirOf(key), `${dirOf(key)}.old-${Date.now()}`).catch(() => {})
 }
@@ -1412,19 +1555,33 @@ export async function pipelines(): Promise<PipelineState[]> {
   return Promise.all(states.filter((s): s is PipelineState => !!s).sort((a, b) => b.startedAt - a.startedAt).map(withSpend))
 }
 
-// Answers written in Jira (by you or anyone): the stage runs again.
+// Answers written in Jira (by you or anyone): the stage goes on with them. On a ticket
+// that waits for nothing of Jira, what people wrote since its last run is news: the card
+// says so, for you to send it back (a person decides where it goes).
 async function poll() {
   for (const state of await pipelines()) {
-    if (state.status !== "needs-info" || !state.askedAt || isRelease(state.stage) || state.local) continue
+    if (state.local || state.status === "running") continue
     try {
       const t = await ticket(state.key)
-      if (answeredAfter(t.comments, state.askedAt)) {
+      if (state.status === "needs-info" && state.askedAt && !isRelease(state.stage)) {
+        if (!answeredAfter(t.comments, state.askedAt)) continue
         await labelTicket(state.key, [], [LABELS.needsInfo])
-        void run(state.key, state.runs + 1, state.stage)
+        void run(state.key, state.runs + 1, state.stage as AgentStage, undefined, { cause: "Answers in Jira", text: "Han contestado en Jira a tus preguntas: están en los comentarios de ticket.md de después de tu pregunta. Si algo sigue sin estar claro, pregunta otra vez (needs-info); si no, sigue." })
+        continue
       }
+      await noteNews(state.key, t.comments)
     } catch {}
   }
 }
+const noteNews = (key: string, comments: TicketComment[]) => locked(key, async () => {
+  const state = await stateOf(key)
+  if (!state || state.status === "running") return
+  const news = newsOf(comments, readAtOf(state))
+  if ((news?.comments.length ?? 0) !== (state.news?.comments.length ?? 0)) await save({ ...state, news })
+})
+// When the last run read the ticket (a ticket from before: its last agent run's start).
+const readAtOf = (state: PipelineState) =>
+  state.readAt ?? [...(state.history ?? [])].reverse().find(r => !isRelease(r.stage) && r.status !== "running")?.startedAt ?? state.startedAt
 const WATCH_MS = 10_000
 export const startPipelinePoll = () => {
   void watch()

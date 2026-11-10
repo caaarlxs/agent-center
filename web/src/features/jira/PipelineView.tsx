@@ -66,6 +66,7 @@ export function TicketCard({ state, card, now }: { state: PipelineState; card: C
             : <p className={cn("m-0 truncate text-[12.5px]", isAsking ? "font-semibold text-ask" : state.status === "failed" ? "text-bad" : "text-text-muted")} title={line}>{line}</p>}
           <span className="dot-time truncate text-[11px] text-faint tabular-nums" title="Its key, the API-equivalent cost of every run, and how long it has been like this">
             <span className="font-mono">{isLoose ? jobLabel(state as Job) : state.key}</span>{state.history?.length ? ` · ≈${dollars(costOf(state.history))}` : ""} · {time}
+            {state.news?.comments.length ? <span className="font-semibold text-ask"> · {state.news.comments.length} new</span> : null}
           </span>
         </div>
       </div>

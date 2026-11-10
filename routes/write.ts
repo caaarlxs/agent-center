@@ -2,7 +2,7 @@
 // notes, PR actions, tasks, files sent and dictation.
 
 import { commentOn, connect, disconnect, moveTicket } from "../lib/jira"
-import { actOnDebt, answerPipeline, askPipeline, checkByHand, cleanUp, createProposed, dismissProposed, editProposed, isStage, stopPipeline, removePipeline, resetPipeline, rollBackPipeline, startPipeline, stopAuto, stepPipeline } from "../lib/pipeline"
+import { actOnDebt, answerPipeline, askPipeline, sendBack, checkByHand, cleanUp, createProposed, dismissProposed, editProposed, isStage, stopPipeline, removePipeline, resetPipeline, rollBackPipeline, startPipeline, stopAuto, stepPipeline } from "../lib/pipeline"
 import { clearJob, continueJob, isLoose, publishReview, startJob, stopJob } from "../lib/jobs"
 import { chooseIcon, isIcon } from "../lib/app-icon"
 import { choosePet, gainXp, openPack } from "../lib/pets"
@@ -183,6 +183,9 @@ export async function handleWrite(path: string, body: Record<string, unknown>): 
     // Stop the agent at work: the stage fails, to run again.
     case "/api/pipeline/stop":
       return await stopPipeline(String(body.key ?? "")).then(() => (refreshSoon(), json({ ok: true })), (err: Error) => json({ error: err.message }, 400))
+    // Back to an earlier stage, with what you say: it goes on in its own session.
+    case "/api/pipeline/back":
+      return await sendBack(String(body.key ?? ""), String(body.stage ?? "") as never, typeof body.note === "string" ? body.note.slice(0, 4000) : "").then(() => (refreshSoon(), json({ ok: true })), (err: Error) => json({ error: err.message }, 400))
     case "/api/pipeline/answer":
       return await answerPipeline(String(body.key ?? ""), (body.answers ?? {}) as Record<string, string>).then(() => json({ ok: true }), (err: Error) => json({ error: err.message }, 400))
     // A release's step at hand: go on (with a tag of your own), or past it.

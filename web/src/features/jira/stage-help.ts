@@ -9,11 +9,13 @@ export const STAGE_HELP: Partial<Record<Stage, StageHelp>> = {
     what: "Reads the whole ticket and turns it into acceptance criteria.",
     can: [
       "Asks product questions, each explained and with a proposal: answer here or in Jira, or change the proposal",
-      "Ask about a question you do not follow",
+      "Ask about a question you do not follow before you answer",
+      "Your answers go on in the same conversation: it may ask again, until nothing is open",
       "Proposes tickets apart: create or dismiss each one",
       "Warns when the ticket makes a rule of deale-context untrue",
       "Takes in everything under the ticket assigned to you (an epic's stories and sub-tasks) as one piece of work; on someone else's ticket, Run mine",
-      "Run to review goes on alone up to the review",
+      "On its own: up to the review, fixing what the review or the test finds (twice at most) and testing staging once deployed; it stops at a question, a release and what nobody could test",
+      "Each stage keeps its conversation: Send back, from any stage, goes on where it left off with what changed",
     ],
   },
   plan: {

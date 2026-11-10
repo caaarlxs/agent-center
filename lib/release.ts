@@ -123,15 +123,21 @@ function unitSteps(u: Unit, env: Env, config: DeployConfig, state: PipelineState
   return steps
 }
 
+// Whether a merge took a unit there: by its PR (a new PR is new work, even under an id
+// used before); a step that names no PR, by the unit's id.
+type Merged = Pick<ReleaseStep, "unit"> & { links?: Link[] }
+const prOfStep = (s: Merged) => s.links?.find(l => l.label.startsWith("PR #"))?.url ?? null
+export const tookUnit = (steps: Merged[], u: Pick<Unit, "id" | "pr">) => steps.some(s => (prOfStep(s) ? prOfStep(s) === u.pr : s.unit === u.id))
+
 // The steps of a release to an environment: its scripts simulated first;
 // then the plan's order (else its units, then its scripts), each script for
 // real in its place, a repo released to prod once.
 // The units and scripts an environment does not run yet (all of them, before a fix's release).
 function notYetIn(state: PipelineState, env: Env) {
   const before = (state.deployed?.[env]?.steps ?? []).filter(s => s.status === "done")
-  const shipped = new Set(before.filter(s => s.kind === "merge").map(s => s.unit))
+  const merged = before.filter(s => s.kind === "merge")
   const ran = new Set(before.filter(s => s.kind === "execute").map(s => s.script))
-  return { units: (state.units ?? []).filter(u => !shipped.has(u.id)), scripts: (state.scripts ?? []).filter(x => !ran.has(x.id)) }
+  return { units: (state.units ?? []).filter(u => !tookUnit(merged, u)), scripts: (state.scripts ?? []).filter(x => !ran.has(x.id)) }
 }
 
 export function releaseSteps(state: PipelineState, env: Env, config: DeployConfig): ReleaseStep[] {
