@@ -4,18 +4,18 @@
 // Nothing is created alone. One that waits on a question shows in it.
 import { ChevronRight, TicketPlus } from "lucide-react"
 import { useEffect, useState } from "react"
-import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Spinner } from "@/components/ui/spinner"
 import { Textarea } from "@/components/ui/textarea"
-import { get, post } from "@/lib/api"
+import { get } from "@/lib/api"
 import { dialog } from "@/app/open-dialog"
 import { Markdown } from "@/features/conversation/Markdown"
 import type { PipelineState } from "@server/pipeline"
 import { KINDS, PRIORITIES, anchorOf, newDescription, ticketsOfYours, waitsOn, type Edit, type Proposal } from "@server/proposals"
 import { changed, useConfirm } from "./confirm"
+import { sendWithFeedback } from "./feedback"
 
 const KIND_WORD: Record<Proposal["kind"], string> = { bug: "Bug", story: "Story", task: "Task", subtask: "Sub-task" }
 const Kind = ({ kind }: { kind: Proposal["kind"] }) => <span className="shrink-0 rounded-[4px] bg-hover px-1.5 text-[11px] font-semibold text-text-muted">{KIND_WORD[kind]}</span>
@@ -73,14 +73,9 @@ const DONE: Record<"create" | "dismiss" | "edit", (r: Reply) => string> = {
   dismiss: () => "Dismissed", edit: () => "Saved", create: r => [`${r.created} created`, r.warning].filter(Boolean).join(". "),
 }
 async function send(ticketKey: string, p: Proposal, action: keyof typeof DONE, edit: Edit = {}) {
-  try {
-    toast(DONE[action](await post<Reply>("/api/pipeline/proposal", { key: ticketKey, id: p.id, action, ...edit })))
-    changed()
-    return true
-  } catch (err) {
-    toast((err as Error).message || "It did not work")
-    return false
-  }
+  const answer = await sendWithFeedback<Reply>("/api/pipeline/proposal", { key: ticketKey, id: p.id, action, ...edit }, DONE[action])
+  if (answer) changed()
+  return !!answer
 }
 
 // Its fields in Jira: type, priority, components, where it goes, and who it is for.

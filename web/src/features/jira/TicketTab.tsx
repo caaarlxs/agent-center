@@ -14,7 +14,7 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
-import { get, post } from "@/lib/api"
+import { get } from "@/lib/api"
 import type { Card, Ticket, Transition } from "@/lib/api-types"
 import { useNow } from "@/lib/now"
 import { cn } from "@/lib/utils"
@@ -30,19 +30,11 @@ import { KindMark, TONE, TicketRefRow } from "./kinds"
 import { Pipeline } from "./Pipeline"
 import { TicketTree } from "./TicketTree"
 import { readComment } from "./comment"
+import { sendWithFeedback } from "./feedback"
 
 const day = (at: number) => (at ? new Date(at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—")
 
-async function sendOrSay(path: string, body: object, done: string) {
-  try {
-    await post(path, body)
-    toast(done)
-    return true
-  } catch (err) {
-    toast((err as Error).message || "Jira did not take it")
-    return false
-  }
-}
+const sendOrSay = async (path: string, body: object, done: string) => (await sendWithFeedback(path, body, done, "Jira did not take it")) !== null
 
 // Its status; on yours, a menu of the statuses it may move to, then "Move?".
 function Status({ ticket, onDone }: { ticket: Ticket; onDone: () => void }) {

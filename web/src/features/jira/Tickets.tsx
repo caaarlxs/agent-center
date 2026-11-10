@@ -107,7 +107,7 @@ function SyncNote({ ticket, hint }: { ticket: TicketRow; hint: SyncHint }) {
       <span className="min-w-0 flex-1">#{hint.pr.number} {hint.isMerged ? "merged" : "open"}</span>
       {isAsking ? (
         <>
-          <button className="rounded px-1.5 font-semibold hover:bg-ask/15" disabled={isBusy} onClick={() => void move()}>Move to {hint.column.name}</button>
+          <button className="rounded px-1.5 font-semibold hover:bg-ask/15" disabled={isBusy} onClick={() => void move()}>{isBusy ? "Moving in Jira…" : `Move to ${hint.column.name}`}</button>
           <button className="rounded px-1.5 hover:bg-ask/15" disabled={isBusy} onClick={() => setAsking(false)}>Cancel</button>
         </>
       ) : (

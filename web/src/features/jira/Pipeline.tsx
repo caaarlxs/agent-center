@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button"
 import { Shimmer } from "@/components/ai-elements/shimmer"
 import { Kbd } from "@/components/ui/kbd"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
-import { get, post } from "@/lib/api"
+import { get } from "@/lib/api"
 import type { Ticket } from "@/lib/api-types"
 import { useLive } from "@/lib/live"
 import { useNow } from "@/lib/now"
@@ -40,6 +40,7 @@ import { STAGE_KEYS, STAGES, costOf, dollars, isRelease, journeyOf, nextStage, p
 import { ReleaseRail, ReleaseSteps, SkipFailed, StepAtHand, type After } from "./Release"
 import { Journey } from "./Journey"
 import { CHANGED, changed, useConfirm } from "./confirm"
+import { sendWithFeedback } from "./feedback"
 import { Proposed, TicketsIfAgreed } from "./Proposals"
 import type { Proposal } from "@server/proposals"
 export { useConfirm }
@@ -55,16 +56,8 @@ const IDLE_MS = 30_000
 
 // Something changed on the ticket from inside its section: the section reads it again.
 
-export async function act(path: string, body: object, done: string) {
-  try {
-    await post(path, body)
-    toast(done)
-    return true
-  } catch (err) {
-    toast((err as Error).message || "It did not work")
-    return false
-  }
-}
+// A request with its feedback (feedback.ts): a toast at once if it takes a while, then the answer.
+export const act = async (path: string, body: object, done: string) => (await sendWithFeedback(path, body, done)) !== null
 
 
 export const openLog = (id: string) => (dialog.set(null), openSession(id))
@@ -408,13 +401,8 @@ function RunMine({ ticket, count, onStarted, auto }: { ticket: Ticket; count: nu
 function RemoveButton({ ticketKey, onRemoved }: { ticketKey: string; onRemoved: () => void }) {
   const [isAsking, confirm] = useConfirm()
   const remove = () => confirm(async () => {
-    try {
-      const { warnings = [] } = await post<{ warnings?: string[] }>("/api/pipeline/remove", { key: ticketKey })
-      toast(["Out of the pipeline", ...warnings].join(". "))
-      onRemoved()
-    } catch (err) {
-      toast((err as Error).message || "It did not work")
-    }
+    const out = await sendWithFeedback<{ warnings?: string[] }>("/api/pipeline/remove", { key: ticketKey }, r => ["Out of the pipeline", ...(r.warnings ?? [])].join(". "))
+    if (out) onRemoved()
   })
   return (
     <button className={cn("mt-1 inline-flex h-6 shrink-0 items-center gap-1 rounded-md px-1.5 text-xs font-semibold transition-colors duration-120",
@@ -426,6 +414,26 @@ function RemoveButton({ ticketKey, onRemoved }: { ticketKey: string; onRemoved: 
 
 // What runs put aside left (worktrees, local branches, the runs' folders): you
 // see it all and pick; nothing goes until you press Delete.
+// What it left, each to pick; nothing left, it says so.
+function LeftoverList({ items, picked, onToggle }: { items: Leftover[]; picked: Set<string>; onToggle: (id: string) => void }) {
+  if (!items.length) return <p className="m-0 text-[13px] text-text-muted">Nothing is left.</p>
+  return (
+    <ul className="m-0 flex min-h-0 list-none flex-col gap-1.5 overflow-auto p-0">
+      {items.map(i => (
+        <li key={i.id}>
+          <label className="flex cursor-pointer items-start gap-2 text-[13px]">
+            <input type="checkbox" checked={picked.has(i.id)} onChange={() => onToggle(i.id)} className="mt-[3px] size-3.5 shrink-0 accent-(--brand)" />
+            <span className="min-w-0">
+              <span className="block truncate">{i.label}</span>
+              {(i.detail || i.warn) && <span className={cn("block text-xs", i.warn ? "text-bad" : "text-faint")}>{i.warn ?? i.detail}</span>}
+            </span>
+          </label>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
 function CleanUp({ ticketKey, count, onDone }: { ticketKey: string; count: number; onDone: () => void }) {
   const [items, setItems] = useState<Leftover[] | null>(null)
   const [picked, setPicked] = useState<Set<string>>(new Set())
@@ -442,16 +450,9 @@ function CleanUp({ ticketKey, count, onDone }: { ticketKey: string; count: numbe
   const toggle = (id: string) => setPicked(now => (now.has(id) ? new Set([...now].filter(x => x !== id)) : new Set([...now, id])))
   const remove = async () => {
     setBusy(true)
-    try {
-      const { failed = [] } = await post<{ failed?: string[] }>("/api/pipeline/cleanup", { key: ticketKey, ids: [...picked] })
-      toast(failed.length ? `Some of it stays: ${failed.join("; ")}` : `Deleted ${picked.size}`)
-      setItems(null)
-      onDone()
-    } catch (err) {
-      toast((err as Error).message || "It did not work")
-    } finally {
-      setBusy(false)
-    }
+    const out = await sendWithFeedback<{ failed?: string[] }>("/api/pipeline/cleanup", { key: ticketKey, ids: [...picked] }, r => (r.failed?.length ? `Some of it stays: ${r.failed.join("; ")}` : `Deleted ${picked.size}`))
+    setBusy(false)
+    if (out) (setItems(null), onDone())
   }
   return (
     <>
@@ -463,24 +464,10 @@ function CleanUp({ ticketKey, count, onDone }: { ticketKey: string; count: numbe
         <Dialog open onOpenChange={o => !o && setItems(null)}>
           <DialogContent className="flex max-h-[min(80vh,640px)] w-[min(560px,calc(100vw-32px))] flex-col gap-3">
             <DialogTitle className="m-0 text-[15px] font-[620]">Clean up {ticketKey}</DialogTitle>
-            {items.length ? (
-              <ul className="m-0 flex min-h-0 list-none flex-col gap-1.5 overflow-auto p-0">
-                {items.map(i => (
-                  <li key={i.id}>
-                    <label className="flex cursor-pointer items-start gap-2 text-[13px]">
-                      <input type="checkbox" checked={picked.has(i.id)} onChange={() => toggle(i.id)} className="mt-[3px] size-3.5 shrink-0 accent-(--brand)" />
-                      <span className="min-w-0">
-                        <span className="block truncate">{i.label}</span>
-                        {(i.detail || i.warn) && <span className={cn("block text-xs", i.warn ? "text-bad" : "text-faint")}>{i.warn ?? i.detail}</span>}
-                      </span>
-                    </label>
-                  </li>
-                ))}
-              </ul>
-            ) : <p className="m-0 text-[13px] text-text-muted">Nothing is left.</p>}
+            <LeftoverList items={items} picked={picked} onToggle={toggle} />
             <div className="flex justify-end gap-2">
               <Button variant="outline" className="h-8 text-xs" onClick={() => setItems(null)}>Cancel</Button>
-              <Button variant="destructive" className="h-8 text-xs" disabled={!picked.size || isBusy} onClick={() => void remove()}>Delete {picked.size}</Button>
+              <Button variant="destructive" className="h-8 text-xs" disabled={!picked.size || isBusy} onClick={() => void remove()}>{isBusy ? "Deleting…" : `Delete ${picked.size}`}</Button>
             </div>
           </DialogContent>
         </Dialog>
