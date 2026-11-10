@@ -38,7 +38,7 @@ import { writeJsonAtomic } from "./files"
 import { descendantsOf, relateTickets, assignToMe, attachTo, commentOn, createIssue, confluenceIds, confluencePage, createSubtask, issueState, remoteLinks, type ConfluencePage, labelTicket, moveToStatus, openStatuses, ticket, type Ticket, type TicketComment } from "./jira"
 import { flowOf, followInJira, type Event as JiraEvent } from "./jira-flow"
 import { scopeLines, scopeOf, storiesOf, type TreeTicket } from "./scope"
-import { anchorOf, decidedForAgent, newDescription, proposalsIn, ticketsOfYours, waitsOn, withProposals, type Proposal } from "./proposals"
+import { anchorOf, decidedForAgent, edited, newDescription, proposalsIn, ticketsOfYours, waitsOn, withProposals, type Edit, type Proposal } from "./proposals"
 import { archiveOf, cleanupSteps, keptAfter, leftoversOf, wantedBranches, worktreesIn, type Archive, type Clone, type Found, type Kept as KeptBranch } from "./cleanup"
 import { evidenceType, filesIn, keptFiles, type EvidenceFile } from "./evidence"
 import { debtIn, merged as debtMerged, ticketOf as debtTicket, type DebtEntry, type DebtItem } from "./debt"
@@ -1320,14 +1320,22 @@ async function createInJira(p: Proposal, anchor: string, description: string) {
   const conf = jsonOf(await readText(join(STAGES_DIR, "jira.json")))
   if (p.kind === "subtask") {
     if (!conf?.subtaskType) throw new Error("jira.json has no subtaskType")
-    return { created: await createSubtask(anchor, p.summary, conf.subtaskType, description), warning: null }
+    return { created: await createSubtask(anchor, p.summary, conf.subtaskType, description, p.priority), warning: null }
   }
   const typeId = conf?.newIssue?.types?.[p.kind]
   if (!conf?.newIssue?.project || !typeId) throw new Error(`jira.json has no newIssue type for ${p.kind}`)
-  const created = await createIssue({ project: conf.newIssue.project, typeId, summary: p.summary, description, labels: conf.newIssue.labels ?? [] })
+  const created = await createIssue({ project: conf.newIssue.project, typeId, summary: p.summary, description, labels: conf.newIssue.labels ?? [], priority: p.priority })
   const warning = await relateTickets(created, anchor).then(() => null, (err: Error) => `${created} is not linked to ${anchor}: ${err.message}`)
   return { created, warning }
 }
+// Your changes to a proposal before you create it.
+export const editProposed = (key: string, id: string, edit: Edit) => locked(key, async () => {
+  const state = await stateOf(key)
+  const p = state?.proposals?.find(x => x.id === id)
+  if (!state || !p) throw new Error("No such proposal")
+  const next = edited(p, edit)
+  await save({ ...state, proposals: state.proposals!.map(x => (x.id === id ? next : x)) })
+})
 export const dismissProposed = (key: string, id: string) => locked(key, async () => {
   const state = await stateOf(key)
   if (!state?.proposals?.some(x => x.id === id && x.status === "proposed")) throw new Error("No such proposal")

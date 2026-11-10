@@ -7,12 +7,15 @@
 // dismissed stays, and the agent reads it so it does not propose it again.
 
 export type NewKind = "story" | "task" | "bug" | "subtask"
+export const PRIORITIES = ["Highest", "High", "Medium", "Low", "Lowest"] as const
+export type Priority = (typeof PRIORITIES)[number]
 export type Proposal = {
   id: string
   kind: NewKind
   summary: string
   description: string
   why: string // why it goes apart, for you
+  priority?: Priority | null // Jira's, as the agent judged it (its reason is in the description)
   linkTo: string | null // the ticket of yours it goes with, as the agent chose it
   question?: string | null // the question whose answer decides it: it waits while that is open
   stage?: string // the stage that proposed it: its next run says again what it proposes
@@ -20,7 +23,8 @@ export type Proposal = {
   created?: string | null // its key in Jira, once created
 }
 
-const KINDS: NewKind[] = ["story", "task", "bug", "subtask"]
+export const KINDS: NewKind[] = ["story", "task", "bug", "subtask"]
+const priorityOf = (v: unknown): Priority | null => PRIORITIES.find(p => p.toLowerCase() === text(v).toLowerCase()) ?? null
 const text = (v: unknown) => (typeof v === "string" ? v.trim() : "")
 const KEY = /^[A-Z][A-Z0-9]+-\d+$/
 
@@ -33,6 +37,7 @@ export function proposalsIn(raw: unknown, run: number, stage: string): Proposal[
     summary: text(t.summary).slice(0, 250),
     description: text(t.description),
     why: text(t.why),
+    priority: priorityOf(t.priority),
     linkTo: KEY.test(text(t.linkTo)) ? text(t.linkTo) : null,
     question: /^Q\d+$/.test(text(t.question)) ? text(t.question) : null,
     stage,
@@ -67,6 +72,22 @@ export const ticketsOfYours = (state: { key: string; local?: boolean; scope?: { 
 // The one it goes with: the agent's choice when it is yours, else the first of yours.
 export const anchorOf = (p: Proposal, yours: string[]) => (p.linkTo && yours.includes(p.linkTo) ? p.linkTo : (yours[0] ?? null))
 
-// What the new ticket says in Jira: its description, and where it comes from.
+// What the new ticket says in Jira (Markdown, as the team's template): its description,
+// why it goes apart, and where it comes from.
 export const newDescription = (p: Proposal, from: string) =>
-  `${p.description}${p.why ? `\n\nPor qué va aparte: ${p.why}` : ""}\n\nPropuesto por el agente al trabajar en ${from}.`
+  `${p.description}${p.why ? `\n\n**Por qué va aparte.** ${p.why}` : ""}\n\n_Propuesto por el agente al trabajar en ${from}._`
+
+// Your changes before you create it: only what a proposal has, only while it is proposed.
+export type Edit = Partial<Pick<Proposal, "summary" | "description" | "kind" | "priority">>
+export function edited(p: Proposal, edit: Edit): Proposal {
+  if (p.status !== "proposed") throw new Error("Only a proposal not created yet can change")
+  const summary = edit.summary === undefined ? p.summary : text(edit.summary).slice(0, 250)
+  if (!summary) throw new Error("A ticket needs a title")
+  return {
+    ...p,
+    summary,
+    description: edit.description === undefined ? p.description : text(edit.description),
+    kind: edit.kind === undefined ? p.kind : KINDS.includes(edit.kind) ? edit.kind : p.kind,
+    priority: edit.priority === undefined ? (p.priority ?? null) : priorityOf(edit.priority),
+  }
+}

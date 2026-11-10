@@ -2,7 +2,7 @@
 // notes, PR actions, tasks, files sent and dictation.
 
 import { commentOn, connect, disconnect, moveTicket } from "../lib/jira"
-import { actOnDebt, answerPipeline, askPipeline, checkByHand, cleanUp, createProposed, dismissProposed, isStage, stopPipeline, removePipeline, resetPipeline, rollBackPipeline, startPipeline, stopAuto, stepPipeline } from "../lib/pipeline"
+import { actOnDebt, answerPipeline, askPipeline, checkByHand, cleanUp, createProposed, dismissProposed, editProposed, isStage, stopPipeline, removePipeline, resetPipeline, rollBackPipeline, startPipeline, stopAuto, stepPipeline } from "../lib/pipeline"
 import { clearJob, continueJob, isLoose, publishReview, startJob, stopJob } from "../lib/jobs"
 import { chooseIcon, isIcon } from "../lib/app-icon"
 import { choosePet, openPack } from "../lib/pets"
@@ -210,10 +210,14 @@ export async function handleWrite(path: string, body: Record<string, unknown>): 
     // What you picked of what it left: worktrees, branches, runs put aside.
     case "/api/pipeline/cleanup":
       return await cleanUp(String(body.key ?? ""), Array.isArray(body.ids) ? body.ids.map(String) : []).then(r => json({ ok: true, ...r }), (err: Error) => json({ error: err.message }, 400))
-    // A ticket a stage proposed: created by you (yours, linked to a ticket of yours), or dismissed.
+    // A ticket a stage proposed: created by you (yours, linked to a ticket of yours), changed
+    // first (its title, description, type, priority), or dismissed.
     case "/api/pipeline/proposal": {
       const key = String(body.key ?? ""), id = String(body.id ?? "")
-      const done = body.action === "dismiss" ? dismissProposed(key, id).then(() => ({})) : createProposed(key, id)
+      const edit = { summary: body.summary, description: body.description, kind: body.kind, priority: body.priority }
+      const done = body.action === "dismiss" ? dismissProposed(key, id).then(() => ({}))
+        : body.action === "edit" ? editProposed(key, id, edit as never).then(() => ({}))
+        : createProposed(key, id)
       return await done.then(r => (refreshSoon(), json({ ok: true, ...r })), (err: Error) => json({ error: err.message }, 400))
     }
     case "/api/pipeline/reset":

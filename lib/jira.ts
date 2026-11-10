@@ -12,6 +12,7 @@
 // keys of the projects to look for, so a word like "UTF-8" is never a ticket.
 
 import type { TreeTicket } from "./scope"
+import { adfOf } from "./adf"
 import { stat } from "node:fs/promises"
 import { settings } from "./config"
 import { readAppended } from "./files"
@@ -642,11 +643,12 @@ export async function moveToStatus(key: string, statusId: string) {
 }
 
 // A sub-task under a ticket of yours, assigned to you: its key.
-export async function createSubtask(parent: string, summary: string, typeId: string, description?: string): Promise<string> {
+// A description is Markdown (adf.ts); a priority, Jira's name for it.
+export async function createSubtask(parent: string, summary: string, typeId: string, description?: string, priority?: string | null): Promise<string> {
   const setup = setupOrThrow()
   await mineOrThrow(setup, parent)
   const fields = { project: { key: parent.split("-")[0] }, parent: { key: parent }, summary: summary.slice(0, 250), issuetype: { id: typeId }, assignee: { accountId: await myId(setup) },
-    ...(description ? { description: docOf(description.slice(0, 30_000)) } : {}) }
+    ...(description ? { description: adfOf(description.slice(0, 30_000)) } : {}), ...(priority ? { priority: { name: priority } } : {}) }
   const r = await call(setup, "/rest/api/3/issue", { method: "POST", body: JSON.stringify({ fields }) })
   briefs.delete(parent)
   return String(r?.key ?? "")
@@ -697,11 +699,13 @@ export async function relateTickets(key: string, yours: string) {
   briefs.delete(yours)
 }
 
-// A new ticket, assigned to you (the board writes only on what is yours): its key.
-export async function createIssue(f: { project: string; typeId: string; summary: string; description: string; labels: string[] }): Promise<string> {
+// A new ticket, assigned to you (the board writes only on what is yours): its key. Its
+// description is Markdown (adf.ts), shown in Jira with its bold, lists and code.
+export async function createIssue(f: { project: string; typeId: string; summary: string; description: string; labels: string[]; priority?: string | null }): Promise<string> {
   const setup = setupOrThrow()
   if (!/^[A-Z][A-Z0-9]{1,9}$/.test(f.project)) throw new Error("Not a project key")
-  const fields = { project: { key: f.project }, issuetype: { id: f.typeId }, summary: f.summary.slice(0, 250), description: docOf(f.description.slice(0, 30_000)), labels: f.labels, assignee: { accountId: await myId(setup) } }
+  const fields = { project: { key: f.project }, issuetype: { id: f.typeId }, summary: f.summary.slice(0, 250), description: adfOf(f.description.slice(0, 30_000)), labels: f.labels, assignee: { accountId: await myId(setup) },
+    ...(f.priority ? { priority: { name: f.priority } } : {}) }
   const r = await call(setup, "/rest/api/3/issue", { method: "POST", body: JSON.stringify({ fields }) })
   return String(r?.key ?? "")
 }

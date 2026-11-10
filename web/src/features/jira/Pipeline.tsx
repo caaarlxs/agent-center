@@ -11,7 +11,7 @@
 // and start the stage again. Start over clears the run and the labels; the
 // comments stay. On someone else's ticket it runs only once you take it
 // (two clicks: it is assigned to you).
-import { AlertTriangle, Check, ChevronRight, CircleHelp, Database, FastForward, FlaskConical, ListChecks, LogOut, Play, TicketPlus, RotateCcw, Route, Send, ShieldCheck, Trash2 } from "lucide-react"
+import { AlertTriangle, Check, ChevronRight, CircleHelp, Database, FastForward, FlaskConical, ListChecks, LogOut, Play, RotateCcw, Route, Send, ShieldCheck, Trash2 } from "lucide-react"
 import { useEffect, useState, type ReactNode } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -34,12 +34,15 @@ import type { ChecklistItem, Finding, PipelineState, PlanScript, Run, Severity, 
 import type { Check as BoardCheck } from "@server/checks"
 import { deliverablesOf } from "@server/scope"
 import type { Leftover } from "@server/cleanup"
-import { anchorOf, ticketsOfYours, waitsOn, type Proposal } from "@server/proposals"
 import { MODELS } from "@/features/prompt/Settings"
 import { PipelineMark, liveLine, startText, startingText, statusText } from "./PipelineMark"
 import { STAGE_KEYS, STAGES, costOf, dollars, isRelease, journeyOf, nextStage, passesOf, stageAt, toFix, tokens } from "./pipeline-board"
 import { ReleaseRail, ReleaseSteps, SkipFailed, StepAtHand, type After } from "./Release"
 import { Journey } from "./Journey"
+import { CHANGED, changed, useConfirm } from "./confirm"
+import { Proposed, TicketsIfAgreed } from "./Proposals"
+import type { Proposal } from "@server/proposals"
+export { useConfirm }
 import { Evidence } from "./Evidence"
 import { Ask, isWaiting } from "./Ask"
 import type { Release } from "@server/release"
@@ -49,11 +52,8 @@ type OnStep = (step: string, action: "approve" | "skip", value?: string) => void
 type Fold = Stage | "runs"
 const FOLLOW_MS = 5_000
 const IDLE_MS = 30_000
-const CONFIRM_MS = 4_000
 
 // Something changed on the ticket from inside its section: the section reads it again.
-const CHANGED = "pipeline-changed"
-const changed = () => window.dispatchEvent(new Event(CHANGED))
 
 export async function act(path: string, body: object, done: string) {
   try {
@@ -66,22 +66,12 @@ export async function act(path: string, body: object, done: string) {
   }
 }
 
-// A click that asks once more (it turns red) before it does what it says.
-export function useConfirm(): [boolean, (then: () => void) => void] {
-  const [isAsking, setAsking] = useState(false)
-  useEffect(() => {
-    if (!isAsking) return
-    const timer = setTimeout(() => setAsking(false), CONFIRM_MS)
-    return () => clearTimeout(timer)
-  }, [isAsking])
-  return [isAsking, then => (isAsking ? (setAsking(false), then()) : setAsking(true))]
-}
 
 export const openLog = (id: string) => (dialog.set(null), openSession(id))
 
 // ---------- the decisions ----------
 
-function Decision({ n, question, context, proposal, tickets = [], text, onChange, ask }: { n: number; question: string; context?: string; proposal: string; tickets?: Proposal[]; text: string | undefined; onChange: (text: string | undefined) => void; ask: ReactNode }) {
+function Decision({ ticketKey, n, question, context, proposal, tickets = [], text, onChange, ask }: { ticketKey: string; n: number; question: string; context?: string; proposal: string; tickets?: Proposal[]; text: string | undefined; onChange: (text: string | undefined) => void; ask: ReactNode }) {
   const isChanging = text !== undefined
   return (
     <li className="flex flex-col gap-2.5 border-t border-line py-4 first:border-t-0 first:pt-1">
@@ -96,7 +86,7 @@ function Decision({ n, question, context, proposal, tickets = [], text, onChange
         ) : (
           <Markdown className="border-l-2 border-line-strong pl-3 text-[13px] text-text-muted">{proposal || "No proposal"}</Markdown>
         )}
-        {tickets.length > 0 && <TicketsIfAgreed tickets={tickets} />}
+        {tickets.length > 0 && <TicketsIfAgreed ticketKey={ticketKey} tickets={tickets} />}
         <button className="self-start text-xs font-semibold text-faint transition-colors duration-120 hover:text-text"
           onClick={() => onChange(isChanging ? undefined : proposal)}>
           {isChanging ? "Keep the proposal" : "Change"}
@@ -124,7 +114,7 @@ function Decisions({ ticketKey, state, onSent }: { ticketKey: string; state: Pip
     <div className="flex flex-col" onKeyDown={e => e.key === "Enter" && (e.metaKey || e.ctrlKey) && (e.preventDefault(), void send())}>
       <h3 className="m-0 mb-2 text-[15px] font-semibold tracking-[-0.01em]">{count} decision{count === 1 ? "" : "s"} for you</h3>
       <ol className="m-0 list-none p-0">
-        {state.questions.map((q, i) => <Decision key={q.id} n={i + 1} question={q.question} context={q.context} proposal={q.proposal} tickets={(state.proposals ?? []).filter(p => p.question === q.id && p.status === "proposed")} text={changed[q.id]} onChange={t => change(q.id, t)}
+        {state.questions.map((q, i) => <Decision key={q.id} ticketKey={ticketKey} n={i + 1} question={q.question} context={q.context} proposal={q.proposal} tickets={(state.proposals ?? []).filter(p => p.question === q.id && p.status === "proposed")} text={changed[q.id]} onChange={t => change(q.id, t)}
           ask={<Ask ticketKey={ticketKey} about={`question:${q.id}`} turns={state.threads?.[`question:${q.id}`]} />} />)}
       </ol>
       <div className="mt-2 flex items-center justify-end gap-2.5">
@@ -752,70 +742,6 @@ function Checks({ checks }: { checks: BoardCheck[] }) {
         </ul>
       )}
     </div>
-  )
-}
-
-// The tickets an answer would bring: they wait in their question until you answer it.
-function TicketsIfAgreed({ tickets }: { tickets: Proposal[] }) {
-  return (
-    <div className="flex flex-col gap-1 rounded-[8px] bg-surface px-3 py-2">
-      <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-text-muted"><TicketPlus size={12} />With this proposal, also these tickets</span>
-      <ul className="m-0 flex list-none flex-col gap-0.5 p-0 text-[12.5px] text-text">
-        {tickets.map(t => <li key={t.id}><span className="text-text-muted">{KIND_WORD[t.kind]} · </span>{t.summary}</li>)}
-      </ul>
-    </div>
-  )
-}
-
-// Tickets the stages proposed: you create each one (yours, linked to a ticket
-// of yours; a second click confirms) or dismiss it. Nothing is created alone.
-const KIND_WORD: Record<Proposal["kind"], string> = { bug: "Bug", story: "Story", task: "Task", subtask: "Sub-task" }
-function Proposed({ state }: { state: PipelineState }) {
-  // One that waits on a question still open shows in that question, not here.
-  const open = state.status === "needs-info" ? state.questions.map(q => q.id) : []
-  const shown = (state.proposals ?? []).filter(p => p.status !== "dismissed" && !waitsOn(p, open))
-  if (!shown.length) return null
-  return (
-    <div className="flex flex-col gap-2">
-      <span className="inline-flex items-center gap-2 text-xs font-semibold text-text-muted"><TicketPlus size={13} />Proposed tickets</span>
-      <ul className="m-0 flex list-none flex-col gap-2 p-0">
-        {shown.map(p => <ProposedTicket key={p.id} ticketKey={state.key} p={p} anchor={anchorOf(p, ticketsOfYours(state))} />)}
-      </ul>
-    </div>
-  )
-}
-function ProposedTicket({ ticketKey, p, anchor }: { ticketKey: string; p: Proposal; anchor: string | null }) {
-  const [isAsking, confirm] = useConfirm()
-  const [isOpen, setOpen] = useState(false)
-  const send = async (action: "create" | "dismiss") => {
-    try {
-      const r = await post<{ created?: string; warning?: string | null }>("/api/pipeline/proposal", { key: ticketKey, id: p.id, action })
-      toast(action === "dismiss" ? "Dismissed" : [`${r.created} created`, r.warning].filter(Boolean).join(". "))
-      window.dispatchEvent(new Event(CHANGED))
-    } catch (err) {
-      toast((err as Error).message || "It did not work")
-    }
-  }
-  return (
-    <li className="flex flex-col gap-1.5 rounded-[8px] border border-line bg-surface px-3 py-2.5">
-      <div className="flex items-start gap-2">
-        <span className="mt-[1px] shrink-0 rounded-[4px] bg-hover px-1.5 text-[11px] font-semibold text-text-muted">{KIND_WORD[p.kind]}</span>
-        <button className="min-w-0 flex-1 text-left text-[13px] leading-[1.45] text-text" onClick={() => setOpen(o => !o)} aria-expanded={isOpen}>{p.summary}</button>
-      </div>
-      {p.why && <span className="text-xs text-text-muted">{p.why}</span>}
-      {isOpen && p.description && <Markdown className="text-[13px] text-text-muted">{p.description}</Markdown>}
-      <div className="flex items-center gap-3">
-        <span className="text-xs text-faint">{p.kind === "subtask" ? "Inside" : "Linked to"} {anchor ?? "—"}</span>
-        <span className="ml-auto flex items-center gap-3">
-          {p.status === "created" ? <button className="font-mono text-xs font-semibold text-brand hover:underline" onClick={() => dialog.set({ kind: "ticket", key: p.created! })}>{p.created}</button> : (
-            <>
-              <button className="text-xs font-semibold text-faint hover:text-text" onClick={() => void send("dismiss")}>Dismiss</button>
-              <Button variant={isAsking ? "destructive" : "outline"} className="h-7 text-xs" disabled={!anchor} onClick={() => confirm(() => void send("create"))}>{isAsking ? "Sure? Create in Jira" : "Create"}</Button>
-            </>
-          )}
-        </span>
-      </div>
-    </li>
   )
 }
 
