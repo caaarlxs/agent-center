@@ -44,7 +44,7 @@ const toolBtn = "inline-flex h-6 items-center gap-[5px] rounded-md border border
 type Command = { id: string; isRunning: boolean; startedAt: number; endedAt: number | null; exitCode: number | null; wasStopped: boolean; output: string }
 
 // What a command run from the block printed, with Stop while it runs.
-function RunOutput({ sessionId, command, onEnd }: { sessionId: string; command: string; onEnd: () => void }) {
+export function RunOutput({ sessionId, command, onEnd }: { sessionId: string; command: string; onEnd: () => void }) {
   const [state, setState] = useState<{ ran: Command | null; error: string | null }>({ ran: null, error: null })
   const log = useRef<HTMLPreElement>(null)
   useEffect(() => {

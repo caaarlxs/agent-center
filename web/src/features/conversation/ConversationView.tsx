@@ -35,7 +35,7 @@ import { type Step, type WorkState, nextSteps } from "./next-steps"
 import { ForkDialog } from "./ForkDialog"
 import { SelectionMenu } from "./SelectionMenu"
 import type { EditsItem, Shown, SuggestionItem } from "./items"
-import { Markdown, SessionOf } from "./Markdown"
+import { Markdown, RunOutput, SessionOf } from "./Markdown"
 import { type Live, orbOf, turnLine, useLiveAnswer } from "./session-events"
 import { useTypewriter } from "./typewriter"
 import { WidgetView } from "./Widget"
@@ -44,7 +44,7 @@ import { type Fold, foldedSteps } from "./steps"
 import { foldSteps } from "./fold-steps"
 import { type Pending, deliveredOf, dropPending, stampOf, takenBack, usePending, waitingOf } from "./pending"
 import { composerHint, composerQuote, reply, takeBack } from "./send"
-import { dialogAnswer, linesText, nameOf, partsOf, quoteOf } from "./text"
+import { dialogAnswer, linesText, nameOf, partsOf, quoteOf, riskOf } from "./text"
 import { type Suggestions, useConversation } from "./useConversation"
 import { Anim } from "@/components/icons/animated"
 import { useIsDots } from "@/lib/board-style"
@@ -613,20 +613,36 @@ function ViewSwitch({ views, value, onChange }: { views: Views; value: string; o
 }
 
 // A level of an answer, drawn by the tool in a sandboxed frame. It tells its
-// height, and a reply pressed in it goes to the session as the person's message.
+// height; a reply pressed in it goes to the session as the person's message;
+// a command it asks to run runs in the session's folder, as a code block's Run
+// does (on, in Setup; one that touches something real asks first), its output below.
 function AnswerFrame({ src, sessionId }: { src: string; sessionId: string }) {
   const frame = useRef<HTMLIFrameElement>(null)
   const [height, setHeight] = useState(120)
+  const [runs, setRuns] = useState<{ id: number; command: string }[]>([])
+  const canRun = useLive(l => !!l.snapshot?.canRunCommands)
   useEffect(() => {
+    const run = (command: string) => {
+      if (!canRun) return void toast("Running commands from the board is off: turn it on in Setup")
+      const risk = riskOf(command)
+      if (risk && !confirm(`This command touches “${risk}”. Run it?\n\n${command}`)) return
+      setRuns(rs => [...rs, { id: Date.now(), command }])
+    }
     const onMessage = (e: MessageEvent) => {
       if (e.source !== frame.current?.contentWindow || !e.data?.unfold) return
       if (typeof e.data.height === "number") setHeight(Math.max(40, e.data.height))
       if (typeof e.data.reply === "string" && e.data.reply.trim()) reply(sessionId, e.data.reply).catch((err: Error) => toast(err.message || "Could not send it"))
+      if (typeof e.data.run === "string" && e.data.run.trim()) run(e.data.run.trim())
     }
     addEventListener("message", onMessage)
     return () => removeEventListener("message", onMessage)
-  }, [sessionId])
-  return <iframe ref={frame} src={src} sandbox="allow-scripts" title="Answer view" className="block w-full shrink-0 border-0 bg-transparent" style={{ height }} />
+  }, [sessionId, canRun])
+  return (
+    <>
+      <iframe ref={frame} src={src} sandbox="allow-scripts" title="Answer view" className="block w-full shrink-0 border-0 bg-transparent" style={{ height }} />
+      {runs.map(r => <RunOutput key={r.id} sessionId={sessionId} command={r.command} onEnd={() => {}} />)}
+    </>
+  )
 }
 
 const ANSWER_RECEIPT_MS = 12_000 // an answer the session has not taken by then did not reach it
