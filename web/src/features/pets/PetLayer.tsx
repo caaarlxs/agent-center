@@ -6,7 +6,9 @@
 // session asks you something or finishes, it tells you (a toast here, a macOS
 // notification when you are in another window). Dragged, it dangles and stays
 // where it is dropped. Play ball with it: drag the ball and let go, it runs
-// after it and brings it back. With reduced motion it does not wander.
+// after it and brings it back. Thrown itself (dragged and let go with
+// speed), it flies like the ball, tumbling, bouncing off the floor and the
+// edges, and gets up again (fling.ts). With reduced motion it does not wander.
 // Two can be out at once (the buddy greets the other now and then); when
 // wandering they climb onto the cards. Each grows with your work
 // (lib/pet-levels.ts): a turn its session finishes, a PR, being fed and
@@ -30,9 +32,10 @@ import { nextWaiting, turnsEnded } from "./board-sense"
 import { FOODS, careOf, cares, energyOf, fullnessOf, setCare } from "./care"
 import { Parade, useArrowCode } from "./Parade"
 import { SIZES, resize, sizes } from "./size"
+import { type Flight, flingOf, flyStep } from "./fling"
 import { conditionOf, earn, pets, rarityOf, watchPets } from "./pets"
 
-type Mode = "idle" | "walk" | "sleep" | "drag" | "cheer" | "alert" | "eat" | "work" | "wait" | "fetch" | "carry" | "deliver" | "shoved"
+type Mode = "idle" | "walk" | "sleep" | "drag" | "cheer" | "alert" | "eat" | "work" | "wait" | "fetch" | "carry" | "deliver" | "shoved" | "fly"
 const FOCUS_MS = 25 * 60_000
 // Where each pet out is, so the other can come and say hello.
 const where = new Map<string, { x: number; y: number }>()
@@ -170,6 +173,7 @@ function Walker({ id, slot, other, color }: { id: string; slot: "active" | "budd
   const energy = energyOf(care, now)
   const isSad = fullness < 15 || energy < 12
   const timers = useRef<number[]>([])
+  const flight = useRef<Flight | null>(null) // thrown: in the air, or rolling to a stop
   const otherRef = useRef(other)
   otherRef.current = other
   const greeting = useRef(false)
@@ -217,7 +221,7 @@ function Walker({ id, slot, other, color }: { id: string; slot: "active" | "budd
     const node = el.current
     if (!node) return
     const s = shove.current
-    node.style.transform = `translate3d(${pos.current.x - SIZE / 2}px, ${pos.current.y - SIZE - (s?.hop ?? 0)}px, 0) rotate(${s?.tilt ?? 0}deg)`
+    node.style.transform = `translate3d(${pos.current.x - SIZE / 2}px, ${pos.current.y - SIZE - (s?.hop ?? 0)}px, 0) rotate(${s?.tilt ?? flight.current?.angle ?? 0}deg)`
     where.set(id, pos.current)
     node.style.setProperty("--face", String(facing.current))
   }
@@ -302,6 +306,24 @@ function Walker({ id, slot, other, color }: { id: string; slot: "active" | "budd
         if (b.state === "loose") for (let left = Math.min(0.25, rawDt); left > 0; left -= 0.016) roll(b, Math.min(0.016, left))
         else if (b.state === "carried") Object.assign(b, { x: pos.current.x + facing.current * 15, y: pos.current.y - SIZE * 0.42, spin: 0 })
         placeBall()
+      }
+      // Thrown: it flies, in small steps as the ball does, and gets up where it stops.
+      const fl = flight.current
+      if (fl) {
+        const box = bounds()
+        let next = fl
+        let landed = false
+        for (let left = Math.min(0.25, rawDt); left > 0 && !landed; left -= 0.016) ({ flight: next, landed } = flyStep(next, Math.min(0.016, left), box))
+        flight.current = landed ? null : next
+        pos.current = { x: next.x, y: next.y }
+        place()
+        if (landed) {
+          keep(posKey, pos.current)
+          setCare(id, { energy: Math.max(0, energyOf(careOf(id)) - 2) })
+          moment(Math.random() < 0.5 ? "cheer" : "alert", pick(["Again! Again!", "Whoa…", "*dizzy*", "I can fly!", "That was fun!", "Ouch… again?"]), 1300)
+        }
+        frame = requestAnimationFrame(step)
+        return
       }
       // The panel against it: pushed out, and while the panel slides in, sent flying.
       const edge = wall - SIZE / 2 - 8
@@ -688,8 +710,10 @@ function Walker({ id, slot, other, color }: { id: string; slot: "active" | "budd
   const onPointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return
     e.preventDefault()
+    if (flight.current) (flight.current = null), place() // caught in the air
     const start = { x: e.clientX, y: e.clientY }
     const from = { ...pos.current }
+    const trail = [{ x: e.clientX, y: e.clientY, t: performance.now() }] // the last moments of the drag, for a throw
     let isDragging = false
     const node = e.currentTarget as HTMLElement
     node.setPointerCapture(e.pointerId)
@@ -707,13 +731,22 @@ function Walker({ id, slot, other, color }: { id: string; slot: "active" | "budd
       }
       pos.current = clamp({ x: from.x + dx, y: from.y + dy })
       place()
+      trail.push({ x: ev.clientX, y: ev.clientY, t: performance.now() })
+      while (trail.length > 2 && trail[0]!.t < performance.now() - 90) trail.shift()
     }
     const up = () => {
       node.removeEventListener("pointermove", move)
       node.removeEventListener("pointerup", up)
       node.removeEventListener("pointercancel", up)
       lastActive.current = Date.now()
-      if (isDragging) {
+      const throw_ = isDragging && !isStill ? flingOf(trail) : null
+      if (throw_) {
+        if (focusRef.current) setCare(id, { focus: null })
+        if (careOf(id).isAsleep) setCare(id, { isAsleep: false })
+        flight.current = { ...pos.current, ...throw_, angle: 0 }
+        setMode("fly")
+        say(pick(["Wheee!", "Aaaah!", "Weee!"]), 900)
+      } else if (isDragging) {
         keep(posKey, pos.current)
         if (focusRef.current) setCare(id, { focus: null }) // carried off its work
         setMode(careOf(id).isAsleep ? "sleep" : "idle")
@@ -751,8 +784,8 @@ function Walker({ id, slot, other, color }: { id: string; slot: "active" | "budd
       {mode === "cheer" && <div className="pet-hearts" aria-hidden><i>♥</i><i>♥</i><i>♥</i></div>}
       {focus && !isMenuOpen && focusCard && <div className="pet-tag" title={focusCard.title}>{focusCard.title}</div>}
       {focusUntil && !focus && !isMenuOpen && <div className="pet-tag tabular-nums" title="Focus block">⏱ <Countdown until={focusUntil} /></div>}
-      <div className="pet-body-wrap cursor-pointer active:cursor-grabbing" title={`${name} · click for its menu, drag to move it`} onPointerDown={onPointerDown}>
-        <div className="pet-grow">{(lv.stage === "legend" || lv.stage === "mythic") && <Crown />}<PetArt id={id} size={SIZE} doing={mode === "fetch" || mode === "carry" || mode === "deliver" ? "walk" : mode === "shoved" ? "alert" : isSad && mode === "idle" ? "sad" : mode} facing={face} /></div>
+      <div className="pet-body-wrap cursor-pointer active:cursor-grabbing" title={`${name} · click for its menu, drag to move it, fling it to throw it`} onPointerDown={onPointerDown}>
+        <div className="pet-grow">{(lv.stage === "legend" || lv.stage === "mythic") && <Crown />}<PetArt id={id} size={SIZE} doing={mode === "fetch" || mode === "carry" || mode === "deliver" ? "walk" : mode === "shoved" ? "alert" : mode === "fly" ? "cheer" : isSad && mode === "idle" ? "sad" : mode} facing={face} /></div>
       </div>
       {(mode === "work" || mode === "wait" || (focusUntil && mode === "idle")) && <Desk isTyping={mode === "work" || !!focusUntil} />}
       {food && <div className="pet-food" aria-hidden>{food}</div>}
