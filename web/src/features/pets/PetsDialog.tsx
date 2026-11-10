@@ -11,7 +11,7 @@
 // on one you have sends it out on the board, its paw sends it out as the
 // buddy of the one already there; each shows its level.
 import { ChevronLeft, ChevronRight, PawPrint, Search } from "lucide-react"
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -20,6 +20,7 @@ import { Spinner } from "@/components/ui/spinner"
 import { cn } from "@/lib/utils"
 import { sound } from "@/features/alerts/prefs"
 import { levelOf } from "@server/pet-levels"
+import { area, peel, polygon, type Pt } from "./peel"
 import { PetArt, RARITY_COLOR, RARITY_NAME, isCommunity, petName, type Rarity } from "./art"
 import { catalog, choosePet, loadCatalog, openPack, pets, rarityOf, type Pets, type Pull } from "./pets"
 
@@ -119,51 +120,50 @@ function Packs({ state, onSee }: { state: Pets; onSee: () => void }) {
       await sleep(620)
       setStage("open")
       setRevealed(0)
-      flick(0.18) // the cards fly out
+      setPeeling(new Set())
+      flick(0.18) // the cards slide out
     } catch (err) {
       setStage("ready")
       toast((err as Error).message)
     }
   }
   // Each card turned sounds a note higher than the one before.
-  const [revealed, setRevealed] = useState(0)
+  const revealed = useRef(0)
+  const setRevealed = (n: number) => void (revealed.current = n)
   const turn = (i: number) => {
     const pull = pulls[i]!
     if (shown.has(i)) return
     if (RANK[pull.rarity] >= 2) return setSpot({ pull, index: i })
-    note(revealed, pull.rarity === "rare")
-    setRevealed(n => n + 1)
+    note(revealed.current++, pull.rarity === "rare")
     setShown(prev => new Set(prev).add(i))
   }
-  // One after another, the small ones first; the first big one gets its moment.
+  // One after another, each peeled by itself.
+  const [peeling, setPeeling] = useState<Set<number>>(new Set())
   const turnAll = async () => {
-    const small = pulls.map((_, i) => i).filter(i => !shown.has(i) && RANK[pulls[i]!.rarity] < 2)
-    for (const [k, i] of small.entries()) {
-      note(revealed + k, pulls[i]!.rarity === "rare")
-      setShown(prev => new Set(prev).add(i))
-      await sleep(260)
+    for (const i of pulls.map((_, i) => i).filter(i => !shown.has(i))) {
+      setPeeling(prev => new Set(prev).add(i))
+      await sleep(420)
     }
-    setRevealed(n => n + small.length)
-    const big = pulls.findIndex((p, i) => !shown.has(i) && RANK[p.rarity] >= 2)
-    if (big >= 0) setSpot({ pull: pulls[big]!, index: big })
   }
   const again = () => (setPulls([]), setShown(new Set()), setBest("common"), setStage("ready"))
 
   if (stage === "open")
     return (
       <div className="flex min-h-full flex-col items-center justify-center gap-6 py-4">
-        <div className="flex flex-wrap items-end justify-center gap-5">
+        <div className="relative flex flex-wrap items-end justify-center gap-5">
           {pulls.map((p, i) => (
-            <PetCard key={i} pull={p} isShown={shown.has(i)} onTurn={() => turn(i)} delay={i * 150} from={(pulls.length - 1) / 2 - i} isLast={i === pulls.length - 1}
-              isOut={state.active === p.id || state.buddy === p.id} hasOut={!!state.active} />
+            <PetCard key={i} pull={p} isShown={shown.has(i)} onTurn={() => turn(i)} delay={i * 110} from={(pulls.length - 1) / 2 - i} isLast={i === pulls.length - 1}
+              isPeeling={peeling.has(i)} isOut={state.active === p.id || state.buddy === p.id} hasOut={!!state.active} />
           ))}
+          {/* What is left of the pack: the cards slide up out of it, then it drops away. */}
+          <div className="pack-left" aria-hidden><PackArt /></div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 after-deal">
           {!isDone && <Button variant="outline" onClick={turnAll}>Turn them all</Button>}
           {isDone && state.packs > 0 && <Button onClick={again}>Open the next one ({state.packs})</Button>}
           {isDone && <Button variant={state.packs > 0 ? "outline" : "default"} onClick={onSee}>See your collection</Button>}
         </div>
-        {spot && <Spotlight pull={spot.pull} onDone={() => (setShown(prev => new Set(prev).add(spot.index)), setRevealed(n => n + 1), setSpot(null))} />}
+        {spot && <Spotlight pull={spot.pull} onDone={() => (setShown(prev => new Set(prev).add(spot.index)), revealed.current++, setSpot(null))} />}
       </div>
     )
 
@@ -259,34 +259,26 @@ const PACK_PATH = (() => {
 
 const nameOf = (p: Pull) => p.name ?? petName(p.id)
 
-// A card out of the pack: it flies from the pack (`from`: how many places
-// it lands from the middle) into its place, tilts under the pointer, and
-// turns over with a lift, a flash and its NEW stamped on.
-function PetCard({ pull, isShown, onTurn, delay, from, isLast, isOut, hasOut }: { pull: Pull; isShown: boolean; onTurn: () => void; delay: number; from: number; isLast: boolean; isOut: boolean; hasOut: boolean }) {
+// A card out of the pack: it slides up out of it (`from`: how many places it
+// lands from the middle) and into its place, tilting under the pointer, its
+// corner turned up. Pull the corner and the back peels off as a page turns
+// (peel.ts); let go with a third of it off and it finishes, else it lies back down. A
+// click (or Enter) peels it slowly by itself. Turned, it lifts, flashes, and
+// its NEW is stamped on.
+function PetCard({ pull, isShown, onTurn, delay, from, isLast, isPeeling, isOut, hasOut }: {
+  pull: Pull; isShown: boolean; onTurn: () => void; delay: number; from: number; isLast: boolean; isPeeling: boolean; isOut: boolean; hasOut: boolean
+}) {
   const color = RARITY_COLOR[pull.rarity]
   return (
     <div className="pet-card-deal" style={{ animationDelay: `${delay}ms`, "--from": from, "--spin": `${from * 14}deg` } as React.CSSProperties}>
       <div className={cn("card-pop", isShown && "is-on")}>
-      <button className={cn("pet-card", isShown && "is-shown", isLast && "is-last", `rarity-${pull.rarity}`)} onClick={onTurn} disabled={isShown} style={{ "--rarity": color } as React.CSSProperties}
-        onPointerMove={e => tilt(e, 18)} onPointerLeave={untilt} title={isShown ? undefined : "Turn it over"}>
-        <div className="pet-card-inner">
-          <div className={cn("pet-card-back", pull.rarity !== "common" && "has-glint")}>
-            <PawPrint className="size-9 text-white/90" />
-            <i className="card-holo" aria-hidden />
+        {isShown ? (
+          <div className={cn("pet-card is-shown", `rarity-${pull.rarity}`)} style={{ "--rarity": color } as React.CSSProperties} onPointerMove={e => tilt(e, 18)} onPointerLeave={untilt}>
+            <CardFront pull={pull} isShown />
           </div>
-          <div className="pet-card-front">
-            {isShown && <i className="card-flash" aria-hidden />}
-            {pull.rarity !== "common" && <i className="card-holo is-front" aria-hidden />}
-            {pull.rarity !== "common" && <div className="pet-card-rays" aria-hidden />}
-            {isShown && pull.rarity !== "common" && <Burst color={color} count={pull.rarity === "rare" ? 14 : 24} />}
-            {pull.isNew && <span className="card-new absolute top-2 left-2 z-[1] rounded-full bg-brand px-1.5 py-px text-[10px] font-bold tracking-wide text-white">NEW</span>}
-            {pull.category && <span className="absolute top-2 right-2 z-[1] rounded-full bg-black/25 px-1.5 py-px text-[9.5px] font-semibold text-white">{pull.category}</span>}
-            <PetArt id={pull.id} size={104} className="relative" doing={isShown ? "cheer" : "idle"} />
-            <div className="relative mt-1 w-full truncate px-2 text-center text-[13.5px] font-[650] text-text" title={nameOf(pull)}>{nameOf(pull)}</div>
-            <div className="relative text-[11px] font-bold tracking-[0.08em] uppercase" style={{ color }}>{RARITY_NAME[pull.rarity]}</div>
-          </div>
-        </div>
-      </button>
+        ) : (
+          <PeelCard pull={pull} isLast={isLast} isPeeling={isPeeling} onDone={onTurn} />
+        )}
       </div>
       <div className={cn("mt-2 flex h-7 justify-center transition-opacity", isShown ? "opacity-100" : "pointer-events-none opacity-0")}>
         {isOut ? <span className="self-center text-[12px] text-text-muted">On the board</span> : (
@@ -296,6 +288,137 @@ function PetCard({ pull, isShown, onTurn, delay, from, isLast, isOut, hasOut }: 
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+function CardFront({ pull, isShown }: { pull: Pull; isShown: boolean }) {
+  const color = RARITY_COLOR[pull.rarity]
+  return (
+    <div className="pet-card-front">
+      {isShown && <i className="card-flash" aria-hidden />}
+      {pull.rarity !== "common" && <i className="card-holo is-front" aria-hidden />}
+      {pull.rarity !== "common" && <div className="pet-card-rays" aria-hidden />}
+      {isShown && pull.rarity !== "common" && <Burst color={color} count={pull.rarity === "rare" ? 14 : 24} />}
+      {pull.isNew && <span className={cn("absolute top-2 left-2 z-[1] rounded-full bg-brand px-1.5 py-px text-[10px] font-bold tracking-wide text-white", isShown && "card-new")}>NEW</span>}
+      {pull.category && <span className="absolute top-2 right-2 z-[1] rounded-full bg-black/25 px-1.5 py-px text-[9.5px] font-semibold text-white">{pull.category}</span>}
+      <PetArt id={pull.id} size={104} className="relative" doing={isShown ? "cheer" : "idle"} />
+      <div className="relative mt-1 w-full truncate px-2 text-center text-[13.5px] font-[650] text-text" title={nameOf(pull)}>{nameOf(pull)}</div>
+      <div className="relative text-[11px] font-bold tracking-[0.08em] uppercase" style={{ color }}>{RARITY_NAME[pull.rarity]}</div>
+    </div>
+  )
+}
+
+const CARD_W = 168
+const CARD_H = 228
+const DOG_EAR: Pt = { x: CARD_W - 20, y: CARD_H - 20 } // the corner turned up, at rest
+const LIFTED: Pt = { x: CARD_W - 38, y: CARD_H - 32 } // and under the pointer
+const GONE: Pt = { x: -CARD_W * 1.08, y: -CARD_H * 1.08 } // past the far corner: all peeled
+const FLAP_PAD = 260 // the flap's layer reaches this far past the card: it overhangs as it folds
+const easeInOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2)
+const easeOut = (t: number) => 1 - (1 - t) ** 3
+
+// The card face down, its back peeling as a page turns. Drawn by setting
+// clip-paths and gradients on its layers, frame by frame, without a render.
+function PeelCard({ pull, isLast, isPeeling, onDone }: { pull: Pull; isLast: boolean; isPeeling: boolean; onDone: () => void }) {
+  const root = useRef<HTMLDivElement>(null)
+  const back = useRef<HTMLDivElement>(null)
+  const flap = useRef<HTMLDivElement>(null)
+  const shade = useRef<HTMLDivElement>(null)
+  const at = useRef<Pt>(DOG_EAR)
+  const anim = useRef(0)
+  const isDone = useRef(false)
+  const isGoing = useRef(false) // peeling off by itself: nothing lays it back down
+  const color = RARITY_COLOR[pull.rarity]
+
+  const draw = (p: Pt) => {
+    at.current = p
+    const g = peel(CARD_W, CARD_H, p)
+    back.current!.style.clipPath = polygon(g.rest)
+    flap.current!.style.clipPath = polygon(g.flap, FLAP_PAD)
+    // The flap's underside: a crease at the fold, lighter further from it.
+    const f = (1 - g.foldAtIn(FLAP_PAD)) * 100
+    flap.current!.style.background = `linear-gradient(${g.angle + 180}deg, transparent ${f - 0.5}%, #b9a9cf ${f}%, #efe8f7 ${f + 9}%, #fbf8ff ${f + 30}%, #e9e0f4 100%)`
+    shade.current!.style.clipPath = polygon(g.bare)
+    const s = g.foldAt * 100
+    shade.current!.style.background = `linear-gradient(${g.angle}deg, transparent ${s - 0.5}%, rgb(0 0 0 / 0.34) ${s}%, transparent ${s + 16}%)`
+  }
+  // From where the corner is to a point, eased; then, if that is all peeled, done.
+  const go = (to: Pt, ms: number, ease: (t: number) => number) => {
+    cancelAnimationFrame(anim.current)
+    const from = { ...at.current }
+    const t0 = performance.now()
+    const step = (t: number) => {
+      const k = Math.min(1, (t - t0) / ms)
+      const e = ease(k)
+      draw({ x: from.x + (to.x - from.x) * e, y: from.y + (to.y - from.y) * e })
+      if (k < 1) anim.current = requestAnimationFrame(step)
+      else if (to === GONE && !isDone.current) (isDone.current = true), onDone()
+    }
+    anim.current = requestAnimationFrame(step)
+  }
+  const finish = (ms: number) => ((isGoing.current = true), go(GONE, ms, ms > 600 ? easeInOut : easeOut))
+  // At rest again (the pointer gone), unless it is on its way off; a pointer
+  // let go outside the card leaves it just after, and must not undo that.
+  const settle = () => !isDone.current && !isGoing.current && go(DOG_EAR, 260, easeOut)
+
+  useEffect(() => {
+    draw(DOG_EAR)
+    return () => cancelAnimationFrame(anim.current)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  useEffect(() => {
+    if (isPeeling && !isDone.current) finish(820)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPeeling])
+
+  // Pulled by the pointer: the corner follows it; let go, it finishes or lies back.
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0 || isDone.current) return
+    e.preventDefault()
+    cancelAnimationFrame(anim.current)
+    untilt(e)
+    const el = e.currentTarget
+    el.setPointerCapture(e.pointerId)
+    const start = { x: e.clientX, y: e.clientY }
+    const base = { ...at.current }
+    let moved = false
+    const move = (ev: PointerEvent) => {
+      const dx = ev.clientX - start.x
+      const dy = ev.clientY - start.y
+      if (!moved && Math.hypot(dx, dy) < 4) return
+      if (!moved) flick(0.07)
+      moved = true
+      draw({ x: Math.max(GONE.x, Math.min(CARD_W, base.x + dx)), y: Math.max(GONE.y, Math.min(CARD_H, base.y + dy)) })
+    }
+    const up = () => {
+      el.removeEventListener("pointermove", move)
+      el.removeEventListener("pointerup", up)
+      el.removeEventListener("pointercancel", up)
+      if (!moved) return finish(900) // a click: it peels slowly by itself
+      const left = area(peel(CARD_W, CARD_H, at.current).rest) / (CARD_W * CARD_H)
+      if (left < 0.7) finish(380)
+      else go(DOG_EAR, 420, easeOut)
+    }
+    el.addEventListener("pointermove", move)
+    el.addEventListener("pointerup", up)
+    el.addEventListener("pointercancel", up)
+  }
+
+  return (
+    <div ref={root} role="button" tabIndex={0} aria-label="Turn it over" title="Pull its corner, or click"
+      className={cn("pet-card peel", isLast && "is-last", `rarity-${pull.rarity}`)} style={{ "--rarity": color } as React.CSSProperties}
+      onPointerDown={onPointerDown}
+      onPointerMove={e => !e.buttons && (tilt(e, 14), !isDone.current && !isGoing.current && at.current === DOG_EAR && go(LIFTED, 180, easeOut))}
+      onPointerLeave={e => (untilt(e), !e.buttons && settle())}
+      onKeyDown={e => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), finish(900))}>
+      <CardFront pull={pull} isShown={false} />
+      <div ref={shade} className="peel-shade" />
+      <div ref={back} className={cn("pet-card-back peel-back", pull.rarity !== "common" && "has-glint")}>
+        <PawPrint className="size-9 text-white/90" />
+        <i className="card-holo" aria-hidden />
+      </div>
+      <div className="peel-flap-wrap"><div ref={flap} className="peel-flap" /></div>
     </div>
   )
 }
