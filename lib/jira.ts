@@ -648,6 +648,14 @@ export async function moveToStatus(key: string, statusId: string) {
   await moveTicket(key, move.id)
 }
 
+// A ticket the board created: its key, once the pets have heard of it (a
+// pack comes sooner, lib/pets.ts), so the page asking next sees it.
+// Imported when needed: pets.ts reads the board.
+async function created(key: string) {
+  if (key) await import("./pets").then(m => m.ticketCreated(key)).catch(() => {})
+  return key
+}
+
 // A sub-task under a ticket of yours, assigned to you: its key.
 // A description is Markdown (adf.ts); a priority, Jira's name for it.
 export async function createSubtask(parent: string, summary: string, typeId: string, description?: string, priority?: string | null): Promise<string> {
@@ -657,7 +665,7 @@ export async function createSubtask(parent: string, summary: string, typeId: str
     ...(description ? { description: adfOf(description.slice(0, 30_000)) } : {}), ...(priority ? { priority: { name: priority } } : {}) }
   const r = await call(setup, "/rest/api/3/issue", { method: "POST", body: JSON.stringify({ fields }) })
   briefs.delete(parent)
-  return String(r?.key ?? "")
+  return created(String(r?.key ?? ""))
 }
 
 // ---------- Confluence (the same site and token) ----------
@@ -724,5 +732,5 @@ export async function createIssue(f: { project: string; typeId: string; summary:
   const fields = { project: { key: f.project }, issuetype: { id: f.typeId }, summary: f.summary.slice(0, 250), description: adfOf(f.description.slice(0, 30_000)), labels: f.labels, assignee: { accountId: await myId(setup) },
     ...(f.priority ? { priority: { name: f.priority } } : {}), ...(f.components?.length ? { components: f.components.map(name => ({ name })) } : {}) }
   const r = await call(setup, "/rest/api/3/issue", { method: "POST", body: JSON.stringify({ fields }) })
-  return String(r?.key ?? "")
+  return created(String(r?.key ?? ""))
 }

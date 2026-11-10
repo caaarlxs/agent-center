@@ -96,8 +96,9 @@ function seatOf(cardId: string) {
 export function PetLayer() {
   const state = pets.use()
   useEffect(watchPets, [])
-  // A PR that brought the next pack nearer.
+  // A PR, or a Jira ticket that brought no pack of its own, that brought the next pack nearer.
   const boosts = useRef<number | null>(null)
+  const tickets = useRef<number | null>(null)
   useEffect(() => {
     if (!state) return
     if (boosts.current !== null && state.prBoosts > boosts.current) {
@@ -105,6 +106,12 @@ export function PetLayer() {
       toast(n > 1 ? `${n} PRs brought your next pack nearer` : "Your PR brought your next pack nearer", { icon: "📦", description: "Every PR you open takes six hours off the wait" })
     }
     boosts.current = state.prBoosts
+    const nearer = (state.ticketBoosts ?? 0) - (state.ticketPacks ?? 0)
+    if (tickets.current !== null && nearer > tickets.current) {
+      const n = nearer - tickets.current
+      toast(n > 1 ? `${n} Jira tickets brought your next pack nearer` : "Your Jira ticket brought your next pack nearer", { icon: "🎟️", description: "Each ticket takes three hours off the wait, and one in eight brings a pack at once" })
+    }
+    tickets.current = nearer
   }, [state])
   // A turn a session finished: XP for the pets out, more for the one working with it.
   const cards = useLive(l => l.snapshot?.cards)

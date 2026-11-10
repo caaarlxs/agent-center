@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { get } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import type { DebtEntry } from "@server/debt"
+import { loadPets } from "@/features/pets/pets"
 import { act } from "./Pipeline"
 
 type Show = "open" | "all"
@@ -40,7 +41,10 @@ function DebtList({ debt, onChange, onClose }: { debt: DebtEntry[]; onChange: ()
   const repos = [...new Set(shown.map(d => d.repo))]
   const toggle = (key: string) => setChosen(c => (c.has(key) ? new Set([...c].filter(k => k !== key)) : new Set([...c, key])))
   const run = async (action: "ticket" | "dismiss") => {
-    if (await act("/api/pipeline/debt", { keys: [...chosen], action }, action === "ticket" ? "Ticket created in Jira" : "Dismissed")) (setChosen(new Set()), onChange())
+    if (!(await act("/api/pipeline/debt", { keys: [...chosen], action }, action === "ticket" ? "Ticket created in Jira" : "Dismissed"))) return
+    setChosen(new Set())
+    onChange()
+    if (action === "ticket") void loadPets() // a ticket brings a pack nearer
   }
   return (
     <Dialog open onOpenChange={o => !o && onClose()}>

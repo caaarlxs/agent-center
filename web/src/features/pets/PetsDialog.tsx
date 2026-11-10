@@ -48,7 +48,7 @@ export function PetsDialog({ onClose }: { onClose: () => void }) {
             <DialogTitle className="text-base font-[650]">Pets</DialogTitle>
             <p className="m-0 text-[12.5px] text-text-muted">
               Packs hold pets of <a className="underline" href="https://codex-pets.net" target="_blank" rel="noreferrer">codex-pets.net</a>, as rare as the community loves them (anime girls are the commonest of all).
-              Packs turn up by chance, never more than 30 hours apart; every PR you open brings the next one six hours nearer, and every 20th level a pet reaches brings one. The higher the level of the pet on the board, the better the pets that come out.
+              Packs turn up by chance, never more than 30 hours apart; every PR you open brings the next one six hours nearer, every Jira ticket you create three hours (one in eight brings a pack at once), and every 20th level a pet reaches brings one. The higher the level of the pet on the board, the better the pets that come out.
             </p>
           </div>
         </div>

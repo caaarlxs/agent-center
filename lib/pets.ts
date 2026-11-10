@@ -6,8 +6,9 @@
 // with your work (lib/pet-levels.ts): every 20th level it reaches brings a
 // pack too. A pack holds three pets, the last of them rare or
 // better: pets of codex-pets.net, rated by community-pets.ts. Each PR a
-// session opens brings the next pack a day nearer: counted once, and only
-// one opened after the pets began counting. The pets drawn here (a species
+// session opens brings the next pack six hours nearer: counted once, and only
+// one opened after the pets began counting. Each Jira ticket the board
+// creates brings it three hours nearer, and one time in eight a pack at once. The pets drawn here (a species
 // in a skin) came out of the first packs; they stay yours, and come out
 // again only when codex-pets.net cannot be reached.
 
@@ -24,6 +25,8 @@ const MIN_WAIT = 4 * HOUR
 const MAX_WAIT = 30 * HOUR
 const PER_PACK = 3
 const PR_BOOST = 6 * HOUR
+const TICKET_BOOST = 3 * HOUR
+const TICKET_LUCK = 1 / 8 // a ticket's chance of a pack there and then
 const XP_KEYS_KEPT = 3000
 const PRS_KEPT = 1000
 
@@ -70,6 +73,9 @@ type State = {
   prsSince: number // PRs opened before this do not count
   prsSeen: string[] // the ones that counted
   prBoosts: number // how many
+  ticketsSeen: string[] // the Jira tickets created on the board that counted
+  ticketBoosts: number // how many
+  ticketPacks: number // packs a ticket brought at once
 }
 
 export type Pull = { id: string; rarity: Rarity; isNew: boolean; name?: string; category?: string }
@@ -87,10 +93,11 @@ async function load(now = Date.now()): Promise<State> {
           packs: saved.packs ?? 0, owned: saved.owned ?? {}, active: saved.active ?? null, opened: saved.opened ?? 0,
           prsSince: saved.prsSince ?? now, prsSeen: saved.prsSeen ?? [], prBoosts: saved.prBoosts ?? 0,
           buddy: saved.buddy ?? null, xp: saved.xp ?? {}, xpSeen: saved.xpSeen ?? [], wasOpen: saved.wasOpen ?? [], mergedSeen: saved.mergedSeen ?? [],
+          ticketsSeen: saved.ticketsSeen ?? [], ticketBoosts: saved.ticketBoosts ?? 0, ticketPacks: saved.ticketPacks ?? 0,
           // A wait drawn when packs came up to two weeks apart: no longer than one is now.
           nextAt: Math.min(saved.nextAt, now + MAX_WAIT),
         }
-      : { packs: 1, nextAt: now + wait(Math.random), owned: {}, active: null, buddy: null, opened: 0, prsSince: now, prsSeen: [], prBoosts: 0, xp: {}, xpSeen: [], wasOpen: [], mergedSeen: [] } // the first, from the start
+      : { packs: 1, nextAt: now + wait(Math.random), owned: {}, active: null, buddy: null, opened: 0, prsSince: now, prsSeen: [], prBoosts: 0, xp: {}, xpSeen: [], wasOpen: [], mergedSeen: [], ticketsSeen: [], ticketBoosts: 0, ticketPacks: 0 } // the first, from the start
     if (!saved || saved.prsSince === undefined) await save()
   }
   const prs = await prUrls()
@@ -155,6 +162,25 @@ export function speedUp(s: Pick<State, "nextAt" | "prsSince" | "prsSeen" | "prBo
   s.prBoosts += fresh.length
   s.nextAt = Math.max(now, s.nextAt - fresh.length * PR_BOOST)
   return fresh.length
+}
+
+// A Jira ticket created on the board, counted once: the next pack three
+// hours nearer (never past now), or, one time in eight, a pack at once.
+export function ticketBoost(s: Pick<State, "nextAt" | "packs" | "ticketsSeen" | "ticketBoosts" | "ticketPacks">, key: string, now: number, random: () => number): "pack" | "nearer" | null {
+  if (!key || s.ticketsSeen.includes(key)) return null
+  s.ticketsSeen = [...s.ticketsSeen, key].slice(-PRS_KEPT)
+  s.ticketBoosts++
+  if (random() < TICKET_LUCK) {
+    s.packs++
+    s.ticketPacks++
+    return "pack"
+  }
+  s.nextAt = Math.max(now, s.nextAt - TICKET_BOOST)
+  return "nearer"
+}
+export async function ticketCreated(key: string) {
+  const s = await load()
+  if (ticketBoost(s, key, Date.now(), Math.random)) await save()
 }
 
 function pick<T extends string>(odds: Record<T, number>, random: () => number): T {
@@ -229,7 +255,7 @@ async function communityPack(level: number, owned: Record<string, number>): Prom
 }
 
 // What the page sees: never when the next pack comes.
-const shown = (s: State) => ({ packs: s.packs, owned: s.owned, active: s.active, buddy: s.buddy, xp: s.xp, opened: s.opened, prBoosts: s.prBoosts })
+const shown = (s: State) => ({ packs: s.packs, owned: s.owned, active: s.active, buddy: s.buddy, xp: s.xp, opened: s.opened, prBoosts: s.prBoosts, ticketBoosts: s.ticketBoosts, ticketPacks: s.ticketPacks })
 
 const COMMUNITY = "community:"
 
