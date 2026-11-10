@@ -310,13 +310,6 @@ export function pickColumns(boards: BoardColumn[][], seen: string[]): BoardColum
   return best
 }
 
-// A comment as Jira's document: a paragraph per line.
-export const docOf = (text: string) => ({
-  type: "doc",
-  version: 1,
-  content: text.split("\n").map(line => (line ? { type: "paragraph", content: [{ type: "text", text: line }] } : { type: "paragraph", content: [] })),
-})
-
 // Its links as Jira words them from this side ("blocks", "is blocked by").
 const linksOf = (list: any[] = [], site: string): TicketLink[] =>
   list.flatMap(l => {
@@ -594,8 +587,9 @@ export async function moveTicket(key: string, transitionId: string) {
 }
 
 // A comment that opens with a mention of each person (Jira tells them).
+// A comment is Markdown (adf.ts): the board's and the agents' show in Jira formatted.
 export const docWith = (text: string, mentions: string[]) => {
-  const doc = docOf(text)
+  const doc = adfOf(text)
   if (!mentions.length) return doc
   const tags = mentions.flatMap(id => [{ type: "mention", attrs: { id } }, { type: "text", text: " " }])
   return { ...doc, content: [{ type: "paragraph", content: tags }, ...doc.content] }

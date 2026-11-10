@@ -1,9 +1,11 @@
 // Markdown as Jira's document (ADF): what the agents write (bold, italics,
 // code, links, lists, headings, rules, code blocks) shows in Jira as such,
 // not as asterisks. Only what the team's tickets use; anything else is text.
+// Lines of one paragraph keep their breaks: the board's comments are written
+// line by line (a release's steps, the answers).
 
 type Mark = { type: "strong" | "em" | "code" } | { type: "link"; attrs: { href: string } }
-type Inline = { type: "text"; text: string; marks?: Mark[] }
+type Inline = { type: "text"; text: string; marks?: Mark[] } | { type: "hardBreak" }
 type Block = Record<string, unknown>
 
 // **bold**, *italics* or _italics_, `code`, [text](url): in that order of precedence.
@@ -25,6 +27,7 @@ export function inlineOf(text: string): Inline[] {
 }
 
 const paragraph = (text: string): Block => ({ type: "paragraph", content: inlineOf(text) })
+const linesOf = (lines: string[]): Block => ({ type: "paragraph", content: lines.flatMap((l, i) => [...(i ? [{ type: "hardBreak" } as const] : []), ...inlineOf(l)]) })
 const BULLET = /^\s*[-*+]\s+(.*)$/
 const ORDERED = /^\s*\d+[.)]\s+(.*)$/
 const HEADING = /^(#{1,6})\s+(.*)$/
@@ -57,10 +60,10 @@ function blockAt(lines: string[], i: number): [Block | null, number] {
   if (heading) return [{ type: "heading", attrs: { level: heading[1]!.length }, content: inlineOf(heading[2]!) }, i + 1]
   if (BULLET.test(line)) return listOf(lines, i, BULLET, "bulletList")
   if (ORDERED.test(line)) return listOf(lines, i, ORDERED, "orderedList")
-  // A paragraph: its lines up to a blank one or the start of another block, joined.
+  // A paragraph: its lines up to a blank one or the start of another block, each kept.
   let end = i + 1
   while (end < lines.length && lines[end]!.trim() && ![FENCE, RULE, HEADING, BULLET, ORDERED].some(p => p.test(lines[end]!))) end++
-  return [paragraph(lines.slice(i, end).join(" ")), end]
+  return [linesOf(lines.slice(i, end)), end]
 }
 
 export function adfOf(markdown: string) {

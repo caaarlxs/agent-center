@@ -95,8 +95,9 @@ describe("comments", () => {
   it("asks each question with its proposal, marked as the agent's", () => {
     const text = questionsComment("PP-1", questions, "refine")
     expect(text.startsWith(MARK)).toBe(true)
-    expect(text).toContain("Q1. ¿Cuál es el copy?\n\nPropuesta:\nEl del ticket")
-    expect(text).toContain("Q2. ¿Se quita la frase?")
+    expect(text).toContain("faltan **2 decisiones**")
+    expect(text).toContain("---\n\n### Q1. ¿Cuál es el copy?\n\n**Propuesta**\n\nEl del ticket")
+    expect(text).toContain("### Q2. ¿Se quita la frase?")
     expect(questionsComment("PP-1", questions, "plan")).toContain("Plan de PP-1")
   })
   it("answers each question, the proposal when left as it was", () => {
@@ -369,7 +370,9 @@ describe("what a person reads", () => {
   })
   it("the questions in Jira carry their context and their steps, each in its own block", () => {
     const q = { id: "Q1", question: "¿A?", proposal: "1. Uno.\n2. Dos.", context: "Trata de:\n\n- el PDF" }
-    expect(questionsComment("PP-1", [q], "refine")).toContain("Q1. ¿A?\n\nTrata de:\n\n- el PDF\n\nPropuesta:\n1. Uno.\n2. Dos.")
+    const text = questionsComment("PP-1", [q], "refine")
+    expect(text).toContain("faltan **1 decisión**")
+    expect(text).toContain("### Q1. ¿A?\n\nTrata de:\n\n- el PDF\n\n**Propuesta**\n\n1. Uno.\n2. Dos.")
   })
 })
 

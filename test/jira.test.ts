@@ -1,7 +1,7 @@
 // What is a ticket, and what Jira answers, in the board's words (lib/jira.ts).
 import { describe, expect, it } from "bun:test"
 import { ticketsAfter } from "../lib/board"
-import { briefOf, docOf, jqlOf, keysIn, kindOf, markdownOf, mentionCounts, pickColumns, rowOf, sessionKeys, siteOf, ticketOf, userKeys } from "../lib/jira"
+import { briefOf, jqlOf, keysIn, kindOf, markdownOf, mentionCounts, pickColumns, rowOf, sessionKeys, siteOf, ticketOf, userKeys } from "../lib/jira"
 
 describe("keysIn", () => {
   it("finds a project's keys in branches and titles, once, in order", () => {
@@ -83,12 +83,6 @@ describe("jqlOf", () => {
   })
   it("finds a ticket by its key, whatever the filter", () => {
     expect(jqlOf("mine", ["PP"], " pp-3093 ")).toBe("project in (PP) AND key = PP-3093 ORDER BY updated DESC")
-  })
-})
-
-describe("docOf", () => {
-  it("writes a comment as a paragraph per line", () => {
-    expect(docOf("Done\n\nNext").content.map(p => p.content[0]?.text ?? "")).toEqual(["Done", "", "Next"])
   })
 })
 

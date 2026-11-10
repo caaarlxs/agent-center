@@ -385,10 +385,11 @@ export function parseResult(text: string, stage: Stage): Result {
   return { verdict: data.verdict, questions, units, checklist, findings: findingsIn(data.findings), fixed: listOf(data.fixed).map(String), scripts: scriptsIn(data.scripts), order: orderIn(data.release), results: resultsIn(data.results), contextImpact: impactIn(data.contextImpact), debt: debtIn(data.debt), tickets: data.tickets }
 }
 
+// The questions in Jira (Markdown, shown formatted): each under its own title, its context,
+// and its proposal set apart; a rule between them.
 export const questionsComment = (key: string, questions: Question[], stage: AgentStage) =>
-  `${MARK} · ${STAGE[stage].title} de ${key}\n\nAntes de implementar faltan estas decisiones. Cada una trae una propuesta: si vale, basta con responder "ok".\n\n` +
-  // The context and the proposal are short Markdown (lists, steps): each in its own block.
-  questions.map(q => `${q.id}. ${q.question}${q.context ? `\n\n${q.context}` : ""}\n\nPropuesta:\n${q.proposal || "—"}`).join("\n\n")
+  `${MARK} · ${STAGE[stage].title} de ${key}\n\nAntes de implementar faltan **${questions.length} ${questions.length === 1 ? "decisión" : "decisiones"}**. Cada una trae una propuesta: si vale, basta con responder "ok" (o "ok a todas").\n\n` +
+  questions.map(q => `---\n\n### ${q.id}. ${q.question}${q.context ? `\n\n${q.context}` : ""}\n\n**Propuesta**\n\n${q.proposal || "—"}`).join("\n\n")
 
 // Your answers: a question left blank takes its proposal.
 export const answersComment = (questions: Question[], answers: Record<string, string>) =>

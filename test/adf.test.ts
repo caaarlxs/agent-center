@@ -29,9 +29,9 @@ describe("adfOf", () => {
     expect(doc.content[3]).toEqual({ type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "Para el pipeline" }] })
     expect(doc.content[5]).toEqual({ type: "codeBlock", attrs: { language: "py" }, content: [{ type: "text", text: "x = 1" }] })
   })
-  it("lines of one paragraph join; a blank line splits them", () => {
+  it("lines of one paragraph keep their breaks; a blank line splits them", () => {
     expect(adfOf("una\ndos\n\ntres").content).toEqual([
-      { type: "paragraph", content: [{ type: "text", text: "una dos" }] },
+      { type: "paragraph", content: [{ type: "text", text: "una" }, { type: "hardBreak" }, { type: "text", text: "dos" }] },
       { type: "paragraph", content: [{ type: "text", text: "tres" }] },
     ])
   })
