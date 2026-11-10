@@ -5,6 +5,7 @@
 // glow (.pet-fx-*).
 import { useId, type ReactNode } from "react"
 import { cn } from "@/lib/utils"
+import { persistedStore } from "@/lib/store"
 
 export type Rarity = "common" | "rare" | "epic" | "legendary"
 
@@ -60,7 +61,16 @@ export const setAdopted = (list: Adopted[]) => (adoptedPets.clear(), list.forEac
 export const COMMUNITY = "community:"
 export const isCommunity = (id: string) => id.startsWith(COMMUNITY)
 
-export const petName = (id: string) => {
+// The names you gave your pets, kept in this browser; none, its own.
+export const nicknames = persistedStore<Record<string, string>>("petNames", {})
+export function setNickname(id: string, name: string) {
+  const { [id]: _, ...rest } = nicknames.get()
+  const clean = name.trim().slice(0, 40)
+  nicknames.set(clean && clean !== realName(id) ? { ...rest, [id]: clean } : rest)
+}
+export const petName = (id: string) => nicknames.get()[id] || realName(id)
+// Its own name: codex-pets.net's, or its skin and species.
+export const realName = (id: string) => {
   if (isCommunity(id)) return adoptedPets.get(id.slice(COMMUNITY.length))?.name ?? "Community pet"
   const [species = "", skin = ""] = id.split(":")
   return skin === "classic" ? SPECIES_NAME[species] ?? species : `${SKIN_NAME[skin] ?? skin} ${SPECIES_NAME[species] ?? species}`

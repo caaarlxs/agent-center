@@ -1,8 +1,10 @@
 // Pets: the packs to open and the collection. A pack floats and tilts under
-// the pointer, its foil catching the light. Pressed, it charges: a tear line
-// runs across its top, light leaks through, it trembles harder (meanwhile
-// the board draws its pets). When it holds something good it glows in that
-// colour first (the tell); then its top rips off, light pours out and its
+// the pointer, its foil catching the light. You tear it open: dragged across
+// its top, the strip peels off as far as you pull, light of its best pet's
+// colour leaking out, bits of foil flying, the pack trembling harder (the
+// first pull draws its pets). Torn off, the strip flies away in a flash and
+// a beam. When it holds something good it glows in that colour first (the
+// tell); then its
 // cards fly out into a fan, face down, each tilting under the pointer, a
 // rare one's back glinting, the last one breathing. Each turns over with a
 // click, lifting, flipping with a flash and a note higher than the last: an epic or a
@@ -11,7 +13,7 @@
 // on one you have sends it out on the board, its paw sends it out as the
 // buddy of the one already there; each shows its level.
 import { ChevronLeft, ChevronRight, PawPrint, Search } from "lucide-react"
-import { useEffect, useMemo, useRef, useState } from "react"
+import { memo, useDeferredValue, useEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -21,8 +23,8 @@ import { cn } from "@/lib/utils"
 import { sound } from "@/features/alerts/prefs"
 import { betterChance, levelOf } from "@server/pet-levels"
 import { area, peel, polygon, type Pt } from "./peel"
-import { PetArt, RARITY_COLOR, RARITY_NAME, isCommunity, petName, type Rarity } from "./art"
-import { catalog, choosePet, loadCatalog, openPack, pets, rarityOf, type Pets, type Pull } from "./pets"
+import { PetArt, RARITY_COLOR, RARITY_NAME, isCommunity, nicknames, petName, type Rarity } from "./art"
+import { catalog, choosePet, loadCatalog, openPack, pets, rarityOf, type CatalogPet, type Pets, type Pull } from "./pets"
 
 const tabBtn = (on: boolean) => cn("h-7 rounded-[7px] px-3 text-[12.5px] font-medium", on ? "bg-surface text-text shadow-[0_1px_2px_rgb(0_0_0/0.08)]" : "text-text-muted hover:text-text")
 const RARITIES: Rarity[] = ["common", "rare", "epic", "legendary"]
@@ -74,8 +76,12 @@ export function PetsDialog({ onClose }: { onClose: () => void }) {
 
 // ---------- packs ----------
 
-type Stage = "ready" | "charging" | "tell" | "tear" | "open"
-const CHARGE_MS = 950
+// ready: it waits for you to tear it; tearing: its top strip peels off as
+// far as you have dragged; burst: torn off, the strip flies away in a flash;
+// tell: something good inside, it glows in that colour; open: the cards.
+type Stage = "ready" | "tearing" | "burst" | "tell" | "open"
+const TEAR_Y = 26 // where the strip tears off, in the pack's units (150 × 210)
+const K = 1.25 // the pack drawn bigger than that, for a hand to pull at
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
 // Under the pointer: an element tilts toward it and its foil follows (CSS
@@ -99,33 +105,118 @@ function Packs({ state, onSee }: { state: Pets; onSee: () => void }) {
   const [best, setBest] = useState<Rarity>("common")
   const [spot, setSpot] = useState<{ pull: Pull; index: number } | null>(null)
   const isDone = pulls.length > 0 && shown.size === pulls.length
+  // How far the strip is torn (0 to 1), the pets asked for as the tear starts,
+  // the drag, and the bits of foil flying off the tear.
+  const [progress, setProgress] = useState(0)
+  const torn = useRef(0)
+  const got = useRef<Promise<Pull[] | null> | null>(null)
+  const isFinishing = useRef(false)
+  const drag = useRef<{ x: number; moved: number } | null>(null)
+  const lastScratch = useRef(0)
+  const [bits, setBits] = useState<{ id: number; x: number; a: number; d: number; s: number; c: string }[]>([])
+  const bitId = useRef(0)
+  // The light out of the tear: white until the server says what is inside, then its best pet's colour.
+  const glow = pulls.length ? RARITY_COLOR[best] : "#fff6d8"
 
-  const open = async () => {
-    if (stage !== "ready" || state.packs < 1) return
-    setStage("charging")
-    try {
-      const [got] = await Promise.all([openPack(), sleep(CHARGE_MS)])
-      const top = got.reduce<Rarity>((b, p) => (RANK[p.rarity] > RANK[b] ? p.rarity : b), "common")
-      setBest(top)
-      setPulls(got)
-      setShown(new Set())
-      // Something good inside: the pack glows in its colour first.
-      if (RANK[top] >= 2) {
-        setStage("tell")
-        fanfare(top === "legendary" ? 3 : 2, true)
-        await new Promise(r => setTimeout(r, top === "legendary" ? 2200 : 1500))
-      }
-      setStage("tear")
-      rip()
-      await sleep(620)
-      setStage("open")
-      setRevealed(0)
-      setPeeling(new Set())
-      flick(0.18) // the cards slide out
-    } catch (err) {
-      setStage("ready")
-      toast((err as Error).message)
+  const reset = () => {
+    got.current = null
+    isFinishing.current = false
+    torn.current = 0
+    lastScratch.current = 0
+    setProgress(0)
+    setBits([])
+    setStage("ready")
+  }
+  // The first pull at the strip opens the pack on the server: by the time it is torn, its pets are known.
+  const start = () => {
+    if (got.current || state.packs < 1) return
+    setStage("tearing")
+    got.current = openPack().then(
+      list => {
+        setBest(list.reduce<Rarity>((b, p) => (RANK[p.rarity] > RANK[b] ? p.rarity : b), "common"))
+        setPulls(list)
+        setShown(new Set())
+        return list
+      },
+      err => {
+        toast((err as Error).message)
+        reset()
+        return null
+      },
+    )
+  }
+  const finish = async () => {
+    if (isFinishing.current) return
+    isFinishing.current = true
+    const list = await got.current
+    if (!list) return
+    const top = list.reduce<Rarity>((b, p) => (RANK[p.rarity] > RANK[b] ? p.rarity : b), "common")
+    setStage("burst")
+    rip()
+    await sleep(850)
+    // Something good inside: the pack glows in its colour first.
+    if (RANK[top] >= 2) {
+      setStage("tell")
+      fanfare(top === "legendary" ? 3 : 2, true)
+      await sleep(top === "legendary" ? 2100 : 1400)
     }
+    setStage("open")
+    setRevealed(0)
+    setPeeling(new Set())
+    flick(0.18) // the cards slide out
+  }
+  const advance = (to: number) => {
+    if (isFinishing.current) return
+    const p = Math.min(1, Math.max(torn.current, to))
+    if (p === torn.current) return
+    torn.current = p
+    setProgress(p)
+    if (p - lastScratch.current > 0.04 || p === 1) {
+      lastScratch.current = p
+      scratch(p)
+      const fresh = Array.from({ length: 3 }, () => ({
+        id: bitId.current++, x: p * 150, a: -70 + Math.random() * 120, d: 30 + Math.random() * 50, s: 3 + Math.random() * 4,
+        c: Math.random() < 0.5 ? glow : pick(["#ff8a5c", "#e2487a", "#6d3cf0", "#fff"]),
+      }))
+      setBits(prev => [...prev.slice(-36), ...fresh])
+    }
+    if (p >= 1) void finish()
+  }
+  // A click, or Enter: it tears on its own.
+  const autoTear = () => {
+    if (state.packs < 1 || isFinishing.current) return
+    start()
+    const from = torn.current
+    const t0 = performance.now()
+    const tick = (t: number) => {
+      const k = Math.min(1, (t - t0) / 750)
+      advance(from + (1 - from) * k * k * (3 - 2 * k))
+      if (k < 1) requestAnimationFrame(tick)
+    }
+    requestAnimationFrame(tick)
+  }
+  const onDown = (e: React.PointerEvent<HTMLElement>) => {
+    if (e.button !== 0 || state.packs < 1 || isFinishing.current) return
+    e.preventDefault()
+    e.currentTarget.setPointerCapture(e.pointerId)
+    drag.current = { x: e.clientX, moved: 0 }
+  }
+  const onMove = (e: React.PointerEvent<HTMLElement>) => {
+    const d = drag.current
+    if (!d) return void (stage === "ready" && tilt(e, 10))
+    const dx = e.clientX - d.x
+    d.x = e.clientX
+    d.moved += Math.abs(dx)
+    if (d.moved > 6) {
+      if (!got.current) untilt(e)
+      start()
+    }
+    if (dx > 0 && got.current) advance(torn.current + dx / (150 * K * 0.85))
+  }
+  const onUp = () => {
+    const d = drag.current
+    drag.current = null
+    if (d && d.moved < 6) autoTear()
   }
   // Each card turned sounds a note higher than the one before.
   const revealed = useRef(0)
@@ -145,7 +236,7 @@ function Packs({ state, onSee }: { state: Pets; onSee: () => void }) {
       await sleep(420)
     }
   }
-  const again = () => (setPulls([]), setShown(new Set()), setBest("common"), setStage("ready"))
+  const again = () => (setPulls([]), setShown(new Set()), setBest("common"), reset())
 
   if (stage === "open")
     return (
@@ -176,42 +267,41 @@ function Packs({ state, onSee }: { state: Pets; onSee: () => void }) {
       </div>
     )
 
+  const isOpened = stage === "burst" || stage === "tell"
   return (
-    <div className="flex min-h-full flex-col items-center justify-center gap-5 py-6">
+    <div className="relative flex min-h-full flex-col items-center justify-center gap-6 py-6" style={{ "--glow": glow, "--rarity": RARITY_COLOR[best] } as React.CSSProperties}>
+      <div className="tp-aura" style={{ opacity: stage === "ready" ? 0.18 : isOpened ? 0.95 : 0.2 + progress * 0.7 }} aria-hidden />
+      {stage === "burst" && <div className="tp-flash" aria-hidden />}
       <div className="relative">
-        {stage === "tell" && <div className="pack-tell" style={{ "--rarity": RARITY_COLOR[best] } as React.CSSProperties} aria-hidden><i /><i /><i /><i /><i /><i /><i /><i /></div>}
-        {state.packs > 1 && stage === "ready" && <div className="absolute top-2 left-3 -rotate-6 opacity-60"><PackArt /></div>}
-        {state.packs > 2 && stage === "ready" && <div className="absolute top-1 left-1.5 -rotate-3 opacity-80"><PackArt /></div>}
-        <div className={cn("pack-float", stage !== "ready" && "is-still")}>
-          <button className={cn("pack-btn relative", stage === "charging" && "pack-charging", stage === "tell" && `pack-telling tell-${best}`, stage === "tear" && "pack-tearing")}
-            onPointerDown={e => e.button === 0 && void open()} onPointerMove={e => stage === "ready" && tilt(e)} onPointerLeave={untilt}
-            onKeyDown={e => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), void open())} title="Open this pack"
-            style={{ "--rarity": RARITY_COLOR[stage === "tear" ? best : "common"] } as React.CSSProperties}>
-            {stage === "tear" ? (
-              <>
-                <span className="pack-top"><PackArt /></span><span className="pack-rest"><PackArt /></span>
-                <i className="pack-light" aria-hidden />
-              </>
-            ) : (
-              <span className="pack-3d">
-                <PackArt />
-                <i className="pack-holo" aria-hidden />
-                <i className="pack-tearline" aria-hidden />
-              </span>
-            )}
-          </button>
+        {stage === "tell" && <div className="pack-tell" aria-hidden><i /><i /><i /><i /><i /><i /><i /><i /></div>}
+        {state.packs > 1 && stage === "ready" && <div className="absolute top-3 left-4 -rotate-6 opacity-60" style={{ scale: K, transformOrigin: "0 0" }}><PackArt /></div>}
+        {state.packs > 2 && stage === "ready" && <div className="absolute top-1.5 left-2 -rotate-3 opacity-80" style={{ scale: K, transformOrigin: "0 0" }}><PackArt /></div>}
+        <div role="button" tabIndex={0} aria-label="Tear the pack open" title={stage === "ready" ? "Drag across the top to tear it open" : undefined}
+          onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={() => (drag.current = null)} onPointerLeave={e => stage === "ready" && untilt(e)}
+          onKeyDown={e => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), autoTear())}
+          className={cn("tp-pack", stage === "ready" && "tp-float", stage === "tearing" && "tp-tremble", stage === "burst" && "tp-pop", stage === "tell" && `pack-telling tell-${best}`)}
+          style={{ "--p": progress } as React.CSSProperties}>
+          {isOpened && <div className={cn("tp-beam", stage === "tell" && "is-held")} aria-hidden />}
+          <span className="pack-3d">
+            <TearPack progress={isOpened ? 1 : progress} stage={stage} />
+            {stage === "ready" && <i className="pack-holo" aria-hidden />}
+          </span>
+          {bits.map(b => (
+            <i key={b.id} className="tp-bit" style={{ left: b.x * K, top: TEAR_Y * K, "--a": `${b.a}deg`, "--d": `${b.d}px`, "--s": `${b.s}px`, background: b.c } as React.CSSProperties} />
+          ))}
+          {stage === "burst" && <div className="absolute left-1/2" style={{ top: TEAR_Y * K }}><Burst color={glow} count={34} spread={1.7} /></div>}
         </div>
         {state.packs > 1 && stage === "ready" && <span className="absolute -top-2 -right-3 rounded-full bg-brand px-2 py-0.5 text-[12px] font-bold text-white shadow-pop tabular-nums">×{state.packs}</span>}
       </div>
-      <div className="text-center">
+      <div className="relative min-h-[44px] text-center">
         {stage === "tell" ? (
           <div className="pack-tell-text text-[17px] font-[800] tracking-wide" style={{ color: RARITY_COLOR[best] }}>{best === "legendary" ? "Something LEGENDARY is inside…" : "Something epic is inside…"}</div>
-        ) : stage === "charging" || stage === "tear" ? (
-          <div className="text-[15px] font-[650]">Opening…</div>
-        ) : (
+        ) : stage === "tearing" ? (
+          <div className="text-[15px] font-[650] tabular-nums">{progress < 0.35 ? "Rrrrip…" : progress < 0.75 ? "Keep going…" : "Almost!"}</div>
+        ) : stage === "burst" ? null : (
           <>
             <div className="text-[15px] font-[650]">{state.packs === 1 ? "You have a pack" : `You have ${state.packs} packs`}</div>
-            <p className="m-0 mt-1 text-[13px] text-text-muted">{state.perPack} pets in each, the last one at least rare. Press it to tear it open.</p>
+            <p className="m-0 mt-1 text-[13px] text-text-muted">{state.perPack} pets in each, the last one at least rare. <b className="text-text">Drag across the top</b> to tear it open.</p>
             <Luck state={state} />
           </>
         )}
@@ -220,9 +310,58 @@ function Packs({ state, onSee }: { state: Pets; onSee: () => void }) {
   )
 }
 
+// The pack being torn: below the tear its body, the light coming out of the
+// gap; the strip above, the part already torn lifted from where the tear has
+// got to, the rest still on; a spark where it tears. Untouched, a dashed line
+// and a light running along it show where to pull.
+function TearPack({ progress, stage }: { progress: number; stage: Stage }) {
+  const x = progress * 150
+  const lift = Math.min(38, progress * 52)
+  const jag = Array.from({ length: 31 }, (_, i) => [i * 5, TEAR_Y + (i % 2 ? 1.8 : -1.4)] as const)
+  const line = jag.map(([a, b]) => `L${a} ${b}`).join(" ")
+  const back = [...jag].reverse().map(([a, b]) => `L${a} ${b}`).join(" ")
+  return (
+    <svg viewBox="0 0 150 210" width={150 * K} height={210 * K} className="block overflow-visible drop-shadow-[0_14px_22px_rgb(0_0_0/0.3)]" aria-hidden>
+      <defs>
+        <clipPath id="tp-body"><path d={`M0 ${TEAR_Y} ${line} L150 220 L0 220 Z`} /></clipPath>
+        <clipPath id="tp-strip"><path d={`M-10 -20 L160 -20 L150 ${TEAR_Y} ${back} Z`} /></clipPath>
+        <clipPath id="tp-done"><rect x="-20" y="-40" width={x + 20} height={TEAR_Y + 50} /></clipPath>
+        <clipPath id="tp-left"><rect x={x} y="-40" width={170 - x} height={TEAR_Y + 50} /></clipPath>
+        <radialGradient id="tp-light"><stop offset="0" stopColor="#fff" /><stop offset="0.35" stopColor="var(--glow)" /><stop offset="1" stopColor="var(--glow)" stopOpacity="0" /></radialGradient>
+      </defs>
+      <g clipPath="url(#tp-body)"><PackFace /></g>
+      {progress > 0 && <ellipse className="tp-leak" cx={x / 2} cy={TEAR_Y} rx={x / 2 + 10} ry={7 + progress * 16} fill="url(#tp-light)" opacity={0.55 + progress * 0.45} />}
+      {progress < 1 && <g clipPath="url(#tp-left)"><g clipPath="url(#tp-strip)"><PackFace /></g></g>}
+      <g className={cn(stage === "burst" || stage === "tell" ? "tp-fly" : undefined)}>
+        <g transform={`rotate(${lift} ${x} ${TEAR_Y}) translate(0 ${-progress * 3})`}>
+          <g clipPath="url(#tp-done)"><g clipPath="url(#tp-strip)"><PackFace /></g></g>
+        </g>
+      </g>
+      {stage === "ready" && progress === 0 && (
+        <>
+          <line className="tp-guide" x1="6" x2="144" y1={TEAR_Y} y2={TEAR_Y} stroke="#fff" strokeWidth="1.4" strokeDasharray="4 4" opacity="0.85" />
+          <circle className="tp-hint" cx="0" cy={TEAR_Y} r="4.5" fill="#fff" />
+        </>
+      )}
+      {stage === "tearing" && progress > 0 && progress < 1 && <circle className="tp-spark" cx={x} cy={TEAR_Y} r="3.2" fill="#fff" />}
+    </svg>
+  )
+}
+
+const pick = <T,>(list: T[]) => list[Math.floor(Math.random() * list.length)]!
+
 function PackArt() {
   return (
     <svg viewBox="0 0 150 210" width="150" height="210" className="pack-art drop-shadow-[0_10px_18px_rgb(0_0_0/0.25)]" aria-hidden>
+      <PackFace />
+    </svg>
+  )
+}
+
+// The foil packet's face, to draw whole or in torn pieces.
+function PackFace() {
+  return (
+    <>
       <defs>
         <linearGradient id="pack-foil" x1="0" y1="0" x2="1" y2="1">
           <stop offset="0" stopColor="#ff8a5c" /><stop offset="0.45" stopColor="#e2487a" /><stop offset="1" stopColor="#6d3cf0" />
@@ -247,7 +386,7 @@ function PackArt() {
       </g>
       <text x="75" y="152" textAnchor="middle" fill="#fff" fontSize="17" fontWeight="800" letterSpacing="2.5">PET PACK</text>
       <text x="75" y="170" textAnchor="middle" fill="#fff" fontSize="9" fontWeight="600" opacity="0.8" letterSpacing="1">AGENT CENTER</text>
-    </svg>
+    </>
   )
 }
 // A foil packet, crimped top and bottom.
@@ -567,6 +706,32 @@ function flick(volume = 0.25) {
   }
 }
 
+// The strip tearing: a short scratch of noise, higher the further it goes,
+// if the board's sound is on. One AudioContext for all of them.
+let tearAudio: AudioContext | null = null
+function scratch(p: number) {
+  if (sound.get() !== "on") return
+  try {
+    tearAudio ??= new AudioContext()
+    const ctx = tearAudio
+    const buf = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.07), ctx.sampleRate)
+    const data = buf.getChannelData(0)
+    for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length) * (Math.random() < 0.3 ? 1 : 0.4)
+    const src = ctx.createBufferSource()
+    const filter = ctx.createBiquadFilter()
+    const g = ctx.createGain()
+    filter.type = "bandpass"
+    filter.frequency.value = 1400 + p * 2600 + Math.random() * 500
+    filter.Q.value = 0.8
+    g.gain.value = 0.22
+    src.buffer = buf
+    src.connect(filter).connect(g).connect(ctx.destination)
+    src.start()
+  } catch {
+    // no sound, no matter
+  }
+}
+
 // A few notes when something good comes out, if the board's sound is on:
 // rising, longer and brighter the rarer it is.
 function fanfare(level: 1 | 2 | 3, isTell = false) {
@@ -619,22 +784,24 @@ function Collection({ state }: { state: Pets }) {
   const [kind, setKind] = useState<string | null>(null)
   const [isMine, setMine] = useState(false)
   const [q, setQ] = useState("")
+  const words = useDeferredValue(q.trim().toLowerCase()) // typing stays quick; the grid follows
   const [page, setPage] = useState(1)
   const owned = state.owned
+  const nick = nicknames.use()
   const list = useMemo(() => {
-    const words = q.trim().toLowerCase()
     const has = (id: string) => (owned[id] ?? 0) > 0
     return (all ?? [])
       .filter(p => (!only || p.rarity === only) && (!kind || p.category === kind) && (!isMine || has(p.id)))
-      .filter(p => !words || (has(p.id) && p.name.toLowerCase().includes(words))) // a name shows once it is yours
+      // a name shows once it is yours: its own, or the one you gave it
+      .filter(p => !words || (has(p.id) && (p.name.toLowerCase().includes(words) || !!nick[p.id]?.toLowerCase().includes(words))))
       .sort((a, b) => Number(has(b.id)) - Number(has(a.id)) || RANK[b.rarity] - RANK[a.rarity])
-  }, [all, only, kind, isMine, q, owned])
+  }, [all, only, kind, isMine, words, owned, nick])
+  const counts = useMemo(() => Object.fromEntries(RARITIES.map(r => {
+    const of = (all ?? []).filter(p => p.rarity === r)
+    return [r, `${of.filter(p => owned[p.id]).length}/${of.length}`]
+  })) as Record<Rarity, string>, [all, owned])
   const pages = Math.max(1, Math.ceil(list.length / PAGE))
   const at = Math.min(page, pages)
-  const countOf = (r: Rarity) => {
-    const of = (all ?? []).filter(p => p.rarity === r)
-    return `${of.filter(p => owned[p.id]).length}/${of.length}`
-  }
   const filter = <T,>(set: (v: T) => void) => (v: T) => (set(v), setPage(1))
   const classic = Object.keys(owned).filter(id => !isCommunity(id) && owned[id])
   if (!all) return <div className="flex flex-col items-center gap-2 py-16 text-[13px] text-text-muted"><Spinner />Reading the catalogue of codex-pets.net…</div>
@@ -644,7 +811,7 @@ function Collection({ state }: { state: Pets }) {
         <button className={chip(!only)} onClick={() => filter(setOnly)(null)}>All</button>
         {RARITIES.map(r => (
           <button key={r} className={chip(only === r)} onClick={() => filter(setOnly)(only === r ? null : r)}>
-            <i className="size-2 rounded-full" style={{ background: RARITY_COLOR[r] }} />{RARITY_NAME[r]}<span className="text-faint tabular-nums">{countOf(r)}</span>
+            <i className="size-2 rounded-full" style={{ background: RARITY_COLOR[r] }} />{RARITY_NAME[r]}<span className="text-faint tabular-nums">{counts[r]}</span>
           </button>
         ))}
         {state.active && <Button variant="outline" className="ml-auto h-7 text-[12px]" onClick={() => void choosePet(null)}>Put {petName(state.active)} away</Button>}
@@ -659,35 +826,10 @@ function Collection({ state }: { state: Pets }) {
         </label>
       </div>
       <div className="grid grid-cols-[repeat(auto-fill,minmax(112px,1fr))] gap-2">
-        {list.slice((at - 1) * PAGE, at * PAGE).map(p => {
-          const count = owned[p.id] ?? 0
-          const isOut = state.active === p.id || state.buddy === p.id
-          const isHome = state.community.some(c => `community:${c.id}` === p.id)
-          const lv = levelOf(state.xp[p.id] ?? 0).level
-          return (
-            <button key={p.id} disabled={!count} onClick={() => void choosePet(isOut ? null : p.id, state.buddy === p.id ? "buddy" : "active")}
-              title={count ? (isOut ? "On the board. Click to put it away" : "Take it out on the board") : `${RARITY_NAME[p.rarity]} · ${p.category}: not found yet, it comes out of a pack`}
-              className={cn("relative flex flex-col items-center overflow-hidden rounded-[10px] border bg-surface px-1 pt-2 pb-1.5 transition-[transform,border-color] duration-150",
-                count ? "border-line hover:-translate-y-0.5 hover:border-[var(--rarity)]" : "cursor-default border-dashed border-line",
-                isOut && "border-[var(--rarity)] shadow-[0_0_0_2px_var(--rarity)]", count > 0 && p.rarity === "legendary" && "coll-legend")}
-              style={{ "--rarity": RARITY_COLOR[p.rarity] } as React.CSSProperties}>
-              <i className="absolute top-1.5 left-1.5 z-[1] size-2 rounded-full" style={{ background: RARITY_COLOR[p.rarity], opacity: count ? 1 : 0.45 }} />
-              {count > 1 && <span className="absolute top-1 right-1.5 z-[1] text-[10.5px] font-semibold text-text-muted tabular-nums">×{count}</span>}
-              {count > 0 && lv > 1 && <span className="absolute bottom-1 left-1.5 z-[1] text-[10px] font-bold text-text-muted tabular-nums">Lv {lv}</span>}
-              {count > 0 && !isOut && state.active && (
-                <span role="button" tabIndex={0} title="Out as the buddy of the one on the board" onClick={e => (e.stopPropagation(), void choosePet(p.id, "buddy"))}
-                  onKeyDown={e => e.key === "Enter" && (e.stopPropagation(), void choosePet(p.id, "buddy"))}
-                  className="coll-buddy absolute right-1 bottom-1 z-[1] grid size-5 place-items-center rounded-full bg-brand-soft text-brand"><PawPrint className="size-3" /></span>
-              )}
-              {count > 0 && isHome ? <PetArt id={p.id} size={70} /> : (
-                <img src={p.poster} alt="" loading="lazy" className={cn("h-[70px] w-[70px] object-contain", !count && "pet-shadow-img")} />
-              )}
-              <span className={cn("mt-0.5 w-full truncate text-center text-[11.5px]", count ? "font-medium text-text" : "text-faint")}>{count ? p.name : "???"}</span>
-              <span className="text-[9.5px] text-faint">{p.category}</span>
-              {isOut && <span className="text-[10px] font-semibold text-brand">{state.buddy === p.id ? "Buddy" : "On the board"}</span>}
-            </button>
-          )
-        })}
+        {list.slice((at - 1) * PAGE, at * PAGE).map(p => (
+          <CollectionCard key={p.id} p={p} count={owned[p.id] ?? 0} out={state.active === p.id ? "active" : state.buddy === p.id ? "buddy" : null}
+            level={levelOf(state.xp[p.id] ?? 0).level} hasActive={!!state.active} nickname={nick[p.id]} />
+        ))}
       </div>
       {list.length === 0 && <p className="m-0 py-8 text-center text-[13px] text-text-muted">{q ? "None of yours goes by that name." : "Nothing here yet."}</p>}
       {pages > 1 && (
@@ -719,6 +861,36 @@ function Collection({ state }: { state: Pets }) {
     </div>
   )
 }
+
+// One pet of the collection. Its poster, never its sprite sheet: a sheet is
+// some 14 MB once decoded, and a page of them made the dialog crawl. Off
+// screen it is not painted at all.
+const CollectionCard = memo(function CollectionCard({ p, count, out, level, hasActive, nickname }: {
+  p: CatalogPet; count: number; out: "active" | "buddy" | null; level: number; hasActive: boolean; nickname?: string
+}) {
+  const isOut = !!out
+  return (
+    <button disabled={!count} onClick={() => void choosePet(isOut ? null : p.id, out === "buddy" ? "buddy" : "active")}
+      title={count ? `${nickname ? `${p.name} · ` : ""}${isOut ? "On the board. Click to put it away" : "Take it out on the board"}` : `${RARITY_NAME[p.rarity]} · ${p.category}: not found yet, it comes out of a pack`}
+      className={cn("relative flex flex-col items-center overflow-hidden rounded-[10px] border bg-surface px-1 pt-2 pb-1.5 transition-[transform,border-color] duration-150 [contain-intrinsic-size:auto_132px] [content-visibility:auto]",
+        count ? "border-line hover:-translate-y-0.5 hover:border-[var(--rarity)]" : "cursor-default border-dashed border-line",
+        isOut && "border-[var(--rarity)] shadow-[0_0_0_2px_var(--rarity)]", count > 0 && p.rarity === "legendary" && "coll-legend")}
+      style={{ "--rarity": RARITY_COLOR[p.rarity] } as React.CSSProperties}>
+      <i className="absolute top-1.5 left-1.5 z-[1] size-2 rounded-full" style={{ background: RARITY_COLOR[p.rarity], opacity: count ? 1 : 0.45 }} />
+      {count > 1 && <span className="absolute top-1 right-1.5 z-[1] text-[10.5px] font-semibold text-text-muted tabular-nums">×{count}</span>}
+      {count > 0 && level > 1 && <span className="absolute bottom-1 left-1.5 z-[1] text-[10px] font-bold text-text-muted tabular-nums">Lv {level}</span>}
+      {count > 0 && !isOut && hasActive && (
+        <span role="button" tabIndex={0} title="Out as the buddy of the one on the board" onClick={e => (e.stopPropagation(), void choosePet(p.id, "buddy"))}
+          onKeyDown={e => e.key === "Enter" && (e.stopPropagation(), void choosePet(p.id, "buddy"))}
+          className="coll-buddy absolute right-1 bottom-1 z-[1] grid size-5 place-items-center rounded-full bg-brand-soft text-brand"><PawPrint className="size-3" /></span>
+      )}
+      <img src={p.poster} alt="" loading="lazy" decoding="async" width={70} height={70} className={cn("h-[70px] w-[70px] object-contain", !count && "pet-shadow-img")} />
+      <span className={cn("mt-0.5 w-full truncate text-center text-[11.5px]", count ? "font-medium text-text" : "text-faint")}>{count ? nickname || p.name : "???"}</span>
+      <span className="text-[9.5px] text-faint">{p.category}</span>
+      {isOut && <span className="text-[10px] font-semibold text-brand">{out === "buddy" ? "Buddy" : "On the board"}</span>}
+    </button>
+  )
+})
 
 const chip = (on: boolean) =>
   cn("inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-[12px] font-medium", on ? "border-brand bg-brand-soft text-text" : "border-line text-text-muted hover:text-text")

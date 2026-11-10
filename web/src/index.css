@@ -820,3 +820,45 @@ button:hover > .coll-buddy, .coll-buddy:focus-visible { opacity: 1; }
 .pet-walker[data-mode=fetch] .pet-tail, .pet-walker[data-mode=carry] .pet-tail { animation-duration: 0.3s; }
 .pet-ball { position: fixed; top: 0; left: 0; z-index: 43; width: 18px; height: 18px; cursor: grab; touch-action: none; will-change: transform; filter: drop-shadow(0 2px 2px rgb(0 0 0 / 0.25)); }
 .pet-ball:active { cursor: grabbing; }
+
+/* A pack torn open by hand (PetsDialog's TearPack): it floats, waiting; it
+   trembles harder the further it is torn; light leaks out of the tear; bits
+   of foil fly off it; the strip flies away in a flash and a beam of the
+   best pet's colour shoots out. */
+.tp-pack { position: relative; touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; outline: none; }
+.tp-pack:active { cursor: grabbing; }
+.tp-pack:focus-visible { box-shadow: 0 0 0 2px var(--brand); border-radius: 14px; }
+.tp-float { animation: tp-float 3.2s ease-in-out infinite; }
+@keyframes tp-float { 50% { transform: translateY(-7px) rotate(-1.2deg); } }
+.tp-tremble { animation: tp-tremble 0.08s linear infinite; }
+@keyframes tp-tremble {
+  25% { transform: translate(calc(var(--p) * 2px), calc(var(--p) * -1px)) rotate(calc(var(--p) * 0.8deg)) scale(calc(1 + var(--p) * 0.06)); }
+  75% { transform: translate(calc(var(--p) * -2px), calc(var(--p) * 1px)) rotate(calc(var(--p) * -0.8deg)) scale(calc(1 + var(--p) * 0.06)); }
+}
+.tp-pop { animation: tp-pop 0.7s cubic-bezier(0.2, 1.6, 0.4, 1); }
+@keyframes tp-pop { 0% { transform: scale(1.06); } 18% { transform: scale(1.16) translateY(6px); } 100% { transform: scale(1); } }
+.tp-aura { position: absolute; left: 50%; top: 42%; width: 560px; height: 560px; translate: -50% -50%; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--glow) 55%, transparent), transparent); transition: opacity 0.25s; }
+.tp-flash { position: absolute; inset: -40px; pointer-events: none; z-index: 5; background: radial-gradient(circle at 50% 38%, #fff, color-mix(in srgb, var(--glow) 60%, transparent) 30%, transparent 70%);
+  animation: tp-flash 0.6s ease-out forwards; }
+@keyframes tp-flash { from { opacity: 1; } to { opacity: 0; } }
+.tp-guide { animation: tp-guide 0.8s linear infinite; }
+@keyframes tp-guide { to { stroke-dashoffset: -8; } }
+.tp-hint { filter: drop-shadow(0 0 4px #fff) drop-shadow(0 0 8px #ffd45c); animation: tp-hint 1.9s cubic-bezier(0.5, 0, 0.3, 1) infinite; }
+@keyframes tp-hint { 0% { transform: translateX(8px); opacity: 0; } 15%, 80% { opacity: 1; } 100% { transform: translateX(142px); opacity: 0; } }
+.tp-spark { filter: drop-shadow(0 0 3px #fff) drop-shadow(0 0 7px var(--glow)); animation: tp-spark 0.12s linear infinite alternate; }
+@keyframes tp-spark { to { r: 5px; } }
+.tp-leak { mix-blend-mode: screen; filter: blur(2px); }
+.tp-fly { transform-box: fill-box; transform-origin: 100% 100%; animation: tp-fly 0.75s cubic-bezier(0.25, 0.6, 0.35, 1) forwards; }
+@keyframes tp-fly { to { transform: translate(60px, -180px) rotate(70deg); opacity: 0; } }
+.tp-bit { position: absolute; width: var(--s); height: var(--s); margin: calc(var(--s) / -2); border-radius: 1.5px; pointer-events: none; box-shadow: 0 0 4px rgb(255 255 255 / 0.5);
+  animation: tp-bit 0.75s cubic-bezier(0.2, 0.7, 0.3, 1) forwards; }
+@keyframes tp-bit { from { transform: rotate(var(--a)) translateY(0); opacity: 1; } to { transform: rotate(var(--a)) translateY(calc(var(--d) * -1)) rotate(220deg); opacity: 0; } }
+.tp-beam { position: absolute; left: 50%; top: calc(26px * 1.3 - 330px); width: 230px; height: 340px; translate: -50% 0; transform-origin: 50% 100%; pointer-events: none; z-index: -1;
+  background: linear-gradient(to top, #fff, var(--glow) 25%, transparent); clip-path: polygon(36% 100%, 64% 100%, 100% 0, 0 0); filter: blur(5px); mix-blend-mode: screen;
+  animation: tp-beam 0.85s ease-out forwards; }
+.tp-beam.is-held { animation: tp-beam-hold 1.1s ease-in-out infinite alternate; }
+@keyframes tp-beam { 0% { opacity: 0; transform: scaleY(0.1); } 25% { opacity: 1; } 100% { opacity: 0.15; transform: scaleY(1.05); } }
+@keyframes tp-beam-hold { from { opacity: 0.55; transform: scaleY(0.9) scaleX(0.92); } to { opacity: 1; transform: scaleY(1.08) scaleX(1.05); } }
+@media (prefers-reduced-motion: reduce) { .tp-float, .tp-tremble, .tp-hint, .tp-guide { animation: none; } }
+.tp-pack:hover .pack-holo { opacity: 0.75; }

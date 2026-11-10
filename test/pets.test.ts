@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { rate } from "../lib/community-pets"
-import { arrive, grow, isXpEvent, newlyMerged, pickFrom, roll, rollRarities, speedUp } from "../lib/pets"
+import { arrive, grow, isXpEvent, newlyMerged, pickFrom, pickNew, roll, rollRarities, speedUp } from "../lib/pets"
 import { XP, levelOf } from "../lib/pet-levels"
 
 const DAY = 24 * 3600_000
@@ -65,6 +65,18 @@ test("codex-pets.net's pets: anime girls are common; the rest as rare as they ar
   expect(rated.get("p60")!.rarity).toBe("common")
   expect(pickFrom([...rated.values()], "legendary", () => 0)!.rarity).toBe("legendary")
   expect(pickFrom([rated.get("p60")!], "epic", () => 0)!.id).toBe("p60") // the next one down when none
+})
+
+test("a pack never holds a pet you have while there is another to find", () => {
+  const e = (id: string, rarity: "common" | "rare" | "epic" | "legendary") => ({ id, name: id, description: "", poster: "", kind: "animal", tags: [], likes: 0, views: 0, category: "Animal", rarity })
+  const catalog = [e("c1", "common"), e("c2", "common"), e("r1", "rare"), e("e1", "epic")]
+  expect(pickNew(catalog, "common", () => 0, new Set(["c1"]))!.id).toBe("c2")
+  expect(pickNew(catalog, "common", () => 0, new Set(["c1", "c2"]))!.id).toBe("r1") // all of it yours: the nearest rarity up
+  expect(pickNew(catalog, "epic", () => 0, new Set(["e1"]))!.id).toBe("r1") // none up: the nearest down
+  expect(pickNew(catalog, "rare", () => 0, new Set(["c1", "c2", "r1", "e1"]))!.id).toBe("r1") // every one yours: again
+  expect(pickNew(catalog, "common", () => 0, new Set(["c1"]), new Set(["c2"]))!.id).toBe("r1") // nor one already tried
+  const owned = Object.fromEntries(roll(() => 0.3).map(p => [p.id, 1]))
+  for (const p of roll(() => Math.random(), 1, owned)) expect(owned[p.id]).toBeUndefined()
 })
 
 test("a merged PR counts once, only one the pets saw open", () => {
