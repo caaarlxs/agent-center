@@ -168,13 +168,17 @@ function pick<T extends string>(odds: Record<T, number>, random: () => number): 
 export const rollRarities = (random: () => number, level = 1): Rarity[] =>
   Array.from({ length: PER_PACK }, (_, i) => pick(luckyOdds(i === PER_PACK - 1 ? LAST_ODDS : ODDS, level), random))
 
-// The pets of one pack, drawn here.
-export function roll(random: () => number, level = 1): { id: string; rarity: Rarity }[] {
+// The pets of one pack, drawn here: none you have (nor twice in it) while
+// there are others of that rarity to draw.
+export function roll(random: () => number, level = 1, owned: Record<string, number> = {}): { id: string; rarity: Rarity }[] {
+  const taken = new Set(Object.keys(owned).filter(id => owned[id]))
   return rollRarities(random, level).map(rarity => {
     const skins = SKINS.filter(k => k.rarity === rarity)
-    const skin = skins[Math.floor(random() * skins.length)]!
-    const species = SPECIES[Math.floor(random() * SPECIES.length)]!
-    return { id: petId(species, skin.key), rarity }
+    let id = ""
+    for (let attempt = 0; attempt < 40 && (!id || taken.has(id)); attempt++)
+      id = petId(SPECIES[Math.floor(random() * SPECIES.length)]!, skins[Math.floor(random() * skins.length)]!.key)
+    taken.add(id)
+    return { id, rarity }
   })
 }
 
@@ -187,16 +191,31 @@ export function pickFrom(catalog: Entry[], rarity: Rarity, random: () => number,
   return null
 }
 
+// A pet of the catalogue you do not have yet (nor tried): of that rarity, or
+// the nearest that still has one, higher first; only when you have them all,
+// one again.
+export function pickNew(catalog: Entry[], rarity: Rarity, random: () => number, have: Set<string>, tried: Set<string> = new Set()) {
+  const skip = new Set([...have, ...tried])
+  const at = RARITIES.indexOf(rarity)
+  const order = [at, ...RARITIES.map((_, r) => r).filter(r => r > at), ...RARITIES.map((_, r) => r).filter(r => r < at).reverse()]
+  for (const r of order) {
+    const pool = catalog.filter(p => p.rarity === RARITIES[r] && !skip.has(p.id))
+    if (pool.length) return pool[Math.floor(random() * pool.length)]!
+  }
+  return pickFrom(catalog, rarity, random, tried)
+}
+
 // Each pet of a pack from codex-pets.net, brought home; a pet whose files do
 // not come is swapped for another of its rarity. Null when none can be had.
-async function communityPack(level: number): Promise<Pull[] | null> {
+async function communityPack(level: number, owned: Record<string, number>): Promise<Pull[] | null> {
   const catalog = await communityCatalog()
   if (!catalog.length) return null
   const pulls: Pull[] = []
   const tried = new Set<string>()
+  const have = new Set(Object.keys(owned).filter(id => owned[id] && id.startsWith(COMMUNITY)).map(id => id.slice(COMMUNITY.length)))
   for (const rarity of rollRarities(Math.random, level)) {
     for (let attempt = 0; attempt < 4; attempt++) {
-      const entry = pickFrom(catalog, rarity, Math.random, tried)
+      const entry = pickNew(catalog, rarity, Math.random, have, tried)
       if (!entry) return null
       tried.add(entry.id)
       const home = await bringHome(entry)
@@ -228,7 +247,7 @@ export async function openPack() {
   const s = await load()
   if (s.packs < 1) return "No pack to open"
   const luck = Math.max(1, ...[s.active, s.buddy].map(p => (p ? levelOf(s.xp[p] ?? 0).level : 1))) // the pets out bring their luck, the higher
-  const drawn = (await communityPack(luck).catch(() => null)) ?? roll(Math.random, luck).map(p => ({ ...p, isNew: false }))
+  const drawn = (await communityPack(luck, s.owned).catch(() => null)) ?? roll(Math.random, luck, s.owned).map(p => ({ ...p, isNew: false }))
   s.packs--
   s.opened++
   const pulls: Pull[] = drawn.map(p => {
