@@ -29,6 +29,7 @@ import { PetArt, RARITY_COLOR, nicknames, petName, realName, setNickname } from 
 import { nextWaiting, turnsEnded } from "./board-sense"
 import { FOODS, careOf, cares, energyOf, fullnessOf, setCare } from "./care"
 import { Parade, useArrowCode } from "./Parade"
+import { SIZES, resize, sizes } from "./size"
 import { conditionOf, earn, pets, rarityOf, watchPets } from "./pets"
 
 type Mode = "idle" | "walk" | "sleep" | "drag" | "cheer" | "alert" | "eat" | "work" | "wait" | "fetch" | "carry" | "deliver" | "shoved"
@@ -180,6 +181,7 @@ function Walker({ id, slot, other, color }: { id: string; slot: "active" | "budd
   const isStill = matchMedia("(prefers-reduced-motion: reduce)").matches
   // Its level and stage; a level up is cheered, a new stage more.
   const xp = pets.use()?.xp[id] ?? 0
+  const size = sizes.use()[id] ?? 1 // as you set it in its menu
   const lv = levelOf(xp)
   const lastLevel = useRef(lv.level)
   const [grew, setGrew] = useState(0) // a burst when it levels up
@@ -740,7 +742,7 @@ function Walker({ id, slot, other, color }: { id: string; slot: "active" | "budd
   const shift = Math.min(innerWidth - 126, Math.max(126, pos.current.x)) - pos.current.x // and stays in the window
   return (
     <div ref={el} data-mode={mode === "deliver" ? "walk" : mode} data-mood={isSad ? "sad" : undefined} data-stage={lv.stage} className={cn("pet-walker fixed top-0 left-0 z-[42] select-none", isTransforming && "is-transforming")}
-      style={{ width: SIZE, height: SIZE, "--rarity": color, "--grow": GROW[lv.stage] } as React.CSSProperties}>
+      style={{ width: SIZE, height: SIZE, "--rarity": color, "--grow": GROW[lv.stage], "--size": size } as React.CSSProperties}>
       <Evolution stage={lv.stage} />
       {isTransforming && <i className="pet-transform-flash" aria-hidden />}
       {grew > 0 && <div key={grew} className="pet-levelup" aria-hidden>{Array.from({ length: 10 }, (_, i) => <i key={i} style={{ "--a": `${i * 36}deg` } as React.CSSProperties} />)}</div>}
@@ -755,7 +757,8 @@ function Walker({ id, slot, other, color }: { id: string; slot: "active" | "budd
       {(mode === "work" || mode === "wait" || (focusUntil && mode === "idle")) && <Desk isTyping={mode === "work" || !!focusUntil} />}
       {food && <div className="pet-food" aria-hidden>{food}</div>}
       {isMenuOpen && (
-        <PetMenu name={name} ownName={realName(id)} color={color}
+        <PetMenu name={name} ownName={realName(id)} color={color} size={size}
+          onResize={dir => (resize(id, dir), say(dir > 0 ? pick(["Bigger!", "Look at me!", "Whoa, tall"]) : pick(["Tiny!", "Smaller…", "Cozy"]), 1200))}
           onRename={n => (setNickname(id, n), say(n.trim() && n.trim() !== realName(id) ? `I'm ${n.trim()} now!` : "Back to my own name", 1800))} fullness={fullness} energy={energy} isAsleep={mode === "sleep"} canNotify={care.canNotify} isUp={isUp} shift={shift}
           cards={cards} focus={focus} onFeed={feed} onSleep={sleepOrWake} onWork={work}
           onPet={() => (closeMenu(), earn("petted", `petted:${id}:${Math.floor(Date.now() / 600_000)}`, id), moment("cheer", pick(["♥", "Hehe", "Purr…", "Again!", ...LINES]), 1200))}
@@ -874,6 +877,7 @@ function PetMenu(props: {
   onBall: () => void; hasBall: boolean
   level: ReturnType<typeof levelOf>; condition: "well" | "ok" | "poorly"; waiting: Card | null; focusUntil: number | null
   onBring: () => void; onFocus: () => void
+  size: number; onResize: (dir: 1 | -1) => void
 }) {
   const [isPicking, setPicking] = useState(false)
   const [draft, setDraft] = useState<string | null>(null) // its new name, being typed
@@ -888,7 +892,7 @@ function PetMenu(props: {
     </button>
   )
   return (
-    <div className={cn("pet-menu", props.isUp ? "top-[calc(100%+8px)]" : "bottom-[calc(100%+8px)]")} style={{ marginLeft: props.shift }} onPointerDown={e => e.stopPropagation()}>
+    <div className={cn("pet-menu", props.isUp ? "top-[calc(100%+8px)]" : "bottom-[calc(100%+8px+var(--lift))]")} style={{ marginLeft: props.shift }} onPointerDown={e => e.stopPropagation()}>
       <div className="flex items-center gap-2 px-1 pb-1.5">
         <i className="size-2 rounded-full" style={{ background: props.color }} />
         {draft !== null ? (
@@ -947,6 +951,16 @@ function PetMenu(props: {
             {row("⏱", props.focusUntil ? "Stop the focus" : "Focus 25 min", props.onFocus, props.focusUntil ? <Countdown until={props.focusUntil} /> : undefined)}
             {row(props.canNotify ? "🔔" : "🔕", props.canNotify ? "Notifications on" : "Notifications off", props.onNotify)}
             {row("✏️", "Rename", () => setDraft(props.name))}
+            <div className={cn(menuBtn, "hover:bg-transparent")}>
+              <span className="w-5 text-center text-[14px]">↕</span>Size
+              <span className="ml-auto flex items-center gap-1">
+                <button className="grid size-6 place-items-center rounded-md text-[15px] hover:bg-hover disabled:opacity-35" onClick={() => props.onResize(-1)} onPointerDown={e => e.stopPropagation()}
+                  disabled={props.size <= SIZES[0]!} aria-label="Smaller">−</button>
+                <span className="w-9 text-center text-[11.5px] text-text-muted tabular-nums">{Math.round(props.size * 100)}%</span>
+                <button className="grid size-6 place-items-center rounded-md text-[15px] hover:bg-hover disabled:opacity-35" onClick={() => props.onResize(1)} onPointerDown={e => e.stopPropagation()}
+                  disabled={props.size >= SIZES.at(-1)!} aria-label="Bigger">+</button>
+              </span>
+            </div>
             {row("🐾", "Your pets", props.onPets)}
           </>
         )}

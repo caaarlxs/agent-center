@@ -518,7 +518,7 @@ html[data-theme-switch]::view-transition-new(root) { animation: theme-curtain 60
 .pet-walker[data-mode=drag] .pet-foot-l, .pet-walker[data-mode=drag] .pet-foot-r { animation: pet-step 0.25s infinite; }
 .pet-walker[data-mode=drag] .pet-shadow { opacity: 0.05; }
 .pet-bubble {
-  position: absolute; bottom: calc(100% + 4px); left: 50%; translate: -50% 0; white-space: nowrap; pointer-events: none;
+  position: absolute; bottom: calc(100% + 4px + max(0px, var(--lift, 0px))); left: 50%; translate: -50% 0; white-space: nowrap; pointer-events: none;
   padding: 4px 9px; border-radius: 10px; background: var(--raised, var(--surface)); color: var(--text); font-size: 12px; font-weight: 600;
   box-shadow: var(--shadow-pop); animation: pet-pop 0.25s cubic-bezier(0.3, 1.5, 0.6, 1);
 }
@@ -667,8 +667,13 @@ button:hover > .coll-buddy, .coll-buddy:focus-visible { opacity: 1; }
 .pet-body-wrap:has(.pet-sprite) { transform: none; }
 @media (prefers-reduced-motion: reduce) { .pet-sprite { animation: none; } }
 /* A pet's stage (lib/pet-levels.ts): its size, a glow on the ground, two sparks circling it, a crown. */
-.pet-grow { position: relative; transform: scale(var(--grow, 1)); transform-origin: 50% 100%; transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1); }
-.pet-evo { position: absolute; inset: 0; pointer-events: none; }
+/* --size: as you set it in its menu, on top of its stage's --grow. --lift:
+   how far above its box the pet now reaches; what shows above it goes as high. */
+.pet-walker { --lift: calc((var(--grow, 1) * var(--size, 1) - 1) * 60px); }
+.pet-walker:has(.pet-sprite) { --lift: calc(var(--grow, 1) * var(--size, 1) * 78px - 60px); } /* a sheet's pet stands 1.3 times its box */
+.pet-body-wrap::before { content: ""; position: absolute; left: 50%; bottom: 0; translate: -50% 0; width: calc(60px * var(--grow, 1) * var(--size, 1)); height: calc(60px * var(--grow, 1) * var(--size, 1)); }
+.pet-grow { position: relative; transform: scale(calc(var(--grow, 1) * var(--size, 1))); transform-origin: 50% 100%; transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.pet-evo { position: absolute; inset: 0; pointer-events: none; transform: scale(var(--size, 1)); transform-origin: 50% 100%; }
 .pet-evo-glow { position: absolute; left: 50%; bottom: -3px; width: 64px; height: 12px; translate: -50% 0; border-radius: 50%; background: radial-gradient(closest-side, color-mix(in srgb, var(--rarity) 55%, transparent), transparent); animation: pet-glow 2.6s ease-in-out infinite; }
 .pet-evo-spark { position: absolute; left: 50%; top: 45%; width: 5px; height: 5px; margin: -2.5px; border-radius: 50%; background: #fff; box-shadow: 0 0 6px 2px var(--rarity); animation: pet-orbit 3.2s linear infinite; }
 .pet-walker[data-stage=legend] .pet-evo-glow { width: 80px; animation-duration: 1.8s; }
