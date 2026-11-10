@@ -1,20 +1,23 @@
 import { expect, test } from "bun:test"
 import { rate } from "../lib/community-pets"
-import { arrive, pickFrom, roll, speedUp } from "../lib/pets"
+import { arrive, grow, isXpEvent, newlyMerged, pickFrom, roll, speedUp } from "../lib/pets"
+import { XP, levelOf } from "../lib/pet-levels"
 
 const DAY = 24 * 3600_000
 
-test("packs pile up: each one that arrives draws when the next will, within two weeks", () => {
+const HOUR = 3600_000
+
+test("packs pile up: each one that arrives draws when the next will, 4 to 30 hours on", () => {
   const s = { packs: 0, nextAt: 0 }
-  expect(arrive(s, 30 * DAY, () => 0.5)).toBe(5) // at 0, then every ~7 days
+  expect(arrive(s, 3 * DAY, () => 0.5)).toBe(5) // at 0, then every 17 hours
   expect(s.packs).toBe(5)
-  expect(s.nextAt).toBeGreaterThan(30 * DAY)
+  expect(s.nextAt).toBeGreaterThan(3 * DAY)
   const before = s.nextAt
   expect(arrive(s, before - 1, () => 0.5)).toBe(0)
   expect(s.nextAt).toBe(before) // not drawn again until it comes
   const late = { packs: 0, nextAt: 0 }
   arrive(late, 0, () => 1)
-  expect(late.nextAt).toBe(14 * DAY)
+  expect(late.nextAt).toBe(30 * HOUR)
 })
 
 test("a pack: three pets, the last rare or better", () => {
@@ -26,15 +29,15 @@ test("a pack: three pets, the last rare or better", () => {
   expect(roll(() => 0.999).map(p => p.rarity)).toEqual(["legendary", "legendary", "legendary"])
 })
 
-test("each PR opened since the pets began counting brings the next pack a day nearer, once", () => {
+test("each PR opened since the pets began counting brings the next pack six hours nearer, once", () => {
   const s = { nextAt: 10 * DAY, prsSince: 5 * DAY, prsSeen: [] as string[], prBoosts: 0 }
   const pr = (url: string, day: number | null) => ({ url, createdAt: day === null ? null : new Date(day * DAY).toISOString() })
-  expect(speedUp(s, [pr("old", 4), pr("unknown", null)], 6 * DAY)).toBe(false) // opened before, or when not known
-  expect(speedUp(s, [pr("a", 6), pr("b", 6), pr("a", 6)], 6 * DAY)).toBe(true)
-  expect(s.nextAt).toBe(8 * DAY)
+  expect(speedUp(s, [pr("old", 4), pr("unknown", null)], 6 * DAY)).toBe(0) // opened before, or when not known
+  expect(speedUp(s, [pr("a", 6), pr("b", 6), pr("a", 6)], 6 * DAY)).toBe(2)
+  expect(s.nextAt).toBe(10 * DAY - 12 * HOUR)
   expect(s.prBoosts).toBe(2)
-  expect(speedUp(s, [pr("a", 6), pr("b", 6)], 6 * DAY)).toBe(false) // counted once
-  speedUp(s, ["c", "d", "e", "f"].map(u => pr(u, 7)), 7.5 * DAY)
+  expect(speedUp(s, [pr("a", 6), pr("b", 6)], 6 * DAY)).toBe(0) // counted once
+  speedUp(s, Array.from({ length: 20 }, (_, i) => pr(`c${i}`, 7)), 7.5 * DAY)
   expect(s.nextAt).toBe(7.5 * DAY) // never before now: it arrives at once
 })
 
@@ -53,4 +56,33 @@ test("codex-pets.net's pets: anime girls are common; the rest as rare as they ar
   expect(rated.get("p60")!.rarity).toBe("common")
   expect(pickFrom([...rated.values()], "legendary", () => 0)!.rarity).toBe("legendary")
   expect(pickFrom([rated.get("p60")!], "epic", () => 0)!.id).toBe("p60") // the next one down when none
+})
+
+test("a merged PR counts once, only one the pets saw open", () => {
+  const s = { wasOpen: [] as string[], mergedSeen: [] as string[] }
+  const pr = (url: string, isMerged: boolean) => ({ url, createdAt: null, isMerged })
+  expect(newlyMerged(s, [pr("old", true), pr("m", false)])).toBe(0) // merged before: never
+  expect(newlyMerged(s, [pr("old", true), pr("m", true)])).toBe(1)
+  expect(newlyMerged(s, [pr("m", true)])).toBe(0) // once
+  expect(newlyMerged(s, null)).toBe(0)
+})
+
+test("the pets out grow; the one a page names, alone; each fifth level brings a pack", () => {
+  const s = { xp: {} as Record<string, number>, packs: 0, active: "a", buddy: "b" }
+  grow(s, "turn", "ok")
+  expect(s.xp).toEqual({ a: XP.turn, b: XP.turn })
+  grow(s, "focusTurn", "well", "b")
+  expect(s.xp.b).toBe(XP.turn + 30)
+  expect(grow(s, "fed", "ok", "away")).toBe(false) // not out: nothing
+  s.xp.a = 0
+  for (let i = 0; i < 100; i++) grow(s, "prMerged", "ok", "a")
+  expect(s.packs).toBe(Math.floor(levelOf(s.xp.a!).level / 5))
+})
+
+test("a page's events: known kinds only, never the PRs the server counts itself", () => {
+  expect(isXpEvent({ key: "turn:x:1", kind: "turn" })).toBe(true)
+  expect(isXpEvent({ key: "k", kind: "fed", pet: "a", condition: "well" })).toBe(true)
+  expect(isXpEvent({ key: "k", kind: "prMerged" })).toBe(false)
+  expect(isXpEvent({ key: "k", kind: "magic" })).toBe(false)
+  expect(isXpEvent({ key: "k", kind: "fed", condition: "great" })).toBe(false)
 })

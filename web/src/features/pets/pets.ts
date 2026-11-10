@@ -1,15 +1,17 @@
 // The pets as the server keeps them (lib/pets.ts): the packs to open, the pets
-// you have and the one on the board. Asked again now and then and when the
+// you have, the one on the board and its buddy, and the XP each has earned. Asked again now and then and when the
 // window comes back, so a pack that arrived shows (with a toast) without a
 // reload; when the next one comes the page never knows.
 import { toast } from "sonner"
 import { get, post } from "@/lib/api"
 import { createStore } from "@/lib/store"
 import { openDialog } from "@/app/open-dialog"
+import type { Condition, XpKind } from "@server/pet-levels"
 import { COMMUNITY, setAdopted, type Adopted, type Rarity } from "./art"
+import { careOf, energyOf, fullnessOf } from "./care"
 
 export type Skin = { key: string; rarity: Rarity }
-export type Pets = { packs: number; owned: Record<string, number>; active: string | null; opened: number; prBoosts: number; species: string[]; skins: Skin[]; perPack: number; community: Adopted[] }
+export type Pets = { packs: number; owned: Record<string, number>; active: string | null; buddy: string | null; xp: Record<string, number>; opened: number; prBoosts: number; species: string[]; skins: Skin[]; perPack: number; community: Adopted[] }
 export type Pull = { id: string; rarity: Rarity; isNew: boolean; name?: string; category?: string }
 
 export const pets = createStore<Pets | null>(null)
@@ -45,9 +47,32 @@ export async function openPack(): Promise<Pull[]> {
   return pulls
 }
 
-export async function choosePet(id: string | null) {
-  const res = await post<Omit<Pets, "species" | "skins" | "perPack" | "community">>("/api/pets/choose", { id })
+// The pet out on the board (slot "buddy": the one with it).
+export async function choosePet(id: string | null, slot: "active" | "buddy" = "active") {
+  const res = await post<Omit<Pets, "species" | "skins" | "perPack" | "community">>("/api/pets/choose", { id, slot })
   pets.set({ ...pets.get()!, ...res })
+}
+
+// How a pet is doing, for what it earns: fed and rested earns more, hungry or tired less.
+export function conditionOf(pet: string): Condition {
+  const c = careOf(pet)
+  const [food, energy] = [fullnessOf(c), energyOf(c)]
+  return food < 25 || energy < 20 ? "poorly" : food > 60 && energy > 50 ? "well" : "ok"
+}
+
+// What the pets did with you, sent to the board a moment later, a few at a
+// time; the key makes each count once, from however many pages.
+type XpEvent = { key: string; kind: XpKind; pet?: string; condition?: Condition }
+let queue: XpEvent[] = []
+let flushing: number | null = null
+export function earn(kind: XpKind, key: string, pet?: string) {
+  queue.push({ key, kind, pet, condition: pet ? conditionOf(pet) : undefined })
+  flushing ??= window.setTimeout(() => {
+    flushing = null
+    const events = queue.splice(0, 50)
+    void post<Omit<Pets, "species" | "skins" | "perPack" | "community">>("/api/pets/xp", { events })
+      .then(res => pets.set({ ...pets.get()!, ...res }), () => {})
+  }, 1500)
 }
 
 export const rarityOf = (p: Pets, id: string): Rarity =>

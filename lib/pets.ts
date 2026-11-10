@@ -1,8 +1,10 @@
-// Pets: a little creature that walks about the board. They come only out of
-// packs, and packs come by chance: the first is there from the start; each
-// one, when it arrives, draws when the next will (any time in the next two
-// weeks), so nobody knows, the page included (it is never told), and packs
-// left closed pile up. A pack holds three pets, the last of them rare or
+// Pets: a little creature that walks about the board (two at once at most).
+// They come only out of packs, and packs come by chance: the first is there
+// from the start; each one, when it arrives, draws when the next will (some
+// time between 4 and 30 hours on), so nobody knows, the page included (it is
+// never told), and packs left closed pile up. A pet out on the board grows
+// with your work (lib/pet-levels.ts): every fifth level it reaches brings a
+// pack too. A pack holds three pets, the last of them rare or
 // better: pets of codex-pets.net, rated by community-pets.ts. Each PR a
 // session opens brings the next pack a day nearer: counted once, and only
 // one opened after the pets began counting. The pets drawn here (a species
@@ -14,13 +16,15 @@ import { DATA_DIR } from "./config"
 import { readJson, writeJsonAtomic } from "./files"
 import { latestState } from "./live"
 import { adopted, bringHome, communityCatalog, type Entry } from "./community-pets"
+import { type Condition, type XpKind, award, isXpKind, levelOf, packsBetween } from "./pet-levels"
 
 const PATH = join(DATA_DIR, "pets.json")
 const HOUR = 3600_000
-const MIN_WAIT = 2 * HOUR
-const MAX_WAIT = 14 * 24 * HOUR
+const MIN_WAIT = 4 * HOUR
+const MAX_WAIT = 30 * HOUR
 const PER_PACK = 3
-const PR_BOOST = 24 * HOUR
+const PR_BOOST = 6 * HOUR
+const XP_KEYS_KEPT = 3000
 const PRS_KEPT = 1000
 
 export const SPECIES = [
@@ -55,6 +59,11 @@ type State = {
   nextAt: number // when the next one arrives: drawn when the last one did, never shown
   owned: Record<string, number> // pet id → how many came out
   active: string | null // the one on the board
+  buddy: string | null // a second one with it
+  xp: Record<string, number> // pet id → all it has earned
+  xpSeen: string[] // the events already counted (a page sends each once, two pages too)
+  wasOpen: string[] // PRs the pets saw open: only their merge counts
+  mergedSeen: string[] // PRs whose merge already counted
   opened: number
   prsSince: number // PRs opened before this do not count
   prsSeen: string[] // the ones that counted
@@ -73,14 +82,21 @@ async function load(now = Date.now()): Promise<State> {
     const saved = (await readJson(PATH).catch(() => null)) as Partial<State> | null
     state = saved && typeof saved.nextAt === "number"
       ? {
-          packs: saved.packs ?? 0, nextAt: saved.nextAt, owned: saved.owned ?? {}, active: saved.active ?? null, opened: saved.opened ?? 0,
+          packs: saved.packs ?? 0, owned: saved.owned ?? {}, active: saved.active ?? null, opened: saved.opened ?? 0,
           prsSince: saved.prsSince ?? now, prsSeen: saved.prsSeen ?? [], prBoosts: saved.prBoosts ?? 0,
+          buddy: saved.buddy ?? null, xp: saved.xp ?? {}, xpSeen: saved.xpSeen ?? [], wasOpen: saved.wasOpen ?? [], mergedSeen: saved.mergedSeen ?? [],
+          // A wait drawn when packs came up to two weeks apart: no longer than one is now.
+          nextAt: Math.min(saved.nextAt, now + MAX_WAIT),
         }
-      : { packs: 1, nextAt: now + wait(Math.random), owned: {}, active: null, opened: 0, prsSince: now, prsSeen: [], prBoosts: 0 } // the first, from the start
+      : { packs: 1, nextAt: now + wait(Math.random), owned: {}, active: null, buddy: null, opened: 0, prsSince: now, prsSeen: [], prBoosts: 0, xp: {}, xpSeen: [], wasOpen: [], mergedSeen: [] } // the first, from the start
     if (!saved || saved.prsSince === undefined) await save()
   }
-  const sped = speedUp(state, await prUrls(), now)
-  if (arrive(state, now, Math.random) || sped) await save()
+  const prs = await prUrls()
+  const opened = speedUp(state, prs, now)
+  const merged = newlyMerged(state, prs)
+  for (let i = 0; i < opened; i++) grow(state, "prOpened", "ok")
+  for (let i = 0; i < merged; i++) grow(state, "prMerged", "ok")
+  if (arrive(state, now, Math.random) || opened || merged) await save()
   return state
 }
 
@@ -98,21 +114,45 @@ export function arrive(s: Pick<State, "packs" | "nextAt">, now: number, random: 
 }
 
 // Every PR the board knows of, open or merged, with when it was opened.
-type Opened = { url: string; createdAt?: string | null }
+type Opened = { url: string; createdAt?: string | null; isMerged?: boolean }
 async function prUrls(): Promise<Opened[] | null> {
   const snap = await latestState().catch(() => null)
-  return snap ? snap.cards.flatMap(c => [...(c.prs ?? []), ...(c.mergedPrs ?? [])]) : null
+  return snap ? snap.cards.flatMap(c => [...(c.prs ?? []), ...(c.mergedPrs ?? []).map(p => ({ ...p, isMerged: true }))]) : null
 }
 
-// Each PR opened since the pets began counting, not counted before, takes a
-// day off the wait (never past now); answers whether anything changed.
+// The PRs merged since last time, each counted once: how many. Only a PR
+// the pets saw open counts, so one merged before (or while the board was
+// still reading its PRs) never does.
+export function newlyMerged(s: Pick<State, "wasOpen" | "mergedSeen">, prs: Opened[] | null) {
+  const list = prs ?? []
+  const open = list.filter(p => !p.isMerged && !s.wasOpen.includes(p.url)).map(p => p.url)
+  if (open.length) s.wasOpen = [...s.wasOpen, ...new Set(open)].slice(-PRS_KEPT)
+  const fresh = [...new Set(list.filter(p => p.isMerged && s.wasOpen.includes(p.url) && !s.mergedSeen.includes(p.url)).map(p => p.url))]
+  if (fresh.length) s.mergedSeen = [...s.mergedSeen, ...fresh].slice(-PRS_KEPT)
+  return fresh.length
+}
+
+// XP for the pets out on the board (the one a page names, if it is out), and
+// a pack for each fifth level one of them reaches.
+export function grow(s: Pick<State, "xp" | "packs" | "active" | "buddy">, kind: XpKind, condition: Condition, only?: string) {
+  const out = [s.active, s.buddy].filter((p): p is string => !!p && (!only || p === only))
+  for (const pet of out) {
+    const before = levelOf(s.xp[pet] ?? 0).level
+    s.xp[pet] = (s.xp[pet] ?? 0) + award(kind, condition)
+    s.packs += packsBetween(before, levelOf(s.xp[pet]!).level)
+  }
+  return out.length > 0
+}
+
+// Each PR opened since the pets began counting, not counted before, takes six
+// hours off the wait (never past now); answers how many there were.
 export function speedUp(s: Pick<State, "nextAt" | "prsSince" | "prsSeen" | "prBoosts">, prs: Opened[] | null, now: number) {
   const fresh = [...new Set((prs ?? []).filter(p => p.createdAt && Date.parse(p.createdAt) > s.prsSince && !s.prsSeen.includes(p.url)).map(p => p.url))]
-  if (!fresh.length) return false
+  if (!fresh.length) return 0
   s.prsSeen = [...s.prsSeen, ...fresh].slice(-PRS_KEPT)
   s.prBoosts += fresh.length
   s.nextAt = Math.max(now, s.nextAt - fresh.length * PR_BOOST)
-  return true
+  return fresh.length
 }
 
 function pick<T extends string>(odds: Record<T, number>, random: () => number): T {
@@ -167,7 +207,7 @@ async function communityPack(): Promise<Pull[] | null> {
 }
 
 // What the page sees: never when the next pack comes.
-const shown = (s: State) => ({ packs: s.packs, owned: s.owned, active: s.active, opened: s.opened, prBoosts: s.prBoosts })
+const shown = (s: State) => ({ packs: s.packs, owned: s.owned, active: s.active, buddy: s.buddy, xp: s.xp, opened: s.opened, prBoosts: s.prBoosts })
 
 const COMMUNITY = "community:"
 
@@ -197,10 +237,42 @@ export async function openPack() {
   return { pulls, ...shown(s), community: await adopted() }
 }
 
-export async function choosePet(id: unknown) {
+// The pet out on the board, or (slot "buddy") the one with it; one pet is never both.
+export async function choosePet(id: unknown, slot: unknown = "active") {
   const s = await load()
   if (id !== null && !(typeof id === "string" && s.owned[id])) return "You do not have that pet"
-  s.active = id
+  if (slot === "buddy") {
+    if (id !== null && id === s.active) return "That pet is already out"
+    s.buddy = id
+  } else {
+    s.active = id
+    if (id !== null && id === s.buddy) s.buddy = null
+    if (id === null && s.buddy) [s.active, s.buddy] = [s.buddy, null] // the buddy stays out alone
+  }
   await save()
+  return shown(s)
+}
+
+// What the pets did with you, as a page saw it: each event once (by its
+// key), worth what its kind is worth here (lib/pet-levels.ts).
+export type XpEvent = { key: string; kind: XpKind; pet?: string; condition?: Condition }
+const CONDITIONS = new Set(["well", "ok", "poorly"])
+export const isXpEvent = (v: any): v is XpEvent =>
+  !!v && typeof v.key === "string" && v.key.length <= 200 && isXpKind(v.kind) && !["prOpened", "prMerged"].includes(v.kind)
+  && (v.pet === undefined || typeof v.pet === "string") && (v.condition === undefined || CONDITIONS.has(v.condition))
+
+export async function gainXp(events: unknown) {
+  if (!Array.isArray(events) || events.length > 50 || !events.every(isXpEvent)) return "Not a list of pet events"
+  const s = await load()
+  const seen = new Set(s.xpSeen)
+  let changed = false
+  for (const e of events) {
+    if (seen.has(e.key)) continue
+    seen.add(e.key)
+    s.xpSeen.push(e.key)
+    changed = grow(s, e.kind, e.condition ?? "ok", e.pet) || changed
+  }
+  s.xpSeen = s.xpSeen.slice(-XP_KEYS_KEPT)
+  if (changed) await save()
   return shown(s)
 }

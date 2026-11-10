@@ -565,7 +565,19 @@ html[data-theme-switch]::view-transition-new(root) { animation: theme-curtain 60
 @keyframes pet-rays { to { transform: rotate(360deg); } }
 .pet-card.is-shown .pet-card-front > svg { animation: pet-arrive 0.7s cubic-bezier(0.3, 1.6, 0.5, 1) 0.25s both; }
 @keyframes pet-arrive { from { transform: scale(0.3) translateY(20px); opacity: 0; } }
-@media (prefers-reduced-motion: reduce) { .pack-sheen, .pet-card-rays, .pet-card-deal, .pack-shaking { animation: none !important; } }
+/* The pack tears: its top flies off, the rest drops away. */
+.pack-tearing { display: grid; }
+.pack-tearing > span { grid-area: 1 / 1; display: block; }
+.pack-top { clip-path: inset(0 0 86% 0); animation: pack-top 0.5s cubic-bezier(0.3, 0.7, 0.4, 1) forwards; transform-origin: 85% 10%; }
+.pack-rest { clip-path: inset(14% 0 0 0); animation: pack-rest 0.5s cubic-bezier(0.5, 0, 0.75, 0) forwards; }
+@keyframes pack-top { to { transform: translate(40px, -46px) rotate(18deg); opacity: 0; } }
+@keyframes pack-rest { 30% { transform: translateY(-4px); } to { transform: translateY(40px) scale(0.92); opacity: 0; } }
+/* A rare card's back glints in its colour before you turn it. */
+.pet-card-back.has-glint { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--rarity) 70%, transparent), 0 0 14px color-mix(in srgb, var(--rarity) 45%, transparent); animation: card-glint 1.6s ease-in-out infinite; }
+@keyframes card-glint { 50% { box-shadow: inset 0 0 0 2px var(--rarity), 0 0 22px color-mix(in srgb, var(--rarity) 70%, transparent); } }
+.coll-buddy { opacity: 0; transition: opacity 0.15s; }
+button:hover > .coll-buddy, .coll-buddy:focus-visible { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .pack-sheen, .pet-card-rays, .pet-card-deal, .pack-shaking, .pack-top, .pack-rest, .pet-card-back.has-glint { animation: none !important; } }
 /* Pets: its mood, its menu, the session it works with, its desk and its food. */
 .pet-walker[data-mood=sad] .pet-eyes { transform: scaleY(0.7) translateY(0.6px); animation: none; }
 .pet-walker[data-mood=sad] .pet-tail { animation-duration: 3s; }
@@ -598,6 +610,25 @@ html[data-theme-switch]::view-transition-new(root) { animation: theme-curtain 60
 .pet-sprite.is-asleep { animation-play-state: paused; filter: brightness(0.85) saturate(0.8); }
 .pet-body-wrap:has(.pet-sprite) { transform: none; }
 @media (prefers-reduced-motion: reduce) { .pet-sprite { animation: none; } }
+/* A pet's stage (lib/pet-levels.ts): its size, a glow on the ground, two sparks circling it, a crown. */
+.pet-grow { position: relative; transform: scale(var(--grow, 1)); transform-origin: 50% 100%; transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.pet-evo { position: absolute; inset: 0; pointer-events: none; }
+.pet-evo-glow { position: absolute; left: 50%; bottom: -3px; width: 64px; height: 12px; translate: -50% 0; border-radius: 50%; background: radial-gradient(closest-side, color-mix(in srgb, var(--rarity) 55%, transparent), transparent); animation: pet-glow 2.6s ease-in-out infinite; }
+.pet-evo-spark { position: absolute; left: 50%; top: 45%; width: 5px; height: 5px; margin: -2.5px; border-radius: 50%; background: #fff; box-shadow: 0 0 6px 2px var(--rarity); animation: pet-orbit 3.2s linear infinite; }
+.pet-walker[data-stage=legend] .pet-evo-glow { width: 80px; animation-duration: 1.8s; }
+.pet-crown { position: absolute; left: 50%; top: -2px; translate: -50% 0; z-index: 1; filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.3)); animation: pet-crown 2.4s ease-in-out infinite; }
+@keyframes pet-glow { 50% { opacity: 0.55; scale: 0.9; } }
+@keyframes pet-orbit { from { transform: rotate(0) translateX(34px) scale(1); } 50% { transform: rotate(180deg) translateX(34px) scale(0.6); } to { transform: rotate(360deg) translateX(34px) scale(1); } }
+@keyframes pet-crown { 50% { translate: -50% -2px; } }
+/* A level up: a ring of sparks from its middle, once. */
+.pet-levelup { position: absolute; left: 50%; top: 50%; pointer-events: none; }
+.pet-levelup i { position: absolute; width: 6px; height: 6px; margin: -3px; border-radius: 50%; background: var(--rarity); box-shadow: 0 0 6px var(--rarity); animation: pet-levelup 0.9s cubic-bezier(0.2, 0.7, 0.3, 1) forwards; }
+@keyframes pet-levelup { from { transform: rotate(var(--a)) translateX(0); opacity: 1; } to { transform: rotate(var(--a)) translateX(54px); opacity: 0; } }
+/* The arrow code: the pets march across the bottom, by transform alone. */
+.pet-parade { position: fixed; inset: auto 0 0 0; height: 80px; z-index: 43; pointer-events: none; overflow: hidden; contain: strict; }
+.pet-parade-one { position: absolute; bottom: 4px; left: 0; will-change: transform; transform: translateX(-80px); animation-name: pet-march; animation-timing-function: linear; animation-fill-mode: both; }
+@keyframes pet-march { to { transform: translateX(calc(100vw + 80px)); } }
+@media (prefers-reduced-motion: reduce) { .pet-evo *, .pet-crown, .pet-levelup { animation: none !important; } .pet-levelup { display: none; } .pet-parade { display: none; } }
 /* ---------- Pets: the big moments (features/pets/PetsDialog.tsx) ---------- */
 /* The tell: a pack holding an epic or a legendary glows in its colour, light leaking out of it. */
 .pack-telling { animation: pack-tell-shake 0.12s linear infinite; filter: drop-shadow(0 0 22px var(--rarity)) drop-shadow(0 0 44px var(--rarity)) brightness(1.15); }

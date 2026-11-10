@@ -5,7 +5,7 @@ import { commentOn, connect, disconnect, moveTicket } from "../lib/jira"
 import { actOnDebt, answerPipeline, askPipeline, checkByHand, cleanUp, createProposed, dismissProposed, editProposed, isStage, stopPipeline, removePipeline, resetPipeline, rollBackPipeline, startPipeline, stopAuto, stepPipeline } from "../lib/pipeline"
 import { clearJob, continueJob, isLoose, publishReview, startJob, stopJob } from "../lib/jobs"
 import { chooseIcon, isIcon } from "../lib/app-icon"
-import { choosePet, openPack } from "../lib/pets"
+import { choosePet, gainXp, openPack } from "../lib/pets"
 import { stat } from "node:fs/promises"
 import { applyAction, isTaskId, setNotes, setSuggestion, setZones } from "../lib/board"
 import { requestSettings } from "../lib/bridge"
@@ -236,8 +236,13 @@ export async function handleWrite(path: string, body: Record<string, unknown>): 
       return typeof opened === "string" ? json({ error: opened }, 400) : json(opened)
     }
     case "/api/pets/choose": {
-      const chosen = await choosePet(body.id ?? null)
+      const chosen = await choosePet(body.id ?? null, body.slot)
       return typeof chosen === "string" ? json({ error: chosen }, 400) : json(chosen)
+    }
+    // What the pets did with you (lib/pet-levels.ts): XP, each event once.
+    case "/api/pets/xp": {
+      const grown = await gainXp(body.events)
+      return typeof grown === "string" ? json({ error: grown }, 400) : json(grown)
     }
     // The commands sessions left running and nobody uses, all stopped.
     case "/api/memory/stopforgotten": {

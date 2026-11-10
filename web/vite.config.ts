@@ -29,7 +29,7 @@ export default defineConfig({
   base: "/",
   plugins: [react(), tailwindcss(), keepOldPieces()],
   build: { emptyOutDir: false },
-  resolve: { alias: { "@": path.resolve(__dirname, "./src") } },
+  resolve: { alias: { "@": path.resolve(__dirname, "./src"), "@server": path.resolve(__dirname, "../lib") } }, // @server: pure modules shared with the board (lib/pet-levels.ts)
   server: {
     port: 7795,
     proxy: Object.fromEntries(["/api", "/vendor"].map(p => [p, { target: process.env.AGENT_CENTER_URL ?? "http://localhost:7777", changeOrigin: true }])),

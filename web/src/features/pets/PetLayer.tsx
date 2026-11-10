@@ -7,7 +7,14 @@
 // notification when you are in another window). Dragged, it dangles and stays
 // where it is dropped. Play ball with it: drag the ball and let go, it runs
 // after it and brings it back. With reduced motion it does not wander.
-import { useEffect, useRef, useState, type ReactNode } from "react"
+// Two can be out at once (the buddy greets the other now and then); when
+// wandering they climb onto the cards. Each grows with your work
+// (lib/pet-levels.ts): a turn its session finishes, a PR, being fed and
+// played with; a level up is cheered, and a new stage changes how it looks
+// (bigger, a glow, sparkles, a crown). "Bring me what waits" runs to the
+// session that waits for you and opens it; "Focus 25 min" keeps you company
+// for a block of work and tells you when to rest.
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { createPortal } from "react-dom"
 import { toast } from "sonner"
 import type { Card } from "@/lib/api-types"
@@ -17,11 +24,18 @@ import { cn } from "@/lib/utils"
 import { openDialog } from "@/app/open-dialog"
 import { openSession } from "@/app/open-session"
 import { canNotify, showNotice } from "@/features/alerts/prefs"
+import { STAGES, levelOf, stageOf } from "@server/pet-levels"
 import { PetArt, RARITY_COLOR, petName } from "./art"
+import { nextWaiting, turnsEnded } from "./board-sense"
 import { FOODS, careOf, cares, energyOf, fullnessOf, setCare } from "./care"
-import { pets, rarityOf, watchPets } from "./pets"
+import { Parade, useArrowCode } from "./Parade"
+import { conditionOf, earn, pets, rarityOf, watchPets } from "./pets"
 
-type Mode = "idle" | "walk" | "sleep" | "drag" | "cheer" | "alert" | "eat" | "work" | "wait" | "fetch" | "carry"
+type Mode = "idle" | "walk" | "sleep" | "drag" | "cheer" | "alert" | "eat" | "work" | "wait" | "fetch" | "carry" | "deliver"
+const FOCUS_MS = 25 * 60_000
+// Where each pet out is, so the other can come and say hello.
+const where = new Map<string, { x: number; y: number }>()
+const GROW: Record<string, number> = { baby: 0.84, young: 1, grown: 1.1, elite: 1.18, legend: 1.26 }
 const SIZE = 60
 const SPEED = 52 // px a second
 const RUSH = 150 // to its session's card
@@ -39,6 +53,19 @@ const LINES = ["Hi!", "♪ ♫", "Ship it!", "More pets, please", "Coffee?", "An
 const WORK_LINES = ["Reading the logs…", "Hmm, interesting", "Compiling…", "Tests are running", "Typing very fast", "Almost there…", "LGTM so far", "Refactoring my tail"]
 
 const pick = <T,>(list: T[]) => list[Math.floor(Math.random() * list.length)]!
+const clock = (ms: number) => {
+  const s = Math.max(0, Math.ceil(ms / 1000))
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`
+}
+// The time left, second by second.
+function Countdown({ until }: { until: number }) {
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [])
+  return <>{clock(until - now)}</>
+}
 const bounds = () => ({ minX: SIZE / 2 + 8, maxX: innerWidth - SIZE / 2 - 8, minY: SIZE + 64, maxY: innerHeight - 6 })
 const clamp = (p: { x: number; y: number }) => {
   const b = bounds()
@@ -64,19 +91,55 @@ export function PetLayer() {
     if (!state) return
     if (boosts.current !== null && state.prBoosts > boosts.current) {
       const n = state.prBoosts - boosts.current
-      toast(n > 1 ? `${n} PRs brought your next pack nearer` : "Your PR brought your next pack nearer", { icon: "📦", description: "Every PR you open takes a day off the wait" })
+      toast(n > 1 ? `${n} PRs brought your next pack nearer` : "Your PR brought your next pack nearer", { icon: "📦", description: "Every PR you open takes six hours off the wait" })
     }
     boosts.current = state.prBoosts
   }, [state])
+  // A turn a session finished: XP for the pets out, more for the one working with it.
+  const cards = useLive(l => l.snapshot?.cards)
+  const columns = useRef<Map<string, string> | null>(null)
+  useEffect(() => {
+    if (!cards) return
+    const before = columns.current
+    columns.current = new Map(cards.map(c => [c.id, c.column]))
+    if (!before || !state) return
+    const minute = Math.floor(Date.now() / 60_000)
+    for (const cardId of turnsEnded(before, cards))
+      for (const pet of [state.active, state.buddy].filter((p): p is string => !!p)) {
+        earn("turn", `turn:${cardId}:${minute}:${pet}`, pet)
+        if (careOf(pet).focus === cardId) earn("focusTurn", `focusTurn:${cardId}:${minute}:${pet}`, pet)
+      }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cards])
+  const [isParading, setParading] = useState(false)
+  const startParade = useCallback(() => setParading(true), [])
+  const endParade = useCallback(() => setParading(false), [])
+  useArrowCode(startParade)
   const active = state?.active
-  if (!active || !state) return null
-  return <Walker key={active} id={active} color={RARITY_COLOR[rarityOf(state, active)]} />
+  const buddy = state?.buddy
+  return (
+    <>
+      {active && state && <Walker key={active} id={active} slot="active" other={buddy ?? null} color={RARITY_COLOR[rarityOf(state, active)]} />}
+      {buddy && state && <Walker key={buddy} id={buddy} slot="buddy" other={active ?? null} color={RARITY_COLOR[rarityOf(state, buddy)]} />}
+      {isParading && state && <Parade state={state} onDone={endParade} />}
+    </>
+  )
 }
 
-function Walker({ id, color }: { id: string; color: string }) {
+// A visible card on the board to climb onto: its top edge.
+function perchOnCard() {
+  const seen = [...document.querySelectorAll<HTMLElement>("article[data-id]")].map(el => el.getBoundingClientRect())
+    .filter(r => r.width > 80 && r.top > 90 && r.bottom < innerHeight - 20 && r.left > 0 && r.right < innerWidth)
+  if (!seen.length) return null
+  const r = seen[Math.floor(Math.random() * seen.length)]!
+  return clamp({ x: r.left + 30 + Math.random() * (r.width - 60), y: r.top + 2 })
+}
+
+function Walker({ id, slot, other, color }: { id: string; slot: "active" | "buddy"; other: string | null; color: string }) {
   const name = petName(id)
   const el = useRef<HTMLDivElement>(null)
-  const pos = useRef(clamp(load("petPos", { x: innerWidth - 140, y: innerHeight - 12 })))
+  const posKey = slot === "buddy" ? "petPos2" : "petPos"
+  const pos = useRef(clamp(load(posKey, { x: innerWidth - (slot === "buddy" ? 230 : 140), y: innerHeight - 12 })))
   const target = useRef<{ x: number; y: number } | null>(null)
   const facing = useRef(1)
   const [face, setFace] = useState(1) // for a community pet, whose sheet runs left or right
@@ -98,10 +161,23 @@ function Walker({ id, color }: { id: string; color: string }) {
   const energy = energyOf(care, now)
   const isSad = fullness < 15 || energy < 12
   const timers = useRef<number[]>([])
+  const otherRef = useRef(other)
+  otherRef.current = other
+  const greeting = useRef(false)
   const ball = useRef<Ball | null>(null)
   const ballEl = useRef<HTMLDivElement>(null)
   const [hasBall, setHasBall] = useState(false)
   const isStill = matchMedia("(prefers-reduced-motion: reduce)").matches
+  // Its level and stage; a level up is cheered, a new stage more.
+  const xp = pets.use()?.xp[id] ?? 0
+  const lv = levelOf(xp)
+  const lastLevel = useRef(lv.level)
+  const [grew, setGrew] = useState(0) // a burst when it levels up
+  // A session to bring you (Bring me what waits), and a focus block running.
+  const deliverTo = useRef<string | null>(null)
+  const focusUntil = care.focusUntil && care.focusUntil > now ? care.focusUntil : null
+  const focusRef2 = useRef(focusUntil)
+  focusRef2.current = focusUntil
 
   const setMode = (m: Mode) => ((modeRef.current = m), setModeState(m))
   const later = (ms: number, fn: () => void) => timers.current.push(window.setTimeout(fn, ms))
@@ -128,6 +204,7 @@ function Walker({ id, color }: { id: string; color: string }) {
     const node = el.current
     if (!node) return
     node.style.transform = `translate3d(${pos.current.x - SIZE / 2}px, ${pos.current.y - SIZE}px, 0)`
+    where.set(id, pos.current)
     node.style.setProperty("--face", String(facing.current))
   }
   const placeBall = () => {
@@ -207,6 +284,19 @@ function Walker({ id, color }: { id: string; color: string }) {
         frame = requestAnimationFrame(step)
         return
       }
+      // Bringing you a session: to its card, then it opens.
+      if (deliverTo.current) {
+        const to = deliverTo.current
+        if (m !== "deliver") setMode("deliver")
+        if (isStill || go(seatOf(to).at, RUSH * 1.4, dt)) {
+          deliverTo.current = null
+          openSession(to)
+          earn("delivered", `delivered:${id}:${to}:${Math.floor(Date.now() / 60_000)}`, id)
+          moment("cheer", pick(["Here it is!", "This one waits for you", "Found it!"]), 1200)
+        }
+        frame = requestAnimationFrame(step)
+        return
+      }
       // Playing: after the thrown ball, back with it, then waiting for the next throw.
       if (b && b.state !== "held") {
         if (b.state === "carried") {
@@ -218,6 +308,7 @@ function Walker({ id, color }: { id: string; color: string }) {
             b.vx = facing.current * 60
             b.vy = -260
             setCare(id, { energy: Math.max(0, energyOf(careOf(id)) - 3) })
+            earn("fetched", `fetched:${id}:${Math.floor(Date.now() / 60_000)}`, id)
             moment("cheer", pick(["Again! Again!", "Throw it again!", "Here you go!", "One more?", "♥"]), 900)
           }
         } else if (b.isThrown) {
@@ -260,6 +351,16 @@ function Walker({ id, color }: { id: string; color: string }) {
           target.current = null
           setMode(cardId ? "wait" : "idle")
           restUntil = t + 2000 + Math.random() * 6000
+          if (greeting.current) {
+            greeting.current = false
+            const o = otherRef.current ? where.get(otherRef.current) : undefined
+            if (o && Math.hypot(o.x - pos.current.x, o.y - pos.current.y) < 90) {
+              facing.current = o.x > pos.current.x ? 1 : -1
+              setFace(facing.current)
+              place()
+              moment("cheer", pick(["Hi buddy!", "♥", "Wanna play?", "Hey you!", "*boop*"]), 1400)
+            }
+          }
         } else {
           const speed = cardId ? RUSH : SPEED * (energyOf(careOf(id)) < 25 ? 0.55 : 1)
           const move = Math.min(dist, speed * dt)
@@ -275,14 +376,20 @@ function Walker({ id, color }: { id: string; color: string }) {
         target.current = null
         place()
         setMode(cardId ? "wait" : "idle")
-      } else if (m === "idle" && !cardId && !isStill) {
+      } else if (m === "idle" && !cardId && !isStill && !focusRef2.current) {
         if (Date.now() - lastActive.current > IDLE_NAP) setMode("sleep")
         else if (t > restUntil) {
           const b = bounds()
           const reach = 380
-          target.current = clamp({ x: pos.current.x + (Math.random() - 0.5) * 2 * reach, y: Math.random() < 0.6 ? b.maxY - Math.random() * 30 : pos.current.y + (Math.random() - 0.5) * reach })
+          const roll = Math.random()
+          const friend = otherRef.current ? where.get(otherRef.current) : undefined
+          // Now and then to its buddy, to say hello; or onto a card, for the view.
+          if (friend && roll < 0.18) {
+            target.current = clamp({ x: friend.x + (friend.x > pos.current.x ? -46 : 46), y: friend.y })
+            greeting.current = true
+          } else target.current = (roll < 0.45 && perchOnCard()) || clamp({ x: pos.current.x + (Math.random() - 0.5) * 2 * reach, y: Math.random() < 0.6 ? b.maxY - Math.random() * 30 : pos.current.y + (Math.random() - 0.5) * reach })
           setMode("walk")
-          if (Math.random() < 0.12) say(pick(LINES))
+          if (!greeting.current && Math.random() < 0.12) say(pick(LINES))
         }
       }
       frame = requestAnimationFrame(step)
@@ -303,7 +410,8 @@ function Walker({ id, color }: { id: string; color: string }) {
       window.removeEventListener("keydown", wake)
       window.removeEventListener("resize", onResize)
       timers.current.forEach(clearTimeout)
-      keep("petPos", pos.current)
+      keep(posKey, pos.current)
+      where.delete(id)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -330,12 +438,32 @@ function Walker({ id, color }: { id: string; color: string }) {
         setMode("sleep")
         say("So sleepy…")
       }
+      // A focus block over: time for a break.
+      if (c.focusUntil && c.focusUntil <= t) {
+        setCare(id, { focusUntil: null }, t)
+        earn("focusDone", `focusDone:${id}:${c.focusUntil}`, id)
+        moment("cheer", "", 1600)
+        notice(pick(["25 minutes done. Time for a break! ☕", "Great focus! Stretch a little", "Block done. Water, then back to it?"]))
+      }
       if (modeRef.current === "work" && Math.random() < 0.06) say(pick(WORK_LINES), 2200)
       else if (isHungry && modeRef.current === "idle" && Math.random() < 0.03) say("I'm hungry…")
     }, 3000)
     return () => clearInterval(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
+
+  // A level up: cheered; a new stage, more so (and you are told).
+  useEffect(() => {
+    if (lv.level <= lastLevel.current) return void (lastLevel.current = lv.level)
+    const isNewStage = stageOf(lv.level).stage !== stageOf(lastLevel.current).stage
+    lastLevel.current = lv.level
+    setGrew(g => g + 1)
+    moment("cheer", isNewStage ? `I'm ${stageOf(lv.level).name} now!` : `Level ${lv.level}!`, 2200)
+    toast(isNewStage ? `${name} grew: ${stageOf(lv.level).name}, level ${lv.level}` : `${name} reached level ${lv.level}`, {
+      icon: <PetArt id={id} size={26} />, description: lv.level % 5 === 0 ? "Every fifth level brings a pack 📦" : undefined,
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lv.level])
 
   // Working: at the laptop while its session works, waiting with a coffee otherwise.
   useEffect(() => {
@@ -374,6 +502,7 @@ function Walker({ id, color }: { id: string; color: string }) {
     if (fullnessOf(careOf(id)) > 90) return say("I'm full! Maybe later")
     const dish = pick(FOODS)
     setCare(id, { fedAt: Date.now(), isAsleep: false, toldHungry: false })
+    earn("fed", `fed:${id}:${Date.now()}`, id)
     setFood(dish)
     target.current = null
     setMode("eat")
@@ -399,6 +528,27 @@ function Walker({ id, color }: { id: string; color: string }) {
       setMode("walk")
       say(`On my way to “${card.title}”!`, 2600)
     } else moment("cheer", "Break time!", 1200)
+  }
+
+  // To the session that waits for you, and it opens.
+  const bring = () => {
+    closeMenu()
+    const card = nextWaiting(cards)
+    if (!card) return say(pick(["Nobody waits for you. Nice!", "All clear!"]))
+    if (careOf(id).isAsleep) setCare(id, { isAsleep: false })
+    if (focusRef.current) setCare(id, { focus: null })
+    target.current = null
+    deliverTo.current = card.id
+    say(`To “${card.title}”!`, 1600)
+  }
+  // A focus block: it sits by you for 25 minutes, then tells you to rest.
+  const toggleFocus = () => {
+    closeMenu()
+    if (focusUntil) return void (setCare(id, { focusUntil: null }), say("Focus stopped"))
+    setCare(id, { focusUntil: Date.now() + FOCUS_MS, isAsleep: false })
+    target.current = null
+    setMode("idle")
+    say("25 minutes. You got this!", 2400)
   }
 
   // Play ball: a ball by its feet, waiting for you to throw it.
@@ -488,7 +638,7 @@ function Walker({ id, color }: { id: string; color: string }) {
       node.removeEventListener("pointercancel", up)
       lastActive.current = Date.now()
       if (isDragging) {
-        keep("petPos", pos.current)
+        keep(posKey, pos.current)
         if (focusRef.current) setCare(id, { focus: null }) // carried off its work
         setMode(careOf(id).isAsleep ? "sleep" : "idle")
         say(pick(["Wheee!", "Here?", "Nice view"]), 1600)
@@ -515,20 +665,25 @@ function Walker({ id, color }: { id: string; color: string }) {
   const isUp = pos.current.y < 330 // near the top: the menu opens below
   const shift = Math.min(innerWidth - 126, Math.max(126, pos.current.x)) - pos.current.x // and stays in the window
   return (
-    <div ref={el} data-mode={mode} data-mood={isSad ? "sad" : undefined} className="pet-walker fixed top-0 left-0 z-[42] select-none" style={{ width: SIZE, height: SIZE }}>
+    <div ref={el} data-mode={mode === "deliver" ? "walk" : mode} data-mood={isSad ? "sad" : undefined} data-stage={lv.stage} className="pet-walker fixed top-0 left-0 z-[42] select-none"
+      style={{ width: SIZE, height: SIZE, "--rarity": color, "--grow": GROW[lv.stage] } as React.CSSProperties}>
+      <Evolution stage={lv.stage} />
+      {grew > 0 && <div key={grew} className="pet-levelup" aria-hidden>{Array.from({ length: 10 }, (_, i) => <i key={i} style={{ "--a": `${i * 36}deg` } as React.CSSProperties} />)}</div>}
       {bubble && !isMenuOpen && <div className="pet-bubble">{bubble}</div>}
       {mode === "sleep" && <div className="pet-zzz" aria-hidden><i>z</i><i>z</i><i>z</i></div>}
       {mode === "cheer" && <div className="pet-hearts" aria-hidden><i>♥</i><i>♥</i><i>♥</i></div>}
       {focus && !isMenuOpen && focusCard && <div className="pet-tag" title={focusCard.title}>{focusCard.title}</div>}
+      {focusUntil && !focus && !isMenuOpen && <div className="pet-tag tabular-nums" title="Focus block">⏱ <Countdown until={focusUntil} /></div>}
       <div className="pet-body-wrap cursor-pointer active:cursor-grabbing" title={`${name} · click for its menu, drag to move it`} onPointerDown={onPointerDown}>
-        <PetArt id={id} size={SIZE} doing={mode === "fetch" || mode === "carry" ? "walk" : isSad && mode === "idle" ? "sad" : mode} facing={face} />
+        <div className="pet-grow">{lv.stage === "legend" && <Crown />}<PetArt id={id} size={SIZE} doing={mode === "fetch" || mode === "carry" || mode === "deliver" ? "walk" : isSad && mode === "idle" ? "sad" : mode} facing={face} /></div>
       </div>
-      {(mode === "work" || mode === "wait") && <Desk isTyping={mode === "work"} />}
+      {(mode === "work" || mode === "wait" || (focusUntil && mode === "idle")) && <Desk isTyping={mode === "work" || !!focusUntil} />}
       {food && <div className="pet-food" aria-hidden>{food}</div>}
       {isMenuOpen && (
         <PetMenu name={name} color={color} fullness={fullness} energy={energy} isAsleep={mode === "sleep"} canNotify={care.canNotify} isUp={isUp} shift={shift}
           cards={cards} focus={focus} onFeed={feed} onSleep={sleepOrWake} onWork={work}
-          onPet={() => (closeMenu(), moment("cheer", pick(["♥", "Hehe", "Purr…", "Again!", ...LINES]), 1200))}
+          onPet={() => (closeMenu(), earn("petted", `petted:${id}:${Math.floor(Date.now() / 600_000)}`, id), moment("cheer", pick(["♥", "Hehe", "Purr…", "Again!", ...LINES]), 1200))}
+          level={lv} condition={conditionOf(id)} waiting={nextWaiting(cards)} focusUntil={focusUntil} onBring={bring} onFocus={toggleFocus}
           onNotify={() => (setCare(id, { canNotify: !care.canNotify }), say(care.canNotify ? "I'll keep quiet" : "I'll let you know!"))}
           onPets={() => (closeMenu(), openDialog({ kind: "pets" }))} onBall={hasBall ? () => (closeMenu(), dropBall(), say("Ball away")) : playBall} hasBall={hasBall} />
       )}
@@ -542,6 +697,28 @@ function Walker({ id, color }: { id: string; color: string }) {
         document.body,
       )}
     </div>
+  )
+}
+
+// How far it has grown, around it: a glow on the ground (grown), two sparks
+// circling it (elite), and a crown (legend, drawn on its head).
+function Evolution({ stage }: { stage: string }) {
+  const at = STAGES.findIndex(s => s.stage === stage)
+  if (at < 2) return null
+  return (
+    <div className="pet-evo" aria-hidden>
+      <i className="pet-evo-glow" />
+      {at >= 3 && <><i className="pet-evo-spark" /><i className="pet-evo-spark" style={{ animationDelay: "-1.6s" }} /></>}
+    </div>
+  )
+}
+
+function Crown() {
+  return (
+    <svg className="pet-crown" viewBox="0 0 24 14" width="22" height="13" aria-hidden>
+      <path d="M2 12 L3.5 3 L8.5 8 L12 1.5 L15.5 8 L20.5 3 L22 12 Z" fill="#ffc83d" stroke="#d9931a" strokeWidth="1" strokeLinejoin="round" />
+      <circle cx="12" cy="9" r="1.6" fill="#ff5b7f" /><circle cx="6.5" cy="10" r="1" fill="#5bc8ff" /><circle cx="17.5" cy="10" r="1" fill="#5bc8ff" />
+    </svg>
   )
 }
 
@@ -598,15 +775,19 @@ function Bar({ label, value, tone }: { label: string; value: number; tone: strin
 
 const menuBtn = "flex h-8 items-center gap-2 rounded-[7px] px-2 text-left text-[12.5px] text-text hover:bg-hover disabled:opacity-40"
 
+const BY = { well: "×1.5 XP", ok: "", poorly: "×0.5 XP" } as const
+
 function PetMenu(props: {
   name: string; color: string; fullness: number; energy: number; isAsleep: boolean; canNotify: boolean; isUp: boolean; shift: number
   cards: Card[]; focus: string | null
   onFeed: () => void; onPet: () => void; onSleep: () => void; onWork: (card: Card | null) => void; onNotify: () => void; onPets: () => void
   onBall: () => void; hasBall: boolean
+  level: ReturnType<typeof levelOf>; condition: "well" | "ok" | "poorly"; waiting: Card | null; focusUntil: number | null
+  onBring: () => void; onFocus: () => void
 }) {
   const [isPicking, setPicking] = useState(false)
   const open = props.cards.filter(c => c.column !== "done").sort((a, b) => Number(b.column === "working") - Number(a.column === "working")).slice(0, 10)
-  const row = (icon: string, label: ReactNode, onClick: () => void, hint?: string) => (
+  const row = (icon: string, label: ReactNode, onClick: () => void, hint?: ReactNode) => (
     <button className={menuBtn} onClick={onClick} onPointerDown={e => e.stopPropagation()}>
       <span className="w-5 text-center text-[14px]">{icon}</span>{label}{hint && <span className="ml-auto text-[11px] text-faint">{hint}</span>}
     </button>
@@ -615,10 +796,16 @@ function PetMenu(props: {
     <div className={cn("pet-menu", props.isUp ? "top-[calc(100%+8px)]" : "bottom-[calc(100%+8px)]")} style={{ marginLeft: props.shift }} onPointerDown={e => e.stopPropagation()}>
       <div className="flex items-center gap-2 px-1 pb-1.5">
         <i className="size-2 rounded-full" style={{ background: props.color }} />
-        <span className="text-[13px] font-[650]">{props.name}</span>
-        <span className="ml-auto text-[11px] text-faint">{props.isAsleep ? "asleep" : props.focus ? "working" : props.fullness < 25 ? "hungry" : props.energy < 25 ? "tired" : "happy"}</span>
+        <span className="min-w-0 truncate text-[13px] font-[650]">{props.name}</span>
+        <span className="ml-auto shrink-0 text-[11px] text-faint">{props.isAsleep ? "asleep" : props.focus ? "working" : props.fullness < 25 ? "hungry" : props.energy < 25 ? "tired" : "happy"}</span>
       </div>
       <div className="flex flex-col gap-1 px-1 pb-2">
+        <div className="flex items-center gap-2 text-[11.5px]">
+          <span className="w-12 font-semibold text-text">Lv {props.level.level}</span>
+          <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-side"><i className="block h-full rounded-full transition-[width] duration-500" style={{ width: props.level.need ? `${(props.level.into / props.level.need) * 100}%` : "100%", background: props.color }} /></span>
+          <span className="w-8 text-right text-faint">{stageOf(props.level.level).name}</span>
+        </div>
+        {props.condition !== "ok" && <span className={cn("self-end text-[10.5px]", props.condition === "well" ? "text-work" : "text-bad")}>{BY[props.condition]}</span>}
         <Bar label="Food" value={props.fullness} tone="var(--work)" />
         <Bar label="Energy" value={props.energy} tone="var(--brand)" />
       </div>
@@ -644,6 +831,8 @@ function PetMenu(props: {
             {row("🎾", props.hasBall ? "Put the ball away" : "Play ball", props.onBall)}
             {row(props.isAsleep ? "☀️" : "💤", props.isAsleep ? "Wake up" : "Go to sleep", props.onSleep)}
             {row("💻", props.focus ? "Working with…" : "Work with a session", () => setPicking(true), props.focus ? "change" : undefined)}
+            {row("📬", "Bring me what waits", props.onBring, props.waiting ? (props.waiting.column === "asking" ? "asking" : "to review") : "none")}
+            {row("⏱", props.focusUntil ? "Stop the focus" : "Focus 25 min", props.onFocus, props.focusUntil ? <Countdown until={props.focusUntil} /> : undefined)}
             {row(props.canNotify ? "🔔" : "🔕", props.canNotify ? "Notifications on" : "Notifications off", props.onNotify)}
             {row("🐾", "Your pets", props.onPets)}
           </>

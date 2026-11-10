@@ -4,7 +4,8 @@
 // session it works with, and whether it may send you notifications.
 import { persistedStore } from "@/lib/store"
 
-export type Care = { fedAt: number; energy: number; at: number; isAsleep: boolean; focus: string | null; canNotify: boolean; toldHungry?: boolean }
+// focusUntil: a focus block it keeps you company in (Focus 25 min), until then.
+export type Care = { fedAt: number; energy: number; at: number; isAsleep: boolean; focus: string | null; canNotify: boolean; toldHungry?: boolean; focusUntil?: number | null }
 
 const HUNGRY_IN = 10 * 3600_000
 const TIRED_IN = 9 * 3600_000

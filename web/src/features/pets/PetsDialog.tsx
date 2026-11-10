@@ -1,9 +1,11 @@
 // Pets: the packs to open and the collection. A pack shakes; when it holds
-// something good it glows in that colour first (the tell), then tears open
-// and lays its pets face down. Each turns over with a click: an epic or a
+// something good it glows in that colour first (the tell), then its top tears
+// off and it lays its pets face down, a rare one's back glinting in its
+// colour. Each turns over with a click (and a flick of sound): an epic or a
 // legendary takes the whole screen (Spotlight). The collection is every pet
 // a pack can hold, codex-pets.net's, the ones you lack as a shadow; a click
-// on one you have sends it out on the board.
+// on one you have sends it out on the board, its paw sends it out as the
+// buddy of the one already there; each shows its level.
 import { ChevronLeft, ChevronRight, PawPrint, Search } from "lucide-react"
 import { useEffect, useMemo, useState } from "react"
 import { createPortal } from "react-dom"
@@ -13,6 +15,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { Spinner } from "@/components/ui/spinner"
 import { cn } from "@/lib/utils"
 import { sound } from "@/features/alerts/prefs"
+import { levelOf } from "@server/pet-levels"
 import { PetArt, RARITY_COLOR, RARITY_NAME, isCommunity, petName, type Rarity } from "./art"
 import { catalog, choosePet, loadCatalog, openPack, pets, rarityOf, type Pets, type Pull } from "./pets"
 
@@ -38,7 +41,7 @@ export function PetsDialog({ onClose }: { onClose: () => void }) {
             <DialogTitle className="text-base font-[650]">Pets</DialogTitle>
             <p className="m-0 text-[12.5px] text-text-muted">
               Packs hold pets of <a className="underline" href="https://codex-pets.net" target="_blank" rel="noreferrer">codex-pets.net</a>, as rare as the community loves them (anime girls are the commonest of all).
-              Packs turn up by chance, never more than two weeks apart, and nobody knows when; every PR you open brings the next one a day nearer. Closed packs pile up.
+              Packs turn up by chance, never more than 30 hours apart; every PR you open brings the next one six hours nearer, and every fifth level a pet reaches brings one. Closed packs pile up.
             </p>
           </div>
         </div>
@@ -66,7 +69,7 @@ export function PetsDialog({ onClose }: { onClose: () => void }) {
 
 // ---------- packs ----------
 
-type Stage = "ready" | "shaking" | "tell" | "open"
+type Stage = "ready" | "shaking" | "tell" | "tear" | "open"
 
 function Packs({ state, onSee }: { state: Pets; onSee: () => void }) {
   const [stage, setStage] = useState<Stage>("ready")
@@ -91,6 +94,9 @@ function Packs({ state, onSee }: { state: Pets; onSee: () => void }) {
         fanfare(top === "legendary" ? 3 : 2, true)
         await new Promise(r => setTimeout(r, top === "legendary" ? 2200 : 1500))
       }
+      setStage("tear")
+      flick(0.5)
+      await new Promise(r => setTimeout(r, 520))
       setStage("open")
     } catch (err) {
       setStage("ready")
@@ -101,6 +107,7 @@ function Packs({ state, onSee }: { state: Pets; onSee: () => void }) {
     const pull = pulls[i]!
     if (RANK[pull.rarity] >= 2) return setSpot({ pull, index: i })
     if (pull.rarity === "rare") fanfare(1)
+    else flick()
     setShown(prev => new Set(prev).add(i))
   }
   // All at once: the small ones turn, the first big one gets its moment.
@@ -116,7 +123,7 @@ function Packs({ state, onSee }: { state: Pets; onSee: () => void }) {
       <div className="flex min-h-full flex-col items-center justify-center gap-6 py-4">
         <div className="flex flex-wrap items-end justify-center gap-5">
           {pulls.map((p, i) => (
-            <PetCard key={i} pull={p} isShown={shown.has(i)} onTurn={() => turn(i)} delay={i * 130} isOut={state.active === p.id} />
+            <PetCard key={i} pull={p} isShown={shown.has(i)} onTurn={() => turn(i)} delay={i * 130} isOut={state.active === p.id || state.buddy === p.id} hasOut={!!state.active} />
           ))}
         </div>
         <div className="flex items-center gap-2">
@@ -133,7 +140,7 @@ function Packs({ state, onSee }: { state: Pets; onSee: () => void }) {
       <div className="flex min-h-full flex-col items-center justify-center gap-4 py-6 text-center">
         <div className="opacity-30 grayscale"><PackArt /></div>
         <div className="text-[15px] font-[650]">No packs right now</div>
-        <p className="m-0 max-w-[400px] text-[13px] text-text-muted">Another one will turn up on its own, sometime within the next two weeks; every PR you open brings it a day nearer. Your pet keeps you company meanwhile.</p>
+        <p className="m-0 max-w-[400px] text-[13px] text-text-muted">Another one turns up on its own within 30 hours. A PR brings it nearer, and a pet's every fifth level brings one.</p>
       </div>
     )
 
@@ -143,16 +150,16 @@ function Packs({ state, onSee }: { state: Pets; onSee: () => void }) {
         {stage === "tell" && <div className="pack-tell" style={{ "--rarity": RARITY_COLOR[best] } as React.CSSProperties} aria-hidden><i /><i /><i /><i /><i /><i /><i /><i /></div>}
         {state.packs > 1 && stage === "ready" && <div className="absolute top-2 left-3 -rotate-6 opacity-60"><PackArt /></div>}
         {state.packs > 2 && stage === "ready" && <div className="absolute top-1 left-1.5 -rotate-3 opacity-80"><PackArt /></div>}
-        <button className={cn("pack-btn relative", stage === "shaking" && "pack-shaking", stage === "tell" && `pack-telling tell-${best}`)} onClick={open} title="Open this pack"
+        <button className={cn("pack-btn relative", stage === "shaking" && "pack-shaking", stage === "tell" && `pack-telling tell-${best}`, stage === "tear" && "pack-tearing")} onClick={open} title="Open this pack"
           style={{ "--rarity": RARITY_COLOR[best] } as React.CSSProperties}>
-          <PackArt />
+          {stage === "tear" ? <><span className="pack-top"><PackArt /></span><span className="pack-rest"><PackArt /></span></> : <PackArt />}
         </button>
         {state.packs > 1 && stage === "ready" && <span className="absolute -top-2 -right-3 rounded-full bg-brand px-2 py-0.5 text-[12px] font-bold text-white shadow-pop tabular-nums">×{state.packs}</span>}
       </div>
       <div className="text-center">
         {stage === "tell" ? (
           <div className="pack-tell-text text-[17px] font-[800] tracking-wide" style={{ color: RARITY_COLOR[best] }}>{best === "legendary" ? "Something LEGENDARY is inside…" : "Something epic is inside…"}</div>
-        ) : stage === "shaking" ? (
+        ) : stage === "shaking" || stage === "tear" ? (
           <div className="text-[15px] font-[650]">Opening…</div>
         ) : (
           <>
@@ -205,14 +212,14 @@ const PACK_PATH = (() => {
 
 const nameOf = (p: Pull) => p.name ?? petName(p.id)
 
-function PetCard({ pull, isShown, onTurn, delay, isOut }: { pull: Pull; isShown: boolean; onTurn: () => void; delay: number; isOut: boolean }) {
+function PetCard({ pull, isShown, onTurn, delay, isOut, hasOut }: { pull: Pull; isShown: boolean; onTurn: () => void; delay: number; isOut: boolean; hasOut: boolean }) {
   const color = RARITY_COLOR[pull.rarity]
   return (
     <div className="pet-card-deal" style={{ animationDelay: `${delay}ms` }}>
       <button className={cn("pet-card", isShown && "is-shown", `rarity-${pull.rarity}`)} onClick={onTurn} disabled={isShown} style={{ "--rarity": color } as React.CSSProperties}
         title={isShown ? undefined : "Turn it over"}>
         <div className="pet-card-inner">
-          <div className="pet-card-back">
+          <div className={cn("pet-card-back", pull.rarity !== "common" && "has-glint")}>
             <PawPrint className="size-9 text-white/90" />
           </div>
           <div className="pet-card-front">
@@ -228,7 +235,10 @@ function PetCard({ pull, isShown, onTurn, delay, isOut }: { pull: Pull; isShown:
       </button>
       <div className={cn("mt-2 flex h-7 justify-center transition-opacity", isShown ? "opacity-100" : "pointer-events-none opacity-0")}>
         {isOut ? <span className="self-center text-[12px] text-text-muted">On the board</span> : (
-          <Button variant="outline" className="h-7 text-[12px]" onClick={() => void choosePet(pull.id)}>Take it out</Button>
+          <div className="flex gap-1.5">
+            <Button variant="outline" className="h-7 text-[12px]" onClick={() => void choosePet(pull.id)}>Take it out</Button>
+            {hasOut && <Button variant="ghost" className="h-7 text-[12px]" onClick={() => void choosePet(pull.id, "buddy")} title="Out with the one already on the board">As buddy</Button>}
+          </div>
         )}
       </div>
     </div>
@@ -299,6 +309,29 @@ function Spotlight({ pull, onDone }: { pull: Pull; onDone: () => void }) {
   )
 }
 
+// A card turning over, or a pack tearing: a short flick of noise, if the board's sound is on.
+function flick(volume = 0.25) {
+  if (sound.get() !== "on") return
+  try {
+    const ctx = new AudioContext()
+    const buf = ctx.createBuffer(1, ctx.sampleRate * 0.12, ctx.sampleRate)
+    const data = buf.getChannelData(0)
+    for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length) ** 2
+    const src = ctx.createBufferSource()
+    const filter = ctx.createBiquadFilter()
+    const g = ctx.createGain()
+    filter.type = "bandpass"
+    filter.frequency.value = 2400
+    g.gain.value = volume
+    src.buffer = buf
+    src.connect(filter).connect(g).connect(ctx.destination)
+    src.start()
+    setTimeout(() => void ctx.close(), 400)
+  } catch {
+    // no sound, no matter
+  }
+}
+
 // A few notes when something good comes out, if the board's sound is on:
 // rising, longer and brighter the rarer it is.
 function fanfare(level: 1 | 2 | 3, isTell = false) {
@@ -364,6 +397,7 @@ function Collection({ state }: { state: Pets }) {
           </button>
         ))}
         {state.active && <Button variant="outline" className="ml-auto h-7 text-[12px]" onClick={() => void choosePet(null)}>Put {petName(state.active)} away</Button>}
+        {state.buddy && <Button variant="outline" className="h-7 text-[12px]" onClick={() => void choosePet(null, "buddy")}>Put {petName(state.buddy)} away</Button>}
       </div>
       <div className="flex flex-wrap items-center gap-1.5">
         {CATEGORIES.map(c => <button key={c} className={chip(kind === c)} onClick={() => filter(setKind)(kind === c ? null : c)}>{c}</button>)}
@@ -376,10 +410,11 @@ function Collection({ state }: { state: Pets }) {
       <div className="grid grid-cols-[repeat(auto-fill,minmax(112px,1fr))] gap-2">
         {list.slice((at - 1) * PAGE, at * PAGE).map(p => {
           const count = owned[p.id] ?? 0
-          const isOut = state.active === p.id
+          const isOut = state.active === p.id || state.buddy === p.id
           const isHome = state.community.some(c => `community:${c.id}` === p.id)
+          const lv = levelOf(state.xp[p.id] ?? 0).level
           return (
-            <button key={p.id} disabled={!count} onClick={() => void choosePet(isOut ? null : p.id)}
+            <button key={p.id} disabled={!count} onClick={() => void choosePet(isOut ? null : p.id, state.buddy === p.id ? "buddy" : "active")}
               title={count ? (isOut ? "On the board. Click to put it away" : "Take it out on the board") : `${RARITY_NAME[p.rarity]} · ${p.category}: not found yet, it comes out of a pack`}
               className={cn("relative flex flex-col items-center overflow-hidden rounded-[10px] border bg-surface px-1 pt-2 pb-1.5 transition-[transform,border-color] duration-150",
                 count ? "border-line hover:-translate-y-0.5 hover:border-[var(--rarity)]" : "cursor-default border-dashed border-line",
@@ -387,12 +422,18 @@ function Collection({ state }: { state: Pets }) {
               style={{ "--rarity": RARITY_COLOR[p.rarity] } as React.CSSProperties}>
               <i className="absolute top-1.5 left-1.5 z-[1] size-2 rounded-full" style={{ background: RARITY_COLOR[p.rarity], opacity: count ? 1 : 0.45 }} />
               {count > 1 && <span className="absolute top-1 right-1.5 z-[1] text-[10.5px] font-semibold text-text-muted tabular-nums">×{count}</span>}
+              {count > 0 && lv > 1 && <span className="absolute bottom-1 left-1.5 z-[1] text-[10px] font-bold text-text-muted tabular-nums">Lv {lv}</span>}
+              {count > 0 && !isOut && state.active && (
+                <span role="button" tabIndex={0} title="Out as the buddy of the one on the board" onClick={e => (e.stopPropagation(), void choosePet(p.id, "buddy"))}
+                  onKeyDown={e => e.key === "Enter" && (e.stopPropagation(), void choosePet(p.id, "buddy"))}
+                  className="coll-buddy absolute right-1 bottom-1 z-[1] grid size-5 place-items-center rounded-full bg-brand-soft text-brand"><PawPrint className="size-3" /></span>
+              )}
               {count > 0 && isHome ? <PetArt id={p.id} size={70} /> : (
                 <img src={p.poster} alt="" loading="lazy" className={cn("h-[70px] w-[70px] object-contain", !count && "pet-shadow-img")} />
               )}
               <span className={cn("mt-0.5 w-full truncate text-center text-[11.5px]", count ? "font-medium text-text" : "text-faint")}>{count ? p.name : "???"}</span>
               <span className="text-[9.5px] text-faint">{p.category}</span>
-              {isOut && <span className="text-[10px] font-semibold text-brand">On the board</span>}
+              {isOut && <span className="text-[10px] font-semibold text-brand">{state.buddy === p.id ? "Buddy" : "On the board"}</span>}
             </button>
           )
         })}
