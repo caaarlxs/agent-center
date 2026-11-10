@@ -494,7 +494,7 @@ html[data-theme-switch]::view-transition-new(root) { animation: theme-curtain 60
 @keyframes pet-holo { from { filter: hue-rotate(0deg) drop-shadow(0 0 4px rgb(190 160 255 / 0.7)); } to { filter: hue-rotate(360deg) drop-shadow(0 0 4px rgb(190 160 255 / 0.7)); } }
 
 /* The walker: moved by its script; its look follows its mode. */
-.pet-walker { will-change: transform; pointer-events: none; }
+.pet-walker { will-change: transform; pointer-events: none; transform-origin: 50% 100%; }
 .pet-body-wrap { pointer-events: auto; transform: scaleX(var(--face, 1)); transition: transform 0.18s; touch-action: none; }
 .pet-walker[data-mode=walk] .pet-bob { animation: pet-bob 0.42s ease-in-out infinite; }
 @keyframes pet-bob { 50% { transform: translateY(-2px) rotate(1.5deg); } }

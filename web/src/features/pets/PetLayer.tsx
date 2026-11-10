@@ -31,7 +31,7 @@ import { FOODS, careOf, cares, energyOf, fullnessOf, setCare } from "./care"
 import { Parade, useArrowCode } from "./Parade"
 import { conditionOf, earn, pets, rarityOf, watchPets } from "./pets"
 
-type Mode = "idle" | "walk" | "sleep" | "drag" | "cheer" | "alert" | "eat" | "work" | "wait" | "fetch" | "carry" | "deliver"
+type Mode = "idle" | "walk" | "sleep" | "drag" | "cheer" | "alert" | "eat" | "work" | "wait" | "fetch" | "carry" | "deliver" | "shoved"
 const FOCUS_MS = 25 * 60_000
 // Where each pet out is, so the other can come and say hello.
 const where = new Map<string, { x: number; y: number }>()
@@ -66,7 +66,14 @@ function Countdown({ until }: { until: number }) {
   }, [])
   return <>{clock(until - now)}</>
 }
-const bounds = () => ({ minX: SIZE / 2 + 8, maxX: innerWidth - SIZE / 2 - 8, minY: SIZE + 64, maxY: innerHeight - 6 })
+// A session's panel open at the right is a wall: the pets stay out of it, and
+// one in its way as it slides in is shoved aside, like by a drawer. Where its
+// left edge is now (the window's, with no panel, or one that fills the window).
+const wallX = () => {
+  const r = document.querySelector("[data-panel]")?.getBoundingClientRect()
+  return r && r.left > 240 ? Math.min(innerWidth, r.left) : innerWidth
+}
+const bounds = () => ({ minX: SIZE / 2 + 8, maxX: wallX() - SIZE / 2 - 8, minY: SIZE + 64, maxY: innerHeight - 6 })
 const clamp = (p: { x: number; y: number }) => {
   const b = bounds()
   return { x: Math.min(b.maxX, Math.max(b.minX, p.x)), y: Math.min(b.maxY, Math.max(b.minY, p.y)) }
@@ -165,6 +172,8 @@ function Walker({ id, slot, other, color }: { id: string; slot: "active" | "budd
   otherRef.current = other
   const greeting = useRef(false)
   const ball = useRef<Ball | null>(null)
+  // Shoved by the panel: its speed sideways, its hop, how it leans, and what it did before.
+  const shove = useRef<{ vx: number; hop: number; vh: number; tilt: number; was: Mode } | null>(null)
   const ballEl = useRef<HTMLDivElement>(null)
   const [hasBall, setHasBall] = useState(false)
   const isStill = matchMedia("(prefers-reduced-motion: reduce)").matches
@@ -203,7 +212,8 @@ function Walker({ id, slot, other, color }: { id: string; slot: "active" | "budd
   const place = () => {
     const node = el.current
     if (!node) return
-    node.style.transform = `translate3d(${pos.current.x - SIZE / 2}px, ${pos.current.y - SIZE}px, 0)`
+    const s = shove.current
+    node.style.transform = `translate3d(${pos.current.x - SIZE / 2}px, ${pos.current.y - SIZE - (s?.hop ?? 0)}px, 0) rotate(${s?.tilt ?? 0}deg)`
     where.set(id, pos.current)
     node.style.setProperty("--face", String(facing.current))
   }
@@ -224,6 +234,7 @@ function Walker({ id, slot, other, color }: { id: string; slot: "active" | "budd
     let last = performance.now()
     let restUntil = performance.now() + 1500
     let seatAt = 0
+    let wall = wallX()
     // One step toward a point; answers whether it got there.
     const go = (to: { x: number; y: number }, speed: number, dt: number) => {
       const dx = to.x - pos.current.x
@@ -261,8 +272,8 @@ function Walker({ id, slot, other, color }: { id: string; slot: "active" | "budd
         b.x = BALL / 2
         b.vx = Math.abs(b.vx) * BOUNCE
       }
-      if (b.x > innerWidth - BALL / 2) {
-        b.x = innerWidth - BALL / 2
+      if (b.x > wall - BALL / 2) {
+        b.x = wall - BALL / 2
         b.vx = -Math.abs(b.vx) * BOUNCE
       }
       b.spin += (b.vx * dt) / (BALL / 2)
@@ -274,11 +285,68 @@ function Walker({ id, slot, other, color }: { id: string; slot: "active" | "budd
       const m = modeRef.current
       const cardId = focusRef.current
       const b = ball.current
+      // The panel's edge, and how fast it comes (px a second; below zero, it opens).
+      const nowWall = wallX()
+      const wallV = (nowWall - wall) / Math.max(0.001, rawDt)
+      wall = nowWall
+      if (b?.state === "loose" && b.x > wall - BALL / 2) {
+        b.x = wall - BALL / 2
+        b.vx = Math.min(-Math.abs(b.vx) * BOUNCE, wallV * 1.3)
+      }
       if (b) {
         // in small steps, as much time as really went by (a slow frame does not slow the ball)
         if (b.state === "loose") for (let left = Math.min(0.25, rawDt); left > 0; left -= 0.016) roll(b, Math.min(0.016, left))
         else if (b.state === "carried") Object.assign(b, { x: pos.current.x + facing.current * 15, y: pos.current.y - SIZE * 0.42, spin: 0 })
         placeBall()
+      }
+      // The panel against it: pushed out, and while the panel slides in, sent flying.
+      const edge = wall - SIZE / 2 - 8
+      if (m !== "drag" && pos.current.x > edge) {
+        pos.current = { ...pos.current, x: Math.max(SIZE / 2 + 8, edge) }
+        if (wallV < -60) {
+          const push = Math.min(-900, Math.max(-1600, wallV * 1.2))
+          if (!shove.current) {
+            shove.current = { vx: push, hop: 0, vh: 560, tilt: 0, was: m }
+            target.current = null
+            if (menuRef.current) closeMenu()
+            setMode("shoved")
+            if (facing.current !== 1) {
+              facing.current = 1
+              setFace(1)
+            }
+          } else shove.current.vx = Math.min(shove.current.vx, push)
+        }
+        place()
+      }
+      const s = shove.current
+      if (s && m === "drag") shove.current = null
+      else if (s) {
+        // Sliding away from the panel, hopping, leaning back, until it stops.
+        s.vx *= Math.exp(-2.6 * dt)
+        const minX = SIZE / 2 + 8
+        pos.current = { ...pos.current, x: Math.min(edge, pos.current.x + s.vx * dt) }
+        if (pos.current.x < minX) {
+          pos.current.x = minX
+          s.vx = Math.abs(s.vx) * 0.35
+        }
+        s.vh -= 2200 * dt
+        s.hop += s.vh * dt
+        if (s.hop <= 0) {
+          s.hop = 0
+          s.vh = s.vh < -260 ? -s.vh * 0.42 : 0
+        }
+        s.tilt = Math.max(-38, Math.min(38, -s.vx / 32))
+        place()
+        if (Math.abs(s.vx) < 18 && s.hop === 0 && s.vh === 0) {
+          shove.current = null
+          place()
+          if (s.was === "sleep") {
+            setMode("sleep")
+            say("Zzz…?", 1600)
+          } else moment("alert", pick(["Hey!", "Whoa!", "Rude!", "I was here first!", "Ouch!", "Watch it!"]), 1000)
+        }
+        frame = requestAnimationFrame(step)
+        return
       }
       if (menuRef.current || m === "drag" || m === "sleep" || m === "eat" || m === "cheer" || m === "alert") {
         frame = requestAnimationFrame(step)
@@ -675,7 +743,7 @@ function Walker({ id, slot, other, color }: { id: string; slot: "active" | "budd
       {focus && !isMenuOpen && focusCard && <div className="pet-tag" title={focusCard.title}>{focusCard.title}</div>}
       {focusUntil && !focus && !isMenuOpen && <div className="pet-tag tabular-nums" title="Focus block">⏱ <Countdown until={focusUntil} /></div>}
       <div className="pet-body-wrap cursor-pointer active:cursor-grabbing" title={`${name} · click for its menu, drag to move it`} onPointerDown={onPointerDown}>
-        <div className="pet-grow">{lv.stage === "legend" && <Crown />}<PetArt id={id} size={SIZE} doing={mode === "fetch" || mode === "carry" || mode === "deliver" ? "walk" : isSad && mode === "idle" ? "sad" : mode} facing={face} /></div>
+        <div className="pet-grow">{lv.stage === "legend" && <Crown />}<PetArt id={id} size={SIZE} doing={mode === "fetch" || mode === "carry" || mode === "deliver" ? "walk" : mode === "shoved" ? "alert" : isSad && mode === "idle" ? "sad" : mode} facing={face} /></div>
       </div>
       {(mode === "work" || mode === "wait" || (focusUntil && mode === "idle")) && <Desk isTyping={mode === "work" || !!focusUntil} />}
       {food && <div className="pet-food" aria-hidden>{food}</div>}
