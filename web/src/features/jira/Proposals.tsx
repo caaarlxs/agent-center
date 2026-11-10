@@ -14,6 +14,7 @@ import { dialog } from "@/app/open-dialog"
 import { Markdown } from "@/features/conversation/Markdown"
 import type { PipelineState } from "@server/pipeline"
 import { KINDS, PRIORITIES, anchorOf, newDescription, ticketsOfYours, waitsOn, type Edit, type Proposal } from "@server/proposals"
+import { loadPets } from "@/features/pets/pets"
 import { changed, useConfirm } from "./confirm"
 import { sendWithFeedback } from "./feedback"
 
@@ -75,6 +76,7 @@ const DONE: Record<"create" | "dismiss" | "edit", (r: Reply) => string> = {
 async function send(ticketKey: string, p: Proposal, action: keyof typeof DONE, edit: Edit = {}) {
   const answer = await sendWithFeedback<Reply>("/api/pipeline/proposal", { key: ticketKey, id: p.id, action, ...edit }, DONE[action])
   if (answer) changed()
+  if (answer && action === "create") void loadPets() // a ticket brings a pack nearer
   return !!answer
 }
 

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { rate } from "../lib/community-pets"
-import { arrive, grow, isXpEvent, newlyMerged, pickFrom, pickNew, roll, rollRarities, speedUp } from "../lib/pets"
+import { arrive, grow, isXpEvent, newlyMerged, pickFrom, pickNew, roll, rollRarities, speedUp, ticketBoost } from "../lib/pets"
 import { XP, levelOf } from "../lib/pet-levels"
 
 const DAY = 24 * 3600_000
@@ -106,4 +106,17 @@ test("a page's events: known kinds only, never the PRs the server counts itself"
   expect(isXpEvent({ key: "k", kind: "prMerged" })).toBe(false)
   expect(isXpEvent({ key: "k", kind: "magic" })).toBe(false)
   expect(isXpEvent({ key: "k", kind: "fed", condition: "great" })).toBe(false)
+})
+
+test("a Jira ticket brings the next pack nearer, or now and then a pack at once, once each", () => {
+  const H = 3600_000
+  const s = { nextAt: 10 * H, packs: 0, ticketsSeen: [] as string[], ticketBoosts: 0, ticketPacks: 0 }
+  expect(ticketBoost(s, "AC-1", 0, () => 0.9)).toBe("nearer")
+  expect(s.nextAt).toBe(7 * H)
+  expect(ticketBoost(s, "AC-1", 0, () => 0)).toBeNull() // counted once
+  expect(ticketBoost(s, "AC-2", 0, () => 0)).toBe("pack")
+  expect(s).toMatchObject({ packs: 1, nextAt: 7 * H, ticketBoosts: 2, ticketPacks: 1 })
+  expect(ticketBoost(s, "AC-3", 8 * H, () => 0.9)).toBe("nearer")
+  expect(s.nextAt).toBe(8 * H) // never past now
+  expect(ticketBoost(s, "", 0, () => 0)).toBeNull()
 })
