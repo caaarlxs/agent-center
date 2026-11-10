@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { rate } from "../lib/community-pets"
-import { arrive, grow, isXpEvent, newlyMerged, pickFrom, roll, speedUp } from "../lib/pets"
+import { arrive, grow, isXpEvent, newlyMerged, pickFrom, roll, rollRarities, speedUp } from "../lib/pets"
 import { XP, levelOf } from "../lib/pet-levels"
 
 const DAY = 24 * 3600_000
@@ -27,6 +27,15 @@ test("a pack: three pets, the last rare or better", () => {
     expect(pulls[2]!.rarity).not.toBe("common")
   }
   expect(roll(() => 0.999).map(p => p.rarity)).toEqual(["legendary", "legendary", "legendary"])
+})
+
+test("a pet of a high level on the board brings better pets out of a pack", () => {
+  const better = (level: number) => {
+    let seed = 1
+    const random = () => ((seed = (seed * 16807) % 2147483647) / 2147483647)
+    return Array.from({ length: 3000 }, () => rollRarities(random, level)[0]).filter(r => r !== "common").length
+  }
+  expect(better(40)).toBeGreaterThan(better(1) * 1.3)
 })
 
 test("each PR opened since the pets began counting brings the next pack six hours nearer, once", () => {

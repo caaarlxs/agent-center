@@ -11,7 +11,7 @@ import { COMMUNITY, setAdopted, type Adopted, type Rarity } from "./art"
 import { careOf, energyOf, fullnessOf } from "./care"
 
 export type Skin = { key: string; rarity: Rarity }
-export type Pets = { packs: number; owned: Record<string, number>; active: string | null; buddy: string | null; xp: Record<string, number>; opened: number; prBoosts: number; species: string[]; skins: Skin[]; perPack: number; community: Adopted[] }
+export type Pets = { packs: number; owned: Record<string, number>; active: string | null; buddy: string | null; xp: Record<string, number>; opened: number; prBoosts: number; species: string[]; skins: Skin[]; perPack: number; odds: Record<Rarity, number>; community: Adopted[] }
 export type Pull = { id: string; rarity: Rarity; isNew: boolean; name?: string; category?: string }
 
 export const pets = createStore<Pets | null>(null)

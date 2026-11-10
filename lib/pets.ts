@@ -16,7 +16,7 @@ import { DATA_DIR } from "./config"
 import { readJson, writeJsonAtomic } from "./files"
 import { latestState } from "./live"
 import { adopted, bringHome, communityCatalog, type Entry } from "./community-pets"
-import { type Condition, type XpKind, award, isXpKind, levelOf, packsBetween } from "./pet-levels"
+import { type Condition, type XpKind, award, isXpKind, levelOf, luckyOdds, packsBetween } from "./pet-levels"
 
 const PATH = join(DATA_DIR, "pets.json")
 const HOUR = 3600_000
@@ -45,8 +45,10 @@ export const SKINS: { key: string; rarity: Rarity }[] = [
   { key: "gold", rarity: "legendary" }, { key: "galaxy", rarity: "legendary" }, { key: "holo", rarity: "legendary" },
 ]
 
-// How often each rarity comes out of a slot; the last slot of a pack skips common.
-const ODDS: Record<Rarity, number> = { common: 64, rare: 25, epic: 9, legendary: 2 }
+// How often each rarity comes out of a slot; the last slot of a pack skips
+// common. The level of the pets on the board (the higher) makes the better ones likelier
+// (luckyOdds, lib/pet-levels.ts).
+export const ODDS: Record<Rarity, number> = { common: 64, rare: 25, epic: 9, legendary: 2 }
 const LAST_ODDS: Record<Rarity, number> = { common: 0, rare: 70, epic: 24, legendary: 6 }
 
 export const petId = (species: string, skin: string) => `${species}:${skin}`
@@ -163,11 +165,12 @@ function pick<T extends string>(odds: Record<T, number>, random: () => number): 
 }
 
 // The rarities of one pack.
-export const rollRarities = (random: () => number): Rarity[] => Array.from({ length: PER_PACK }, (_, i) => pick(i === PER_PACK - 1 ? LAST_ODDS : ODDS, random))
+export const rollRarities = (random: () => number, level = 1): Rarity[] =>
+  Array.from({ length: PER_PACK }, (_, i) => pick(luckyOdds(i === PER_PACK - 1 ? LAST_ODDS : ODDS, level), random))
 
 // The pets of one pack, drawn here.
-export function roll(random: () => number): { id: string; rarity: Rarity }[] {
-  return rollRarities(random).map(rarity => {
+export function roll(random: () => number, level = 1): { id: string; rarity: Rarity }[] {
+  return rollRarities(random, level).map(rarity => {
     const skins = SKINS.filter(k => k.rarity === rarity)
     const skin = skins[Math.floor(random() * skins.length)]!
     const species = SPECIES[Math.floor(random() * SPECIES.length)]!
@@ -186,12 +189,12 @@ export function pickFrom(catalog: Entry[], rarity: Rarity, random: () => number,
 
 // Each pet of a pack from codex-pets.net, brought home; a pet whose files do
 // not come is swapped for another of its rarity. Null when none can be had.
-async function communityPack(): Promise<Pull[] | null> {
+async function communityPack(level: number): Promise<Pull[] | null> {
   const catalog = await communityCatalog()
   if (!catalog.length) return null
   const pulls: Pull[] = []
   const tried = new Set<string>()
-  for (const rarity of rollRarities(Math.random)) {
+  for (const rarity of rollRarities(Math.random, level)) {
     for (let attempt = 0; attempt < 4; attempt++) {
       const entry = pickFrom(catalog, rarity, Math.random, tried)
       if (!entry) return null
@@ -213,7 +216,7 @@ const COMMUNITY = "community:"
 
 export async function petsState() {
   void communityCatalog().catch(() => {}) // read ahead, so the first pack opens at once
-  return { ...shown(await load()), species: SPECIES, skins: SKINS, perPack: PER_PACK, community: await adopted() }
+  return { ...shown(await load()), species: SPECIES, skins: SKINS, perPack: PER_PACK, odds: ODDS, community: await adopted() }
 }
 
 // The catalogue for the collection: every pet a pack can hold.
@@ -224,7 +227,8 @@ export async function petsCatalog() {
 export async function openPack() {
   const s = await load()
   if (s.packs < 1) return "No pack to open"
-  const drawn = (await communityPack().catch(() => null)) ?? roll(Math.random).map(p => ({ ...p, isNew: false }))
+  const luck = Math.max(1, ...[s.active, s.buddy].map(p => (p ? levelOf(s.xp[p] ?? 0).level : 1))) // the pets out bring their luck, the higher
+  const drawn = (await communityPack(luck).catch(() => null)) ?? roll(Math.random, luck).map(p => ({ ...p, isNew: false }))
   s.packs--
   s.opened++
   const pulls: Pull[] = drawn.map(p => {

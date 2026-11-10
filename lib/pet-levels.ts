@@ -1,5 +1,5 @@
-// How a pet grows: the XP each thing it does with you is worth, its level and
-// its stage. A level needs a little more than the one before (50, 75, 100…),
+// How a pet grows: the XP each thing it does with you is worth, its level,
+// its stage and the luck it brings to packs. A level needs a little more than the one before (50, 75, 100…),
 // so the first come within a day of work and the last take weeks; a stage
 // changes how it looks on the board; every fifth level brings a pack. Pure,
 // and shared with the page (web/src/features/pets).
@@ -45,3 +45,18 @@ export function levelOf(xp: number) {
 
 /** The packs a pet earns going from one level to another: one for every fifth. */
 export const packsBetween = (from: number, to: number) => Math.floor(to / 5) - Math.floor(from / 5)
+
+// Luck: the higher the level of the pet on the board, the likelier the
+// better pets come out of a pack. Common stays as it is; rare gains a little,
+// epic and legendary more (at level 20 twice as likely, at 60 four times).
+type Odds = { common: number; rare: number; epic: number; legendary: number }
+export function luckyOdds<T extends Odds>(odds: T, level: number): T {
+  const up = (level - 1) / 20
+  return { ...odds, rare: odds.rare * (1 + up / 2), epic: odds.epic * (1 + up), legendary: odds.legendary * (1 + up) }
+}
+
+/** The chance of rare or better in a slot with those odds, at that level. */
+export function betterChance(odds: Odds, level: number) {
+  const o = luckyOdds(odds, level)
+  return (o.rare + o.epic + o.legendary) / (o.common + o.rare + o.epic + o.legendary)
+}

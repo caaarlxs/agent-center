@@ -19,7 +19,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { Spinner } from "@/components/ui/spinner"
 import { cn } from "@/lib/utils"
 import { sound } from "@/features/alerts/prefs"
-import { levelOf } from "@server/pet-levels"
+import { betterChance, levelOf } from "@server/pet-levels"
 import { area, peel, polygon, type Pt } from "./peel"
 import { PetArt, RARITY_COLOR, RARITY_NAME, isCommunity, petName, type Rarity } from "./art"
 import { catalog, choosePet, loadCatalog, openPack, pets, rarityOf, type Pets, type Pull } from "./pets"
@@ -46,7 +46,7 @@ export function PetsDialog({ onClose }: { onClose: () => void }) {
             <DialogTitle className="text-base font-[650]">Pets</DialogTitle>
             <p className="m-0 text-[12.5px] text-text-muted">
               Packs hold pets of <a className="underline" href="https://codex-pets.net" target="_blank" rel="noreferrer">codex-pets.net</a>, as rare as the community loves them (anime girls are the commonest of all).
-              Packs turn up by chance, never more than 30 hours apart; every PR you open brings the next one six hours nearer, and every fifth level a pet reaches brings one. Closed packs pile up.
+              Packs turn up by chance, never more than 30 hours apart; every PR you open brings the next one six hours nearer, and every fifth level a pet reaches brings one. The higher the level of the pet on the board, the better the pets that come out.
             </p>
           </div>
         </div>
@@ -212,6 +212,7 @@ function Packs({ state, onSee }: { state: Pets; onSee: () => void }) {
           <>
             <div className="text-[15px] font-[650]">{state.packs === 1 ? "You have a pack" : `You have ${state.packs} packs`}</div>
             <p className="m-0 mt-1 text-[13px] text-text-muted">{state.perPack} pets in each, the last one at least rare. Press it to tear it open.</p>
+            <Luck state={state} />
           </>
         )}
       </div>
@@ -590,6 +591,22 @@ function fanfare(level: 1 | 2 | 3, isTell = false) {
   } catch {
     // no sound, no matter
   }
+}
+
+// The luck the pets on the board bring (the higher level of the two): it
+// makes rare or better likelier in each card.
+function Luck({ state }: { state: Pets }) {
+  const out = [state.active, state.buddy].filter((p): p is string => !!p)
+  if (!out.length || !state.odds) return null
+  const best = out.reduce((a, b) => ((state.xp[b] ?? 0) > (state.xp[a] ?? 0) ? b : a))
+  const level = levelOf(state.xp[best] ?? 0).level
+  const [now, base] = [betterChance(state.odds, level), betterChance(state.odds, 1)]
+  return (
+    <p className="m-0 mt-2 inline-flex items-center gap-1.5 rounded-full bg-work-soft px-2.5 py-1 text-[12px] text-text" title="Each level of the pet on the board makes rare, epic and legendary pets likelier">
+      🍀 <span><b className="font-semibold">{petName(best)}</b>, level {level}:</span> <span><b className="font-semibold tabular-nums">{Math.round(now * 100)}%</b> rare or better</span>
+      {level > 1 && <span className="text-text-muted tabular-nums">(from {Math.round(base * 100)}%)</span>}
+    </p>
+  )
 }
 
 // ---------- collection ----------

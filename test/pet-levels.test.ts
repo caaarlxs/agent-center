@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { STAGES, XP, award, levelOf, packsBetween } from "../lib/pet-levels"
+import { STAGES, XP, award, betterChance, levelOf, luckyOdds, packsBetween } from "../lib/pet-levels"
 
 describe("levelOf", () => {
   it("starts at level 1, a baby", () => {
@@ -32,5 +32,23 @@ describe("packsBetween", () => {
     expect(packsBetween(3, 4)).toBe(0)
     expect(packsBetween(4, 5)).toBe(1)
     expect(packsBetween(4, 11)).toBe(2)
+  })
+})
+
+describe("luckyOdds", () => {
+  const odds = { common: 64, rare: 25, epic: 9, legendary: 2 }
+  it("leaves the odds as they are at level 1", () => {
+    expect(luckyOdds(odds, 1)).toEqual(odds)
+  })
+  it("makes the better ones likelier the higher the level, common as it is", () => {
+    const at20 = luckyOdds(odds, 20)
+    expect(at20.common).toBe(64)
+    expect(at20.rare).toBeGreaterThan(25)
+    expect(at20.legendary / odds.legendary).toBeGreaterThan(at20.rare / odds.rare) // the rarest gain most
+    expect(luckyOdds(odds, 60).legendary).toBeGreaterThan(at20.legendary)
+  })
+  it("says the chance of rare or better in a slot", () => {
+    expect(betterChance(odds, 1)).toBeCloseTo(0.36)
+    expect(betterChance(odds, 20)).toBeGreaterThan(0.45)
   })
 })
