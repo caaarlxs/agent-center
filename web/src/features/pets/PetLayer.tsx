@@ -25,7 +25,7 @@ import { openDialog } from "@/app/open-dialog"
 import { openSession } from "@/app/open-session"
 import { canNotify, showNotice } from "@/features/alerts/prefs"
 import { STAGES, levelOf, stageOf } from "@server/pet-levels"
-import { PetArt, RARITY_COLOR, petName } from "./art"
+import { PetArt, RARITY_COLOR, nicknames, petName, realName, setNickname } from "./art"
 import { nextWaiting, turnsEnded } from "./board-sense"
 import { FOODS, careOf, cares, energyOf, fullnessOf, setCare } from "./care"
 import { Parade, useArrowCode } from "./Parade"
@@ -143,6 +143,7 @@ function perchOnCard() {
 }
 
 function Walker({ id, slot, other, color }: { id: string; slot: "active" | "buddy"; other: string | null; color: string }) {
+  nicknames.use()
   const name = petName(id)
   const el = useRef<HTMLDivElement>(null)
   const posKey = slot === "buddy" ? "petPos2" : "petPos"
@@ -748,7 +749,8 @@ function Walker({ id, slot, other, color }: { id: string; slot: "active" | "budd
       {(mode === "work" || mode === "wait" || (focusUntil && mode === "idle")) && <Desk isTyping={mode === "work" || !!focusUntil} />}
       {food && <div className="pet-food" aria-hidden>{food}</div>}
       {isMenuOpen && (
-        <PetMenu name={name} color={color} fullness={fullness} energy={energy} isAsleep={mode === "sleep"} canNotify={care.canNotify} isUp={isUp} shift={shift}
+        <PetMenu name={name} ownName={realName(id)} color={color}
+          onRename={n => (setNickname(id, n), say(n.trim() && n.trim() !== realName(id) ? `I'm ${n.trim()} now!` : "Back to my own name", 1800))} fullness={fullness} energy={energy} isAsleep={mode === "sleep"} canNotify={care.canNotify} isUp={isUp} shift={shift}
           cards={cards} focus={focus} onFeed={feed} onSleep={sleepOrWake} onWork={work}
           onPet={() => (closeMenu(), earn("petted", `petted:${id}:${Math.floor(Date.now() / 600_000)}`, id), moment("cheer", pick(["♥", "Hehe", "Purr…", "Again!", ...LINES]), 1200))}
           level={lv} condition={conditionOf(id)} waiting={nextWaiting(cards)} focusUntil={focusUntil} onBring={bring} onFocus={toggleFocus}
@@ -846,7 +848,7 @@ const menuBtn = "flex h-8 items-center gap-2 rounded-[7px] px-2 text-left text-[
 const BY = { well: "×1.5 XP", ok: "", poorly: "×0.5 XP" } as const
 
 function PetMenu(props: {
-  name: string; color: string; fullness: number; energy: number; isAsleep: boolean; canNotify: boolean; isUp: boolean; shift: number
+  name: string; ownName: string; onRename: (name: string) => void; color: string; fullness: number; energy: number; isAsleep: boolean; canNotify: boolean; isUp: boolean; shift: number
   cards: Card[]; focus: string | null
   onFeed: () => void; onPet: () => void; onSleep: () => void; onWork: (card: Card | null) => void; onNotify: () => void; onPets: () => void
   onBall: () => void; hasBall: boolean
@@ -854,6 +856,11 @@ function PetMenu(props: {
   onBring: () => void; onFocus: () => void
 }) {
   const [isPicking, setPicking] = useState(false)
+  const [draft, setDraft] = useState<string | null>(null) // its new name, being typed
+  const rename = () => {
+    if (draft !== null && draft.trim() !== props.name) props.onRename(draft)
+    setDraft(null)
+  }
   const open = props.cards.filter(c => c.column !== "done").sort((a, b) => Number(b.column === "working") - Number(a.column === "working")).slice(0, 10)
   const row = (icon: string, label: ReactNode, onClick: () => void, hint?: ReactNode) => (
     <button className={menuBtn} onClick={onClick} onPointerDown={e => e.stopPropagation()}>
@@ -864,7 +871,24 @@ function PetMenu(props: {
     <div className={cn("pet-menu", props.isUp ? "top-[calc(100%+8px)]" : "bottom-[calc(100%+8px)]")} style={{ marginLeft: props.shift }} onPointerDown={e => e.stopPropagation()}>
       <div className="flex items-center gap-2 px-1 pb-1.5">
         <i className="size-2 rounded-full" style={{ background: props.color }} />
-        <span className="min-w-0 truncate text-[13px] font-[650]">{props.name}</span>
+        {draft !== null ? (
+          <input autoFocus onFocus={e => e.target.select()} value={draft} maxLength={40} placeholder={props.ownName} onChange={e => setDraft(e.target.value)} onBlur={rename}
+            onKeyDown={e => {
+              e.stopPropagation()
+              if (e.key === "Enter") rename()
+              if (e.key === "Escape") {
+                e.nativeEvent.stopImmediatePropagation()
+                setDraft(null)
+              }
+            }}
+            className="h-6 min-w-0 flex-1 rounded-[6px] border border-brand bg-surface px-1.5 text-[13px] font-[650] outline-none" />
+        ) : (
+          <button className="group flex min-w-0 items-center gap-1 rounded-[5px] text-left hover:text-brand" title={props.name !== props.ownName ? `${props.ownName} · click to rename` : "Click to rename"}
+            onClick={() => setDraft(props.name)}>
+            <span className="min-w-0 truncate text-[13px] font-[650]">{props.name}</span>
+            <span className="text-[11px] opacity-0 transition-opacity group-hover:opacity-70" aria-hidden>✏️</span>
+          </button>
+        )}
         <span className="ml-auto shrink-0 text-[11px] text-faint">{props.isAsleep ? "asleep" : props.focus ? "working" : props.fullness < 25 ? "hungry" : props.energy < 25 ? "tired" : "happy"}</span>
       </div>
       <div className="flex flex-col gap-1 px-1 pb-2">
@@ -902,6 +926,7 @@ function PetMenu(props: {
             {row("📬", "Bring me what waits", props.onBring, props.waiting ? (props.waiting.column === "asking" ? "asking" : "to review") : "none")}
             {row("⏱", props.focusUntil ? "Stop the focus" : "Focus 25 min", props.onFocus, props.focusUntil ? <Countdown until={props.focusUntil} /> : undefined)}
             {row(props.canNotify ? "🔔" : "🔕", props.canNotify ? "Notifications on" : "Notifications off", props.onNotify)}
+            {row("✏️", "Rename", () => setDraft(props.name))}
             {row("🐾", "Your pets", props.onPets)}
           </>
         )}
