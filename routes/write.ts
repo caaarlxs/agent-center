@@ -214,7 +214,7 @@ export async function handleWrite(path: string, body: Record<string, unknown>): 
     // first (its title, description, type, priority), or dismissed.
     case "/api/pipeline/proposal": {
       const key = String(body.key ?? ""), id = String(body.id ?? "")
-      const edit = { summary: body.summary, description: body.description, kind: body.kind, priority: body.priority }
+      const edit = { summary: body.summary, description: body.description, kind: body.kind, priority: body.priority, components: body.components }
       const done = body.action === "dismiss" ? dismissProposed(key, id).then(() => ({}))
         : body.action === "edit" ? editProposed(key, id, edit as never).then(() => ({}))
         : createProposed(key, id)

@@ -1,14 +1,14 @@
 import { describe, expect, it } from "bun:test"
-import { anchorOf, decidedForAgent, edited, newDescription, proposalsIn, ticketsOfYours, waitsOn, withProposals, type Proposal } from "../lib/proposals"
+import { anchorOf, componentsFor, decidedForAgent, edited, newDescription, proposalsIn, ticketsOfYours, waitsOn, withProposals, type Proposal } from "../lib/proposals"
 
 const p = (extra: Partial<Proposal> = {}): Proposal => ({ id: "R1-T1", kind: "bug", summary: "El owner no se actualiza", description: "D", why: "W", linkTo: null, status: "proposed", ...extra })
 
 describe("proposalsIn", () => {
   it("reads what the agent proposes, numbered by its run, and leaves out what has no title", () => {
-    const out = proposalsIn([{ kind: "bug", summary: " A ", description: "d", why: "w", linkTo: "PP-3", question: "Q7", priority: "high" }, { summary: "" }, { kind: "epic", summary: "B", linkTo: "nope", question: "7" }], 4, "refine")
+    const out = proposalsIn([{ kind: "bug", summary: " A ", description: "d", why: "w", linkTo: "PP-3", question: "Q7", priority: "high", components: ["Plataforma Web", " ", "Plataforma Web"] }, { summary: "" }, { kind: "epic", summary: "B", linkTo: "nope", question: "7" }], 4, "refine")
     expect(out).toEqual([
-      { id: "R4-T1", kind: "bug", summary: "A", description: "d", why: "w", priority: "High", linkTo: "PP-3", question: "Q7", stage: "refine", status: "proposed" },
-      { id: "R4-T2", kind: "task", summary: "B", description: "", why: "", priority: null, linkTo: null, question: null, stage: "refine", status: "proposed" },
+      { id: "R4-T1", kind: "bug", summary: "A", description: "d", why: "w", priority: "High", components: ["Plataforma Web"], linkTo: "PP-3", question: "Q7", stage: "refine", status: "proposed" },
+      { id: "R4-T2", kind: "task", summary: "B", description: "", why: "", priority: null, components: [], linkTo: null, question: null, stage: "refine", status: "proposed" },
     ])
     expect(proposalsIn(undefined, 1, "refine")).toEqual([])
   })
@@ -60,5 +60,17 @@ describe("edited", () => {
     expect(edited(p({ priority: "High" }), { kind: "epic" as never }).kind).toBe("bug")
     expect(() => edited(p(), { summary: "  " })).toThrow("A ticket needs a title")
     expect(() => edited(p({ status: "created" }), { summary: "X" })).toThrow("Only a proposal not created yet can change")
+  })
+})
+
+describe("components", () => {
+  it("its own, else the ones of the ticket it goes with, else the team's default", () => {
+    expect(componentsFor(p({ components: ["App móvil"] }), ["Plataforma Web"])).toEqual(["App móvil"])
+    expect(componentsFor(p(), ["Plataforma Web"], ["Data"])).toEqual(["Plataforma Web"])
+    expect(componentsFor(p(), [], ["Data"])).toEqual(["Data"])
+  })
+  it("you change them before you create it", () => {
+    expect(edited(p(), { components: ["Data", "Data"] }).components).toEqual(["Data"])
+    expect(edited(p({ components: ["Data"] }), { summary: "X" }).components).toEqual(["Data"])
   })
 })

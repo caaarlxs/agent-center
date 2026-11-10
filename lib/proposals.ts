@@ -16,6 +16,7 @@ export type Proposal = {
   description: string
   why: string // why it goes apart, for you
   priority?: Priority | null // Jira's, as the agent judged it (its reason is in the description)
+  components?: string[] // Jira's components; none, the ones of the ticket it goes with
   linkTo: string | null // the ticket of yours it goes with, as the agent chose it
   question?: string | null // the question whose answer decides it: it waits while that is open
   stage?: string // the stage that proposed it: its next run says again what it proposes
@@ -24,6 +25,7 @@ export type Proposal = {
 }
 
 export const KINDS: NewKind[] = ["story", "task", "bug", "subtask"]
+const namesOf = (v: unknown): string[] => (Array.isArray(v) ? [...new Set(v.map(text).filter(Boolean))].slice(0, 5) : [])
 const priorityOf = (v: unknown): Priority | null => PRIORITIES.find(p => p.toLowerCase() === text(v).toLowerCase()) ?? null
 const text = (v: unknown) => (typeof v === "string" ? v.trim() : "")
 const KEY = /^[A-Z][A-Z0-9]+-\d+$/
@@ -38,6 +40,7 @@ export function proposalsIn(raw: unknown, run: number, stage: string): Proposal[
     description: text(t.description),
     why: text(t.why),
     priority: priorityOf(t.priority),
+    components: namesOf(t.components),
     linkTo: KEY.test(text(t.linkTo)) ? text(t.linkTo) : null,
     question: /^Q\d+$/.test(text(t.question)) ? text(t.question) : null,
     stage,
@@ -69,6 +72,10 @@ export const decidedForAgent = (all: Proposal[] = []) =>
 export const ticketsOfYours = (state: { key: string; local?: boolean; scope?: { key: string; kind: string }[] }) =>
   [...(state.local ? [] : [state.key]), ...(state.scope ?? []).filter(t => t.kind !== "subtask").map(t => t.key)]
 
+// Its components in Jira: its own, else the ones of the ticket it goes with, else the team's default.
+export const componentsFor = (p: Proposal, ofAnchor: string[], fallback: string[] = []) =>
+  p.components?.length ? p.components : ofAnchor.length ? ofAnchor : fallback
+
 // The one it goes with: the agent's choice when it is yours, else the first of yours.
 export const anchorOf = (p: Proposal, yours: string[]) => (p.linkTo && yours.includes(p.linkTo) ? p.linkTo : (yours[0] ?? null))
 
@@ -78,7 +85,7 @@ export const newDescription = (p: Proposal, from: string) =>
   `${p.description}${p.why ? `\n\n**Por qué va aparte.** ${p.why}` : ""}\n\n_Propuesto por el agente al trabajar en ${from}._`
 
 // Your changes before you create it: only what a proposal has, only while it is proposed.
-export type Edit = Partial<Pick<Proposal, "summary" | "description" | "kind" | "priority">>
+export type Edit = Partial<Pick<Proposal, "summary" | "description" | "kind" | "priority" | "components">>
 export function edited(p: Proposal, edit: Edit): Proposal {
   if (p.status !== "proposed") throw new Error("Only a proposal not created yet can change")
   const summary = edit.summary === undefined ? p.summary : text(edit.summary).slice(0, 250)
@@ -89,5 +96,6 @@ export function edited(p: Proposal, edit: Edit): Proposal {
     description: edit.description === undefined ? p.description : text(edit.description),
     kind: edit.kind === undefined ? p.kind : KINDS.includes(edit.kind) ? edit.kind : p.kind,
     priority: edit.priority === undefined ? (p.priority ?? null) : priorityOf(edit.priority),
+    components: edit.components === undefined ? (p.components ?? []) : namesOf(edit.components),
   }
 }

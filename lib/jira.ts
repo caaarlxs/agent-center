@@ -364,9 +364,15 @@ async function request(setup: JiraSetup, path: string, init: RequestInit = {}, t
     signal: AbortSignal.timeout(15_000),
   })
   if (res.status === 401 || res.status === 403) throw new Error("Jira did not accept the email and token")
-  if (!res.ok) throw new Error(`Jira answered ${res.status}`)
+  if (!res.ok) throw new Error(`Jira answered ${res.status}${await whyRefused(res)}`)
   return res
 }
+// What Jira says it refused (its messages, and each field's): to know what to change.
+export const refusalOf = (body: any): string => {
+  const parts = [...(Array.isArray(body?.errorMessages) ? body.errorMessages : []), ...Object.entries(body?.errors ?? {}).map(([field, why]) => `${field}: ${why}`)]
+  return parts.length ? `: ${parts.join("; ")}` : ""
+}
+const whyRefused = (res: Response) => res.json().then(refusalOf, () => "")
 const call = async (setup: JiraSetup, path: string, init: RequestInit = {}, token?: string): Promise<any> => (await request(setup, path, init, token)).json()
 
 // Checks the details with Jira, then keeps them: the token in the keychain, the rest in the settings.
@@ -691,6 +697,17 @@ export async function attachTo(key: string, paths: string[]) {
   briefs.delete(key)
 }
 
+// A ticket's components (their names), and the ones a project has: a new ticket needs one in some projects.
+export async function componentsOf(key: string): Promise<string[]> {
+  const raw = await call(setupOrThrow(), `/rest/api/3/issue/${keyOrThrow(key)}?fields=components`)
+  return (raw?.fields?.components ?? []).map((c: any) => String(c.name)).filter(Boolean)
+}
+export async function projectComponents(project: string): Promise<string[]> {
+  if (!/^[A-Z][A-Z0-9]{1,9}$/.test(project)) throw new Error("Not a project key")
+  const list = await call(setupOrThrow(), `/rest/api/3/project/${project}/components`)
+  return (Array.isArray(list) ? list : []).map((c: any) => String(c.name)).filter(Boolean)
+}
+
 // Two tickets related ("relates to"): the link shows on both; one of them must be yours.
 export async function relateTickets(key: string, yours: string) {
   const setup = setupOrThrow()
@@ -701,11 +718,11 @@ export async function relateTickets(key: string, yours: string) {
 
 // A new ticket, assigned to you (the board writes only on what is yours): its key. Its
 // description is Markdown (adf.ts), shown in Jira with its bold, lists and code.
-export async function createIssue(f: { project: string; typeId: string; summary: string; description: string; labels: string[]; priority?: string | null }): Promise<string> {
+export async function createIssue(f: { project: string; typeId: string; summary: string; description: string; labels: string[]; priority?: string | null; components?: string[] }): Promise<string> {
   const setup = setupOrThrow()
   if (!/^[A-Z][A-Z0-9]{1,9}$/.test(f.project)) throw new Error("Not a project key")
   const fields = { project: { key: f.project }, issuetype: { id: f.typeId }, summary: f.summary.slice(0, 250), description: adfOf(f.description.slice(0, 30_000)), labels: f.labels, assignee: { accountId: await myId(setup) },
-    ...(f.priority ? { priority: { name: f.priority } } : {}) }
+    ...(f.priority ? { priority: { name: f.priority } } : {}), ...(f.components?.length ? { components: f.components.map(name => ({ name })) } : {}) }
   const r = await call(setup, "/rest/api/3/issue", { method: "POST", body: JSON.stringify({ fields }) })
   return String(r?.key ?? "")
 }

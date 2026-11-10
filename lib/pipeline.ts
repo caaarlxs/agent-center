@@ -35,10 +35,10 @@ import { appendFile, cp, mkdir, readFile, rename, rm } from "node:fs/promises"
 import { basename, join } from "node:path"
 import { DATA_DIR } from "./config"
 import { writeJsonAtomic } from "./files"
-import { descendantsOf, relateTickets, assignToMe, attachTo, commentOn, createIssue, confluenceIds, confluencePage, createSubtask, issueState, remoteLinks, type ConfluencePage, labelTicket, moveToStatus, openStatuses, ticket, type Ticket, type TicketComment } from "./jira"
+import { componentsOf, descendantsOf, relateTickets, assignToMe, attachTo, commentOn, createIssue, confluenceIds, confluencePage, createSubtask, issueState, remoteLinks, type ConfluencePage, labelTicket, moveToStatus, openStatuses, ticket, type Ticket, type TicketComment } from "./jira"
 import { flowOf, followInJira, type Event as JiraEvent } from "./jira-flow"
 import { scopeLines, scopeOf, storiesOf, type TreeTicket } from "./scope"
-import { anchorOf, decidedForAgent, edited, newDescription, proposalsIn, ticketsOfYours, waitsOn, withProposals, type Edit, type Proposal } from "./proposals"
+import { anchorOf, componentsFor, decidedForAgent, edited, newDescription, proposalsIn, ticketsOfYours, waitsOn, withProposals, type Edit, type Proposal } from "./proposals"
 import { archiveOf, cleanupSteps, keptAfter, leftoversOf, wantedBranches, worktreesIn, type Archive, type Clone, type Found, type Kept as KeptBranch } from "./cleanup"
 import { evidenceType, filesIn, keptFiles, type EvidenceFile } from "./evidence"
 import { debtIn, merged as debtMerged, ticketOf as debtTicket, type DebtEntry, type DebtItem } from "./debt"
@@ -1316,15 +1316,22 @@ export const createProposed = (key: string, id: string) => locked(key, async () 
   return { created, anchor, warning }
 })
 // In Jira, as jira.json says: a sub-task inside the ticket of yours, else a ticket linked to it.
+// A ticket of its own, as jira.json's newIssue says. A project that needs a component (PP
+// does) gets the proposal's, else the anchor's, else newIssue's.
+type NewIssueConf = { project?: string; types?: Record<string, string>; labels?: string[]; components?: string[] } | undefined
+async function newIssueOf(p: Proposal, anchor: string, description: string, conf: NewIssueConf) {
+  const typeId = conf?.types?.[p.kind]
+  if (!conf?.project || !typeId) throw new Error(`jira.json has no newIssue type for ${p.kind}`)
+  const components = componentsFor(p, await componentsOf(anchor).catch(() => []), conf.components ?? [])
+  return { project: conf.project, typeId, summary: p.summary, description, labels: conf.labels ?? [], priority: p.priority, components }
+}
 async function createInJira(p: Proposal, anchor: string, description: string) {
   const conf = jsonOf(await readText(join(STAGES_DIR, "jira.json")))
   if (p.kind === "subtask") {
     if (!conf?.subtaskType) throw new Error("jira.json has no subtaskType")
     return { created: await createSubtask(anchor, p.summary, conf.subtaskType, description, p.priority), warning: null }
   }
-  const typeId = conf?.newIssue?.types?.[p.kind]
-  if (!conf?.newIssue?.project || !typeId) throw new Error(`jira.json has no newIssue type for ${p.kind}`)
-  const created = await createIssue({ project: conf.newIssue.project, typeId, summary: p.summary, description, labels: conf.newIssue.labels ?? [], priority: p.priority })
+  const created = await createIssue(await newIssueOf(p, anchor, description, conf?.newIssue))
   const warning = await relateTickets(created, anchor).then(() => null, (err: Error) => `${created} is not linked to ${anchor}: ${err.message}`)
   return { created, warning }
 }

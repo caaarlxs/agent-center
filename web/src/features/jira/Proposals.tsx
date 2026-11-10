@@ -3,13 +3,14 @@
 // description formatted), where you change it, dismiss it or create it.
 // Nothing is created alone. One that waits on a question shows in it.
 import { ChevronRight, TicketPlus } from "lucide-react"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { Spinner } from "@/components/ui/spinner"
 import { Textarea } from "@/components/ui/textarea"
-import { post } from "@/lib/api"
+import { get, post } from "@/lib/api"
 import { dialog } from "@/app/open-dialog"
 import { Markdown } from "@/features/conversation/Markdown"
 import type { PipelineState } from "@server/pipeline"
@@ -82,29 +83,45 @@ async function send(ticketKey: string, p: Proposal, action: keyof typeof DONE, e
   }
 }
 
+// Its fields in Jira: type, priority, components, where it goes, and who it is for.
+function Fields({ p, anchor }: { p: Proposal; anchor: string | null }) {
+  const where = `${p.kind === "subtask" ? "inside" : "linked to"} ${anchor ?? "—"}`
+  const components = p.components?.length ? p.components.join(", ") : `Components of ${anchor ?? "—"}`
+  return (
+    <span className="flex flex-wrap items-center gap-2 text-xs text-text-muted">
+      <Kind kind={p.kind} />
+      {p.priority && <span className="font-semibold">{p.priority}</span>}
+      <span className="text-faint">{components} · {where} · assigned to you</span>
+    </span>
+  )
+}
+
 // A proposal as it will be in Jira: its fields above, its description as Jira shows it (what
 // the board sends: yours, why it goes apart and where it comes from); or the form to change it.
 function ProposalDialog({ ticketKey, p, anchor, isWaiting = false, onClose }: { ticketKey: string; p: Proposal; anchor: string | null; isWaiting?: boolean; onClose: () => void }) {
   const [isEditing, setEditing] = useState(false)
-  const act = async (action: keyof typeof DONE, edit?: Edit) => (await send(ticketKey, p, action, edit)) && (action === "edit" ? setEditing(false) : onClose())
+  // What it is doing now (Jira takes a few seconds): the buttons wait and say so.
+  const [busy, setBusy] = useState<keyof typeof DONE | null>(null)
+  const act = async (action: keyof typeof DONE, edit?: Edit) => {
+    setBusy(action)
+    const ok = await send(ticketKey, p, action, edit)
+    setBusy(null)
+    if (ok) action === "edit" ? setEditing(false) : onClose()
+  }
   return (
     <Dialog open onOpenChange={o => !o && onClose()}>
       <DialogContent className="flex max-h-[min(88vh,900px)] w-[min(820px,calc(100vw-32px))] flex-col gap-4">
         <header className="flex flex-col gap-2 pr-8">
-          <span className="flex flex-wrap items-center gap-2 text-xs text-text-muted">
-            <Kind kind={p.kind} />
-            {p.priority && <span className="font-semibold">{p.priority}</span>}
-            <span className="text-faint">{p.kind === "subtask" ? "Inside" : "Linked to"} {anchor ?? "—"} · assigned to you</span>
-          </span>
+          <Fields p={p} anchor={anchor} />
           <DialogTitle className="m-0 text-[17px] leading-[1.35] font-[620]">{p.summary}</DialogTitle>
         </header>
-        {isEditing ? <Editor p={p} onCancel={() => setEditing(false)} onSave={edit => void act("edit", edit)} />
+        {isEditing ? <Editor p={p} project={ticketKey.split("-")[0]!} isSaving={busy === "edit"} onCancel={() => setEditing(false)} onSave={edit => void act("edit", edit)} />
           : <Markdown isDocument className="-mx-1 min-h-0 flex-1 overflow-auto px-1 text-[13.5px]">{newDescription(p, ticketKey)}</Markdown>}
         {!isEditing && (
           <footer className="flex items-center gap-3 border-t border-line pt-3">
             {p.status === "created" ? <button className="font-mono text-xs font-semibold text-brand hover:underline" onClick={() => dialog.set({ kind: "ticket", key: p.created! })}>{p.created}</button>
               : isWaiting ? <span className="text-xs text-text-muted">It waits for your answer to {p.question}</span>
-              : <Actions canCreate={!!anchor} onDismiss={() => void act("dismiss")} onEdit={() => setEditing(true)} onCreate={() => void act("create")} />}
+              : <Actions canCreate={!!anchor} busy={busy} onDismiss={() => void act("dismiss")} onEdit={() => setEditing(true)} onCreate={() => void act("create")} />}
           </footer>
         )}
       </DialogContent>
@@ -113,14 +130,20 @@ function ProposalDialog({ ticketKey, p, anchor, isWaiting = false, onClose }: { 
 }
 
 // Dismiss it, change it, or create it (a second click confirms).
-function Actions({ canCreate, onDismiss, onEdit, onCreate }: { canCreate: boolean; onDismiss: () => void; onEdit: () => void; onCreate: () => void }) {
+// While one runs, all wait, and the one at work says so with a spinner.
+function Actions({ canCreate, busy, onDismiss, onEdit, onCreate }: { canCreate: boolean; busy: string | null; onDismiss: () => void; onEdit: () => void; onCreate: () => void }) {
   const [isAsking, confirm] = useConfirm()
+  const createLabel = busy === "create" ? "Creating in Jira…" : isAsking ? "Sure? Create in Jira" : "Create in Jira"
   return (
     <>
-      <button className="text-xs font-semibold text-faint hover:text-text" onClick={onDismiss}>Dismiss</button>
+      <button className="inline-flex items-center gap-1.5 text-xs font-semibold text-faint hover:text-text disabled:opacity-50" disabled={!!busy} onClick={onDismiss}>
+        {busy === "dismiss" && <Spinner className="size-3" />}{busy === "dismiss" ? "Dismissing…" : "Dismiss"}
+      </button>
       <span className="ml-auto flex items-center gap-2">
-        <Button variant="outline" className="h-8 text-xs" onClick={onEdit}>Edit</Button>
-        <Button variant={isAsking ? "destructive" : "default"} className="h-8 text-xs" disabled={!canCreate} onClick={() => confirm(onCreate)}>{isAsking ? "Sure? Create in Jira" : "Create in Jira"}</Button>
+        <Button variant="outline" className="h-8 text-xs" disabled={!!busy} onClick={onEdit}>Edit</Button>
+        <Button variant={isAsking && !busy ? "destructive" : "default"} className="h-8 gap-1.5 text-xs" disabled={!canCreate || !!busy} onClick={() => confirm(onCreate)}>
+          {busy === "create" && <Spinner className="size-3.5" />}{createLabel}
+        </Button>
       </span>
     </>
   )
@@ -128,8 +151,9 @@ function Actions({ canCreate, onDismiss, onEdit, onCreate }: { canCreate: boolea
 
 // Its title, type, priority and description (Markdown, as the team's template).
 const SELECT = "h-8 rounded-md border border-line bg-surface px-2 text-xs text-text"
-function Editor({ p, onCancel, onSave }: { p: Proposal; onCancel: () => void; onSave: (edit: Edit) => void }) {
+function Editor({ p, project, isSaving, onCancel, onSave }: { p: Proposal; project: string; isSaving: boolean; onCancel: () => void; onSave: (edit: Edit) => void }) {
   const [summary, setSummary] = useState(p.summary)
+  const [components, setComponents] = useState(p.components ?? [])
   const [kind, setKind] = useState(p.kind)
   const [priority, setPriority] = useState(p.priority ?? "")
   const [description, setDescription] = useState(p.description)
@@ -145,11 +169,29 @@ function Editor({ p, onCancel, onSave }: { p: Proposal; onCancel: () => void; on
           {PRIORITIES.map(x => <option key={x} value={x}>{x}</option>)}
         </select>
       </div>
+      <Components project={project} picked={components} onChange={setComponents} />
       <Textarea value={description} onChange={e => setDescription(e.target.value)} aria-label="Description" className="min-h-[300px] flex-1 font-mono text-xs leading-[1.55]" />
       <div className="flex justify-end gap-2">
-        <Button variant="outline" className="h-8 text-xs" onClick={onCancel}>Cancel</Button>
-        <Button className="h-8 text-xs" disabled={!summary.trim()} onClick={() => onSave({ summary, kind, priority: (priority || null) as Edit["priority"], description })}>Save</Button>
+        <Button variant="outline" className="h-8 text-xs" disabled={isSaving} onClick={onCancel}>Cancel</Button>
+        <Button className="h-8 gap-1.5 text-xs" disabled={!summary.trim() || isSaving} onClick={() => onSave({ summary, kind, priority: (priority || null) as Edit["priority"], description, components })}>{isSaving && <Spinner className="size-3.5" />}{isSaving ? "Saving…" : "Save"}</Button>
       </div>
+    </div>
+  )
+}
+
+// The project's components to pick; none picked, it takes the ones of the ticket it goes with.
+function Components({ project, picked, onChange }: { project: string; picked: string[]; onChange: (names: string[]) => void }) {
+  const [all, setAll] = useState<string[]>([])
+  useEffect(() => void get<{ components: string[] }>(`/api/jira/components?project=${encodeURIComponent(project)}`).then(r => setAll(r.components), () => {}), [project])
+  const toggle = (name: string) => onChange(picked.includes(name) ? picked.filter(n => n !== name) : [...picked, name])
+  if (!all.length) return null
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-text-muted">
+      {all.map(name => (
+        <label key={name} className="inline-flex cursor-pointer items-center gap-1.5">
+          <input type="checkbox" checked={picked.includes(name)} onChange={() => toggle(name)} className="size-3.5 accent-(--brand)" />{name}
+        </label>
+      ))}
     </div>
   )
 }

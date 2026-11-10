@@ -2,7 +2,7 @@
 // PRs, tasks, runs, files sent and search. GET only; none changes anything
 // the person decided.
 
-import { jiraSetup, searchTickets, ticket, ticketRows, transitionsOf } from "../lib/jira"
+import { jiraSetup, projectComponents, searchTickets, ticket, ticketRows, transitionsOf } from "../lib/jira"
 import { debtRegister, leftovers, pipelineActivity, pipelineEvidence, pipelineOf, pipelineReport, runDoc } from "../lib/pipeline"
 import { jobActivity, jobOf, resolveJob } from "../lib/jobs"
 import { reportOf } from "../lib/release"
@@ -346,6 +346,8 @@ export async function handleRead(url: URL): Promise<Response | null> {
     return await searchTickets(filter === "reported" || filter === "sprint" || filter === "all" ? filter : "mine", url.searchParams.get("q") ?? "").then(r => json(r), (err: Error) => json({ error: err.message }, 400))
   }
   if (path === "/api/jira/rows") return await ticketRows((url.searchParams.get("keys") ?? "").split(",")).then(rows => json({ rows }), (err: Error) => json({ error: err.message }, 400))
+  // The components a project has: a new ticket takes one or more (Edit lists them).
+  if (path === "/api/jira/components") return await projectComponents(url.searchParams.get("project") ?? "").then(c => json({ components: c }), (err: Error) => json({ error: err.message }, 400))
   if (path === "/api/jira/transitions") return await transitionsOf(url.searchParams.get("key") ?? "").then(t => json({ transitions: t }), (err: Error) => json({ error: err.message }, 400))
   if (path === "/api/app-icon") return json({ icon: chosenIcon(), icons: ICONS })
   // Pets (lib/pets.ts): the packs to open, the pets you have, the one out.

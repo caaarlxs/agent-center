@@ -180,3 +180,12 @@ describe("userKeys", () => {
     expect(userKeys("not json")).toEqual([])
   })
 })
+
+describe("refusalOf", () => {
+  it("says what Jira refused: its messages and each field's", async () => {
+    const { refusalOf } = await import("../lib/jira")
+    expect(refusalOf({ errorMessages: ["Bad"], errors: { priority: "Field 'priority' cannot be set." } })).toBe(": Bad; priority: Field 'priority' cannot be set.")
+    expect(refusalOf({})).toBe("")
+    expect(refusalOf(null)).toBe("")
+  })
+})
