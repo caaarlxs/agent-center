@@ -5,8 +5,10 @@
 // walks to that session's card and sits on it at its laptop; when the
 // session asks you something or finishes, it tells you (a toast here, a macOS
 // notification when you are in another window). Dragged, it dangles and stays
-// where it is dropped. With reduced motion it does not wander.
+// where it is dropped. Play ball with it: drag the ball and let go, it runs
+// after it and brings it back. With reduced motion it does not wander.
 import { useEffect, useRef, useState, type ReactNode } from "react"
+import { createPortal } from "react-dom"
 import { toast } from "sonner"
 import type { Card } from "@/lib/api-types"
 import { useLive } from "@/lib/live"
@@ -19,10 +21,19 @@ import { PetArt, RARITY_COLOR, petName } from "./art"
 import { FOODS, careOf, cares, energyOf, fullnessOf, setCare } from "./care"
 import { pets, rarityOf, watchPets } from "./pets"
 
-type Mode = "idle" | "walk" | "sleep" | "drag" | "cheer" | "alert" | "eat" | "work" | "wait"
+type Mode = "idle" | "walk" | "sleep" | "drag" | "cheer" | "alert" | "eat" | "work" | "wait" | "fetch" | "carry"
 const SIZE = 60
 const SPEED = 52 // px a second
 const RUSH = 150 // to its session's card
+const CHASE = 270 // after the ball
+// The ball: its size, how it falls, how much of a bounce it keeps, and how
+// long the pet waits for a throw before it puts the ball away.
+const BALL = 18
+const GRAVITY = 2100
+const BOUNCE = 0.58
+const BORED_AFTER = 30_000
+type Ball = { x: number; y: number; vx: number; vy: number; spin: number; state: "loose" | "held" | "carried"; isThrown: boolean; from: { x: number; y: number }; at: number }
+const floorOf = () => innerHeight - 4 - BALL / 2
 const IDLE_NAP = 90_000 // nobody moves the mouse: a nap
 const LINES = ["Hi!", "♪ ♫", "Ship it!", "More pets, please", "Coffee?", "Any PRs to review?", "I'm helping!", "Bugs? Where?", "*happy noises*", "You got this"]
 const WORK_LINES = ["Reading the logs…", "Hmm, interesting", "Compiling…", "Tests are running", "Typing very fast", "Almost there…", "LGTM so far", "Refactoring my tail"]
@@ -87,6 +98,9 @@ function Walker({ id, color }: { id: string; color: string }) {
   const energy = energyOf(care, now)
   const isSad = fullness < 15 || energy < 12
   const timers = useRef<number[]>([])
+  const ball = useRef<Ball | null>(null)
+  const ballEl = useRef<HTMLDivElement>(null)
+  const [hasBall, setHasBall] = useState(false)
   const isStill = matchMedia("(prefers-reduced-motion: reduce)").matches
 
   const setMode = (m: Mode) => ((modeRef.current = m), setModeState(m))
@@ -116,6 +130,14 @@ function Walker({ id, color }: { id: string; color: string }) {
     node.style.transform = `translate3d(${pos.current.x - SIZE / 2}px, ${pos.current.y - SIZE}px, 0)`
     node.style.setProperty("--face", String(facing.current))
   }
+  const placeBall = () => {
+    const b = ball.current
+    if (b && ballEl.current) ballEl.current.style.transform = `translate3d(${b.x - BALL / 2}px, ${b.y - BALL / 2}px, 0) rotate(${b.spin}rad)`
+  }
+  const dropBall = () => {
+    ball.current = null
+    setHasBall(false)
+  }
 
   // The walk: one frame at a time toward its target; at rest, now and then a
   // new one; working, its seat on the card, followed when the card moves.
@@ -125,12 +147,100 @@ function Walker({ id, color }: { id: string; color: string }) {
     let last = performance.now()
     let restUntil = performance.now() + 1500
     let seatAt = 0
+    // One step toward a point; answers whether it got there.
+    const go = (to: { x: number; y: number }, speed: number, dt: number) => {
+      const dx = to.x - pos.current.x
+      const dy = to.y - pos.current.y
+      const dist = Math.hypot(dx, dy)
+      if (dist < 3) return true
+      const move = Math.min(dist, speed * dt)
+      pos.current = { x: pos.current.x + (dx / dist) * move, y: pos.current.y + (dy / dist) * move }
+      if (Math.abs(dx) > 1 && (dx > 0 ? 1 : -1) !== facing.current) {
+        facing.current = dx > 0 ? 1 : -1
+        setFace(facing.current)
+      }
+      place()
+      return false
+    }
+    // The ball on its own: it falls, bounces off the floor and the edges, rolls and stops.
+    const roll = (b: Ball, dt: number) => {
+      const floor = floorOf()
+      if (b.y >= floor && Math.abs(b.vy) < 1) {
+        b.vx *= Math.max(0, 1 - 2.6 * dt) // rolling
+        if (Math.abs(b.vx) < 6) b.vx = 0
+      } else b.vy += GRAVITY * dt
+      b.x += b.vx * dt
+      b.y += b.vy * dt
+      if (b.y > floor) {
+        b.y = floor
+        b.vy = Math.abs(b.vy) > 140 ? -b.vy * BOUNCE : 0
+        b.vx *= 0.86
+      }
+      if (b.y < BALL / 2) {
+        b.y = BALL / 2
+        b.vy = Math.abs(b.vy) * BOUNCE
+      }
+      if (b.x < BALL / 2) {
+        b.x = BALL / 2
+        b.vx = Math.abs(b.vx) * BOUNCE
+      }
+      if (b.x > innerWidth - BALL / 2) {
+        b.x = innerWidth - BALL / 2
+        b.vx = -Math.abs(b.vx) * BOUNCE
+      }
+      b.spin += (b.vx * dt) / (BALL / 2)
+    }
     const step = (t: number) => {
-      const dt = Math.min(0.05, (t - last) / 1000)
+      const rawDt = (t - last) / 1000
+      const dt = Math.min(0.05, rawDt)
       last = t
       const m = modeRef.current
       const cardId = focusRef.current
+      const b = ball.current
+      if (b) {
+        // in small steps, as much time as really went by (a slow frame does not slow the ball)
+        if (b.state === "loose") for (let left = Math.min(0.25, rawDt); left > 0; left -= 0.016) roll(b, Math.min(0.016, left))
+        else if (b.state === "carried") Object.assign(b, { x: pos.current.x + facing.current * 15, y: pos.current.y - SIZE * 0.42, spin: 0 })
+        placeBall()
+      }
       if (menuRef.current || m === "drag" || m === "sleep" || m === "eat" || m === "cheer" || m === "alert") {
+        frame = requestAnimationFrame(step)
+        return
+      }
+      // Playing: after the thrown ball, back with it, then waiting for the next throw.
+      if (b && b.state !== "held") {
+        if (b.state === "carried") {
+          if (m !== "carry") setMode("carry")
+          if (go(clamp(b.from), CHASE * 0.75, dt)) {
+            b.state = "loose"
+            b.isThrown = false
+            b.at = Date.now()
+            b.vx = facing.current * 60
+            b.vy = -260
+            setCare(id, { energy: Math.max(0, energyOf(careOf(id)) - 3) })
+            moment("cheer", pick(["Again! Again!", "Throw it again!", "Here you go!", "One more?", "♥"]), 900)
+          }
+        } else if (b.isThrown) {
+          if (m !== "fetch") setMode("fetch")
+          const ground = clamp({ x: b.x, y: b.y + BALL / 2 })
+          go(ground, CHASE, dt)
+          if (Math.hypot(b.x - pos.current.x, b.y - (pos.current.y - BALL / 2)) < SIZE * 0.55) {
+            b.state = "carried"
+            if (Math.random() < 0.35) say(pick(["Got it!", "Mine!", "Hehe"]), 1200)
+          }
+        } else {
+          if (m !== "idle") setMode("idle")
+          const looking = b.x > pos.current.x ? 1 : -1
+          if (looking !== facing.current) {
+            facing.current = looking
+            setFace(looking)
+            place()
+          }
+          if (Date.now() - b.at > BORED_AFTER) {
+            dropBall()
+            say(pick(["That was fun!", "Good game!", "Play again later?"]))
+          }
+        }
         frame = requestAnimationFrame(step)
         return
       }
@@ -291,6 +401,63 @@ function Walker({ id, color }: { id: string; color: string }) {
     } else moment("cheer", "Break time!", 1200)
   }
 
+  // Play ball: a ball by its feet, waiting for you to throw it.
+  const playBall = () => {
+    closeMenu()
+    if (careOf(id).isAsleep || modeRef.current === "sleep") return say("Zzz… later")
+    if (energyOf(careOf(id)) < 10) return say("Too tired to play…")
+    target.current = null
+    ball.current = { x: pos.current.x + facing.current * 46, y: pos.current.y - BALL, vx: 0, vy: 0, spin: 0, state: "loose", isThrown: false, from: { ...pos.current }, at: Date.now() }
+    setHasBall(true)
+    setMode("idle")
+    say("Throw it! Drag the ball and let go", 3200)
+  }
+  // The ball in your hand: it follows the pointer, and flies off as fast as
+  // you let go of it (a click alone tosses it up).
+  const onBallDown = (e: React.PointerEvent) => {
+    const b = ball.current
+    if (!b || e.button !== 0) return
+    e.preventDefault()
+    e.stopPropagation()
+    if (b.state === "carried") say(pick(["Hey!", "That's mine!"]), 1000)
+    b.state = "held"
+    b.vx = b.vy = 0
+    const node = e.currentTarget as HTMLElement
+    node.setPointerCapture(e.pointerId)
+    const trail: { x: number; y: number; t: number }[] = [{ x: e.clientX, y: e.clientY, t: performance.now() }]
+    const move = (ev: PointerEvent) => {
+      b.x = Math.min(innerWidth - BALL / 2, Math.max(BALL / 2, ev.clientX))
+      b.y = Math.min(floorOf(), Math.max(BALL / 2, ev.clientY))
+      trail.push({ x: ev.clientX, y: ev.clientY, t: performance.now() })
+      while (trail.length > 2 && trail[0]!.t < performance.now() - 90) trail.shift()
+      placeBall()
+    }
+    const up = (ev: PointerEvent) => {
+      node.removeEventListener("pointermove", move)
+      node.removeEventListener("pointerup", up)
+      node.removeEventListener("pointercancel", up)
+      const first = trail[0]!
+      const span = Math.max(0.016, (performance.now() - first.t) / 1000)
+      let vx = (ev.clientX - first.x) / span
+      let vy = (ev.clientY - first.y) / span
+      const speed = Math.hypot(vx, vy)
+      if (speed < 120) {
+        // a click: up it goes
+        vx = (Math.random() - 0.5) * 500
+        vy = -750
+      } else if (speed > 2600) {
+        vx = (vx / speed) * 2600
+        vy = (vy / speed) * 2600
+      }
+      Object.assign(b, { vx, vy, state: "loose", isThrown: true, from: { x: ev.clientX, y: ev.clientY }, at: Date.now() })
+      lastActive.current = Date.now()
+      if (Math.random() < 0.4) say(pick(["!", "Ooh!", "I'll get it!", "Wheee!"]), 1000)
+    }
+    node.addEventListener("pointermove", move)
+    node.addEventListener("pointerup", up)
+    node.addEventListener("pointercancel", up)
+  }
+
   // A press: dragged once it moves, else its menu.
   const onPointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return
@@ -307,6 +474,7 @@ function Walker({ id, color }: { id: string; color: string }) {
       if (!isDragging) {
         isDragging = true
         target.current = null
+        if (ball.current?.state === "carried") Object.assign(ball.current, { state: "loose", isThrown: false, at: Date.now() }) // it lets go
         closeMenu()
         setMode("drag")
         setBubble(null)
@@ -353,7 +521,7 @@ function Walker({ id, color }: { id: string; color: string }) {
       {mode === "cheer" && <div className="pet-hearts" aria-hidden><i>♥</i><i>♥</i><i>♥</i></div>}
       {focus && !isMenuOpen && focusCard && <div className="pet-tag" title={focusCard.title}>{focusCard.title}</div>}
       <div className="pet-body-wrap cursor-pointer active:cursor-grabbing" title={`${name} · click for its menu, drag to move it`} onPointerDown={onPointerDown}>
-        <PetArt id={id} size={SIZE} doing={isSad && mode === "idle" ? "sad" : mode} facing={face} />
+        <PetArt id={id} size={SIZE} doing={mode === "fetch" || mode === "carry" ? "walk" : isSad && mode === "idle" ? "sad" : mode} facing={face} />
       </div>
       {(mode === "work" || mode === "wait") && <Desk isTyping={mode === "work"} />}
       {food && <div className="pet-food" aria-hidden>{food}</div>}
@@ -362,9 +530,33 @@ function Walker({ id, color }: { id: string; color: string }) {
           cards={cards} focus={focus} onFeed={feed} onSleep={sleepOrWake} onWork={work}
           onPet={() => (closeMenu(), moment("cheer", pick(["♥", "Hehe", "Purr…", "Again!", ...LINES]), 1200))}
           onNotify={() => (setCare(id, { canNotify: !care.canNotify }), say(care.canNotify ? "I'll keep quiet" : "I'll let you know!"))}
-          onPets={() => (closeMenu(), openDialog({ kind: "pets" }))} />
+          onPets={() => (closeMenu(), openDialog({ kind: "pets" }))} onBall={hasBall ? () => (closeMenu(), dropBall(), say("Ball away")) : playBall} hasBall={hasBall} />
+      )}
+      {hasBall && createPortal(
+        <div ref={el => {
+          ballEl.current = el
+          placeBall()
+        }} className="pet-ball" onPointerDown={onBallDown} title="Drag it and let go to throw it">
+          <TennisBall />
+        </div>,
+        document.body,
       )}
     </div>
+  )
+}
+
+function TennisBall() {
+  return (
+    <svg viewBox="0 0 20 20" width={BALL} height={BALL} aria-hidden>
+      <circle cx="10" cy="10" r="9.5" fill="#d4ee3a" />
+      <circle cx="10" cy="10" r="9.5" fill="url(#pet-ball-shade)" />
+      <path d="M3.2 3.6 C7.6 6.2 7.6 13.8 3.2 16.4 M16.8 3.6 C12.4 6.2 12.4 13.8 16.8 16.4" fill="none" stroke="#fffde8" strokeWidth="1.5" strokeLinecap="round" />
+      <defs>
+        <radialGradient id="pet-ball-shade" cx="0.35" cy="0.3" r="0.8">
+          <stop offset="0" stopColor="#fff" stopOpacity="0.35" /><stop offset="0.6" stopColor="#fff" stopOpacity="0" /><stop offset="1" stopColor="#000" stopOpacity="0.2" />
+        </radialGradient>
+      </defs>
+    </svg>
   )
 }
 
@@ -410,6 +602,7 @@ function PetMenu(props: {
   name: string; color: string; fullness: number; energy: number; isAsleep: boolean; canNotify: boolean; isUp: boolean; shift: number
   cards: Card[]; focus: string | null
   onFeed: () => void; onPet: () => void; onSleep: () => void; onWork: (card: Card | null) => void; onNotify: () => void; onPets: () => void
+  onBall: () => void; hasBall: boolean
 }) {
   const [isPicking, setPicking] = useState(false)
   const open = props.cards.filter(c => c.column !== "done").sort((a, b) => Number(b.column === "working") - Number(a.column === "working")).slice(0, 10)
@@ -448,6 +641,7 @@ function PetMenu(props: {
           <>
             {row("🍖", "Feed", props.onFeed, props.fullness > 90 ? "full" : undefined)}
             {row("♥", "Pet", props.onPet)}
+            {row("🎾", props.hasBall ? "Put the ball away" : "Play ball", props.onBall)}
             {row(props.isAsleep ? "☀️" : "💤", props.isAsleep ? "Wake up" : "Go to sleep", props.onSleep)}
             {row("💻", props.focus ? "Working with…" : "Work with a session", () => setPicking(true), props.focus ? "change" : undefined)}
             {row(props.canNotify ? "🔔" : "🔕", props.canNotify ? "Notifications on" : "Notifications off", props.onNotify)}
