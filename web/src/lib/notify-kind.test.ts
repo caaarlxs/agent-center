@@ -7,7 +7,7 @@ test("a failure is an error", () => {
 })
 
 test("something done is a success", () => {
-  for (const t of ["Message sent", "Copied", "Answer sent", "Saved", "Your dictation went to “X”", "Replied: “ok”", "Sound on: a chime when a session finishes", "Pushed"])
+  for (const t of ["Message sent", "Copied", "Answer sent", "Saved", "Your dictation went to “X”", "Replied: “ok”", "Sound on: a chime when a session finishes", "Pushed", "“Agent automation” finished", "Goku reached level 12"])
     expect(kindOf(t), t).toBe("success")
 })
 

@@ -7,7 +7,7 @@ export type Kind = "error" | "success" | "warning" | "info"
 
 const ERROR = /^(could ?n[o']t|cannot|can't|failed|error|unable)|\b(went wrong|has no permission|did not (work|start|open)|stopped: )/i
 const WARNING = /^(archived|nothing|nobody|no (pack|session|one)|already)|did not reach|\b(asleep|queued|over the limit|too (big|many|long))\b/i
-const SUCCESS = /\b(sent|saved|copied|done|created|merged|pushed|opened|added|removed|moved|renamed|linked|unlinked|replied|deleted|archived it|restored|went to|turned on|is on|answer sent|started|updated|cleared|stopped it)\b|\b(on|off):/i
+const SUCCESS = /\b(sent|saved|copied|done|created|merged|pushed|opened|added|removed|moved|renamed|linked|unlinked|replied|deleted|archived it|restored|went to|turned on|is on|answer sent|started|updated|cleared|stopped it|finished|reached)\b|\b(on|off):/i
 
 export function kindOf(text: string): Kind {
   if (ERROR.test(text)) return "error"
