@@ -1,9 +1,9 @@
 // A dictation outlives the box it started in. If you leave the conversation
-// while it records or while Whisper writes, its text still reaches the
-// session: sent, if you had pressed Enter to send it; else added to that
-// session's reply box (if it is open again) or to its draft, and you are told
-// where it went. A dictation from New session, with no session yet, is shown
-// in a toast to copy.
+// while it records or while Whisper writes, it is sent to its session once
+// Whisper has written it, open or not. Only if that send fails does its text
+// wait in the session's reply box (if open again) or its draft, and you are
+// told where. A dictation from New session, with no session yet, is shown in
+// a toast to copy.
 import { toast } from "sonner"
 import { createStore } from "@/lib/store"
 import { live } from "@/lib/live"
@@ -27,18 +27,16 @@ export function boxOpened(id: string) {
 
 const titleOf = (id: string) => live().snapshot?.cards.find(c => c.id === id)?.title ?? "its session"
 
-export async function handOff(owner: string | undefined, text: string, isSend: boolean) {
+export async function handOff(owner: string | undefined, text: string) {
   if (!owner) {
     toast("Your dictation", { description: text.length > 160 ? `${text.slice(0, 160)}…` : text, duration: 20_000, action: { label: "Copy", onClick: () => void navigator.clipboard.writeText(text) } })
     return
   }
   const title = titleOf(owner)
-  if (isSend) {
-    try {
-      return await sendMessage(owner, text, `Your dictation went to “${title}”`)
-    } catch (err) {
-      toast((err as Error).message || "Could not send it: it is in the draft")
-    }
+  try {
+    return await sendMessage(owner, text, `Your dictation went to “${title}”`)
+  } catch (err) {
+    toast((err as Error).message || "Could not send it: it is in the draft")
   }
   if (openBoxes.has(owner)) return composerAppend.set({ id: owner, text })
   appendToDraft(owner, text)

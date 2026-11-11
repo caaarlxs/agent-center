@@ -58,8 +58,8 @@ type MicState =
 // Whisper while it records: a live wave of the microphone's level and the
 // time; Enter writes the text and sends it, a click only writes it (to
 // change it first), Esc drops it. Leave the box while it records or writes
-// and nothing is lost: it finishes on its own and its text goes to the
-// session `owner` (voice-handoff.ts); if Whisper fails, the audio stays and
+// and nothing is lost: it finishes on its own and is sent to the session
+// `owner` (voice-handoff.ts); if Whisper fails, the audio stays and
 // the toast tries again. Either way the field
 // takes the focus back, the caret at the end, so the next Enter sends.
 // Without Whisper, the browser's dictation writes as you speak.
@@ -92,7 +92,7 @@ export function MicButton({ owner }: { owner?: string }) {
   // Its text: into this box while it is on the page; else handed to its session.
   const land = (heard: string, isSend: boolean, form: HTMLFormElement | null) => {
     if (!heard) return
-    if (!isMounted.current) return void handOff(owner, heard, isSend)
+    if (!isMounted.current) return void handOff(owner, heard) // left the box: sent once written
     add(heard)
     // Sent as the box's own Enter would, once the box shows the text (sent
     // before, it would go empty and the text be lost).
