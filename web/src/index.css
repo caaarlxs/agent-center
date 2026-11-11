@@ -879,7 +879,7 @@ button:hover > .coll-buddy, .coll-buddy:focus-visible { opacity: 1; }
 [data-sonner-toaster] [data-sonner-toast].cn-toast[data-type=error] { --k: var(--bad); }
 [data-sonner-toaster] [data-sonner-toast].cn-toast[data-type=warning] { --k: var(--ask); }
 [data-sonner-toaster] [data-sonner-toast].cn-toast[data-type=loading] { --k: var(--text-muted); }
-[data-sonner-toaster] [data-sonner-toast].cn-toast [data-icon] { flex: none; width: 32px; height: 32px; margin: 0; border-radius: 10px; display: grid; place-items: center;
+[data-sonner-toaster] [data-sonner-toast].cn-toast [data-icon] { flex: none; width: 32px !important; height: 32px !important; margin: 0 !important; border-radius: 10px; display: flex !important; align-items: center !important; justify-content: center !important;
   background: color-mix(in srgb, var(--k) 15%, transparent); color: var(--k); animation: toast-icon 0.45s cubic-bezier(0.3, 1.6, 0.5, 1) both; }
 [data-sonner-toaster] [data-sonner-toast].cn-toast [data-icon] > * { margin: 0; }
 [data-sonner-toaster] [data-sonner-toast].cn-toast [data-icon] > :not(svg) { width: 26px !important; height: 26px !important; overflow: hidden; } /* its own picture (a pet) as big as an icon */
