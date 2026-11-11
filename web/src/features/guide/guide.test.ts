@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import { catalogueOf, findIn, newSince, piecesOf } from "./guide"
+import { catalogueOf, findIn, newSince, piecesOf, seenUpTo } from "./guide"
 import { ICONS } from "./icons"
 
 const MD = `# Title
@@ -73,4 +73,10 @@ describe("FEATURES.md", () => {
     const lines = md.split("\n").filter(l => l.startsWith("- ")).length
     expect(sections.flatMap(s => s.items).length).toBe(lines)
   })
+})
+
+test("closing What's new marks up to the newest line, even one dated after today", () => {
+  const sections = [{ name: "A", icon: "x", items: [{ icon: "x", title: "t", text: "", since: "2026-11-12" }, { icon: "x", title: "u", text: "", since: "2026-11-01" }] }]
+  expect(seenUpTo(sections as never, "2026-11-11")).toBe("2026-11-12")
+  expect(seenUpTo(sections as never, "2026-11-20")).toBe("2026-11-20")
 })

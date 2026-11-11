@@ -48,6 +48,10 @@ export function findIn(sections: Section[], query: string): Section[] {
 }
 
 // What is new after a day (YYYY-MM-DD), newest first, with its section.
+/** The day to mark as seen: today, or the newest line's day if one is dated later, so closing "What's new" always clears it. */
+export const seenUpTo = (sections: Section[], today: string) =>
+  sections.flatMap(s => s.items.map(f => f.since ?? "")).reduce((top, d) => (d > top ? d : top), today)
+
 export function newSince(sections: Section[], day: string): (Feature & { section: string })[] {
   return sections
     .flatMap(s => s.items.map(f => ({ ...f, section: s.name })))
