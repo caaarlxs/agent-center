@@ -362,3 +362,16 @@ describe("a rollback", () => {
     expect(rollbackSteps({ env: "staging", steps } as never, config).map(s => s.kind)).toEqual(["revert"])
   })
 })
+
+describe("a release after a Send back", () => {
+  it("takes only what that environment does not have: no tag again, no manual step again", () => {
+    const u1 = { id: "U1", repo: "api-service", subtask: null, branch: "b", title: "t", dependsOn: [], status: "done" as const, pr: "https://github.com/acme/api-service/pull/1" }
+    const x1 = { ...u1, id: "X1", pr: "https://github.com/acme/api-service/pull/9" }
+    const prod = { env: "prod" as const, steps: [
+      { ...releaseSteps(state({ units: [u1], scripts: [] }), "prod", config)[0]!, status: "done" as const },
+      { id: "M", kind: "manual" as const, title: "Turn the flag on", unit: null, repo: null, script: null, status: "done" as const, isApproved: true, detail: null, items: [], links: [], value: null, sha: null, since: null, phase: null, pid: null, report: null, error: null },
+    ] }
+    const s = state({ units: [u1, x1], scripts: [], order: [{ kind: "manual", id: null, text: "Turn the flag on", envs: [] }, { kind: "unit", id: "U1", text: null, envs: [] }], deployed: { prod } })
+    expect(releaseSteps(s, "prod", config).map(x => x.unit ?? x.title)).toEqual(["X1"])
+  })
+})

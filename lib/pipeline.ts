@@ -49,6 +49,8 @@ import { claudeEnv } from "./proc"
 import { applyAction } from "./board"
 import { sessionSpend, type Spend } from "./usage"
 import { transcriptPath } from "./transcript"
+import { sentBackSince } from "./sent-back"
+export { sentBackSince }
 import { activityOf } from "./activity"
 import { existsSync } from "node:fs"
 import { exec } from "./proc"
@@ -218,7 +220,7 @@ const STAGE: Record<AgentStage, StageDef> = {
 1. Lee ${join(STAGES_DIR, "test.md")} y ${join(STAGES_DIR, "environment.md")}, y síguelos.
 2. Los criterios de aceptación y el plan de verificación están en ${join(dir, "refine.md")}; el plan, en ${join(dir, "plan.md")}; lo desplegado, en ${join(dir, "build.json")}.
 3. Solo staging. Nunca prod: ni con STAGE=prod, ni con sus tablas, ni con sus URLs.
-   Si existe ${join(dir, "retest.json")}, este test sigue a un arreglo: sigue la sección "Después de un arreglo" de test.md.
+   Si existe ${join(dir, "retest.json")}, este test sigue a un arreglo o a un cambio: sigue la sección "Después de un arreglo o un cambio" de test.md.
 4. Escribe el informe en ${join(dir, "test.md")} y el resumen en ${join(dir, "test.summary.md")}.
 5. Escribe al final ${join(dir, "test.json")}: {"verdict": "ready" | "needs-info", "questions": [...], "results": [{"id": "T1", "criterion": "...", "status": "pass" | "fail" | "untested", "summary": "...", "evidence": "...", "files": [{"path": "evidence/T1-desktop.png", "caption": "..."}]}]}. Guarda la evidencia de cada criterio en ${join(dir, "evidence")}.`,
   },
@@ -335,15 +337,22 @@ export const testFix = (state: Pick<PipelineState, "results" | "fixOf" | "thread
     id: r.id, criterion: r.criterion, summary: r.summary ?? null, evidence: r.evidence, subtask: state.fixOf?.[r.id] ?? null,
     asked: (state.threads?.[`result:${r.id}`] ?? []).filter(t => t.a).map(t => ({ q: t.q, a: t.a })),
   }))
-// A test after a fix of a failed test (retest.json): what was fixed, what failed or
-// was not tried before, and the repos the fix's release took to staging.
-export function retestOf(state: Pick<PipelineState, "fixing" | "results" | "units" | "release">) {
-  if (state.fixing?.from !== "test") return null
-  const fixed = state.fixing.ids
-  const before = (state.results ?? []).filter(r => r.status !== "pass" && !fixed.includes(r.id)).map(r => r.id)
+// A test (or a check in prod) of only what is new (retest.json): after a fix of a failed test, what
+// was fixed and what failed or was not tried before; after a Send back, the change you asked for.
+// Either way, the repos the last release took there; the criteria it does not test keep their result.
+export function retestOf(state: Pick<PipelineState, "fixing" | "results" | "units" | "release" | "history" | "backNote">, stage: "test" | "smoke" = "test") {
   const repos = [...new Set(releasedUnits(state).map(u => u.repo))]
-  return { fixed, before, repos }
+  if (stage === "test" && state.fixing?.from === "test") {
+    const fixed = state.fixing.ids
+    const before = (state.results ?? []).filter(r => r.status !== "pass" && !fixed.includes(r.id)).map(r => r.id)
+    return { fixed, before, repos }
+  }
+  if (sentBackSince(state, stage)) return { change: state.backNote ?? "Lo que dice sent-back.md", repos }
+  return null
 }
+// A test of only what is new keeps the results of before it did not test again.
+export const withEarlier = (earlier: TestResult[], now: TestResult[]) => [...earlier.filter(r => !now.some(n => n.id === r.id)), ...now]
+const earlierResults = (state: PipelineState) => [...(state.history ?? [])].reverse().find(r => r.stage === state.stage && r.status === "ready" && r.kept?.results)?.kept?.results ?? []
 
 // The [Fix] sub-tasks of what fails now (all of them, before a test has results).
 export const fixesNow = (state: Pick<PipelineState, "results" | "fixOf" | "fixes" | "fixing">) => {
@@ -795,10 +804,12 @@ async function finish(key: string) {
   // A build after a fix may list only its new units: the ones before stay, each as its last build left it.
   const units = state.stage === "plan" ? result.units : state.stage === "build" ? withUnits(state.units, result.units) : state.units
   const found = state.stage === "review" ? { findings: result.findings, fixed: [] } : state.stage === "build" ? { fixed: result.fixed } : {}
-  const tested = state.stage === "test" || state.stage === "smoke" ? { results: shown.results } : {}
+  // Only what is new was tested (retest.json): the rest keeps its result of before.
+  const isRetest = existsSync(join(dir, "retest.json")) && (state.stage === "test" || state.stage === "smoke")
+  const tested = state.stage === "test" || state.stage === "smoke" ? { results: isRetest ? withEarlier(earlierResults(state), shown.results) : shown.results } : {}
   const context = state.stage === "refine" ? { contextImpact: result.contextImpact } : {}
   const proposals = withProposals(state.proposals, proposalsIn(result.tickets, state.runs, state.stage), state.stage)
-  const done: PipelineState = { ...state, publishedRun: state.runs, status: "ready", questions: [], proposals, units, checklist, checked, scripts, order, ...found, ...tested, ...context, checks: withJira([...checks, ...attached.checks], state.checks), endedAt: Date.now() }
+  const done: PipelineState = { ...state, publishedRun: state.runs, status: "ready", questions: [], proposals, units, checklist, checked, scripts, order, ...(state.stage === "smoke" ? { backNote: null } : {}), ...found, ...tested, ...context, checks: withJira([...checks, ...attached.checks], state.checks), endedAt: Date.now() }
   await recordDebt(key, result.debt)
   await settle({ ...done, checks: withJira([...(done.checks ?? []), ...graveDebt(result.debt)], []) })
   // Saved first: it explains the findings this review left.
@@ -1035,11 +1046,9 @@ async function startNow(key: string, take: boolean, asked?: Stage, chosen?: stri
   const local = await takeOn(key, state, take, mine)
   if (isRelease(stage)) return startRelease(state!, stage)
   const fixing = await writeFixes(key, state, stage, chosen)
-  if (stage === "test") await writeRetest(key, state)
+  if (stage === "test" || stage === "smoke") await writeRetest(key, state, stage)
   // At work at once, so the board shows it; the run then reads the ticket (it takes a while) and starts the agent.
-  // A start that is not the review of what you sent back leaves your note behind.
-  const backNote = stage === "review" && state?.stage === "build" ? state.backNote : null
-  await save({ ...(await fresh(key, (state?.runs ?? 0) + 1, stage)), summary: state?.summary, backNote, ...(fixing === undefined ? {} : { fixing }), ...(local ? { local } : {}) })
+  await save({ ...(await fresh(key, (state?.runs ?? 0) + 1, stage)), summary: state?.summary, ...(fixing === undefined ? {} : { fixing }), ...(local ? { local } : {}) })
   void run(key, (state?.runs ?? 0) + 1, stage, auto, whyStart(state, stage))
 }
 // Why a stage starts: again after a run that did not end, to fix what a review or a test
@@ -1047,14 +1056,16 @@ async function startNow(key: string, take: boolean, asked?: Stage, chosen?: stri
 export function whyStart(state: PipelineState | null, stage: AgentStage): Why | undefined {
   if (state?.stage === stage && state.status === "failed")
     return { cause: "Run again", text: `Tu último run no terminó (${state.error ?? "sin motivo"}). Sigue donde lo dejaste: lo que ya está hecho, no lo repitas.` }
+  // After a Send back to an earlier stage, the next ones (plan, build) work on that change too.
+  if ((stage === "plan" || stage === "build") && state && !state.fixing && sentBackSince(state, stage) && state.stage !== "review" && state.stage !== "test")
+    return { cause: "After the change", text: (backWhy(state!, stage, state!.backNote ?? "").text ?? "").replace("Te devuelven a esta etapa.", "Una etapa de antes ha vuelto a pasar por un cambio que pidió una persona (sent-back.md): rehaz solo lo que ese cambio toca.") }
   if (stage === "build" && state?.stage === "review") return { cause: "Fix the review", text: "La revisión encontró hallazgos: arregla los de review.fix.json." }
   if (stage === "build" && state?.stage === "test") return { cause: "Fix the test", text: "El test en staging falló: arregla los criterios de test.fix.json." }
   if (stage === "review" && state?.stage === "build" && state.fixing?.from === "review") return { cause: "Review the fix", text: newWorkText(state, `ha arreglado los hallazgos ${state.fixing.ids.join(", ")} de tu revisión anterior (review.fix.json)`) }
-  if (stage === "review" && state?.stage === "build" && isSentBack(state)) return { cause: "Review the change", text: newWorkText(state, `ha hecho el cambio que pidió una persona al devolver el ticket (${join(dirOf(state.key), "sent-back.md")})`) }
+  if (stage === "review" && state?.stage === "build" && sentBackSince(state, "review")) return { cause: "Review the change", text: newWorkText(state, `ha hecho el cambio que pidió una persona al devolver el ticket (${join(dirOf(state.key), "sent-back.md")})`) }
+  if ((stage === "test" || stage === "smoke") && state && retestOf(state, stage)) return { cause: stage === "test" ? "Test what changed" : "Check what changed", text: `Esta vez pruebas solo lo nuevo: lee ${join(dirOf(state.key), "retest.json")} y sigue la sección "Después de un arreglo o un cambio" de ${join(STAGES_DIR, "test.md")}. Los criterios que no pruebas conservan su resultado de antes: el board los junta.` }
   return undefined
 }
-// The last build ran because a person sent the ticket back (not to fix a review or a test).
-const isSentBack = (state: PipelineState) => !![...(state.history ?? [])].reverse().find(r => r.stage === "build")?.cause?.startsWith("Sent back")
 // A review after a build that changed little (a fix, a change a person asked for): only what
 // changed since the last review, not the PRs again.
 export function newWorkText(state: Pick<PipelineState, "fixing" | "units" | "findings" | "history" | "deployed">, what: string) {
@@ -1081,8 +1092,8 @@ async function takeOn(key: string, state: PipelineState | null, take: boolean, m
 }
 
 // A test after a fix tests deep what the fix is about, and the rest quickly (retest.json); any other, all of it.
-async function writeRetest(key: string, state: PipelineState | null) {
-  const retest = state ? retestOf(state) : null
+async function writeRetest(key: string, state: PipelineState | null, stage: "test" | "smoke") {
+  const retest = state ? retestOf(state, stage) : null
   if (retest) await writeJsonAtomic(join(dirOf(key), "retest.json"), retest, { pretty: true })
   else await rename(join(dirOf(key), "retest.json"), join(dirOf(key), "retest.json.prev")).catch(() => {})
 }

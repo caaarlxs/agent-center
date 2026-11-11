@@ -30,6 +30,7 @@ import { doingText } from "@/features/conversation/session-events"
 import { ago } from "@/features/session/state"
 import { repoDot } from "@/features/session/state"
 import type { Helper, Step } from "@server/activity"
+import { sentBackSince } from "@server/sent-back"
 import type { ChecklistItem, Finding, PipelineState, PlanScript, Run, Severity, Stage, TestResult, Turn, Unit } from "@server/pipeline"
 import type { Check as BoardCheck } from "@server/checks"
 import { deliverablesOf } from "@server/scope"
@@ -579,9 +580,8 @@ export function AtWork({ state }: { state: PipelineState }) {
 // What a pass works on when it is not the plan's list: what you wrote when you sent it back,
 // or what a review or a test found to fix.
 const passFocus = (state: PipelineState) =>
-  state.stage !== "build" && state.stage !== "review" ? null
-    : state.backNote ? state.backNote
-    : state.stage === "build" && state.fixing ? `Fixing ${state.fixing.ids.join(", ")}, from the ${state.fixing.from}` : null
+  state.stage === "build" && state.fixing ? `Fixing ${state.fixing.ids.join(", ")}, from the ${state.fixing.from}`
+    : ["build", "review", "test", "smoke"].includes(state.stage) && state.backNote && sentBackSince(state, state.stage) ? state.backNote : null
 function ThisPass({ text }: { text: string }) {
   return (
     <div className="flex flex-col gap-1.5">

@@ -135,14 +135,16 @@ export const tookUnit = (steps: Merged[], u: Pick<Unit, "id" | "pr">) => steps.s
 // The units and scripts an environment does not run yet (all of them, before a fix's release).
 function notYetIn(state: PipelineState, env: Env) {
   const before = (state.deployed?.[env]?.steps ?? []).filter(s => s.status === "done")
-  const merged = before.filter(s => s.kind === "merge")
-  const ran = new Set(before.filter(s => s.kind === "execute").map(s => s.script))
-  return { units: (state.units ?? []).filter(u => !tookUnit(merged, u)), scripts: (state.scripts ?? []).filter(x => !ran.has(x.id)) }
+  // A unit is there once a step of its own went (a merge in staging, a tag or a command in prod).
+  const took = before.filter(s => s.unit && s.kind !== "simulate")
+  const ran = new Set(before.filter(s => s.kind === "execute" && s.script).map(s => s.script))
+  const done = new Set(before.filter(s => s.kind === "manual" && !s.unit).map(s => s.title))
+  return { units: (state.units ?? []).filter(u => !tookUnit(took, u)), scripts: (state.scripts ?? []).filter(x => !ran.has(x.id)), manualDone: done }
 }
 
 export function releaseSteps(state: PipelineState, env: Env, config: DeployConfig): ReleaseStep[] {
   // What this environment runs already (a release before a fix): only the rest goes.
-  const { units, scripts } = notYetIn(state, env)
+  const { units, scripts, manualDone } = notYetIn(state, env)
   const asUnit = (u: { id: string }) => ({ kind: "unit" as const, id: u.id, text: null, envs: [] })
   const planned: OrderItem[] = state.order?.length ? state.order
     : [...units.map(asUnit), ...scripts.map(x => ({ kind: "script" as const, id: x.id, text: null, envs: [] }))]
@@ -153,7 +155,8 @@ export function releaseSteps(state: PipelineState, env: Env, config: DeployConfi
   const released = new Set<string>()
   for (const item of order) {
     if (item.envs.length && !item.envs.includes(env)) continue
-    if (item.kind === "manual" && item.text) steps.push(blank("manual", item.text))
+    // What a person did there for an earlier release is done.
+    if (item.kind === "manual" && item.text && !manualDone.has(item.text)) steps.push(blank("manual", item.text))
     const u = item.kind === "unit" ? units.find(x => x.id === item.id) : undefined
     if (u) steps.push(...unitSteps(u, env, config, state, released))
     const x = item.kind === "script" ? scripts.find(s => s.id === item.id) : undefined

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { AUTO_FIXES, autoNext, noteText, parseResult, plainFindings, backRefusal, backWhy, continuePrompt, newsOf, pipelineKeyOf, spentIn, whyStart, type PipelineState, type Run } from "../lib/pipeline"
+import { AUTO_FIXES, autoNext, noteText, parseResult, plainFindings, retestOf, sentBackSince, withEarlier, backRefusal, backWhy, continuePrompt, newsOf, pipelineKeyOf, spentIn, whyStart, type PipelineState, type Run } from "../lib/pipeline"
 import { tookUnit } from "../lib/release"
 
 const base: PipelineState = { key: "PP-1", stage: "refine", status: "ready", sessionId: null, runs: 1, startedAt: 1, endedAt: 2, askedAt: null, questions: [], error: null }
@@ -112,5 +112,24 @@ describe("findings in plain words", () => {
     const out = plainFindings([f, { ...f, id: "F2", plain: "ya" }], { F1: { title: "Se pierden los avisos apagados", plain: "Explicado" }, F2: { plain: "otra" } })
     expect(out[0]).toMatchObject({ title: "Se pierden los avisos apagados", plain: "Explicado", detail: "d" })
     expect(out[1]?.plain).toBe("ya")
+  })
+})
+
+describe("after a Send back, each stage only what is new", () => {
+  const sent = [run(1, "review"), run(2, "test"), run(3, "build", "ready", { cause: "Sent back: copies" })]
+  it("a stage knows it was sent back since it last ended well", () => {
+    expect(sentBackSince({ history: sent }, "test")).toBe(true)
+    expect(sentBackSince({ history: [...sent, run(4, "test")] }, "test")).toBe(false)
+    expect(sentBackSince({ history: sent }, "smoke")).toBe(false)
+  })
+  it("the test tries only the change, and keeps the results it does not try again", () => {
+    expect(retestOf({ history: sent, backNote: "Informa → Registro Mercantil", units: [], release: null }, "test")).toEqual({ change: "Informa → Registro Mercantil", repos: [] })
+    expect(whyStart({ ...base, stage: "staging", history: sent }, "test")?.cause).toBe("Test what changed")
+    const toPlan = [run(1, "plan"), run(2, "build"), run(3, "refine", "ready", { cause: "Sent back: scope" })]
+    const plan = whyStart({ ...base, history: toPlan, backNote: "scope", deployed: { staging: { env: "staging", steps: [] } } }, "plan")
+    expect(plan?.cause).toBe("After the change")
+    expect(plan?.text).toContain("unidades nuevas")
+    const r = (id: string, status: "pass" | "fail") => ({ id, criterion: id, status, evidence: "" })
+    expect(withEarlier([r("CA1", "pass"), r("CA2", "fail")], [r("CA2", "pass"), r("N1", "pass")]).map(x => `${x.id}:${x.status}`)).toEqual(["CA1:pass", "CA2:pass", "N1:pass"])
   })
 })
