@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { AUTO_FIXES, autoNext, backRefusal, backWhy, continuePrompt, newsOf, pipelineKeyOf, spentIn, whyStart, type PipelineState, type Run } from "../lib/pipeline"
+import { AUTO_FIXES, autoNext, noteText, backRefusal, backWhy, continuePrompt, newsOf, pipelineKeyOf, spentIn, whyStart, type PipelineState, type Run } from "../lib/pipeline"
 import { tookUnit } from "../lib/release"
 
 const base: PipelineState = { key: "PP-1", stage: "refine", status: "ready", sessionId: null, runs: 1, startedAt: 1, endedAt: 2, askedAt: null, questions: [], error: null }
@@ -93,5 +93,12 @@ describe("a review after a fix", () => {
     const sent = { ...state, fixing: null, history: [...state.history, run(14, "build", "ready", { cause: "Sent back: copies" })] }
     expect(whyStart(sent, "review")?.cause).toBe("Review the change")
     expect(whyStart(sent, "review")?.text).toContain("sent-back.md")
+  })
+})
+
+describe("your note when you send it back", () => {
+  it("is what you wrote, without the lines of the files", () => {
+    expect(noteText("Cambia los copies\n\nAttached images (open them with Read):\n- /a.png\n- /b.png")).toBe("Cambia los copies")
+    expect(noteText("Attached image (open it with Read): /a.png")).toBeNull()
   })
 })

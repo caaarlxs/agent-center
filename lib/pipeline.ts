@@ -134,6 +134,7 @@ export type PipelineState = {
   readAt?: number // when the last run read the ticket: what people wrote after it is news
   news?: News | null // what people wrote in Jira since then, for you to send it back with
   autoFixes?: number // the fixes a pipeline on its own started since the plan (a few, then it waits for you)
+  backNote?: string | null // what you wrote when you sent it back: what the stages after it work on, not the plan's list
 }
 export type Fixing = { from: "review" | "test"; ids: string[] }
 // One question to the agent about what it left, and its answer (null while it thinks).
@@ -608,7 +609,7 @@ const EMPTY = (key: string, runs: number, stage: Stage): PipelineState =>
 const fresh = async (key: string, runs: number, stage: Stage): Promise<PipelineState> => {
   const prev = await stateOf(key)
   // The plan's units and to-do list, and the review's findings, stay with the ticket for the stages after it.
-  return { ...EMPTY(key, runs, stage), summary: prev?.summary, history: prev?.history ?? [], sessions: prev?.sessions, readAt: prev?.readAt, news: prev?.news, order: prev?.order,
+  return { ...EMPTY(key, runs, stage), summary: prev?.summary, history: prev?.history ?? [], sessions: prev?.sessions, readAt: prev?.readAt, backNote: prev?.backNote, news: prev?.news, order: prev?.order,
     autoFixes: stage === "refine" || stage === "plan" ? 0 : prev?.autoFixes, units: prev?.units, checklist: prev?.checklist, checked: prev?.checked, scripts: prev?.scripts, contextImpact: prev?.contextImpact,
     release: prev?.release, deployed: prev?.deployed, fixes: prev?.fixes, fixOf: prev?.fixOf, threads: prev?.threads, fixing: ["refine", "plan", "test", "smoke"].includes(stage) ? null : prev?.fixing, results: stage === "test" || stage === "smoke" ? undefined : prev?.results, scope: prev?.scope, auto: prev?.auto, local: prev?.local, proposals: prev?.proposals,
     ...(stage === "review" ? {} : { findings: prev?.findings, fixed: stage === "build" ? [] : prev?.fixed }) }
@@ -984,7 +985,9 @@ async function startNow(key: string, take: boolean, asked?: Stage, chosen?: stri
   const fixing = await writeFixes(key, state, stage, chosen)
   if (stage === "test") await writeRetest(key, state)
   // At work at once, so the board shows it; the run then reads the ticket (it takes a while) and starts the agent.
-  await save({ ...(await fresh(key, (state?.runs ?? 0) + 1, stage)), summary: state?.summary, ...(fixing === undefined ? {} : { fixing }), ...(local ? { local } : {}) })
+  // A start that is not the review of what you sent back leaves your note behind.
+  const backNote = stage === "review" && state?.stage === "build" ? state.backNote : null
+  await save({ ...(await fresh(key, (state?.runs ?? 0) + 1, stage)), summary: state?.summary, backNote, ...(fixing === undefined ? {} : { fixing }), ...(local ? { local } : {}) })
   void run(key, (state?.runs ?? 0) + 1, stage, auto, whyStart(state, stage))
 }
 // Why a stage starts: again after a run that did not end, to fix what a review or a test
@@ -1145,12 +1148,15 @@ export async function sendBack(key: string, stage: Stage, note = "") {
     if (!state.local && state.status === "needs-info") await labelTicket(key, [], [LABELS.needsInfo]).catch(() => {})
     const why = backWhy(state, to, note)
     await Bun.write(join(dirOf(key), "sent-back.md"), `# Devuelto a ${STAGE[to].title.toLowerCase()} · ${new Date().toISOString().slice(0, 16)}\n\n${note.trim() || "(sin nota)"}\n`)
-    await save({ ...(await fresh(key, state.runs + 1, to)), summary: state.summary, fixing: null, autoFixes: 0 })
+    await save({ ...(await fresh(key, state.runs + 1, to)), summary: state.summary, fixing: null, autoFixes: 0, backNote: noteText(note) })
     void run(key, state.runs + 1, to, undefined, why)
   } finally {
     starting.delete(key)
   }
 }
+
+// What you wrote, without the lines that name the files you attached.
+export const noteText = (note: string) => note.split(/\n*Attached (?:image|images|file|files) \(/)[0]!.trim() || null
 
 // ---------- asking the agent about what it left ----------
 

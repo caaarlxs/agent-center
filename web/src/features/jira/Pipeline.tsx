@@ -545,9 +545,11 @@ function Details({ children, label = "Details" }: { children: ReactNode; label?:
 export function AtWork({ state }: { state: PipelineState }) {
   const activity = useActivity(state.key, true, isJob(state))
   const busy = activity?.helpers.filter(h => !h.isDone) ?? []
+  const focus = passFocus(state)
   return (
     <div className="flex flex-col gap-3">
-      {state.checklist?.length ? <Checklist items={state.checklist} checked={activity?.checked ?? []} isBuilding={state.stage === "build"} /> : null}
+      {focus ? <ThisPass text={focus} />
+        : state.checklist?.length ? <Checklist items={state.checklist} checked={activity?.checked ?? []} isBuilding={state.stage === "build"} /> : null}
       {busy.length > 0 && <Helpers helpers={busy} />}
       {(activity?.steps.length ?? 0) > 0 && (
         <Details label="Every step">
@@ -556,6 +558,21 @@ export function AtWork({ state }: { state: PipelineState }) {
           <Steps steps={activity!.steps} />
         </Details>
       )}
+    </div>
+  )
+}
+
+// What a pass works on when it is not the plan's list: what you wrote when you sent it back,
+// or what a review or a test found to fix.
+const passFocus = (state: PipelineState) =>
+  state.stage !== "build" && state.stage !== "review" ? null
+    : state.backNote ? state.backNote
+    : state.stage === "build" && state.fixing ? `Fixing ${state.fixing.ids.join(", ")}, from the ${state.fixing.from}` : null
+function ThisPass({ text }: { text: string }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-xs font-semibold text-text-muted">This pass</span>
+      <p className="m-0 line-clamp-6 border-l-2 border-line-strong pl-3 text-[13px] leading-[1.55] whitespace-pre-wrap text-text-muted">{text}</p>
     </div>
   )
 }
