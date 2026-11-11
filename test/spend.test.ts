@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { originOf, projectOf, summarize, turnCosts } from "../lib/spend"
+import { SPANS, originOf, projectOf, spanOf, summarize, turnCosts } from "../lib/spend"
 import { spendOf } from "../lib/usage"
 
 describe("spendOf", () => {
@@ -65,5 +65,15 @@ describe("turnCosts", () => {
     expect(costs[0]!.at).toBe(0)
     expect(costs[0]!.cost).toBeCloseTo(0.4)
     expect(costs[1]!.cost).toBeCloseTo(0.2)
+  })
+})
+
+describe("spanOf", () => {
+  it("reads a span by name, the week by its old name, 5 hours otherwise", () => {
+    expect(spanOf("1h")).toBe(SPANS["1h"])
+    expect(spanOf("30d")).toBe(30 * 24 * 3600_000)
+    expect(spanOf("week")).toBe(SPANS["7d"])
+    expect(spanOf(null)).toBe(SPANS["5h"])
+    expect(spanOf("forever")).toBe(SPANS["5h"])
   })
 })

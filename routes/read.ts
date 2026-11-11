@@ -9,7 +9,7 @@ import { reportOf } from "../lib/release"
 import { namedBy, repoPage, sessionCommits, sessionRepos } from "../lib/session-commits"
 import { ICONS, chosenIcon } from "../lib/app-icon"
 import { petsCatalog, petsState } from "../lib/pets"
-import { sessionTurnCosts, spendSince } from "../lib/spend"
+import { sessionTurnCosts, spanOf, spendSince } from "../lib/spend"
 import { sheetOf } from "../lib/community-pets"
 import { basename } from "node:path"
 import { status as bridgeStatus } from "../lib/bridge"
@@ -373,8 +373,8 @@ export async function handleRead(url: URL): Promise<Response | null> {
   }
   if (path === "/api/monaco") return json(await monacoState())
   if (path === "/api/update") return json(await freshness({ fresh: true }))
-  // Where the account's tokens go (lib/spend.ts): the 5-hour window or the week.
-  if (path === "/api/spend") return json(await spendSince(url.searchParams.get("window") === "week" ? 7 * 24 * 3600_000 : 5 * 3600_000))
+  // Where the account's tokens go (lib/spend.ts): the last hour, 5 hours, day, week or month.
+  if (path === "/api/spend") return json(await spendSince(spanOf(url.searchParams.get("window"))))
   if (path === "/api/diagnostics") return json({ text: await report() })
   if (path === "/api/voices") return json({ voices: await listVoices(), default: defaultVoice() })
   const file = path.match(/^\/api\/uploads\/(.+)$/)

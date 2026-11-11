@@ -1,5 +1,5 @@
-// Where it goes: what the account spent in the plan's 5-hour window or the
-// week (lib/spend.ts), at API prices: what kind of tokens it paid for, where
+// Where it goes: what the account spent in the last hour, 5 hours (the
+// plan's window), day, week or month (lib/spend.ts), at API prices: what kind of tokens it paid for, where
 // the sessions ran, in which projects, with which models, and each session
 // with its share, its context and what one more step of it costs. A session
 // that re-reads too much each step is marked: starting it fresh saves most.
@@ -13,7 +13,8 @@ import { cn } from "@/lib/utils"
 import { openSession } from "@/app/open-session"
 import { isExpensive, money, tokens } from "./spend"
 
-type Window = "5h" | "week"
+type Window = "1h" | "5h" | "24h" | "7d" | "30d"
+const SPANS: [Window, string, string][] = [["1h", "Hour", "the last hour"], ["5h", "5 hours", "the last 5 hours"], ["24h", "Day", "the last 24 hours"], ["7d", "Week", "the last 7 days"], ["30d", "Month", "the last 30 days"]]
 const KIND: { key: keyof SpendSummary["byKind"]; label: string; color: string; why: string }[] = [
   { key: "cacheRead", label: "Re-reading the conversation", color: "#3d8bfd", why: "Every step reads the whole conversation again, from the cache" },
   { key: "cacheWrite", label: "Saving it to the cache", color: "#a66cff", why: "What is new in the conversation, and all of it again when the cache expired" },
@@ -25,7 +26,7 @@ const pct = (part: number, total: number) => (total > 0 ? Math.round((part / tot
 
 export function SpendDialog({ onClose }: { onClose: () => void }) {
   const [win, setWin] = useState<Window>("5h")
-  const [data, setData] = useState<Record<Window, SpendSummary | undefined>>({ "5h": undefined, week: undefined })
+  const [data, setData] = useState<Partial<Record<Window, SpendSummary>>>({})
   useEffect(() => {
     let alive = true
     void get<SpendSummary>(`/api/spend?window=${win}`).then(s => alive && setData(d => ({ ...d, [win]: s })), () => {})
@@ -40,8 +41,10 @@ export function SpendDialog({ onClose }: { onClose: () => void }) {
       <DialogContent className="flex h-[min(760px,calc(100vh-48px))] w-[min(900px,calc(100vw-32px))] max-w-none flex-col gap-4 overflow-hidden">
         <div className="flex items-center gap-3 pr-8">
           <DialogTitle className="text-base font-[650]">Where it goes</DialogTitle>
-          <div className="inline-flex rounded-[9px] bg-side p-0.5">{tab("5h", "5 hours")}{tab("week", "Week")}</div>
-          {s && <span className="ml-auto text-[13px] text-text-muted" title="At Claude API prices: the plan does not say how it weighs each token, but the shares hold"><b className="text-text tabular-nums">{money(s.total)}</b> at API prices</span>}
+          <div className="inline-flex rounded-[9px] bg-side p-0.5">{SPANS.map(([w, label]) => <span key={w}>{tab(w, label)}</span>)}</div>
+          {s && <span className="ml-auto text-[13px] text-text-muted" title="At Claude API prices: the plan does not say how it weighs each token, but the shares hold">
+            <b className="text-text tabular-nums">{money(s.total)}</b> in {SPANS.find(([w]) => w === win)![2]}, at API prices
+          </span>}
         </div>
         {!s ? <div className="flex flex-1 items-center justify-center gap-2 text-[13px] text-text-muted"><Spinner />Reading the conversations…</div> : <Body s={s} />}
       </DialogContent>
@@ -106,7 +109,7 @@ function Sessions({ s }: { s: SpendSummary }) {
   return (
     <section className="flex flex-col">
       <div className="grid grid-cols-[minmax(0,1fr)_130px_60px_70px_80px] gap-3 border-b border-line px-2 pb-1.5 text-[11.5px] font-semibold text-faint">
-        <span>Conversation</span><span>Share</span><span className="text-right">Spent</span><span className="text-right" title="The context it reads again at each step">Context</span><span className="text-right" title="What one more step of it costs">Each step</span>
+        <span>Conversation</span><span>Share</span><span className="text-right" title="What it spent in this time">Spent</span><span className="text-right" title="The context it reads again at each step, now">Context now</span><span className="text-right" title="What one more step of it costs, now">Each step</span>
       </div>
       {s.sessions.map(r => {
         const costly = isExpensive(r.context)
@@ -116,7 +119,7 @@ function Sessions({ s }: { s: SpendSummary }) {
             className="grid grid-cols-[minmax(0,1fr)_130px_60px_70px_80px] items-center gap-3 rounded-md px-2 py-1.5 text-left text-[12.5px] hover:bg-hover disabled:hover:bg-transparent">
             <span className="flex min-w-0 flex-col">
               <span className="truncate font-medium text-text">{r.title}</span>
-              <span className="truncate text-[11px] text-faint">{r.project} · {ORIGIN[r.origin] ?? r.origin} · {r.turns} steps</span>
+              <span className="truncate text-[11px] text-faint">{r.project} · {ORIGIN[r.origin] ?? r.origin} · {r.turns} steps in this time</span>
             </span>
             <span className="flex items-center gap-2">
               <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-side"><i className="block h-full rounded-full bg-brand" style={{ width: `${pct(r.cost, s.total)}%` }} /></span>

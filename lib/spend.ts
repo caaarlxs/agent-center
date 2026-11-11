@@ -83,7 +83,13 @@ export function turnCosts(messages: Iterable<Message>, starts: number[]) {
 // ---------- reading the transcripts ----------
 
 const PROJECTS = PROJECTS_DIR
-const WEEK = 7 * 24 * 3600_000
+const HOUR = 3600_000
+
+// The spans the page offers: the last hour, the plan's 5-hour window, a day, a week, a month.
+export const SPANS = { "1h": HOUR, "5h": 5 * HOUR, "24h": 24 * HOUR, "7d": 7 * 24 * HOUR, "30d": 30 * 24 * HOUR } as const
+export type Span = keyof typeof SPANS
+/** A span asked for by name ("week" as "7d"), the plan's 5 hours by default. */
+export const spanOf = (name: string | null): number => (name === "week" ? SPANS["7d"] : SPANS[(name ?? "") as Span] ?? SPANS["5h"])
 
 // Every transcript written to since `since`, with its subagents' beside it.
 async function transcriptsSince(since: number) {
@@ -103,9 +109,9 @@ async function transcriptsSince(since: number) {
   return out
 }
 
-/** The spend of the last `windowMs` (the 5-hour window or the week). */
+/** The spend of the last `windowMs` (at most 30 days). */
 export async function spendSince(windowMs: number): Promise<SpendSummary> {
-  const since = Date.now() - Math.min(windowMs, WEEK)
+  const since = Date.now() - Math.min(windowMs, SPANS["30d"])
   const titles = new Map((await latestState().catch(() => null))?.cards.map(c => [c.id, c.title] as const) ?? [])
   const sessions: Session[] = []
   for (const t of await transcriptsSince(since)) {
