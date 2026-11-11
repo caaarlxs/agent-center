@@ -94,8 +94,18 @@ const keepModel = (name: string) => {
 const isYours = (line: string) =>
   line.includes('"type":"user"') && !line.includes('"tool_result"') && !line.includes('"isMeta":true') && !line.includes('"isCompactSummary":true') && !line.includes('"isSidechain":true')
 
+const POST_TOKENS = /"postTokens":(\d+)/
+/** The context a compaction left (the main conversation's), or null for any other line. */
+export function compactedTo(line: string): number | null {
+  if (!line.includes('"compact_boundary"') || line.includes('"isSidechain":true')) return null
+  const n = POST_TOKENS.exec(line)?.[1]
+  return n ? Number(n) : null
+}
+
 function ingest(scan: Scan, chunk: string) {
   for (const line of chunk.split("\n")) {
+    // Compacted: the context is the summary until the next response says more.
+    scan.lastContext = compactedTo(line) ?? scan.lastContext
     if (!scan.entrypoint) scan.entrypoint = ENTRY.exec(line)?.[1] ? own(ENTRY.exec(line)![1]!) : null
     if (!scan.cwd) scan.cwd = CWD.exec(line)?.[1] ? own(JSON.parse(`"${CWD.exec(line)![1]}"`)) : null
     if (!scan.firstText) scan.firstText = firstWords(line)
@@ -172,7 +182,9 @@ export async function sessionSpend(id: string): Promise<Spend | null> {
 
 // recentCost: what it spent in the last 5 hours, the plan's short window.
 // stepCost: what one more step costs it, its context read again from the cache.
-export type SessionUsage = { context: number; window: number; cost: number; recentCost: number; model: string | null; modelAt: number; stepCost: number }
+// wakeCost: what the first step costs once the cache has expired (an hour
+// idle): its context written to the 1-hour cache again, at 2x input.
+export type SessionUsage = { context: number; window: number; cost: number; recentCost: number; model: string | null; modelAt: number; stepCost: number; wakeCost: number }
 const RECENT_MS = 5 * 3600_000
 
 // `current` is the CLI id running now (its last request is the live
@@ -190,6 +202,8 @@ export async function usageOf(current: string, ids: string[]): Promise<SessionUs
       if (m.at >= since) recentCost += c
     }
   const live = (await scanned(current).catch(() => null)) ?? scans[0]!
-  const stepCost = (live.lastContext * priceOf(live.lastModel ?? "").read) / 1_000_000
-  return { context: live.lastContext, window: WINDOW, cost: Math.round(cost * 100) / 100, recentCost: Math.round(recentCost * 100) / 100, model: live.lastModel, modelAt: live.lastModelAt, stepCost: Math.round(stepCost * 1000) / 1000 }
+  const price = priceOf(live.lastModel ?? "")
+  const stepCost = (live.lastContext * price.read) / 1_000_000
+  const wakeCost = (live.lastContext * price.input * 2) / 1_000_000
+  return { context: live.lastContext, window: WINDOW, cost: Math.round(cost * 100) / 100, recentCost: Math.round(recentCost * 100) / 100, model: live.lastModel, modelAt: live.lastModelAt, stepCost: Math.round(stepCost * 1000) / 1000, wakeCost: Math.round(wakeCost * 100) / 100 }
 }
