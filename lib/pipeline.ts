@@ -42,7 +42,7 @@ import { flowOf, followInJira, type Event as JiraEvent } from "./jira-flow"
 import { scopeLines, scopeOf, storiesOf, type TreeTicket } from "./scope"
 import { anchorOf, componentsFor, decidedForAgent, edited, newDescription, proposalsIn, ticketsOfYours, waitsOn, withProposals, type Edit, type Proposal } from "./proposals"
 import { archiveOf, cleanupSteps, keptAfter, leftoversOf, wantedBranches, worktreesIn, type Archive, type Clone, type Found, type Kept as KeptBranch } from "./cleanup"
-import { evidenceType, filesIn, keptFiles, type EvidenceFile } from "./evidence"
+import { JIRA_MAX, evidenceType, filesIn, forJira, keptFiles, type EvidenceFile } from "./evidence"
 import { debtIn, merged as debtMerged, ticketOf as debtTicket, type DebtEntry, type DebtItem } from "./debt"
 import { claudeBinary, running } from "./launch"
 import { claudeEnv } from "./proc"
@@ -86,7 +86,7 @@ export type TestResult = { id: string; criterion: string; status: "pass" | "fail
 // A rule of the team's context (its repo) that the ticket makes untrue: the file and the words.
 // quote: the words of today it makes untrue; null for a new code rule, which says what it proposes instead.
 export type ContextImpact = { file: string; quote: string | null; why: string; proposal: string | null }
-export type Result = { verdict: "ready" | "needs-info"; questions: Question[]; units: Unit[]; checklist: ChecklistItem[]; findings: Finding[]; fixed: string[]; scripts: PlanScript[]; order: OrderItem[]; results: TestResult[]; contextImpact: ContextImpact[]; debt: DebtItem[]; tickets?: unknown }
+export type Result = { jira?: string[]; verdict: "ready" | "needs-info"; questions: Question[]; units: Unit[]; checklist: ChecklistItem[]; findings: Finding[]; fixed: string[]; scripts: PlanScript[]; order: OrderItem[]; results: TestResult[]; contextImpact: ContextImpact[]; debt: DebtItem[]; tickets?: unknown }
 export type PipelineStatus = "running" | "needs-info" | "ready" | "failed"
 // kept: what the run left, to see each pass of a stage apart (a plan's or a build's units, a review's findings, a test's results).
 export type Kept = { units?: Unit[]; checklist?: ChecklistItem[]; findings?: Finding[]; results?: TestResult[] }
@@ -399,7 +399,7 @@ export function parseResult(text: string, stage: Stage): Result {
     .filter(c => typeof c?.text === "string" && c.text.trim())
     .map((c, i) => ({ id: String(c.id ?? `C${i + 1}`), text: c.text.trim(), unit: typeof c.unit === "string" && c.unit ? c.unit : null }))
   if (stage === "plan" && data.verdict === "ready" && !units.length) throw new Error("plan.json is ready but has no units")
-  return { verdict: data.verdict, questions, units, checklist, findings: findingsIn(data.findings), fixed: listOf(data.fixed).map(String), scripts: scriptsIn(data.scripts), order: orderIn(data.release), results: resultsIn(data.results), contextImpact: impactIn(data.contextImpact), debt: debtIn(data.debt), tickets: data.tickets }
+  return { verdict: data.verdict, questions, units, checklist, findings: findingsIn(data.findings), fixed: listOf(data.fixed).map(String), scripts: scriptsIn(data.scripts), order: orderIn(data.release), results: resultsIn(data.results), contextImpact: impactIn(data.contextImpact), debt: debtIn(data.debt), tickets: data.tickets, ...(Array.isArray(data.jira) ? { jira: data.jira.map(String) } : {}) }
 }
 
 // The questions in Jira (Markdown, shown formatted): each under its own title, its context,
@@ -781,7 +781,7 @@ async function finish(key: string) {
   const shown = { ...result, results: result.results.map(r => ({ ...r, files: keptFiles(dir, r.files ?? []) })) }
   // Once a run: a restart in the middle of an end does not write it to Jira again.
   const isNew = state.publishedRun !== state.runs && !state.local
-  const attached = isNew && (state.stage === "test" || state.stage === "smoke") ? await attachEvidence(key, dir, shown.results) : { line: "", checks: [] }
+  const attached = isNew && (state.stage === "test" || state.stage === "smoke") ? await attachEvidence(key, dir, shown.results, result.jira ?? [], state.stage === "smoke" ? 4 : JIRA_MAX) : { line: "", checks: [] }
   if (isNew) {
     await commentOn(key, `${MARK} · ${key} ${stage.done}\n\n${prodWarning(state.stage, result)}${attached.line}${prs ? `${prs}\n\n` : ""}${md.slice(0, COMMENT_CHARS)}${md.length > COMMENT_CHARS ? "\n\n(…recortado)" : ""}`)
     await save({ ...state, publishedRun: state.runs })
@@ -904,15 +904,21 @@ function goOnAlone(state: PipelineState) {
   void counted.then(() => startPipeline(state.key, false, next)).catch(err => console.error(`auto ${state.key} → ${next}:`, err))
 }
 
-// A test's files, attached to the ticket (the first few, as Jira takes them):
-// the line that names them in the comment, and a warning if Jira refused.
-const MAX_ATTACHED = 20
-async function attachEvidence(key: string, dir: string, results: TestResult[]) {
-  const names = results.flatMap(r => (r.files ?? []).map(f => f.name)).slice(0, MAX_ATTACHED)
-  if (!names.length) return { line: "", checks: [] as Check[] }
+// A test's files that go to Jira (evidence.ts forJira): a few, never one Jira already has as it
+// is (evidence/.attached.json keeps what went, by its content); the line that names them in the
+// comment, and a warning if Jira refused.
+async function attachEvidence(key: string, dir: string, results: TestResult[], picked: string[], max: number) {
+  const record = join(dir, "evidence", ".attached.json")
+  const sent: Record<string, number> = jsonOf(await readText(record)) ?? {}
+  const hashes = new Map(await Promise.all(results.flatMap(r => (r.files ?? []).map(async f => [f.name, Number(Bun.hash(await Bun.file(join(dir, "evidence", f.name)).arrayBuffer()))] as const))))
+  const names = forJira(picked, results, n => sent[n] === hashes.get(n), max)
+  const all = new Set(results.flatMap(r => (r.files ?? []).map(f => f.name))).size
+  const rest = all > names.length ? ` (el resto, ${all - names.length}, en el board)` : ""
+  if (!names.length) return { line: all ? `Evidencia: ${all} ficheros en el board.\n\n` : "", checks: [] as Check[] }
   try {
     await attachTo(key, names.map(n => join(dir, "evidence", n)))
-    return { line: `Evidencia adjunta: ${names.join(", ")}\n\n`, checks: [] as Check[] }
+    await writeJsonAtomic(record, { ...sent, ...Object.fromEntries(names.map(n => [n, hashes.get(n)!])) }, { pretty: true })
+    return { line: `Evidencia adjunta: ${names.join(", ")}${rest}\n\n`, checks: [] as Check[] }
   } catch (err) {
     return { line: "", checks: [{ id: "evidence", label: "The evidence did not go to Jira", status: "warn" as const, detail: String((err as Error)?.message ?? err) }] }
   }
