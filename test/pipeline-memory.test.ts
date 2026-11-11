@@ -80,3 +80,15 @@ describe("what an environment runs", () => {
     expect(tookUnit([{ unit: "U1" }], { id: "U1", pr: null })).toBe(true)
   })
 })
+
+describe("a review after a fix", () => {
+  it("reviews only what changed since the last review", () => {
+    const state = { ...base, stage: "build" as const, fixing: { from: "review" as const, ids: ["F1"] }, findings: [{ id: "F1", unit: "U1", severity: "major" as const, file: null, line: null, title: "t", detail: "", fix: "" }],
+      units: [{ id: "U1", repo: "r", subtask: null, branch: "b", title: "t", dependsOn: [], pr: "https://github.com/o/r/pull/1" }], history: [run(13, "review", "ready", { endedAt: Date.parse("2026-11-10T10:00:00Z") })] }
+    const why = whyStart(state, "review")
+    expect(why?.cause).toBe("Review the fix")
+    expect(why?.text).toContain("U1 (https://github.com/o/r/pull/1)")
+    expect(why?.text).toContain("2026-11-10T10:00:00.000Z")
+    expect(whyStart({ ...state, fixing: null }, "review")).toBeUndefined()
+  })
+})

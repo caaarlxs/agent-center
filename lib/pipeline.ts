@@ -994,7 +994,21 @@ export function whyStart(state: PipelineState | null, stage: AgentStage): Why | 
     return { cause: "Run again", text: `Tu último run no terminó (${state.error ?? "sin motivo"}). Sigue donde lo dejaste: lo que ya está hecho, no lo repitas.` }
   if (stage === "build" && state?.stage === "review") return { cause: "Fix the review", text: "La revisión encontró hallazgos: arregla los de review.fix.json." }
   if (stage === "build" && state?.stage === "test") return { cause: "Fix the test", text: "El test en staging falló: arregla los criterios de test.fix.json." }
+  if (stage === "review" && state?.stage === "build" && state.fixing?.from === "review") return { cause: "Review the fix", text: fixReviewText(state) }
   return undefined
+}
+// A review after a build that fixed its findings: only what changed since it, not the PRs again.
+export function fixReviewText(state: Pick<PipelineState, "fixing" | "units" | "findings" | "history">) {
+  const last = [...(state.history ?? [])].reverse().find(r => r.stage === "review" && r.status === "ready")
+  const since = last?.endedAt ? new Date(last.endedAt).toISOString() : null
+  const units = unitsNow(state as PipelineState).map(u => `${u.id} (${u.pr ?? u.branch})`).join(", ") || "las de los hallazgos"
+  return `La construcción ha arreglado los hallazgos ${state.fixing!.ids.join(", ")} de tu revisión anterior (review.fix.json), en ${units}.
+
+Revisa solo lo nuevo:
+- Los commits de esas PRs posteriores a tu revisión${since ? ` (terminó el ${since}; \`gh pr view <url> --json commits\` y \`git diff <último commit que revisaste>..HEAD\` en su worktree)` : ""}.
+- Comprueba que cada hallazgo arreglado lo está de verdad, y que el arreglo no rompe nada de alrededor (quién llama a lo que cambia, sus tests).
+- Lo que ya revisaste y no ha cambiado no lo revises otra vez: sus hallazgos de antes que no se arreglaban ahora (los minor) se quedan como estaban, con el mismo id y título.
+- En review.json deja todos los hallazgos: los de antes que siguen y los nuevos que encuentres en lo nuevo.`
 }
 
 // Whose the ticket is: yours (taken first when you ask, and labelled, which checks it is yours),
