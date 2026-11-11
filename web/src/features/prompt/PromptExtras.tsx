@@ -6,6 +6,8 @@ import { useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 import { usePromptInputAttachments, usePromptInputController } from "@/components/ai-elements/prompt-input"
 import { canDictate, canRecord, dictate, hasWhisper, micLive, recordVoice, type Recording } from "./voice"
+import { handOff } from "./voice-handoff"
+import { joinText } from "@/features/conversation/drafts"
 import { Anim } from "@/components/icons/animated"
 import { Elapsed } from "./VoiceWave"
 import { showImage } from "@/components/common/Lightbox"
@@ -55,7 +57,10 @@ type MicState =
 
 // Whisper while it records: a live wave of the microphone's level and the
 // time; Enter writes the text and sends it, a click only writes it (to
-// change it first), Esc drops it. Either way the field
+// change it first), Esc drops it. Leave the box while it records or writes
+// and nothing is lost: it finishes on its own and its text goes to the
+// session `owner` (voice-handoff.ts); if Whisper fails, the audio stays and
+// the toast tries again. Either way the field
 // takes the focus back, the caret at the end, so the next Enter sends.
 // Without Whisper, the browser's dictation writes as you speak.
 // Submits the form once its field holds `text`, waiting up to about a second.
@@ -66,7 +71,7 @@ function submitWhenShown(form: HTMLFormElement | null, text: string, frames = 30
   if (frames > 0) setTimeout(() => submitWhenShown(form, text, frames - 1), 30)
 }
 
-export function MicButton() {
+export function MicButton({ owner }: { owner?: string }) {
   const { textInput } = usePromptInputController()
   const [isWhisper, setWhisper] = useState(false)
   const [mic, setMic] = useState<MicState>({ kind: "idle" })
@@ -82,29 +87,43 @@ export function MicButton() {
       field.setSelectionRange(field.value.length, field.value.length)
     }, 0)
   useEffect(() => void hasWhisper().then(ok => setWhisper(ok && canRecord)), [])
-  // Gone mid-recording (the panel or the dialog closed): the microphone stops too.
-  useEffect(() => () => {
-    const m = micNow.current
-    if (m.kind === "recording") m.rec.cancel()
-    if (m.kind === "dictating") m.stop()
-  }, [])
-
-  const add = (heard: string, base = textInput.value) => textInput.setInput(base ? `${base.trimEnd()} ${heard}` : heard)
+  const isMounted = useRef(true)
+  const add = (heard: string, base = textInput.value) => textInput.setInput(joinText(base, heard))
+  // Its text: into this box while it is on the page; else handed to its session.
+  const land = (heard: string, isSend: boolean, form: HTMLFormElement | null) => {
+    if (!heard) return
+    if (!isMounted.current) return void handOff(owner, heard, isSend)
+    add(heard)
+    // Sent as the box's own Enter would, once the box shows the text (sent
+    // before, it would go empty and the text be lost).
+    if (isSend) submitWhenShown(form, heard)
+  }
   const finish = async (rec: Recording, isSend = false) => {
     const form = button.current?.closest("form") ?? null
-    setMic({ kind: "transcribing" })
-    try {
-      const heard = await rec.stop()
-      if (heard) add(heard)
-      // Sent as the box's own Enter would, once the box shows the text (sent
-      // before, it would go empty and the text be lost).
-      if (heard && isSend) submitWhenShown(form, heard)
-    } catch (err) {
-      toast.error((err as Error).message)
-    }
+    if (isMounted.current) setMic({ kind: "transcribing" })
+    const attempt = (retry: () => Promise<string>) =>
+      retry().then(heard => land(heard, isSend, form), (err: Error & { retry?: () => Promise<string> }) => {
+        const again = err.retry
+        toast.error(err.message, again ? { duration: 60_000, action: { label: "Try again", onClick: () => void attempt(again) } } : undefined)
+      })
+    await attempt(() => rec.stop())
+    if (!isMounted.current) return
     setMic({ kind: "idle" })
     backToField()
   }
+  const finishNow = useRef(finish)
+  finishNow.current = finish
+  // Gone mid-recording (the panel or the dialog closed): it stops and writes
+  // what it heard all the same; browser dictation just stops.
+  useEffect(() => {
+    isMounted.current = true
+    return () => {
+    isMounted.current = false
+    const m = micNow.current
+    if (m.kind === "recording") void finishNow.current(m.rec)
+    if (m.kind === "dictating") m.stop()
+    }
+  }, [])
 
   const rec = mic.kind === "recording" ? mic.rec : null
   // The composer's glow: on while you speak, off once it writes.

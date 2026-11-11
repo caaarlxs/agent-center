@@ -49,6 +49,7 @@ Lucide's names, and must be in `web/src/features/guide/icons.ts`.
 - {reply} **Reply**: write in the box at the bottom; paste or drop files, or dictate with the microphone (`↵` writes what you said and sends it; a click on the recording only writes it). A draft stays three days. · 2026-11-06
 - {sliders-horizontal} **Mode and model**: the pills under the box change them in the session.
 - {sparkles} **New models**: the model list is the newest of each family that Claude desktop ships (Fable, Opus, Sonnet, Haiku), so a new one such as Fable 5.2 shows up once the app brings it. · 2026-11-10
+- {reply} **Dictation is never lost**: leave the conversation while you dictate or while Whisper writes, and it finishes on its own: sent to its session if you had pressed Enter, else added to that conversation's draft (a toast says where); if Whisper fails, your audio is kept and the toast tries again. · 2026-11-11
 - {wand-sparkles} **Suggested reply**: after a turn it shows grey in the box; `Tab` or `→` writes it, "Send suggestion" sends it. · 2026-11-03
 - {terminal} **Run a command**: a command block has Run, in the session's folder; one that touches prod or deletes asks for a second click. · 2026-11-03
 - {messages-square} **Selected text**: select text in a conversation for Side chat (a new session that knows the whole conversation, to ask about it) or Reply (it goes quoted into the box). · 2026-11-04

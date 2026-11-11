@@ -12,7 +12,6 @@ import { toast } from "sonner"
 import { PromptInput, PromptInputBody, PromptInputProvider, PromptInputTextarea, usePromptInputAttachments, usePromptInputController } from "@/components/ai-elements/prompt-input"
 import { post } from "@/lib/api"
 import type { Bridge, Card } from "@/lib/api-types"
-import { persistedStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
 import { AttachButton, MicButton, PickedFiles, fileErrors } from "@/features/prompt/PromptExtras"
 import { micLive } from "@/features/prompt/voice"
@@ -26,19 +25,11 @@ import { launch, sleep, stopTurn, wake } from "@/features/session/actions"
 import { UsageMeter } from "@/features/session/UsageMeter"
 import { isBusyNow, isStuckNow, reachOf } from "./reach"
 import { composerFill, composerFocus, composerHint, composerQuote, sendMessage } from "./send"
+import { DRAFT_MS, draftOf, joinText, keepDraft } from "./drafts"
+import { boxOpened, composerAppend } from "@/features/prompt/voice-handoff"
 import { Anim } from "@/components/icons/animated"
 import { SendMark, useSendMoment } from "@/components/icona/marks"
 
-const DRAFT_MS = 3 * 24 * 60 * 60_000
-const drafts = persistedStore<Record<string, { text: string; at: number }>>("drafts", {})
-const draftOf = (id: string) => {
-  const d = drafts.get()[id]
-  return d && Date.now() - d.at < DRAFT_MS ? d.text : ""
-}
-function keepDraft(id: string, text: string) {
-  const all = Object.fromEntries(Object.entries(drafts.get()).filter(([key, d]) => key !== id && Date.now() - d.at < DRAFT_MS))
-  drafts.set(text.trim() ? { ...all, [id]: { text, at: Date.now() } } : all)
-}
 // The files picked, per session, while the page stays open; kept in the
 // browser too (draft-files.ts), so they come back after a reload.
 const draftFiles = new Map<string, (FileUIPart & { id: string })[]>()
@@ -189,6 +180,15 @@ function Box({ id, card, bridge }: { id: string; card: Card | undefined; bridge:
     return () => clearTimeout(timer)
   }, [id, textInput.value])
   useEffect(() => () => keepDraft(id, latest.current), [id])
+  // A dictation started before this box opened (or before you came back): its text, at the end.
+  useEffect(() => boxOpened(id), [id])
+  const appended = composerAppend.use()
+  useEffect(() => {
+    if (appended?.id !== id) return
+    composerAppend.set(null)
+    textInput.setInput(joinText(textInput.value, appended.text))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appended, id])
   useKeptFiles(id)
   const alive = useRef(true)
   useEffect(() => () => void (alive.current = false), [])
@@ -229,7 +229,7 @@ function Box({ id, card, bridge }: { id: string; card: Card | undefined; bridge:
         </PromptInputBody>
         <div data-align="block-end" className="order-last flex w-full min-w-0 items-center gap-0.5 pt-1 pr-1.5 pb-1.5 pl-2">
           <AttachButton />
-          <MicButton />
+          <MicButton owner={id} />
           {card && <><span className="mx-1.5 h-[18px] w-px shrink-0 bg-line" /><Settings card={card} bridge={bridge} /></>}
           <span className="flex-1" />
           {suggested && !bridge?.isArchived && (

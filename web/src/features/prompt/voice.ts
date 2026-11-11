@@ -26,6 +26,19 @@ export const canDictate = !!Recognition
 
 export type Recording = { stream: MediaStream; startedAt: number; stop(): Promise<string>; cancel(): void }
 
+// The audio's text from Whisper. When it fails the error keeps the audio:
+// its `retry()` sends it again.
+async function transcribeBlob(blob: Blob): Promise<string> {
+  try {
+    const res = await fetch("/api/transcribe", { method: "POST", headers: { "content-type": blob.type, "x-agent-center": "1" }, body: blob })
+    const body = await res.json().catch(() => ({}))
+    if (!body.ok) throw new Error(body.error || "Could not transcribe")
+    return body.text as string
+  } catch (err) {
+    throw Object.assign(new Error(`${(err as Error).message || "Could not transcribe"}: your audio is kept`), { retry: () => transcribeBlob(blob) })
+  }
+}
+
 // Records the microphone: `stop()` resolves the text, `cancel()` drops it.
 export async function recordVoice(): Promise<Recording> {
   const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
@@ -43,11 +56,7 @@ export async function recordVoice(): Promise<Recording> {
       recorder.stop()
       await ended
       release()
-      const blob = new Blob(chunks, { type: recorder.mimeType || "audio/webm" })
-      const res = await fetch("/api/transcribe", { method: "POST", headers: { "content-type": blob.type, "x-agent-center": "1" }, body: blob })
-      const body = await res.json().catch(() => ({}))
-      if (!body.ok) throw new Error(body.error || "Could not transcribe")
-      return body.text as string
+      return transcribeBlob(new Blob(chunks, { type: recorder.mimeType || "audio/webm" }))
     },
     cancel() {
       recorder.onstop = null
