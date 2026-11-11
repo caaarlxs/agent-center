@@ -1,5 +1,5 @@
 import { expect, test } from "vitest"
-import { EXPENSIVE_CONTEXT, freshStart, isExpensive, money, tokens } from "./spend"
+import { EXPENSIVE_CONTEXT, isExpensive, money, tokens } from "./spend"
 
 test("a conversation is costly once each step re-reads a lot of context", () => {
   expect(isExpensive(EXPENSIVE_CONTEXT - 1)).toBe(false)
@@ -13,11 +13,4 @@ test("tokens and money, short", () => {
   expect(money(0.137)).toBe("$0.14")
   expect(money(184.4)).toBe("$184")
   expect(money(12.34)).toBe("$12.3")
-})
-
-test("a fresh start names the old session and asks to read only its end", () => {
-  const p = freshStart({ id: "abc", title: "Custom IDE" })
-  expect(p).toContain("“Custom IDE”")
-  expect(p).toContain("abc.jsonl")
-  expect(p).toMatch(/last part|end/)
 })

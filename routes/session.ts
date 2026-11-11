@@ -12,7 +12,9 @@ import { EFFORTS, MODES } from "../lib/config"
 import { saveCode } from "../lib/code"
 import { forkPoint } from "../lib/fork"
 import { errorMessage, json } from "../lib/http"
+import { startFresh } from "../lib/handoff"
 import { launch } from "../lib/launch"
+import { transcriptPath } from "../lib/transcript"
 import { latestJson, latestState, refreshSoon } from "../lib/live"
 import { rescan, sleepSession, stopProcess } from "../lib/memory"
 import { saveCommand, start as startRun, status as runStatus, stop as stopRun } from "../lib/runner"
@@ -60,6 +62,24 @@ async function fork(id: string, body: Record<string, unknown>) {
   }
 }
 
+// Start fresh (lib/handoff.ts): a new session in its folder that picks up its
+// work from a handoff note, with its model and its permission mode.
+async function fresh(id: string) {
+  const group = groupOf(id)
+  if (!group) return json({ error: "unknown session" }, 404)
+  const card = (await latestState())?.cards.find(c => c.id === id)
+  const paths = (await Promise.all(group.ids.map(i => transcriptPath(i)))).filter((p): p is string => !!p)
+  if (!paths.length) return json({ error: "Cannot find this session's conversation" }, 404)
+  const mode = MODES.includes(String(group.lead.mode)) ? String(group.lead.mode) : "default"
+  try {
+    const started = await startFresh({ title: card?.title ?? "this session", folder: group.lead.cwd, paths, model: card?.usage?.model ?? null, mode, onDone: done => void activate(done) })
+    refreshSoon()
+    return json({ ok: true, id: started })
+  } catch (err) {
+    return json({ error: errorMessage(err) }, 500)
+  }
+}
+
 // Permission mode, model and effort, changed through the session's mod (v4).
 async function settings(id: string, body: Record<string, unknown>) {
   const bridge = await bridgeStatus(id)
@@ -100,6 +120,8 @@ export async function handleSession(id: string, action: string, body: Record<str
       return send(id, body)
     case "fork":
       return fork(id, body)
+    case "fresh":
+      return fresh(id)
     case "settings":
       return settings(id, body)
     case "run": {
