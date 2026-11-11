@@ -4,7 +4,7 @@
 // wait in the session's reply box (if open again) or its draft, and you are
 // told where. A dictation from New session, with no session yet, is shown in
 // a toast to copy.
-import { toast } from "sonner"
+import { toast } from "@/lib/notify"
 import { createStore } from "@/lib/store"
 import { live } from "@/lib/live"
 import { openSession } from "@/app/open-session"

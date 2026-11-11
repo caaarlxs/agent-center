@@ -1,6 +1,6 @@
 // What the page asks a session to do, through the board's API
 // (routes/session.ts). Each one throws ApiError with the server's reason.
-import { toast } from "sonner"
+import { toast } from "@/lib/notify"
 import { post } from "@/lib/api"
 import { live } from "@/lib/live"
 import { addPending, dropPending } from "@/features/conversation/pending"

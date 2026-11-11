@@ -9,7 +9,7 @@ import Editor, { DiffEditor, type Monaco, type OnMount } from "@monaco-editor/re
 import { ChevronRight, Folder as FolderGlyph, Search, X } from "lucide-react"
 import type { editor } from "monaco-editor"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { toast } from "sonner"
+import { toast } from "@/lib/notify"
 import { FileIcon, FolderIcon } from "@/components/common/FileIcon"
 import { Button } from "@/components/ui/button"
 import { Kbd } from "@/components/ui/kbd"

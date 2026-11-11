@@ -1,51 +1,38 @@
 import { Toaster as Sonner, type ToasterProps } from "sonner"
 import { theme as pageTheme } from "@/lib/theme"
-import { CircleCheckIcon, InfoIcon, TriangleAlertIcon, OctagonXIcon, Loader2Icon } from "lucide-react"
+import { CircleCheck, CircleX, Info, Loader2, TriangleAlert } from "lucide-react"
 
+// The toasts: at the bottom in the middle, a card with its kind's icon in a
+// tile of its colour, a title and its detail, a pill for its action and a
+// thin bar that runs out with it (index.css, .cn-toast). Kinds: lib/notify.ts.
 const Toaster = ({ ...props }: ToasterProps) => {
   const theme = pageTheme.use() // the page's light or dark, not only the system's
   return (
     <Sonner
       theme={theme}
-      position="bottom-right"
+      position="bottom-center"
       visibleToasts={3}
-      duration={3500}
-      offset={20}
+      duration={4500}
+      offset={24}
+      gap={10}
       className="toaster group"
       icons={{
-        success: (
-          <CircleCheckIcon className="size-4" />
-        ),
-        info: (
-          <InfoIcon className="size-4" />
-        ),
-        warning: (
-          <TriangleAlertIcon className="size-4" />
-        ),
-        error: (
-          <OctagonXIcon className="size-4" />
-        ),
-        loading: (
-          <Loader2Icon className="size-4 animate-spin" />
-        ),
+        success: <CircleCheck className="size-[17px]" strokeWidth={2.2} />,
+        info: <Info className="size-[17px]" strokeWidth={2.2} />,
+        warning: <TriangleAlert className="size-[17px]" strokeWidth={2.2} />,
+        error: <CircleX className="size-[17px]" strokeWidth={2.2} />,
+        loading: <Loader2 className="size-[17px] animate-spin" strokeWidth={2.2} />,
       }}
       style={
         {
-          // Inverted, as the classic board's (styles.css:1021-1031).
-          "--normal-bg": "var(--text)",
-          "--normal-text": "var(--bg)",
-          "--normal-border": "transparent",
+          "--normal-bg": "var(--raised)",
+          "--normal-text": "var(--text)",
+          "--normal-border": "var(--line)",
           "--toast-button-margin-start": "auto",
-          "--border-radius": "10px",
+          "--border-radius": "14px",
         } as React.CSSProperties
       }
-      toastOptions={{
-        classNames: {
-          toast: "cn-toast !w-auto !max-w-[min(460px,calc(100vw-40px))] !gap-3.5 !py-2.5 !pr-3 !pl-3.5 !text-[13px] !shadow-pop",
-          title: "truncate",
-          actionButton: "!bg-transparent !px-0 !text-[13px] !font-[650] !text-brand !gap-1.5 [&_kbd]:!border-[color-mix(in_srgb,var(--bg)_30%,transparent)] [&_kbd]:!bg-transparent [&_kbd]:!text-current",
-        },
-      }}
+      toastOptions={{ classNames: { toast: "cn-toast", title: "cn-toast-title", description: "cn-toast-text", actionButton: "cn-toast-action", cancelButton: "cn-toast-cancel" } }}
       {...props}
     />
   )

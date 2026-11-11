@@ -5,7 +5,7 @@
 // card would: an answer you have not read (blue), a question or an approval
 // waiting for you (amber); opening it puts it out.
 import { Wrench } from "lucide-react"
-import { toast } from "sonner"
+import { toast } from "@/lib/notify"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { post } from "@/lib/api"

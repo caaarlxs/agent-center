@@ -8,7 +8,7 @@
 import { SendHorizontal, Square } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import type { FileUIPart } from "ai"
-import { toast } from "sonner"
+import { toast } from "@/lib/notify"
 import { PromptInput, PromptInputBody, PromptInputProvider, PromptInputTextarea, usePromptInputAttachments, usePromptInputController } from "@/components/ai-elements/prompt-input"
 import { post } from "@/lib/api"
 import type { Bridge, Card } from "@/lib/api-types"

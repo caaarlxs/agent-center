@@ -3,7 +3,7 @@
 import { FileText, Paperclip, Square } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useEffect, useRef, useState } from "react"
-import { toast } from "sonner"
+import { toast } from "@/lib/notify"
 import { usePromptInputAttachments, usePromptInputController } from "@/components/ai-elements/prompt-input"
 import { canDictate, canRecord, dictate, hasWhisper, micLive, recordVoice, type Recording } from "./voice"
 import { handOff } from "./voice-handoff"

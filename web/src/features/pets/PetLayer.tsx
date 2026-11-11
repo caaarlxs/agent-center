@@ -18,7 +18,7 @@
 // for a block of work and tells you when to rest.
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { createPortal } from "react-dom"
-import { toast } from "sonner"
+import { toast } from "@/lib/notify"
 import type { Card } from "@/lib/api-types"
 import { useLive } from "@/lib/live"
 import { load, keep } from "@/lib/store"

@@ -1,7 +1,7 @@
 // The board's actions on a session, as the classic board does them
 // (main.js act): shown at once, sent to the server, then a toast that names
 // the session, with Undo (also Z) when it can be taken back.
-import { toast } from "sonner"
+import { toast } from "@/lib/notify"
 import type { Card } from "@/lib/api-types"
 import { undoable } from "@/lib/toast"
 import { post } from "@/lib/api"

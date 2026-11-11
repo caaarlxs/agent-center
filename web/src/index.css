@@ -867,3 +867,33 @@ button:hover > .coll-buddy, .coll-buddy:focus-visible { opacity: 1; }
 @keyframes tp-beam-hold { from { opacity: 0.55; transform: scaleY(0.9) scaleX(0.92); } to { opacity: 1; transform: scaleY(1.08) scaleX(1.05); } }
 @media (prefers-reduced-motion: reduce) { .tp-float, .tp-tremble, .tp-hint, .tp-guide { animation: none; } }
 .tp-pack:hover .pack-holo { opacity: 0.75; }
+
+/* Toasts (components/ui/sonner.tsx, lib/notify.ts): a card at the bottom in
+   the middle; its kind's icon in a tile of its colour (--k), popping in; a
+   title and its detail; a pill for its action; a bar that runs out with it
+   (--life), paused while you hover the toasts. */
+[data-sonner-toaster] [data-sonner-toast].cn-toast { --k: var(--brand); width: auto; min-width: 300px; max-width: min(460px, calc(100vw - 32px)); align-items: center; gap: 12px;
+  padding: 11px 12px 12px 11px; border: 1px solid var(--line); border-radius: 14px; background: var(--raised); color: var(--text); box-shadow: var(--shadow-pop); font-size: 13px; overflow: hidden; }
+[data-sonner-toaster] [data-sonner-toast].cn-toast[data-type=info] { --k: #3d8bfd; }
+[data-sonner-toaster] [data-sonner-toast].cn-toast[data-type=success] { --k: var(--work); }
+[data-sonner-toaster] [data-sonner-toast].cn-toast[data-type=error] { --k: var(--bad); }
+[data-sonner-toaster] [data-sonner-toast].cn-toast[data-type=warning] { --k: var(--ask); }
+[data-sonner-toaster] [data-sonner-toast].cn-toast[data-type=loading] { --k: var(--text-muted); }
+[data-sonner-toaster] [data-sonner-toast].cn-toast [data-icon] { flex: none; width: 32px; height: 32px; margin: 0; border-radius: 10px; display: grid; place-items: center;
+  background: color-mix(in srgb, var(--k) 15%, transparent); color: var(--k); animation: toast-icon 0.45s cubic-bezier(0.3, 1.6, 0.5, 1) both; }
+[data-sonner-toaster] [data-sonner-toast].cn-toast [data-icon] > * { width: auto; height: auto; margin: 0; }
+[data-sonner-toaster] [data-sonner-toast].cn-toast [data-content] { min-width: 0; gap: 1px; }
+[data-sonner-toaster] .cn-toast-title { font-size: 13.5px; font-weight: 620; line-height: 1.3; }
+[data-sonner-toaster] .cn-toast-text { font-size: 12.5px; line-height: 1.35; color: var(--text-muted) !important; }
+[data-sonner-toaster] [data-sonner-toast].cn-toast .cn-toast-action { height: 28px; padding: 0 11px; border-radius: 8px; background: color-mix(in srgb, var(--k) 14%, transparent); color: var(--k); font-size: 12.5px; font-weight: 650; gap: 6px;
+  transition: background-color 0.15s, transform 0.12s; }
+[data-sonner-toaster] [data-sonner-toast].cn-toast .cn-toast-action:hover { background: color-mix(in srgb, var(--k) 24%, transparent); }
+[data-sonner-toaster] [data-sonner-toast].cn-toast .cn-toast-action:active { transform: scale(0.96); }
+[data-sonner-toaster] [data-sonner-toast].cn-toast .cn-toast-action kbd { border-color: color-mix(in srgb, var(--k) 35%, transparent); background: transparent; color: currentColor; }
+[data-sonner-toaster] [data-sonner-toast].cn-toast::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--k); opacity: 0.55; transform-origin: 0 50%;
+  animation: toast-life var(--life, 0s) linear forwards; }
+[data-sonner-toaster] [data-sonner-toast].cn-toast:not([style*="--life"])::after { display: none; }
+[data-sonner-toaster]:hover [data-sonner-toast].cn-toast::after { animation-play-state: paused; }
+@keyframes toast-icon { from { transform: scale(0.5) rotate(-12deg); opacity: 0; } }
+@keyframes toast-life { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+@media (prefers-reduced-motion: reduce) { [data-sonner-toaster] [data-sonner-toast].cn-toast [data-icon], [data-sonner-toaster] [data-sonner-toast].cn-toast::after { animation: none; } }

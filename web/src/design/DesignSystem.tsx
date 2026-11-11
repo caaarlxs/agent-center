@@ -4,7 +4,7 @@
 import { Bell, Check, Command as CommandIcon, Folder, Inbox, LayoutGrid, Plus, Search, Settings, Sun } from "lucide-react"
 import { motion } from "motion/react"
 import { useEffect, useState } from "react"
-import { toast } from "sonner"
+import { toast } from "@/lib/notify"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandShortcut } from "@/components/ui/command"

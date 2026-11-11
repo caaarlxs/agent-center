@@ -2,7 +2,7 @@
 // review's finding): it answers in its own session, so it knows the ticket, the
 // code and what it did. The thread stays on the ticket. ↵ sends.
 import { useState, type KeyboardEvent } from "react"
-import { toast } from "sonner"
+import { toast } from "@/lib/notify"
 import { Shimmer } from "@/components/ai-elements/shimmer"
 import { post } from "@/lib/api"
 import { cn } from "@/lib/utils"

@@ -8,7 +8,7 @@
 // again every 30 s and after each action.
 import { ChevronDown, ChevronRight } from "lucide-react"
 import { useEffect, useState } from "react"
-import { toast } from "sonner"
+import { toast } from "@/lib/notify"
 import { Button } from "@/components/ui/button"
 import { get, post } from "@/lib/api"
 import type { FileDiff, PrDetail } from "@/lib/api-types"

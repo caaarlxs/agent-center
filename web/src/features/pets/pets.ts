@@ -2,7 +2,7 @@
 // you have, the one on the board and its buddy, and the XP each has earned. Asked again now and then and when the
 // window comes back, so a pack that arrived shows (with a toast) without a
 // reload; when the next one comes the page never knows.
-import { toast } from "sonner"
+import { toast } from "@/lib/notify"
 import { get, post } from "@/lib/api"
 import { createStore } from "@/lib/store"
 import { openDialog } from "@/app/open-dialog"

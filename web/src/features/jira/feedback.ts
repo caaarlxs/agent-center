@@ -2,7 +2,7 @@
 // once that it is on it: if the answer takes more than a moment, a toast with a
 // spinner says what it is doing, and it turns into the answer when it comes.
 // The same request a second time while the first waits does nothing.
-import { toast } from "sonner"
+import { toast } from "@/lib/notify"
 import { post } from "@/lib/api"
 
 const SLOW_MS = 300

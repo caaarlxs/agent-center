@@ -13,7 +13,7 @@
 // (two clicks: it is assigned to you).
 import { AlertTriangle, Check, ChevronRight, CircleHelp, Database, FastForward, FlaskConical, ListChecks, LogOut, Play, RotateCcw, Route, Send, ShieldCheck, Trash2 } from "lucide-react"
 import { useEffect, useState, type ReactNode } from "react"
-import { toast } from "sonner"
+import { toast } from "@/lib/notify"
 import { Button } from "@/components/ui/button"
 import { Shimmer } from "@/components/ai-elements/shimmer"
 import { Kbd } from "@/components/ui/kbd"

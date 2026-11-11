@@ -5,7 +5,7 @@ let failSend = false
 vi.mock("@/features/conversation/send", () => ({ sendMessage: async (id: string, text: string) => { if (failSend) throw new Error("asleep"); sent.push([id, text]) } }))
 vi.mock("@/lib/live", () => ({ live: () => ({ snapshot: { cards: [{ id: "s1", title: "My session" }] } }) }))
 vi.mock("@/app/open-session", () => ({ openSession: () => {} }))
-vi.mock("sonner", () => ({ toast: Object.assign(() => {}, { error: () => {} }) }))
+vi.mock("@/lib/notify", () => ({ toast: Object.assign(() => {}, { error: () => {}, success: () => {}, warning: () => {}, info: () => {} }) }))
 
 const { handOff, boxOpened, composerAppend } = await import("./voice-handoff")
 const { draftOf, keepDraft } = await import("@/features/conversation/drafts")

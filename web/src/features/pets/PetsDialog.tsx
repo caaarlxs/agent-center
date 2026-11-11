@@ -15,7 +15,7 @@
 import { ChevronLeft, ChevronRight, PawPrint, Search } from "lucide-react"
 import { memo, useDeferredValue, useEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom"
-import { toast } from "sonner"
+import { toast } from "@/lib/notify"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { Spinner } from "@/components/ui/spinner"

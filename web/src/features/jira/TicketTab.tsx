@@ -10,7 +10,7 @@
 import { BotAvatar } from "bot-avatars"
 import { ChevronDown, Link2, Plus, X } from "lucide-react"
 import { type ReactNode, useEffect, useState } from "react"
-import { toast } from "sonner"
+import { toast } from "@/lib/notify"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"

@@ -12,7 +12,7 @@
 // beside a long one shows where your messages, questions and failures are.
 import { ArrowDown, ChevronDown, ChevronRight, Download, FileText, FlaskConical, GitFork, Globe, ListChecks, ListTree, Square, Terminal, Bot, Wrench } from "lucide-react"
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
-import { toast } from "sonner"
+import { toast } from "@/lib/notify"
 import { FileIcon } from "@/components/common/FileIcon"
 import { Button } from "@/components/ui/button"
 import { get, post, sessionFileUrl } from "@/lib/api"

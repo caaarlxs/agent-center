@@ -11,7 +11,7 @@ import {
 } from "@xyflow/react"
 import { ArrowRight } from "lucide-react"
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { toast } from "sonner"
+import { toast } from "@/lib/notify"
 import { Canvas as FlowCanvas } from "@/components/ai-elements/canvas"
 import { Backdrop } from "./Backdrop"
 import type { Card, Note, Zone } from "@/lib/api-types"

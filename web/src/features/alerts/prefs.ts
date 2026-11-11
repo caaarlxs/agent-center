@@ -1,7 +1,7 @@
 // How the board tells you about your sessions, kept in this browser under the
 // classic board's keys: the chime, the macOS notification, the Mac reading the
 // recap aloud, and the sessions you asked to hear about once (the bell).
-import { toast } from "sonner"
+import { toast } from "@/lib/notify"
 import { post } from "@/lib/api"
 import { persistedStore } from "@/lib/store"
 import { chime } from "./chime"

@@ -7,7 +7,7 @@
 // report. It opens by itself, on Setup, while a required step is missing.
 import { Bell, Check, ChevronLeft, ChevronRight, LifeBuoy, Palette, Ticket as TicketIcon, Wrench, X } from "lucide-react"
 import { useEffect, useRef, useState, type ReactNode } from "react"
-import { toast } from "sonner"
+import { toast } from "@/lib/notify"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { Spinner } from "@/components/ui/spinner"

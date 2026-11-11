@@ -5,7 +5,7 @@
 // a question about what you selected in it.
 import { GitFork, MessagesSquare } from "lucide-react"
 import { useRef, useState } from "react"
-import { toast } from "sonner"
+import { toast } from "@/lib/notify"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
 import { Kbd } from "@/components/ui/kbd"

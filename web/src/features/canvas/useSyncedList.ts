@@ -3,7 +3,7 @@
 // by the server's copy only when nothing of ours is on its way: an older copy
 // must not undo what was just done.
 import { useCallback, useEffect, useRef, useState } from "react"
-import { toast } from "sonner"
+import { toast } from "@/lib/notify"
 import { post } from "@/lib/api"
 
 const LATER_MS = 600

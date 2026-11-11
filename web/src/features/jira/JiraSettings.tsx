@@ -2,7 +2,7 @@
 // The details are checked with Jira before they are kept; the token goes to
 // the macOS keychain and is never shown again.
 import { useEffect, useState } from "react"
-import { toast } from "sonner"
+import { toast } from "@/lib/notify"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { post } from "@/lib/api"

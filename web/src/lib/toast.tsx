@@ -1,7 +1,7 @@
 // Notes about what just happened, with Undo when it can be taken back: the
 // last one stays reachable with Z (keys.ts) while its toast shows.
 import type { ReactNode } from "react"
-import { toast } from "sonner"
+import { toast } from "@/lib/notify"
 import { UndoCountdown } from "@/components/watermelon/UndoCountdown"
 
 const UNDO_MS = 7000

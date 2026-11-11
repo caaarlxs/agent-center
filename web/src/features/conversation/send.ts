@@ -1,7 +1,7 @@
 // Sending from anywhere on the page (the reply box, a reply button, review
 // comments): the message goes, a toast offers Undo, and Undo puts its text
 // back in that session's reply box.
-import { toast } from "sonner"
+import { toast } from "@/lib/notify"
 import { createStore } from "@/lib/store"
 import { undoable } from "@/lib/toast"
 import { sendText, unsend } from "@/features/session/actions"

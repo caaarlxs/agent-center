@@ -6,7 +6,7 @@
 // would overwrite a newer copy on disk is refused, and Reload brings it in.
 import { BookText, Brain, ChevronDown, ChevronRight } from "lucide-react"
 import { useEffect, useState } from "react"
-import { toast } from "sonner"
+import { toast } from "@/lib/notify"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { Kbd } from "@/components/ui/kbd"

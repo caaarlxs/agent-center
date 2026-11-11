@@ -3,7 +3,7 @@
 // each live update.
 import { Check } from "lucide-react"
 import { useCallback, useEffect, useState } from "react"
-import { toast } from "sonner"
+import { toast } from "@/lib/notify"
 import { get, post } from "@/lib/api"
 import { useLive } from "@/lib/live"
 import { undoable } from "@/lib/toast"

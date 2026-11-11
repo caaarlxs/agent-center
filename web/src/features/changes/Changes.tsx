@@ -7,7 +7,7 @@
 import { DiffEditor } from "@monaco-editor/react"
 import { ChevronRight, PanelLeft, Pencil } from "lucide-react"
 import { useEffect, useMemo, useRef, useState } from "react"
-import { toast } from "sonner"
+import { toast } from "@/lib/notify"
 import { Button } from "@/components/ui/button"
 import { Kbd } from "@/components/ui/kbd"
 import { get } from "@/lib/api"

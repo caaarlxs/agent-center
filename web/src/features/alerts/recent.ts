@@ -1,7 +1,7 @@
 // The sessions that just told you something (finished, asked, need your
 // approval), newest first: L opens the newest, and the canvas points at the
 // ones off screen until you open them. Kept half an hour, ten at most.
-import { toast } from "sonner"
+import { toast } from "@/lib/notify"
 import { openSession } from "@/app/open-session"
 import { focusCard } from "@/app/view-state"
 import { createStore } from "@/lib/store"
