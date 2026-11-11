@@ -15,30 +15,33 @@ type Said = { who: "you" | "claude"; text: string }
 const EDITS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"])
 const NOT_YOURS = /^\s*<(system-reminder|command-|local-command|task-notification)/
 
-/** What a transcript's lines say, for a handoff: the messages (the latest that fit in `maxChars`) and the files changed. */
-export function excerptOf(lines: string[], maxChars: number) {
-  const all: Said[] = []
-  const files: string[] = []
-  for (const line of lines) {
-    if (!line.includes('"type":"user"') && !line.includes('"type":"assistant"')) continue
-    let d: any
-    try {
-      d = JSON.parse(line)
-    } catch {
-      continue
-    }
-    if (d.isMeta || d.isCompactSummary || d.isSidechain) continue
-    const content = d.message?.content
-    if (d.type === "user") {
-      const text = typeof content === "string" ? content : Array.isArray(content) ? content.filter((b: any) => b?.type === "text").map((b: any) => b.text).join("\n") : ""
-      if (text.trim() && !NOT_YOURS.test(text)) all.push({ who: "you", text: text.trim() })
-    } else if (Array.isArray(content)) {
-      for (const b of content) {
-        if (b?.type === "text" && b.text?.trim()) all.push({ who: "claude", text: b.text.trim() })
-        if (b?.type === "tool_use" && EDITS.has(b.name) && typeof b.input?.file_path === "string" && !files.includes(b.input.file_path)) files.push(b.input.file_path)
-      }
-    }
+// A row of the conversation itself: not injected, not a summary, not a subagent's.
+function rowOf(line: string): any | null {
+  if (!line.includes('"type":"user"') && !line.includes('"type":"assistant"')) return null
+  try {
+    const d = JSON.parse(line)
+    return d.isMeta || d.isCompactSummary || d.isSidechain ? null : d
+  } catch {
+    return null
   }
+}
+
+// What one row says (your words, or Claude's), and the file it changed if it did.
+function readRow(d: any): { said: Said[]; files: string[] } {
+  const content = d.message?.content
+  if (d.type === "user") {
+    const text = (typeof content === "string" ? content : Array.isArray(content) ? content.filter((b: any) => b?.type === "text").map((b: any) => b.text).join("\n") : "").trim()
+    return { said: text && !NOT_YOURS.test(text) ? [{ who: "you", text }] : [], files: [] }
+  }
+  const blocks: any[] = Array.isArray(content) ? content : []
+  return {
+    said: blocks.filter(b => b?.type === "text" && b.text?.trim()).map(b => ({ who: "claude", text: b.text.trim() })),
+    files: blocks.filter(b => b?.type === "tool_use" && EDITS.has(b.name) && typeof b.input?.file_path === "string").map(b => b.input.file_path),
+  }
+}
+
+// The latest messages that fit in `maxChars`, oldest first; the newest one, cut if alone it is too long.
+function latestThatFit(all: Said[], maxChars: number): Said[] {
   const said: Said[] = []
   let left = maxChars
   for (let i = all.length - 1; i >= 0 && left > 0; i--) {
@@ -47,7 +50,13 @@ export function excerptOf(lines: string[], maxChars: number) {
     said.unshift(s.text.length > left ? { ...s, text: s.text.slice(-left) } : s)
     left -= s.text.length
   }
-  return { said, files }
+  return said
+}
+
+/** What a transcript's lines say, for a handoff: the messages (the latest that fit in `maxChars`) and the files changed. */
+export function excerptOf(lines: string[], maxChars: number) {
+  const read = lines.map(rowOf).filter(Boolean).map(readRow)
+  return { said: latestThatFit(read.flatMap(r => r.said), maxChars), files: [...new Set(read.flatMap(r => r.files))] }
 }
 
 /** The new session's first message. */
