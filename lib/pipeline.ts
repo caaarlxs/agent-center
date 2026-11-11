@@ -76,7 +76,9 @@ export type Env = "staging" | "prod"
 export type PlanScript = { id: string; unit: string | null; title: string; command: string; when: string; envs: Env[] }
 // What a review found in a unit's PR: how bad, where, and how to fix it.
 export type Severity = "blocker" | "major" | "minor"
-export type Finding = { id: string; unit: string | null; severity: Severity; file: string | null; line: number | null; title: string; detail: string; fix: string }
+// plain: what it means for a person who has not seen the code (who it happens to, what they see or lose,
+// what the fix changes); detail and fix are for the agent that fixes it.
+export type Finding = { id: string; unit: string | null; severity: Severity; file: string | null; line: number | null; title: string; detail: string; fix: string; plain?: string | null }
 // What a test (in staging) or a smoke check (in prod) found of each criterion.
 // untested: the test could not try it (no data, no device), which is no failure: a person checks it by hand.
 // summary: what it tried, expected and found, in plain words; evidence: the technical detail.
@@ -161,7 +163,8 @@ export const AS_AGENT = `Trabajas sin una persona delante:
 - Escribe para el siguiente agente: listas, campos y rutas, sin prosa ni repeticiones.
 - Lee solo lo que necesitas: \`git grep -n\` y rangos de líneas (\`git show <ref>:<fichero> | sed -n 'a,bp'\`), no ficheros enteros.
 - El resumen (\`<etapa>.summary.md\`) es lo único para una persona, y va a Jira: lo que debe saber, en 300 palabras como máximo.
-- Lo que lee una persona va en lenguaje normal, sin jerga ni nombres de campos (y si un término técnico hace falta, lo explicas en la misma frase): el resumen, cada pregunta y su \`context\` (por qué lo preguntas y qué cambia según la respuesta), y el \`summary\` de cada resultado de un test (qué probaste, qué esperabas, qué pasó y por qué importa). El detalle técnico va en \`evidence\`.`
+- Lo que lee una persona va en lenguaje normal, sin jerga ni nombres de campos (y si un término técnico hace falta, lo explicas en la misma frase): el resumen, cada pregunta y su \`context\` (por qué lo preguntas y qué cambia según la respuesta), el \`summary\` de cada resultado de un test (qué probaste, qué esperabas, qué pasó y por qué importa), y el \`title\` y el \`plain\` de cada hallazgo. El detalle técnico va en \`evidence\`, \`detail\` y \`fix\`.
+- En lo que lee una persona no nombres lo que solo se ve en el código: ficheros, funciones, campos, ids de unidad (U1) o de criterio (CA3). Di lo que es: «el aviso por WhatsApp», «la tabla de cifras del teaser».`
 
 // Each stage: its verb in the prompt, what its comments say, the label it
 // leaves when it is done (and the ones it takes off), its model and effort,
@@ -206,7 +209,7 @@ const STAGE: Record<AgentStage, StageDef> = {
    Si existe ${join(dir, "test.fix.json")}, esto es un arreglo de lo que falló en staging: revisa solo las unidades nuevas (X1, X2…) contra los criterios que lista; las de antes ya están mergeadas y desplegadas.
 3. Si existe ${join(dir, "review.json.prev")}, es la revisión anterior: comprueba primero que sus hallazgos están arreglados. Lo que el board ya ha comprobado de cada PR (borrador, rama, base, checks de CI, tests borrados o desactivados) está en ${join(dir, "checks.json")}: no lo repitas; cada aviso que tenga es un hallazgo que confirmas o descartas.
 4. Escribe los hallazgos en ${join(dir, "review.md")} y el resumen en ${join(dir, "review.summary.md")}.
-5. Escribe al final ${join(dir, "review.json")}: {"verdict": "ready" | "needs-info", "questions": [...], "findings": [{"id": "F1", "unit": "U1", "severity": "blocker" | "major" | "minor", "file": "ruta", "line": 12, "title": "...", "detail": "...", "fix": "..."}]}.`,
+5. Escribe al final ${join(dir, "review.json")}: {"verdict": "ready" | "needs-info", "questions": [...], "findings": [{"id": "F1", "unit": "U1", "severity": "blocker" | "major" | "minor", "file": "ruta", "line": 12, "title": "...", "plain": "...", "detail": "...", "fix": "..."}]}.`,
   },
   test: {
     verb: "probar", title: "Prueba en staging", done: "probado en staging", label: LABELS.tested, unlabel: [], model: "claude-opus-5-5", effort: "high", writes: false,
@@ -288,7 +291,7 @@ const findingsIn = (v: unknown): Finding[] =>
   listOf(v)
     .filter(f => textOf(f?.title))
     .map((f, i) => ({ id: String(f.id ?? `F${i + 1}`), unit: textOf(f.unit) || null, severity: SEVERITIES.includes(f.severity) ? f.severity : "minor",
-      file: textOf(f.file) || null, line: Number.isInteger(f.line) ? f.line : null, title: textOf(f.title), detail: textOf(f.detail), fix: textOf(f.fix) }))
+      file: textOf(f.file) || null, line: Number.isInteger(f.line) ? f.line : null, title: textOf(f.title), detail: textOf(f.detail), fix: textOf(f.fix), ...(textOf(f.plain) ? { plain: textOf(f.plain) } : {}) }))
 const ENVS: Env[] = ["staging", "prod"]
 const scriptsIn = (v: unknown): PlanScript[] =>
   listOf(v)
@@ -798,6 +801,8 @@ async function finish(key: string) {
   const done: PipelineState = { ...state, publishedRun: state.runs, status: "ready", questions: [], proposals, units, checklist, checked, scripts, order, ...found, ...tested, ...context, checks: withJira([...checks, ...attached.checks], state.checks), endedAt: Date.now() }
   await recordDebt(key, result.debt)
   await settle({ ...done, checks: withJira([...(done.checks ?? []), ...graveDebt(result.debt)], []) })
+  // Saved first: it explains the findings this review left.
+  if (state.stage === "review") void explainFindings(key).catch(err => console.error(`explain ${key}:`, err))
 }
 
 // Each run's document, apart (runs/<n>-<stage>.md), to read each pass of a stage.
@@ -812,6 +817,47 @@ export async function runDoc(key: string, n: number) {
   if (!isKey(key) || !run) throw new Error("No such run")
   return readText(join(dirOf(key), "runs", `${n}-${run.stage}.md`))
 }
+
+// ---------- findings in plain words ----------
+
+// A review's findings without their explanation for a person (a review from before, or one
+// that left it out): a small agent writes it from the review, the refinement and the plan.
+const explaining = new Set<string>()
+export const explainPrompt = (key: string, dir: string, ids: string[]) => `${TAG} ${key} · explicar hallazgos
+
+Eres quien explica a una persona del equipo, que decide pero no ha visto el código, los hallazgos de una revisión.
+
+Lee ${join(dir, "review.json")} (los hallazgos ${ids.join(", ")}), y lo que necesites de ${join(dir, "refine.md")} y ${join(dir, "plan.md")}.
+
+Para cada uno escribe:
+- "title": qué falla, en una frase corta: lo que le pasa a un usuario o a los datos.
+- "plain": 2-4 frases en lenguaje de producto: a quién le pasa, en qué situación, qué ve o qué se pierde, y qué cambia el arreglo.
+
+Términos técnicos generales sí (migración, cola, caché). Nada que solo se ve en el código: ficheros, funciones, campos, ids de unidad (U1) o de criterio (CA3). Si hace falta uno, lo explicas en la misma frase. En español.
+
+Escribe ${join(dir, "review.plain.json")}: {"F1": {"title": "…", "plain": "…"}}. Solo lee: no cambies nada más.`
+export async function explainFindings(key: string) {
+  const state = await stateOf(key)
+  const ids = (state?.findings ?? []).filter(f => !f.plain).map(f => f.id)
+  if (!state || !ids.length || explaining.has(key)) return
+  explaining.add(key)
+  const dir = dirOf(key)
+  const out = join(dir, "review.plain.json")
+  await rm(out, { force: true })
+  const args = ["-p", "--permission-mode", "auto", "--setting-sources", "project,local", "--strict-mcp-config", "--model", "claude-sonnet-5-5", "--effort", "low",
+    "--disallowedTools", ...NEVER, "Bash(git push:*)", "Bash(git commit:*)", "Bash(gh pr create:*)", "Bash(aws:*)", `Edit(/${join(ROOT, "repos")}/**)`, `Write(/${join(ROOT, "repos")}/**)`, "--", explainPrompt(key, dir, ids)]
+  const proc = spawn(await claudeBinary(), args, { cwd: dir, env: claudeEnv({ AGENT_CENTER_LAUNCH: "1" }), stdio: "ignore" })
+  proc.on("exit", () => void withPlain(key, out).finally(() => explaining.delete(key)))
+}
+// Its explanations into the findings it wrote them for (a review run since keeps its own).
+const withPlain = (key: string, path: string) => locked(key, async () => {
+  const plain = jsonOf(await readText(path)) as Record<string, { title?: string; plain?: string }> | null
+  const state = await stateOf(key)
+  if (!plain || !state?.findings) return
+  await save({ ...state, findings: plainFindings(state.findings, plain) })
+})
+export const plainFindings = (findings: Finding[], plain: Record<string, { title?: string; plain?: string }>) =>
+  findings.map(f => (f.plain || !plain[f.id]?.plain ? f : { ...f, plain: textOf(plain[f.id]!.plain), title: textOf(plain[f.id]!.title) || f.title }))
 
 // ---------- the team's code debt (debt.ts) ----------
 

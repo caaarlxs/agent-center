@@ -267,15 +267,29 @@ function FindingRow({ finding: f, unit, isFixed, isPublished = false, isChosen, 
       </button>
       {isOpen && (
         <div className="ml-6 flex flex-col gap-2 pb-3 text-[13px] leading-[1.55]">
-          {where && <span className="truncate font-mono text-[11px] text-faint">{where}</span>}
-          {f.detail && <p className="m-0 text-text-muted">{f.detail}</p>}
-          {f.fix && <p className="m-0 border-l-2 border-line-strong pl-3 text-text-muted">{f.fix}</p>}
+          {/* For you first; the agent's own words (the file, the case, the fix) folded. */}
+          {f.plain ? (
+            <>
+              <p className="m-0 text-text">{f.plain}</p>
+              <Details label="Technical detail"><Technical where={where} finding={f} /></Details>
+            </>
+          ) : <Technical where={where} finding={f} />}
           {ask}
           {unit?.pr && <a href={`${unit.pr}/files`} target="_blank" rel="noreferrer" className="self-start text-xs font-semibold text-brand no-underline hover:underline">Open in PR #{unit.pr.split("/").pop()}</a>}
         </div>
       )}
       </div>
     </li>
+  )
+}
+
+function Technical({ where, finding: f }: { where: string; finding: Finding }) {
+  return (
+    <div className="flex flex-col gap-2">
+      {where && <span className="truncate font-mono text-[11px] text-faint">{where}</span>}
+      {f.detail && <p className="m-0 text-text-muted">{f.detail}</p>}
+      {f.fix && <p className="m-0 border-l-2 border-line-strong pl-3 text-text-muted">{f.fix}</p>}
+    </div>
   )
 }
 

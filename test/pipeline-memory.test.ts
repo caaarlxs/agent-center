@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { AUTO_FIXES, autoNext, noteText, backRefusal, backWhy, continuePrompt, newsOf, pipelineKeyOf, spentIn, whyStart, type PipelineState, type Run } from "../lib/pipeline"
+import { AUTO_FIXES, autoNext, noteText, parseResult, plainFindings, backRefusal, backWhy, continuePrompt, newsOf, pipelineKeyOf, spentIn, whyStart, type PipelineState, type Run } from "../lib/pipeline"
 import { tookUnit } from "../lib/release"
 
 const base: PipelineState = { key: "PP-1", stage: "refine", status: "ready", sessionId: null, runs: 1, startedAt: 1, endedAt: 2, askedAt: null, questions: [], error: null }
@@ -100,5 +100,17 @@ describe("your note when you send it back", () => {
   it("is what you wrote, without the lines of the files", () => {
     expect(noteText("Cambia los copies\n\nAttached images (open them with Read):\n- /a.png\n- /b.png")).toBe("Cambia los copies")
     expect(noteText("Attached image (open it with Read): /a.png")).toBeNull()
+  })
+})
+
+describe("findings in plain words", () => {
+  const f = { id: "F1", unit: "U2", severity: "blocker" as const, file: "a.py", line: 1, title: "run_planned salta", detail: "d", fix: "x" }
+  it("a review keeps the explanation it wrote", () => {
+    expect(parseResult(JSON.stringify({ verdict: "ready", findings: [{ ...f, plain: "Quien apagó el email lo vuelve a recibir." }] }), "review").findings[0]?.plain).toBe("Quien apagó el email lo vuelve a recibir.")
+  })
+  it("one written later goes into the findings without one, with its title", () => {
+    const out = plainFindings([f, { ...f, id: "F2", plain: "ya" }], { F1: { title: "Se pierden los avisos apagados", plain: "Explicado" }, F2: { plain: "otra" } })
+    expect(out[0]).toMatchObject({ title: "Se pierden los avisos apagados", plain: "Explicado", detail: "d" })
+    expect(out[1]?.plain).toBe("ya")
   })
 })
