@@ -9,6 +9,7 @@ import { reportOf } from "../lib/release"
 import { namedBy, repoPage, sessionCommits, sessionRepos } from "../lib/session-commits"
 import { ICONS, chosenIcon } from "../lib/app-icon"
 import { petsCatalog, petsState } from "../lib/pets"
+import { sessionTurnCosts, spendSince } from "../lib/spend"
 import { sheetOf } from "../lib/community-pets"
 import { basename } from "node:path"
 import { status as bridgeStatus } from "../lib/bridge"
@@ -41,7 +42,7 @@ import { setupStatus } from "../lib/setup"
 import { readSessions } from "../lib/sessions"
 import { groupOf, prRefs } from "../lib/snapshot"
 import { refreshLinks, sessionOf } from "../lib/task-links"
-import { readMessages } from "../lib/transcript"
+import { readMessages, transcriptPath } from "../lib/transcript"
 import { isReady as voiceReady } from "../lib/transcribe"
 import { uploadedFile } from "../lib/uploads"
 import { wakeState } from "../lib/wake"
@@ -154,6 +155,11 @@ async function sessionRead(id: string, what: string, url: URL) {
       const root = group ? (await repoInfo(group.lead.cwd)).root : null
       for (const item of page.items) if (item.kind === "suggestion") item.folder ??= root
       return json({ ...page, suggestions: await suggestionStates(group?.ids ?? [id], board.suggestions ?? {}) })
+    }
+    // What each turn cost (lib/spend.ts), by when you wrote it.
+    case "turncosts": {
+      const paths = (await Promise.all((group?.ids ?? [id]).map(i => transcriptPath(i)))).filter((p): p is string => !!p)
+      return json({ turns: await sessionTurnCosts(paths) })
     }
     // The "Code" tab: the folder's files, and one of them as text.
     case "codetree":
@@ -367,6 +373,8 @@ export async function handleRead(url: URL): Promise<Response | null> {
   }
   if (path === "/api/monaco") return json(await monacoState())
   if (path === "/api/update") return json(await freshness({ fresh: true }))
+  // Where the account's tokens go (lib/spend.ts): the 5-hour window or the week.
+  if (path === "/api/spend") return json(await spendSince(url.searchParams.get("window") === "week" ? 7 * 24 * 3600_000 : 5 * 3600_000))
   if (path === "/api/diagnostics") return json({ text: await report() })
   if (path === "/api/voices") return json({ voices: await listVoices(), default: defaultVoice() })
   const file = path.match(/^\/api\/uploads\/(.+)$/)

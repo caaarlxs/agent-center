@@ -4,7 +4,7 @@
 
 import { readdir, stat } from "node:fs/promises"
 import { basename, dirname, join } from "node:path"
-import { readAppended } from "./files"
+import { own, readAppended } from "./files"
 import { transcriptPath } from "./transcript"
 
 const WINDOW = 1_000_000 // every current model has a 1M-token context window
@@ -29,7 +29,7 @@ export function priceOf(model: string) {
   return PRICES[id] ?? (kin ? PRICES[kin] : undefined) ?? PRICES["claude-opus-5-5"]!
 }
 
-type Usage = {
+export type Usage = {
   input_tokens?: number
   output_tokens?: number
   cache_read_input_tokens?: number
@@ -37,7 +37,7 @@ type Usage = {
   cache_creation?: { ephemeral_5m_input_tokens?: number; ephemeral_1h_input_tokens?: number }
 }
 
-function costOf(model: string, u: Usage) {
+export function costOf(model: string, u: Usage) {
   const p = priceOf(model)
   const w1h = u.cache_creation?.ephemeral_1h_input_tokens ?? 0
   const w5m = u.cache_creation ? (u.cache_creation.ephemeral_5m_input_tokens ?? 0) : (u.cache_creation_input_tokens ?? 0)
@@ -59,12 +59,50 @@ type Scan = {
   lastContext: number
   lastModel: string | null
   lastModelAt: number // when it last answered with lastModel
+  // What it says of itself (lib/spend.ts): where it was started, its folder, your first words.
+  entrypoint: string | null
+  cwd: string | null
+  firstText: string | null
+  userAts: number[] // when you wrote each of your messages, for each turn's cost
 }
 
 const scans = new Map<string, Scan>()
 
+const ENTRY = /"entrypoint":"([^"]{1,40})"/
+const CWD = /"cwd":"((?:[^"\\]|\\.){1,400})"/
+// Your first words in it: a message of yours, not a command, a summary or a tool's answer.
+function firstWords(line: string): string | null {
+  if (!line.includes('"type":"user"') || line.includes('"isMeta":true') || line.includes('"isCompactSummary":true') || line.includes('"tool_result"')) return null
+  try {
+    const c = JSON.parse(line).message?.content
+    const text: string = typeof c === "string" ? c : Array.isArray(c) ? (c.find((b: any) => b?.type === "text")?.text ?? "") : ""
+    const clean = text.replace(/\s+/g, " ").trim()
+    return clean && !clean.startsWith("<") ? own(clean.slice(0, 80)) : null
+  } catch {
+    return null
+  }
+}
+
+const TIMESTAMP = /"timestamp":"([^"]{10,40})"/
+// One copy of each model's name, shared by all the responses that name it.
+const models = new Map<string, string>()
+const keepModel = (name: string) => {
+  const copy = own(name)
+  models.set(copy, copy)
+  return copy
+}
+const isYours = (line: string) =>
+  line.includes('"type":"user"') && !line.includes('"tool_result"') && !line.includes('"isMeta":true') && !line.includes('"isCompactSummary":true') && !line.includes('"isSidechain":true')
+
 function ingest(scan: Scan, chunk: string) {
   for (const line of chunk.split("\n")) {
+    if (!scan.entrypoint) scan.entrypoint = ENTRY.exec(line)?.[1] ? own(ENTRY.exec(line)![1]!) : null
+    if (!scan.cwd) scan.cwd = CWD.exec(line)?.[1] ? own(JSON.parse(`"${CWD.exec(line)![1]}"`)) : null
+    if (!scan.firstText) scan.firstText = firstWords(line)
+    if (isYours(line)) {
+      const at = Date.parse(TIMESTAMP.exec(line)?.[1] ?? "")
+      if (at) scan.userAts.push(at)
+    }
     if (!line.includes('"usage"') || !line.includes('"type":"assistant"')) continue
     let row: any
     try {
@@ -75,11 +113,15 @@ function ingest(scan: Scan, chunk: string) {
     const msg = row.message
     if (row.type !== "assistant" || !msg?.usage || msg.model === "<synthetic>") continue
     const isMain = !row.isSidechain
-    scan.messages.set(msg.id ?? row.uuid, { model: msg.model ?? "", usage: msg.usage, isMain, at: Date.parse(row.timestamp ?? "") || 0 })
+    // Copies of what it keeps: a string taken from the line would keep the whole line alive.
+    const u: Usage = msg.usage
+    const kept: Usage = { input_tokens: u.input_tokens, output_tokens: u.output_tokens, cache_read_input_tokens: u.cache_read_input_tokens, cache_creation_input_tokens: u.cache_creation_input_tokens,
+      ...(u.cache_creation ? { cache_creation: { ephemeral_5m_input_tokens: u.cache_creation.ephemeral_5m_input_tokens, ephemeral_1h_input_tokens: u.cache_creation.ephemeral_1h_input_tokens } } : {}) }
+    scan.messages.set(own(msg.id ?? row.uuid ?? ""), { model: models.get(msg.model) ?? keepModel(msg.model ?? ""), usage: kept, isMain, at: Date.parse(row.timestamp ?? "") || 0 })
     if (isMain) {
       const u: Usage = msg.usage
       scan.lastContext = (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + (u.output_tokens ?? 0)
-      scan.lastModel = msg.model ?? scan.lastModel
+      scan.lastModel = msg.model ? (models.get(msg.model) ?? keepModel(msg.model)) : scan.lastModel
       scan.lastModelAt = Date.parse(row.timestamp ?? "") || scan.lastModelAt
     }
   }
@@ -89,11 +131,11 @@ async function scanned(sessionId: string): Promise<Scan | null> {
   const path = await transcriptPath(sessionId)
   return path ? scannedAt(path) : null
 }
-async function scannedAt(path: string): Promise<Scan> {
+export async function scannedAt(path: string): Promise<Scan> {
   const { size } = await stat(path)
   let scan = scans.get(path)
   if (!scan || size < scan.offset) {
-    scan = { offset: 0, messages: new Map(), lastContext: 0, lastModel: null, lastModelAt: 0 }
+    scan = { offset: 0, messages: new Map(), lastContext: 0, lastModel: null, lastModelAt: 0, entrypoint: null, cwd: null, firstText: null, userAts: [] }
     scans.set(path, scan)
   }
   scan.offset = await readAppended(path, scan.offset, size, text => ingest(scan, text))
@@ -129,7 +171,8 @@ export async function sessionSpend(id: string): Promise<Spend | null> {
 }
 
 // recentCost: what it spent in the last 5 hours, the plan's short window.
-export type SessionUsage = { context: number; window: number; cost: number; recentCost: number; model: string | null; modelAt: number }
+// stepCost: what one more step costs it, its context read again from the cache.
+export type SessionUsage = { context: number; window: number; cost: number; recentCost: number; model: string | null; modelAt: number; stepCost: number }
 const RECENT_MS = 5 * 3600_000
 
 // `current` is the CLI id running now (its last request is the live
@@ -147,5 +190,6 @@ export async function usageOf(current: string, ids: string[]): Promise<SessionUs
       if (m.at >= since) recentCost += c
     }
   const live = (await scanned(current).catch(() => null)) ?? scans[0]!
-  return { context: live.lastContext, window: WINDOW, cost: Math.round(cost * 100) / 100, recentCost: Math.round(recentCost * 100) / 100, model: live.lastModel, modelAt: live.lastModelAt }
+  const stepCost = (live.lastContext * priceOf(live.lastModel ?? "").read) / 1_000_000
+  return { context: live.lastContext, window: WINDOW, cost: Math.round(cost * 100) / 100, recentCost: Math.round(recentCost * 100) / 100, model: live.lastModel, modelAt: live.lastModelAt, stepCost: Math.round(stepCost * 1000) / 1000 }
 }

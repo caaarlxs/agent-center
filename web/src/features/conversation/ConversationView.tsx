@@ -42,6 +42,8 @@ import { WidgetView } from "./Widget"
 import { actionUrl, answerEnds, answerRuns, viewUrl } from "./response-actions"
 import { type Fold, foldedSteps } from "./steps"
 import { foldSteps } from "./fold-steps"
+import { TurnCosts, useTurnCost, useTurnCosts } from "@/features/spend/turn-costs"
+import { money } from "@/features/spend/spend"
 import { type Pending, deliveredOf, dropPending, stampOf, takenBack, usePending, waitingOf } from "./pending"
 import { composerHint, composerQuote, reply, takeBack } from "./send"
 import { dialogAnswer, linesText, nameOf, partsOf, quoteOf, riskOf } from "./text"
@@ -150,6 +152,7 @@ function EditedFiles({ item }: { item: EditsItem }) {
 }
 
 function YourMessage({ item, onFork }: { item: Extract<Shown, { kind: "user" }>; onFork: () => void }) {
+  const cost = useTurnCost(item.at)
   return (
     <div className="group/msg flex max-w-[88%] flex-col items-end gap-[3px] self-end" data-mark="you" data-mark-label={sentFiles(item.text).text.replace(/\s+/g, " ").slice(0, 240)} data-mark-time={item.at ? clock(Date.parse(item.at)) : undefined}>
       <Bubble text={item.text} />
@@ -158,6 +161,7 @@ function YourMessage({ item, onFork }: { item: Extract<Shown, { kind: "user" }>;
           onClick={onFork} title="New session with the conversation up to just before this message; the original does not change">
           <GitFork className="size-3" />Fork
         </button>
+        {cost !== undefined && cost >= 0.01 && <span className="tabular-nums" title="What this turn cost, at API prices: every step until your next message">{money(cost)} ·</span>}
         {item.at && <span title={item.isMidTurn ? "You wrote it while Claude was working" : undefined}>{item.isMidTurn ? "during the turn · " : ""}{clock(Date.parse(item.at))}</span>}
       </span>
     </div>
@@ -720,6 +724,7 @@ export function ConversationView({ sessionId, card: session, bridge }: { session
   const gone = takenBack.use()
   const waiting = useMemo(() => waitingOf(mine, bridge?.queued ?? [], gone), [mine, bridge?.queued, gone])
   const [forking, setForking] = useState<{ key: string | null; text: string } | null>(null) // a message to fork before, or (key null) a side chat
+  const turnCosts = useTurnCosts(sessionId, session?.column === "working" ? undefined : shown.at(-1)?.key)
   const today = new Date(useNow()).toDateString()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const breaks = useMemo(() => dayBreaks(shown as { key: string; at?: string | null }[], Date.now()), [shown, today])
@@ -844,6 +849,7 @@ export function ConversationView({ sessionId, card: session, bridge }: { session
 
   return (
     <SessionOf.Provider value={sessionId}>
+    <TurnCosts.Provider value={turnCosts}>
       <div className="relative flex min-h-0 flex-1 flex-col">
       <ConversationMap box={box} />
       <SelectionMenu box={box} onSideChat={text => setForking({ key: null, text: `${quoteOf(text)}\n\n` })} onReply={text => composerQuote.set({ id: sessionId, text: quoteOf(text) })} />
@@ -897,6 +903,7 @@ export function ConversationView({ sessionId, card: session, bridge }: { session
       </div>
       </div>
       {forking && <ForkDialog sessionId={sessionId} item={forking} onClose={() => setForking(null)} />}
+    </TurnCosts.Provider>
     </SessionOf.Provider>
   )
 }

@@ -17,6 +17,7 @@ const RunDialog = lazyView(() => import("@/features/run/RunDialog").then(m => m.
 const TicketDialog = lazyView(() => import("@/features/jira/TicketDialog").then(m => m.TicketDialog), { isFloating: true })
 const JobDialog = lazyView(() => import("@/features/jira/Job").then(m => m.JobDialog), { isFloating: true })
 const PetsDialog = lazyView(() => import("@/features/pets/PetsDialog").then(m => m.PetsDialog), { isFloating: true })
+const SpendDialog = lazyView(() => import("@/features/spend/SpendDialog").then(m => m.SpendDialog), { isFloating: true })
 const SetupDialog = lazyView(() => import("@/features/setup/SetupDialog").then(m => m.SetupDialog), { isFloating: true })
 
 const setupSeen = persistedStore("setupSeen", false)
@@ -51,6 +52,7 @@ export function Dialogs() {
   if (open.kind === "digest") return <DigestDialog onClose={closeDialog} />
   if (open.kind === "context") return <ContextDialog onClose={closeDialog} />
   if (open.kind === "pets") return <PetsDialog onClose={closeDialog} />
+  if (open.kind === "spend") return <SpendDialog onClose={closeDialog} />
   if (open.kind === "run") return <RunDialog card={open.card} onClose={closeDialog} />
   if (open.kind === "ticket") return <TicketDialog ticketKey={open.key} onClose={closeDialog} />
   if (open.kind === "job") return <JobDialog id={open.id} onClose={closeDialog} />

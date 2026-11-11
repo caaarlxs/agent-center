@@ -9,6 +9,7 @@ import { useLive } from "@/lib/live"
 import { persistedStore } from "@/lib/store"
 import { useNow } from "@/lib/now"
 import { cn } from "@/lib/utils"
+import { openDialog } from "@/app/open-dialog"
 import { openSession } from "@/app/open-session"
 import { ago } from "@/features/session/state"
 import { clockOf, limitRows, PACE_SHORT, resetAt, STALE_MS, topSpenders, type Tone } from "./pace"
@@ -84,6 +85,12 @@ export function Limits() {
                 </button>
               ))}
             </div>
+          )}
+          {r.kind === "five_hour" && (
+            <button onClick={() => openDialog({ kind: "spend" })} title="What your tokens went on: by kind, project, model and conversation"
+              className="-mx-1 mt-1 flex h-[22px] w-[calc(100%+8px)] items-center justify-between rounded-md px-1 text-[11.5px] font-semibold text-text-muted hover:bg-hover hover:text-text">
+              Where it goes<ChevronDown className="size-3 -rotate-90 text-faint" />
+            </button>
           )}
         </div>
       ))}

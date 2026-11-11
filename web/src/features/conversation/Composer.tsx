@@ -23,6 +23,7 @@ import { ModelEffort } from "@/features/prompt/ModelEffort"
 import { MAX_BYTES, MAX_FILES, messageWith } from "@/features/prompt/files"
 import { launch, sleep, stopTurn, wake } from "@/features/session/actions"
 import { UsageMeter } from "@/features/session/UsageMeter"
+import { CostlyNote } from "@/features/spend/CostlyNote"
 import { isBusyNow, isStuckNow, reachOf } from "./reach"
 import { composerFill, composerFocus, composerHint, composerQuote, sendMessage } from "./send"
 import { DRAFT_MS, draftOf, joinText, keepDraft } from "./drafts"
@@ -217,6 +218,7 @@ function Box({ id, card, bridge }: { id: string; card: Card | undefined; bridge:
       onDragEnter={e => e.dataTransfer.types.includes("Files") && setDrop(true)}
       onDragLeave={e => !e.currentTarget.contains(e.relatedTarget as Node) && setDrop(false)}
       onDrop={() => setDrop(false)}>
+      {card && <CostlyNote card={card} />}
       <div className="relative">
       <PromptInput
         multiple maxFiles={MAX_FILES} maxFileSize={MAX_BYTES} onError={fileErrors}
