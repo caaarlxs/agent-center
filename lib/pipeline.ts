@@ -994,19 +994,23 @@ export function whyStart(state: PipelineState | null, stage: AgentStage): Why | 
     return { cause: "Run again", text: `Tu último run no terminó (${state.error ?? "sin motivo"}). Sigue donde lo dejaste: lo que ya está hecho, no lo repitas.` }
   if (stage === "build" && state?.stage === "review") return { cause: "Fix the review", text: "La revisión encontró hallazgos: arregla los de review.fix.json." }
   if (stage === "build" && state?.stage === "test") return { cause: "Fix the test", text: "El test en staging falló: arregla los criterios de test.fix.json." }
-  if (stage === "review" && state?.stage === "build" && state.fixing?.from === "review") return { cause: "Review the fix", text: fixReviewText(state) }
+  if (stage === "review" && state?.stage === "build" && state.fixing?.from === "review") return { cause: "Review the fix", text: newWorkText(state, `ha arreglado los hallazgos ${state.fixing.ids.join(", ")} de tu revisión anterior (review.fix.json)`) }
+  if (stage === "review" && state?.stage === "build" && isSentBack(state)) return { cause: "Review the change", text: newWorkText(state, `ha hecho el cambio que pidió una persona al devolver el ticket (${join(dirOf(state.key), "sent-back.md")})`) }
   return undefined
 }
-// A review after a build that fixed its findings: only what changed since it, not the PRs again.
-export function fixReviewText(state: Pick<PipelineState, "fixing" | "units" | "findings" | "history">) {
+// The last build ran because a person sent the ticket back (not to fix a review or a test).
+const isSentBack = (state: PipelineState) => !![...(state.history ?? [])].reverse().find(r => r.stage === "build")?.cause?.startsWith("Sent back")
+// A review after a build that changed little (a fix, a change a person asked for): only what
+// changed since the last review, not the PRs again.
+export function newWorkText(state: Pick<PipelineState, "fixing" | "units" | "findings" | "history" | "deployed">, what: string) {
   const last = [...(state.history ?? [])].reverse().find(r => r.stage === "review" && r.status === "ready")
   const since = last?.endedAt ? new Date(last.endedAt).toISOString() : null
-  const units = unitsNow(state as PipelineState).map(u => `${u.id} (${u.pr ?? u.branch})`).join(", ") || "las de los hallazgos"
-  return `La construcción ha arreglado los hallazgos ${state.fixing!.ids.join(", ")} de tu revisión anterior (review.fix.json), en ${units}.
+  const units = unitsNow(state as PipelineState).map(u => `${u.id} (${u.pr ?? u.branch})`).join(", ") || "las que cambian"
+  return `La construcción ${what}, en ${units}.
 
 Revisa solo lo nuevo:
 - Los commits de esas PRs posteriores a tu revisión${since ? ` (terminó el ${since}; \`gh pr view <url> --json commits\` y \`git diff <último commit que revisaste>..HEAD\` en su worktree)` : ""}.
-- Comprueba que cada hallazgo arreglado lo está de verdad, y que el arreglo no rompe nada de alrededor (quién llama a lo que cambia, sus tests).
+- Comprueba que lo nuevo hace lo que se pidió, y que no rompe nada de alrededor (quién llama a lo que cambia, sus tests).
 - Lo que ya revisaste y no ha cambiado no lo revises otra vez: sus hallazgos de antes que no se arreglaban ahora (los minor) se quedan como estaban, con el mismo id y título.
 - En review.json deja todos los hallazgos: los de antes que siguen y los nuevos que encuentres en lo nuevo.`
 }
@@ -1140,6 +1144,7 @@ export async function sendBack(key: string, stage: Stage, note = "") {
     for (const f of ["review.fix.json", "test.fix.json", ...(to === "build" ? ["build.progress.json", "build.checklist.json"] : [])]) await aside(f)
     if (!state.local && state.status === "needs-info") await labelTicket(key, [], [LABELS.needsInfo]).catch(() => {})
     const why = backWhy(state, to, note)
+    await Bun.write(join(dirOf(key), "sent-back.md"), `# Devuelto a ${STAGE[to].title.toLowerCase()} · ${new Date().toISOString().slice(0, 16)}\n\n${note.trim() || "(sin nota)"}\n`)
     await save({ ...(await fresh(key, state.runs + 1, to)), summary: state.summary, fixing: null, autoFixes: 0 })
     void run(key, state.runs + 1, to, undefined, why)
   } finally {

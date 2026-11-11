@@ -2,6 +2,10 @@
 // what people wrote in Jira since its last run. That stage goes on in its own conversation
 // (it remembers the ticket and what it decided), then the ones after it.
 import { Undo2 } from "lucide-react"
+import { toast } from "sonner"
+import { PromptInput, PromptInputBody, PromptInputProvider, PromptInputTextarea, usePromptInputAttachments, usePromptInputController } from "@/components/ai-elements/prompt-input"
+import { AttachButton, MicButton, PickedFiles, fileErrors } from "@/features/prompt/PromptExtras"
+import { MAX_BYTES, MAX_FILES, messageWith } from "@/features/prompt/files"
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
@@ -28,22 +32,37 @@ export function SendBack({ state, now }: { state: PipelineState; now: number }) 
   )
 }
 
-function SendBackDialog({ state, now, onClose }: { state: PipelineState; now: number; onClose: () => void }) {
+function SendBackDialog(props: { state: PipelineState; now: number; onClose: () => void }) {
+  return (
+    <Dialog open onOpenChange={o => !o && props.onClose()}>
+      <PromptInputProvider>
+        <SendBackForm {...props} />
+      </PromptInputProvider>
+    </Dialog>
+  )
+}
+
+// What you write, dictate (the chat's microphone) or attach (screenshots, pasted or picked): the
+// files are saved on this Mac and the note names them, for the agent to open.
+function SendBackForm({ state, now, onClose }: { state: PipelineState; now: number; onClose: () => void }) {
   const [stage, setStage] = useState<AgentStage>(() => backDefault(state))
-  const [note, setNote] = useState("")
   const [isBusy, setBusy] = useState(false)
+  const { textInput } = usePromptInputController()
+  const { files } = usePromptInputAttachments()
   const envs = deployedTo(state)
   const send = async () => {
     if (isBusy) return
     setBusy(true)
-    const ok = await sendWithFeedback("/api/pipeline/back", { key: state.key, stage, note }, `Back to ${BACK_NAMES[stage]}`)
+    try {
+      const note = await messageWith(`back-${state.key}`, textInput.value.trim(), files)
+      if (await sendWithFeedback("/api/pipeline/back", { key: state.key, stage, note }, `Back to ${BACK_NAMES[stage]}`)) (changed(), onClose())
+    } catch (err) {
+      toast((err as Error).message)
+    }
     setBusy(false)
-    if (ok) (changed(), onClose())
   }
   return (
-    <Dialog open onOpenChange={o => !o && onClose()}>
-      <DialogContent className="flex max-h-[min(85vh,760px)] w-[min(560px,calc(100vw-32px))] flex-col gap-4"
-        onKeyDown={e => e.key === "Enter" && (e.metaKey || e.ctrlKey) && (e.preventDefault(), void send())}>
+      <DialogContent className="flex max-h-[min(85vh,760px)] w-[min(560px,calc(100vw-32px))] flex-col gap-4">
         <DialogTitle className="m-0 text-[16px] font-[620]">Send {state.key} back</DialogTitle>
         <div className="flex flex-col gap-2">
           <ToggleGroup type="single" variant="outline" size="sm" value={stage} onValueChange={v => v && setStage(v as AgentStage)} className="self-start">
@@ -65,8 +84,25 @@ function SendBackDialog({ state, now, onClose }: { state: PipelineState; now: nu
             </ul>
           </div>
         ) : null}
-        <textarea autoFocus value={note} onChange={e => setNote(e.target.value)} rows={4} placeholder="What changes"
-          className="max-h-[260px] min-h-[96px] resize-none rounded-[8px] border border-line bg-surface px-3 py-2 text-[13px] leading-[1.55] outline-none [field-sizing:content] focus:border-brand focus:shadow-[0_0_0_3px_var(--brand-soft)]" />
+        <div className="composer-box">
+          <PromptInput multiple maxFiles={MAX_FILES} maxFileSize={MAX_BYTES} onError={fileErrors} onSubmit={() => void send()}>
+            <PickedFiles />
+            <PromptInputBody>
+              {/* Enter writes a new line here; ⌘↵ sends. */}
+              <PromptInputTextarea autoFocus rows={4} className="max-h-[260px] min-h-24" placeholder="What changes"
+                onKeyDown={e => {
+                  if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing) return
+                  e.preventDefault()
+                  if (e.metaKey || e.ctrlKey) e.currentTarget.form?.requestSubmit()
+                  else document.execCommand("insertText", false, "\n")
+                }} />
+            </PromptInputBody>
+            <div data-align="block-end" className="order-last flex w-full items-center gap-0.5 pt-1 pr-1.5 pb-1.5 pl-2">
+              <AttachButton />
+              <MicButton />
+            </div>
+          </PromptInput>
+        </div>
         <footer className="flex items-center justify-end gap-2.5">
           <Kbd>⌘↵</Kbd>
           <Button variant="outline" className="h-8 text-xs" disabled={isBusy} onClick={onClose}>Cancel</Button>
@@ -75,6 +111,5 @@ function SendBackDialog({ state, now, onClose }: { state: PipelineState; now: nu
           </Button>
         </footer>
       </DialogContent>
-    </Dialog>
   )
 }

@@ -90,5 +90,8 @@ describe("a review after a fix", () => {
     expect(why?.text).toContain("U1 (https://github.com/o/r/pull/1)")
     expect(why?.text).toContain("2026-11-10T10:00:00.000Z")
     expect(whyStart({ ...state, fixing: null }, "review")).toBeUndefined()
+    const sent = { ...state, fixing: null, history: [...state.history, run(14, "build", "ready", { cause: "Sent back: copies" })] }
+    expect(whyStart(sent, "review")?.cause).toBe("Review the change")
+    expect(whyStart(sent, "review")?.text).toContain("sent-back.md")
   })
 })
