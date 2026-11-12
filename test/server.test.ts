@@ -388,8 +388,8 @@ describe("board", () => {
   })
 
   test("cleans zones it is sent", async () => {
-    const res = await jsonOf(post("/api/canvas/zones", { zones: [{ id: "z1", name: "  WIP  ", x: -10, y: 5, w: 10, h: 10 }] }))
-    expect(res.zones).toEqual([{ id: "z1", name: "WIP", x: 0, y: 5, w: 160, h: 120 }])
+    const res = await jsonOf(post("/api/canvas/zones", { zones: [{ id: "z1", name: "  WIP  ", x: -10, y: 5, w: 10, h: 10 }, { id: "z2", x: -1e9, y: "?" }] }))
+    expect(res.zones).toEqual([{ id: "z1", name: "WIP", x: -10, y: 5, w: 160, h: 120 }, { id: "z2", name: "Zone", x: -100_000, y: 0, w: 320, h: 220 }])
     const folded = await jsonOf(post("/api/canvas/zones", { zones: [{ id: "z1", name: "WIP", x: 0, y: 0, w: 320, h: 220, collapsed: true }, { id: "z2", collapsed: "yes" }] }))
     expect(folded.zones.map((z: any) => z.collapsed)).toEqual([true, undefined])
   })

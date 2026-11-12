@@ -10,7 +10,8 @@ export const ENTRY = { x: GRID, y: GRID * 2, cols: 2 }
 
 export type Point = { x: number; y: number }
 
-export const snap = (v: number) => Math.max(0, Math.round(v / GRID) * GRID)
+// Any side of the origin: the canvas goes on above and to the left of where it starts.
+export const snap = (v: number) => Math.round(v / GRID) * GRID || 0
 
 // The cards the canvas places: done ones sit in "Done", archived ones leave.
 export const onCanvas = (cards: Card[]) => cards.filter(c => c.column !== "done" && c.column !== "archived")

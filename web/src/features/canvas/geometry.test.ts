@@ -18,10 +18,11 @@ describe("placeCards", () => {
   })
 })
 
-test("snap rounds to the grid and never goes negative", () => {
+test("snap rounds to the grid, on any side of the origin", () => {
   expect(snap(35)).toBe(24)
   expect(snap(37)).toBe(48)
-  expect(snap(-30)).toBe(0)
+  expect(snap(-30)).toBe(-24)
+  expect(snap(-5)).toBe(0)
 })
 
 test("onCanvas leaves out done and archived cards", () => {

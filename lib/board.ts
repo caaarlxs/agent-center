@@ -110,6 +110,10 @@ export function itemOf(key: string, ids: string[]): BoardItem {
 const ACTIONS = new Set(["pin", "unpin", "park", "unpark", "done", "undone", "archive", "unarchive", "seen", "unseen", "move", "rename", "color", "tier", "rank", "tickets", "customize"])
 export const isBoardAction = (action: string) => ACTIONS.has(action)
 
+// A place on the canvas: on any side of its origin, within a reach no drag gets near.
+const REACH = 100_000
+const place = (v: number) => Math.max(-REACH, Math.min(REACH, Math.round(v) || 0))
+
 // Applies one of ACTIONS to a group's item (`key`: the group's board key,
 // `ids`: its CLI ids, whose older items fold into the key's). Answers an
 // error message, or null when it was saved.
@@ -120,7 +124,7 @@ export async function applyAction(key: string, ids: string[], action: string, bo
     const x = Number(body.x)
     const y = Number(body.y)
     if (!Number.isFinite(x) || !Number.isFinite(y)) return "invalid position"
-    pos = { x: Math.max(0, Math.round(x)), y: Math.max(0, Math.round(y)) }
+    pos = { x: place(x), y: place(y) }
   }
   // An empty colour takes it off.
   const color = action === "color" ? String(body.color ?? "") : ""
@@ -242,8 +246,8 @@ export async function setZones(raw: unknown[]) {
     .map((z: any) => ({
       id: String(z?.id ?? crypto.randomUUID()).slice(0, 40),
       name: String(z?.name ?? "Zone").replace(/\s+/g, " ").trim().slice(0, 60) || "Zone",
-      x: Math.max(0, Math.round(Number(z?.x) || 0)),
-      y: Math.max(0, Math.round(Number(z?.y) || 0)),
+      x: place(Number(z?.x)),
+      y: place(Number(z?.y)),
       w: Math.max(160, Math.round(Number(z?.w) || 320)),
       h: Math.max(120, Math.round(Number(z?.h) || 220)),
       ...(z?.collapsed === true ? { collapsed: true } : {}),
@@ -260,7 +264,7 @@ export async function setNotes(raw: unknown[]) {
     .map((n: any) => {
       const cardId = typeof n?.cardId === "string" && /^[\w-]{1,80}$/.test(n.cardId) ? n.cardId : null
       // Relative to the card when attached, so it may be negative.
-      const coord = (v: unknown) => (cardId ? Math.max(-1600, Math.min(1600, Math.round(Number(v) || 0))) : Math.max(0, Math.round(Number(v) || 0)))
+      const coord = (v: unknown) => (cardId ? Math.max(-1600, Math.min(1600, Math.round(Number(v) || 0))) : place(Number(v)))
       return {
         id: String(n?.id ?? crypto.randomUUID()).slice(0, 40),
         text: String(n?.text ?? "").slice(0, 4000),
