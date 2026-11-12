@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import { conflictsPrompt } from "../lib/conflicts"
-import { DEFAULT_CONFIG, rollbackSteps, approveStep, deployState, isGated, nextTag, releaseSteps, reportOf, skipStep, retryStep, advanceRelease, type Ops, type Release, rollupOf } from "../lib/release"
+import { DEFAULT_CONFIG, setupFor, rollbackSteps, approveStep, deployState, isGated, nextTag, releaseSteps, reportOf, skipStep, retryStep, advanceRelease, type Ops, type Release, rollupOf } from "../lib/release"
 
 const unit = (id: string, repo: string, n: number) => ({ id, repo, subtask: null, branch: `feat/${id}`, title: id, dependsOn: [], status: "done" as const, pr: `https://github.com/acme/${repo}/pull/${n}` })
 const units = [unit("U1", "api-service", 7), unit("U2", "web-app", 8), unit("U3", "mobile-app", 9)]
@@ -373,5 +373,22 @@ describe("a release after a Send back", () => {
     ] }
     const s = state({ units: [u1, x1], scripts: [], order: [{ kind: "manual", id: null, text: "Turn the flag on", envs: [] }, { kind: "unit", id: "U1", text: null, envs: [] }], deployed: { prod } })
     expect(releaseSteps(s, "prod", config).map(x => x.unit ?? x.title)).toEqual(["X1"])
+  })
+})
+
+describe("what a script needs ready", () => {
+  it("a Python script, the venv only; a Node command, its packages only", () => {
+    expect(setupFor("python scripts/backfill.py")).not.toContain("npm")
+    expect(setupFor("pnpm update:preview --message x")).not.toContain("venv")
+    expect(setupFor("./run.sh")).toContain("venv")
+  })
+})
+
+describe("a script for real whose simulation was skipped", () => {
+  it("waits for you in staging; with its simulation done, it goes on its own", () => {
+    const steps = releaseSteps(state({ units: [], scripts: [{ id: "S1", unit: null, title: "Backfill", command: "python b.py", when: "", envs: ["staging"] }] }), "staging", config)
+    const run = steps.find(s => s.kind === "execute")!
+    expect(isGated(run, "staging", steps.map(s => (s.kind === "simulate" ? { ...s, status: "skipped" as const } : s)))).toBe(true)
+    expect(isGated(run, "staging", steps.map(s => (s.kind === "simulate" ? { ...s, status: "done" as const } : s)))).toBe(false)
   })
 })

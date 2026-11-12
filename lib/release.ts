@@ -192,7 +192,12 @@ export function rollbackSteps(release: Release, config: DeployConfig): ReleaseSt
 // What waits for you before it starts: in prod, every step but a simulation;
 // in staging, what only a person does and the check (a script for real was
 // approved with its simulation). A simulation waits for you once it ends.
-export const isGated = (step: ReleaseStep, env: Env) => step.kind !== "simulate" && (env === "prod" || step.kind === "manual" || step.kind === "check")
+// A script for real whose simulation was skipped was approved by nobody: it waits for you too.
+// (A script's rehearsal is its simulation; a command's, its dry run in the same repo.)
+const rehearsalOf = (step: ReleaseStep, steps: ReleaseStep[]) =>
+  steps.find(s => s.kind === "simulate" && s.repo === step.repo && (step.script ? s.script === step.script : !s.script))
+export const isGated = (step: ReleaseStep, env: Env, steps: ReleaseStep[] = []) => step.kind !== "simulate" && (env === "prod" || step.kind === "manual" || step.kind === "check"
+  || (step.kind === "execute" && !!rehearsalOf(step, steps) && rehearsalOf(step, steps)!.status !== "done"))
 
 // The next version after the latest vX.Y.Z tag.
 export function nextTag(tags: string[], bump: DeployConfig["tag"]["bump"]) {
@@ -359,7 +364,12 @@ async function checkout(step: ReleaseStep, release: Release, ctx: Ctx, ops: Ops)
   return path
 }
 // Readies a checkout for its scripts (once): the repo's own way, else its venv or its packages.
-const SETUP = `if [ -f requirements.txt ] && [ ! -x .venv/bin/python ]; then python$(cat .python-version 2>/dev/null || echo 3) -m venv .venv && .venv/bin/pip install -q -r requirements.txt; fi; if [ -f package.json ] && [ ! -d node_modules ]; then if [ -f pnpm-lock.yaml ]; then pnpm install --frozen-lockfile; else npm ci; fi; fi`
+const PY_SETUP = `if [ -f requirements.txt ] && [ ! -x .venv/bin/python ]; then python$(cat .python-version 2>/dev/null || echo 3) -m venv .venv && .venv/bin/pip install -q --disable-pip-version-check -r requirements.txt; fi`
+const NODE_SETUP = `if [ -f package.json ] && [ ! -d node_modules ]; then if [ -f pnpm-lock.yaml ]; then pnpm install --frozen-lockfile; else npm ci; fi; fi`
+// What a command needs ready: a Python one, the repo's venv; a Node one, its packages; any other, both.
+// (A Python script in a repo that also deploys with Node needs no npm.)
+export const setupFor = (command: string) =>
+  /^(python3?|\.venv\/bin\/)/.test(command.trim()) ? PY_SETUP : /^(npm|npx|pnpm|node|yarn)\b/.test(command.trim()) ? NODE_SETUP : `${PY_SETUP}; ${NODE_SETUP}`
 
 // A repo's own command runs in its clone, on its default branch, up to date
 // (its own checks may refuse anything else), with its secrets.
@@ -377,7 +387,7 @@ async function startCommand(step: ReleaseStep, release: Release, ctx: Ctx, ops: 
   }
   const mode = step.kind === "execute" ? "execute" : "simulate"
   const base = `${ctx.dir}/scripts/${step.repo}-${release.env}-${mode}`
-  const pid = await ops.spawn(clone, `${ctx.config.setup[step.repo!] ?? SETUP} && ${step.value}`, env, `${base}.log`, `${base}.exit`)
+  const pid = await ops.spawn(clone, `${ctx.config.setup[step.repo!] ?? setupFor(step.value!)} && ${step.value}`, env, `${base}.log`, `${base}.exit`)
   return { status: "running", phase: "script", pid, report: `${step.repo}-${release.env}-${mode}.csv`, since: ops.now(), detail: mode === "execute" ? "Running" : "Dry run" }
 }
 
@@ -390,7 +400,7 @@ async function startScript(step: ReleaseStep, release: Release, ctx: Ctx, ops: O
   const base = `${ctx.dir}/scripts/${script.id}-${release.env}-${mode}`
   const report = `${script.id}-${release.env}-${mode}.csv`
   const env: Record<string, string> = { STAGE: release.env, REPORT: `${ctx.dir}/scripts/${report}`, ...(mode === "execute" ? { EXECUTE: "true" } : {}) }
-  const pid = await ops.spawn(cwd, `${ctx.config.setup[step.repo] ?? SETUP} && ${script.command}`, env, `${base}.log`, `${base}.exit`)
+  const pid = await ops.spawn(cwd, `${ctx.config.setup[step.repo] ?? setupFor(script.command)} && ${script.command}`, env, `${base}.log`, `${base}.exit`)
   return { status: "running", phase: "script", pid, report, since: ops.now(), detail: mode === "execute" ? "Running for real" : "Simulating" }
 }
 
@@ -563,7 +573,7 @@ export async function advanceRelease(release: Release, ctx: Ctx, ops: Ops): Prom
     if (step.status === "waiting" || step.status === "failed") return { release, isDone: false, failed: step.status === "failed" ? step.id : null }
     let patch: Patch
     try {
-      patch = step.status === "pending" && isGated(step, release.env) && !step.isApproved
+      patch = step.status === "pending" && isGated(step, release.env, release.steps) && !step.isApproved
         ? { ...(await prepare(step, release, ctx, ops)), status: "waiting" }
         : step.status === "pending" ? await start(step, release, ctx, ops) : await check(step, ctx, ops)
     } catch (err) {

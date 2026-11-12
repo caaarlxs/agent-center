@@ -52,7 +52,7 @@ import { transcriptPath } from "./transcript"
 import { sentBackSince } from "./sent-back"
 export { sentBackSince }
 import { activityOf } from "./activity"
-import { existsSync } from "node:fs"
+import { existsSync, readdirSync, readFileSync } from "node:fs"
 import { exec } from "./proc"
 import { overLimits, prChecks, reposClean, type Check } from "./checks"
 import { canJudge, gatePrompt, parseAdvice } from "./gate"
@@ -1304,6 +1304,15 @@ async function startRelease(state: PipelineState, env: Env) {
   void tickRelease(state.key)
 }
 
+// Node and pnpm as your terminal has them: the board runs from launchd, without your shell's nvm.
+// nvm's default version (its alias, else the newest), and pnpm's own folder.
+export function toolDirs(home = process.env.HOME ?? "", list = (d: string) => { try { return readdirSync(d) } catch { return [] as string[] } }, read = (f: string) => { try { return readFileSync(f, "utf8").trim() } catch { return "" } }) {
+  const versions = list(join(home, ".nvm", "versions", "node")).filter(v => /^v\d/.test(v)).sort((a, b) => Bun.semver.order(a.slice(1), b.slice(1)))
+  const alias = read(join(home, ".nvm", "alias", "default")).replace(/^v/, "")
+  const node = versions.filter(v => !alias || v.slice(1) === alias || v.slice(1).startsWith(`${alias}.`)).at(-1) ?? versions.at(-1)
+  return [...(node ? [join(home, ".nvm", "versions", "node", node, "bin")] : []), join(home, "Library", "pnpm")].filter(d => list(d).length)
+}
+
 const releaseOps: Ops = {
   sh: async (cmd, options) => {
     const r = await exec(cmd, { cwd: options?.cwd, timeoutMs: options?.timeoutMs ?? 20_000 })
@@ -1317,7 +1326,7 @@ const releaseOps: Ops = {
     await rm(exit, { force: true })
     const out = openSync(log, "a")
     const proc = spawn("/bin/zsh", ["-lc", `${line}; echo $? > ${JSON.stringify(exit)}`],
-      { cwd, env: { ...process.env, ...env, PATH: `${cwd}/.venv/bin:${cwd}/node_modules/.bin:${process.env.PATH}` }, detached: true, stdio: ["ignore", out, out] })
+      { cwd, env: { ...process.env, ...env, PATH: [`${cwd}/.venv/bin`, `${cwd}/node_modules/.bin`, ...toolDirs(), process.env.PATH].join(":") }, detached: true, stdio: ["ignore", out, out] })
     if (!proc.pid) throw new Error("The script did not start")
     proc.unref()
     return proc.pid

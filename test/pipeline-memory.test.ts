@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { AUTO_FIXES, autoNext, noteText, parseResult, plainFindings, retestOf, sentBackSince, withEarlier, backRefusal, backWhy, continuePrompt, newsOf, pipelineKeyOf, spentIn, whyStart, type PipelineState, type Run } from "../lib/pipeline"
+import { AUTO_FIXES, autoNext, toolDirs, noteText, parseResult, plainFindings, retestOf, sentBackSince, withEarlier, backRefusal, backWhy, continuePrompt, newsOf, pipelineKeyOf, spentIn, whyStart, type PipelineState, type Run } from "../lib/pipeline"
 import { tookUnit } from "../lib/release"
 
 const base: PipelineState = { key: "PP-1", stage: "refine", status: "ready", sessionId: null, runs: 1, startedAt: 1, endedAt: 2, askedAt: null, questions: [], error: null }
@@ -131,5 +131,14 @@ describe("after a Send back, each stage only what is new", () => {
     expect(plan?.text).toContain("unidades nuevas")
     const r = (id: string, status: "pass" | "fail") => ({ id, criterion: id, status, evidence: "" })
     expect(withEarlier([r("CA1", "pass"), r("CA2", "fail")], [r("CA2", "pass"), r("N1", "pass")]).map(x => `${x.id}:${x.status}`)).toEqual(["CA1:pass", "CA2:pass", "N1:pass"])
+  })
+})
+
+describe("node and pnpm for a release's scripts", () => {
+  it("nvm's default version, else the newest; pnpm's folder; only what is there", () => {
+    const tree: Record<string, string[]> = { "/h/.nvm/versions/node": ["v20.19.5", "v22.9.0", "v22.23.4", "v18.1.0"], "/h/.nvm/versions/node/v22.23.4/bin": ["node"], "/h/.nvm/versions/node/v20.19.5/bin": ["node"], "/h/Library/pnpm": ["pnpm"] }
+    expect(toolDirs("/h", d => tree[d] ?? [], () => "22")).toEqual(["/h/.nvm/versions/node/v22.23.4/bin", "/h/Library/pnpm"])
+    expect(toolDirs("/h", d => tree[d] ?? [], () => "20")).toEqual(["/h/.nvm/versions/node/v20.19.5/bin", "/h/Library/pnpm"])
+    expect(toolDirs("/h", () => [], () => "")).toEqual([])
   })
 })
