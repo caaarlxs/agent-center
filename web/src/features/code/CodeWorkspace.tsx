@@ -46,8 +46,8 @@ function remembered(id: string): { open: string[]; active: string | null; dirs: 
   }
 }
 
-function TreeRows({ node, depth, open, toggle, status, changed, active, onOpen }: {
-  node: Folder; depth: number; open: Set<string>; toggle: (p: string) => void; status: Record<string, string>; changed: Set<string>; active: string | null; onOpen: (p: string) => void
+function TreeRows({ node, depth, open, toggle, status, ignored, changed, active, onOpen }: {
+  node: Folder; depth: number; open: Set<string>; toggle: (p: string) => void; status: Record<string, string>; ignored: Set<string>; changed: Set<string>; active: string | null; onOpen: (p: string) => void
 }) {
   const dirs = [...node.dirs.entries()].sort(([a], [b]) => a.localeCompare(b))
   return (
@@ -60,12 +60,12 @@ function TreeRows({ node, depth, open, toggle, status, changed, active, onOpen }
             <span className="min-w-0 flex-1 truncate">{name}</span>
             {changed.has(dir.path) && <i className="size-1.5 shrink-0 rounded-full bg-ask opacity-70" title="Has changes" />}
           </button>
-          {open.has(dir.path) && <TreeRows node={dir} depth={depth + 1} open={open} toggle={toggle} status={status} changed={changed} active={active} onOpen={onOpen} />}
+          {open.has(dir.path) && <TreeRows node={dir} depth={depth + 1} open={open} toggle={toggle} status={status} ignored={ignored} changed={changed} active={active} onOpen={onOpen} />}
         </div>
       ))}
       {node.files.map(path => (
         <button key={path} onClick={() => onOpen(path)} title={path} style={{ paddingLeft: 24 + depth * 12 }}
-          className={cn(row, "gap-1.5", path === active && "bg-select hover:bg-select")}>
+          className={cn(row, "gap-1.5", ignored.has(path) && "opacity-55", path === active && "bg-select hover:bg-select")}>
           <FileIcon path={path} />
           <span className={cn("min-w-0 flex-1 truncate", STATUS_TONE[status[path]])}>{nameOf(path)}</span>
           {status[path] && <span className={cn("shrink-0 font-mono text-[10.5px] font-semibold", STATUS_TONE[status[path]])} title={STATUS_TITLE[status[path]] ?? status[path]}>{status[path]}</span>}
@@ -358,6 +358,7 @@ export function CodeWorkspace({ id, isShown = true }: { id: string; isShown?: bo
 
   const root = useMemo(() => (tree ? treeOf(tree.files) : null), [tree?.files])
   const changed = useMemo(() => changedFolders(tree?.status ?? {}), [tree?.status])
+  const ignored = useMemo(() => new Set(tree?.ignored ?? []), [tree?.ignored])
   // ⌘⇧F: the search, its field selected.
   const searchField = useRef<HTMLInputElement>(null)
   const showSearch = () => (setSide("search"), requestAnimationFrame(() => searchField.current?.select()))
@@ -374,7 +375,7 @@ export function CodeWorkspace({ id, isShown = true }: { id: string; isShown?: bo
         </header>
         <div className={cn("flex min-h-0 flex-1 flex-col", side !== "search" && "hidden")}><SearchPanel id={id} field={searchField} onOpen={(p, l, span) => void open(p, l, true, span)} /></div>
         <div className={cn("min-h-0 flex-1 overflow-auto px-1 pb-3", side !== "files" && "hidden")}>
-          {root ? <TreeRows node={root} depth={0} open={openDirs} toggle={toggle} status={tree!.status} changed={changed} active={active} onOpen={p => void open(p)} /> : <p className="p-3 text-text-muted">Reading the folder…</p>}
+          {root ? <TreeRows node={root} depth={0} open={openDirs} toggle={toggle} status={tree!.status} ignored={ignored} changed={changed} active={active} onOpen={p => void open(p)} /> : <p className="p-3 text-text-muted">Reading the folder…</p>}
           {tree?.truncated && <p className="p-3 text-text-muted">Only the first {tree.files.length} files show.</p>}
         </div>
     </>

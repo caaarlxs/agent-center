@@ -15,24 +15,30 @@ beforeAll(async () => {
   await mkdir(join(repo, "src"))
   await writeFile(join(repo, "src", "a.ts"), "export const a = 1\n")
   await writeFile(join(repo, "README.md"), "# Repo\n")
-  await writeFile(join(repo, ".gitignore"), "ignored.log\n")
+  await writeFile(join(repo, ".gitignore"), "ignored.log\nlocal/\nnode_modules/\n")
   git("init", "-q")
   git("add", ".")
   git("commit", "-q", "-m", "first")
   await writeFile(join(repo, "src", "a.ts"), "export const a = 2\n") // modified
   await writeFile(join(repo, "src", "b.ts"), "export const b = 1\n") // new
   await writeFile(join(repo, "ignored.log"), "noise\n")
+  await mkdir(join(repo, "local"))
+  await writeFile(join(repo, "local", ".env"), "KEY=1\n")
+  await mkdir(join(repo, "node_modules", "pkg"), { recursive: true })
+  await writeFile(join(repo, "node_modules", "pkg", "index.js"), "noise\n")
   await writeFile(join(repo, "bin.dat"), Buffer.from([1, 0, 2]))
   await symlink("/etc/hosts", join(repo, "hosts-link"))
 })
 afterAll(() => rm(repo, { recursive: true, force: true }))
 
-test("lists what git sees, with its status", async () => {
+test("lists what git sees, with its status, and what it ignores apart", async () => {
   const tree = await codeTree(join(repo, "src"))
   expect(tree.isGit).toBe(true)
   expect(tree.files).toContain("src/a.ts")
   expect(tree.files).toContain("src/b.ts")
-  expect(tree.files).not.toContain("ignored.log")
+  expect(tree.files).toContain("ignored.log")
+  expect(tree.ignored.sort()).toEqual(["ignored.log", "local/.env"])
+  expect(tree.files.some(f => f.startsWith("node_modules/"))).toBe(false)
   expect(tree.status["src/a.ts"]).toBe("M")
   expect(tree.status["src/b.ts"]).toBe("U")
 })

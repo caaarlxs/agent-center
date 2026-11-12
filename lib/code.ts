@@ -1,6 +1,7 @@
 // The "Code" tab: a session's folder as an editor sees it. Its root is the git
 // repository the session works in (else its folder); the tree is what git
-// tracks plus new files it does not ignore, each with its git status. A file
+// tracks, new files, and what git ignores (.env, local settings), dimmed, each
+// with its git status. A file
 // opens as text and saves back only if nobody changed it since it was read
 // (Claude may edit it meanwhile): else the page decides what wins.
 
@@ -11,9 +12,9 @@ import { exec, run } from "./proc"
 
 const MAX_FILES = 20_000
 const MAX_TEXT = 4 * 1024 * 1024 // bytes opened in the editor at most
-const SKIPPED = new Set([".git", "node_modules", ".venv", "venv", "__pycache__", "dist", "build", ".next", ".turbo", ".cache", "DerivedData", "Library"])
+const SKIPPED = new Set([".git", "node_modules", ".venv", "venv", "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", "dist", "build", ".build", "Pods", ".gradle", "coverage", ".next", ".turbo", ".cache", "DerivedData", "Library"])
 
-export type CodeTree = { root: string; name: string; files: string[]; status: Record<string, string>; isGit: boolean; truncated: boolean }
+export type CodeTree = { root: string; name: string; files: string[]; ignored: string[]; status: Record<string, string>; isGit: boolean; truncated: boolean }
 
 const git = (cwd: string, args: string[]) => run(["git", "-C", cwd, ...args], cwd, { timeoutMs: 15_000 })
 
@@ -53,15 +54,30 @@ async function statusOf(root: string) {
   return status
 }
 
+// What git ignores: each file, and each ignored folder walked, without the
+// folders that are never source (node_modules, .venv…).
+async function ignoredOf(root: string) {
+  const listed = await git(root, ["ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z"])
+  const out: string[] = []
+  for (const entry of (listed ?? "").split("\0").filter(Boolean)) {
+    if (entry.endsWith(".DS_Store")) continue
+    if (!entry.endsWith("/")) out.push(entry)
+    else if (!entry.split("/").some(part => SKIPPED.has(part))) out.push(...(await walk(join(root, entry))).map(f => entry + f))
+    if (out.length >= MAX_FILES) break
+  }
+  return out
+}
+
 export async function codeTree(cwd: string): Promise<CodeTree> {
   const root = await rootOf(cwd)
   const listed = await git(root, ["ls-files", "--cached", "--others", "--exclude-standard", "-z"])
   const isGit = listed !== null
   const all = isGit ? [...new Set(listed.split("\0").filter(Boolean))] : await walk(root)
   const status = isGit ? await statusOf(root) : {}
+  const ignored = isGit ? await ignoredOf(root) : []
   // A deleted file is still in git's index: gone from the tree, unless it is back.
-  const files = all.filter(f => status[f] !== "D").sort((a, b) => a.localeCompare(b))
-  return { root, name: basename(root), files: files.slice(0, MAX_FILES), status, isGit, truncated: files.length > MAX_FILES }
+  const files = [...all.filter(f => status[f] !== "D"), ...ignored].sort((a, b) => a.localeCompare(b))
+  return { root, name: basename(root), files: files.slice(0, MAX_FILES), ignored, status, isGit, truncated: files.length > MAX_FILES }
 }
 
 // `rel` inside the root, also after links are followed; else null.
