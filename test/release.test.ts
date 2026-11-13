@@ -406,4 +406,10 @@ describe("a script a fix's build added", () => {
     const s = state({ units: [], scripts: [{ id: "S2", unit: "X1", title: "Copy", command: "python sync.py", when: "", envs: ["staging", "prod"] }], order: [{ kind: "manual", id: null, text: "Flag on", envs: [] }] })
     expect(releaseSteps(s, "staging", config).map(x => `${x.kind}:${x.script ?? x.title}`)).toEqual(["simulate:S2", "manual:Flag on", "execute:S2"])
   })
+  it("runs in its unit's repo, even when that unit is already there", () => {
+    const x1 = { id: "X1", repo: "notification-service-v2", subtask: null, branch: "b", title: "t", dependsOn: [], status: "done" as const, pr: "https://github.com/acme/n/pull/71" }
+    const merged = { env: "staging" as const, steps: [{ ...releaseSteps(state({ units: [x1], scripts: [] }), "staging", config)[0]!, status: "done" as const }] }
+    const s = state({ units: [x1], scripts: [{ id: "S2", unit: "X1", title: "Copy", command: "python sync.py", when: "", envs: ["staging"] }], deployed: { staging: merged } })
+    expect(releaseSteps(s, "staging", config).map(x => x.repo)).toEqual(["notification-service-v2", "notification-service-v2"])
+  })
 })

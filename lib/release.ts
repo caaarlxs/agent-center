@@ -66,7 +66,7 @@ export type DeployConfig = {
   mergeMethod: "merge" | "squash" | "rebase"
   default: Record<Env, string>
   repos: Record<string, Partial<Record<Env, Way>>>
-  secrets?: Record<string, Record<string, string>> // a repo's commands' variables: "keychain:<service>", read when they run
+  secrets?: Record<string, Record<string, string>> // a repo's commands' and scripts' variables ("*": every repo's): "keychain:<service>" or "gh-token" (your GitHub CLI's), read when they run
   remind?: Record<string, Partial<Record<Env, string>>> // what a person must have done before a release to an environment starts
   gates?: Partial<Record<Env, "person" | "agent">> // who answers a step that waits: you (the agent only advises), or the agent
   gateAgent?: boolean // whether an agent looks at each step that waits, and says go on or hold
@@ -163,7 +163,8 @@ export function releaseSteps(state: PipelineState, env: Env, config: DeployConfi
     if (u) steps.push(...unitSteps(u, env, config, state, released))
     const x = item.kind === "script" ? scripts.find(s => s.id === item.id) : undefined
     if (x && (!x.envs.length || x.envs.includes(env))) {
-      const repo = units.find(v => v.id === x.unit)?.repo ?? null
+      // Its unit may already run there (a fix's script after its merge): its repo is the unit's all the same.
+      const repo = (state.units ?? []).find(v => v.id === x.unit)?.repo ?? null
       simulations.push(blank("simulate", `${x.title}: simulate`, { unit: x.unit, repo, script: x.id }))
       steps.push(blank("execute", `${x.title}: run for real`, { unit: x.unit, repo, script: x.id }))
     }
@@ -366,7 +367,11 @@ async function checkout(step: ReleaseStep, release: Release, ctx: Ctx, ops: Ops)
   return path
 }
 // Readies a checkout for its scripts (once): the repo's own way, else its venv or its packages.
-const PY_SETUP = `if [ -f requirements.txt ] && [ ! -x .venv/bin/python ]; then python$(cat .python-version 2>/dev/null || echo 3) -m venv .venv && .venv/bin/pip install -q --disable-pip-version-check -r requirements.txt; fi`
+// Ready once its packages installed (.venv/.ready): a venv whose install failed is made again.
+// Its Python is the repo's (.python-version, else the runtime its serverless.yml deploys), not
+// whichever python3 is newest on the Mac: a package may have no build yet for that one.
+const PY_PICK = `V=$(cut -d. -f1,2 .python-version 2>/dev/null); [ -z "$V" ] && V=$(grep -m1 -oE 'python3\\.[0-9]+' serverless.yml 2>/dev/null | sed 's/python//'); PY=python3; if [ -n "$V" ]; then PY=$(command -v python$V || ls -d "$HOME"/.pyenv/versions/$V*/bin/python 2>/dev/null | tail -1); [ -z "$PY" ] && PY=python3; fi`
+const PY_SETUP = `if [ -f requirements.txt ] && [ ! -f .venv/.ready ]; then ${PY_PICK}; rm -rf .venv && "$PY" -m venv .venv && .venv/bin/pip install -q --disable-pip-version-check -r requirements.txt && touch .venv/.ready; fi`
 const NODE_SETUP = `if [ -f package.json ] && [ ! -d node_modules ]; then if [ -f pnpm-lock.yaml ]; then pnpm install --frozen-lockfile; else npm ci; fi; fi`
 // What a command needs ready: a Python one, the repo's venv; a Node one, its packages; any other, both.
 // (A Python script in a repo that also deploys with Node needs no npm.)
@@ -381,16 +386,23 @@ async function startCommand(step: ReleaseStep, release: Release, ctx: Ctx, ops: 
   const branch = slug ? await defaultBranch(slug, ops) : "master"
   await must(ops, ["git", "-C", clone, "checkout", "-q", branch])
   await must(ops, ["git", "-C", clone, "pull", "-q", "--ff-only"], { timeoutMs: 60_000 })
-  const env: Record<string, string> = { STAGE: release.env }
-  for (const [name, from] of Object.entries(ctx.config.secrets?.[step.repo!] ?? {})) {
-    const value = from.startsWith("keychain:") ? await ops.secret(from.slice(9)) : from
-    if (!value) throw new Error(`${name} is not in the keychain (${from.slice(9)}): add it, then retry`)
-    env[name] = value
-  }
+  const env: Record<string, string> = { STAGE: release.env, ...(await secretsOf(step.repo!, ctx, ops)) }
   const mode = step.kind === "execute" ? "execute" : "simulate"
   const base = `${ctx.dir}/scripts/${step.repo}-${release.env}-${mode}`
   const pid = await ops.spawn(clone, `${ctx.config.setup[step.repo!] ?? setupFor(step.value!)} && ${step.value}`, env, `${base}.log`, `${base}.exit`)
   return { status: "running", phase: "script", pid, report: `${step.repo}-${release.env}-${mode}.csv`, since: ops.now(), detail: mode === "execute" ? "Running" : "Dry run" }
+}
+
+// A repo's variables for what runs in it (a private library's token to install it, an API key):
+// every repo's ("*"), then its own; from the keychain, or the GitHub CLI's token.
+async function secretsOf(repo: string, ctx: Ctx, ops: Ops): Promise<Record<string, string>> {
+  const env: Record<string, string> = {}
+  for (const [name, from] of Object.entries({ ...ctx.config.secrets?.["*"], ...ctx.config.secrets?.[repo] })) {
+    const value = from === "gh-token" ? (await ops.sh(["gh", "auth", "token"])).out.trim() || null : from.startsWith("keychain:") ? await ops.secret(from.slice(9)) : from
+    if (!value) throw new Error(from === "gh-token" ? `${name}: the GitHub CLI has no token (gh auth login), then retry` : `${name} is not in the keychain (${from.slice(9)}): add it, then retry`)
+    env[name] = value
+  }
+  return env
 }
 
 async function startScript(step: ReleaseStep, release: Release, ctx: Ctx, ops: Ops): Promise<Patch> {
@@ -401,7 +413,7 @@ async function startScript(step: ReleaseStep, release: Release, ctx: Ctx, ops: O
   const mode = step.kind === "execute" ? "execute" : "simulate"
   const base = `${ctx.dir}/scripts/${script.id}-${release.env}-${mode}`
   const report = `${script.id}-${release.env}-${mode}.csv`
-  const env: Record<string, string> = { STAGE: release.env, REPORT: `${ctx.dir}/scripts/${report}`, ...(mode === "execute" ? { EXECUTE: "true" } : {}) }
+  const env: Record<string, string> = { ...(await secretsOf(step.repo, ctx, ops)), STAGE: release.env, REPORT: `${ctx.dir}/scripts/${report}`, ...(mode === "execute" ? { EXECUTE: "true" } : {}) }
   const pid = await ops.spawn(cwd, `${ctx.config.setup[step.repo] ?? setupFor(script.command)} && ${script.command}`, env, `${base}.log`, `${base}.exit`)
   return { status: "running", phase: "script", pid, report, since: ops.now(), detail: mode === "execute" ? "Running for real" : "Simulating" }
 }
