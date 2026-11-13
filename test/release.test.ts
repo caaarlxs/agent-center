@@ -400,3 +400,10 @@ describe("a script you skipped in an environment", () => {
     expect(releaseSteps(state({ units: [], scripts: [script], deployed: { staging: { env: "staging", steps: skipped } } }), "staging", config)).toEqual([])
   })
 })
+
+describe("a script a fix's build added", () => {
+  it("goes in the next release after the plan's order", () => {
+    const s = state({ units: [], scripts: [{ id: "S2", unit: "X1", title: "Copy", command: "python sync.py", when: "", envs: ["staging", "prod"] }], order: [{ kind: "manual", id: null, text: "Flag on", envs: [] }] })
+    expect(releaseSteps(s, "staging", config).map(x => `${x.kind}:${x.script ?? x.title}`)).toEqual(["simulate:S2", "manual:Flag on", "execute:S2"])
+  })
+})

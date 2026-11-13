@@ -844,7 +844,7 @@ function NowActions({ state, preview, now, onRun, onStep }: { state: PipelineSta
     <>
       {back}
       <RollBack state={state} />
-      <AfterTest state={state} onRun={onRun} />
+      <AfterTest state={state} preview={preview} onRun={onRun} />
       {next && !(state.stage === "review" && next === "build") ? <StartButton stage={next} from={state.stage} reminders={preview?.env === next ? preview.reminders : undefined} onRun={onRun} /> : null}
     </>
   )
@@ -853,14 +853,17 @@ function NowActions({ state, preview, now, onRun, onStep }: { state: PipelineSta
 // A test (or a check in prod) that found something runs again (after a fix, or with
 // new data); what failed in staging goes back to Build: new PRs that fix it, then
 // review, staging and the test again.
-function AfterTest({ state, onRun }: { state: PipelineState; onRun: (stage?: Stage) => void }) {
+// Something a fix added that staging does not run yet (a script on the data): it goes there first, then the test.
+function AfterTest({ state, preview, onRun }: { state: PipelineState; preview: Release | null; onRun: (stage?: Stage) => void }) {
   if (state.stage !== "test" && state.stage !== "smoke") return null
   const fails = failing(state.results).length
   const isRetest = (state.results ?? []).some(r => r.status !== "pass")
+  const hasPending = state.stage === "test" && preview?.env === "staging" && preview.steps.length > 0
   return (
     <>
       {isRetest && <Button variant="outline" className="h-7 shrink-0 text-xs" onClick={() => onRun(state.stage)}>{state.stage === "test" ? "Test again" : "Check again"}</Button>}
-      {state.stage === "test" && fails > 0 && <Button className="h-7 shrink-0 gap-1.5 text-xs" onClick={() => onRun("build")}><Play size={12} className="fill-current" />Fix {fails} with build</Button>}
+      {state.stage === "test" && fails > 0 && <Button variant={hasPending ? "outline" : "default"} className="h-7 shrink-0 gap-1.5 text-xs" onClick={() => onRun("build")}><Play size={12} className="fill-current" />Fix {fails} with build</Button>}
+      {hasPending && <StartButton stage="staging" from={state.stage} reminders={preview.reminders} onRun={onRun} />}
     </>
   )
 }
@@ -914,11 +917,15 @@ export const startedState = (state: PipelineState, stage?: Stage): PipelineState
 // Staging and prod: a pass is a release there and the test that followed it; one waiting at the door is next.
 function ReleasePasses({ stage, ...props }: { stage: Stage; state: PipelineState; preview: Release | null; onRun: (stage?: Stage, fix?: string[]) => void; onStep: OnStep }) {
   const passes = releasePasses(props.state, stage)
-  const hasNext = !passes.some(p => p.isLive) && props.preview?.env === stage
+  // A release about to start: at the door, or from the test (what a fix added that staging does not run yet).
+  const isLive = passes.some(p => p.isLive)
+  const hasNext = props.preview?.env === stage && props.preview.steps.length > 0 && (!isLive || props.state.stage === (stage === "staging" ? "test" : "smoke"))
+  const next = isLive && hasNext ? { ...props.state, stage, release: props.preview } : null
   const tabs = [...passes.map((p, i) => ({ key: p.n, label: `Pass ${i + 1}`, title: `Run ${p.n} · ${new Date(p.startedAt).toLocaleString()}`, past: p.past })),
-    ...(hasNext ? [{ key: -1, label: "Next", title: "The release about to start", past: null }] : [])]
+    ...(hasNext ? [{ key: -1, label: "Next", title: "The release about to start", past: next }] : [])]
   const [picked, setPicked] = useState<number | null>(null)
-  const shown = tabs.find(t => t.key === picked) ?? tabs.at(-1)
+  // At first, the pass at hand (the latest), not one still to come.
+  const shown = tabs.find(t => t.key === picked) ?? (isLive && hasNext ? tabs.at(-2) : tabs.at(-1))
   return (
     <div className="flex flex-col gap-3">
       {tabs.length > 1 && (
@@ -928,7 +935,7 @@ function ReleasePasses({ stage, ...props }: { stage: Stage; state: PipelineState
             return (
               <button key={t.key} role="tab" aria-selected={isOn} onClick={() => setPicked(t.key)} title={t.title}
                 className={cn("h-6 rounded-md px-2 text-[11.5px] font-semibold transition-colors duration-100", isOn ? "bg-surface text-text" : "text-faint hover:text-text")}>
-                {t.label}{i === tabs.length - 1 && t.key !== -1 ? " · latest" : ""}
+                {t.label}{(t.key === -1 ? false : hasNext ? i === tabs.length - 2 : i === tabs.length - 1) ? " · latest" : ""}
               </button>
             )
           })}

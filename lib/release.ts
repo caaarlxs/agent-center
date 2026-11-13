@@ -149,8 +149,9 @@ export function releaseSteps(state: PipelineState, env: Env, config: DeployConfi
   const asUnit = (u: { id: string }) => ({ kind: "unit" as const, id: u.id, text: null, envs: [] })
   const planned: OrderItem[] = state.order?.length ? state.order
     : [...units.map(asUnit), ...scripts.map(x => ({ kind: "script" as const, id: x.id, text: null, envs: [] }))]
-  // A fix's new units, which the plan's order does not know, go after it.
-  const order = [...planned, ...units.filter(u => !planned.some(o => o.kind === "unit" && o.id === u.id)).map(asUnit)]
+  // A fix's new units and scripts, which the plan's order does not know, go after it.
+  const order = [...planned, ...units.filter(u => !planned.some(o => o.kind === "unit" && o.id === u.id)).map(asUnit),
+    ...scripts.filter(x => !planned.some(o => o.kind === "script" && o.id === x.id)).map(x => ({ kind: "script" as const, id: x.id, text: null, envs: [] }))]
   const simulations: Omit<ReleaseStep, "id">[] = []
   const steps: Omit<ReleaseStep, "id">[] = []
   const released = new Set<string>()

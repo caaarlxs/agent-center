@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { AUTO_FIXES, autoNext, toolDirs, noteText, parseResult, plainFindings, retestOf, sentBackSince, withEarlier, backRefusal, backWhy, continuePrompt, newsOf, pipelineKeyOf, spentIn, whyStart, type PipelineState, type Run } from "../lib/pipeline"
+import { AUTO_FIXES, autoNext, shippedWith, stageToRun, withScripts, toolDirs, noteText, parseResult, plainFindings, retestOf, sentBackSince, withEarlier, backRefusal, backWhy, continuePrompt, newsOf, pipelineKeyOf, spentIn, whyStart, type PipelineState, type Run } from "../lib/pipeline"
 import { tookUnit } from "../lib/release"
 
 const base: PipelineState = { key: "PP-1", stage: "refine", status: "ready", sessionId: null, runs: 1, startedAt: 1, endedAt: 2, askedAt: null, questions: [], error: null }
@@ -140,5 +140,23 @@ describe("node and pnpm for a release's scripts", () => {
     expect(toolDirs("/h", d => tree[d] ?? [], () => "22")).toEqual(["/h/.nvm/versions/node/v22.23.4/bin", "/h/Library/pnpm"])
     expect(toolDirs("/h", d => tree[d] ?? [], () => "20")).toEqual(["/h/.nvm/versions/node/v20.19.5/bin", "/h/Library/pnpm"])
     expect(toolDirs("/h", () => [], () => "")).toEqual([])
+  })
+})
+
+describe("what a fix leaves for staging", () => {
+  it("a build's scripts join the plan's; staging runs again from a test that has something pending", () => {
+    const x = (id: string, title: string) => ({ id, unit: null, title, command: "c", when: "", envs: [] })
+    expect(withScripts([x("S1", "a"), x("S2", "old")], [x("S2", "new")]).map(s => `${s.id}:${s.title}`)).toEqual(["S1:a", "S2:new"])
+    const tested = { ...base, stage: "test" as const, results: [{ id: "CA3", criterion: "c", status: "fail" as const, evidence: "" }] }
+    expect(stageToRun(tested, "staging", ["staging"])).toBe("staging")
+    expect(() => stageToRun(tested, "staging", [])).toThrow()
+  })
+})
+
+describe("what an environment ran, release after release", () => {
+  it("keeps a script you skipped, so it is not offered again", () => {
+    const step = (id: string, kind: string, status: string) => ({ id, kind, status, script: kind === "execute" ? "S1" : null, unit: "U1", sha: null }) as never
+    const kept = shippedWith({ env: "staging", steps: [step("R1", "merge", "done"), step("R2", "execute", "skipped"), step("R3", "simulate", "skipped")] }, { env: "staging", steps: [] })
+    expect(kept.steps.map((s: { id: string }) => s.id)).toEqual(["R1", "R2"])
   })
 })

@@ -474,6 +474,7 @@ export async function stateIn<S extends PipelineState>(dir: string): Promise<S |
 }
 const stateOf = (key: string) => stateIn(dirOf(key))
 // The state with its run in the history: added the first time, then kept up to date.
+export const withScripts = (before: PlanScript[] = [], now: PlanScript[]) => [...before.filter(x => !now.some(n => n.id === x.id)), ...now]
 export const withUnits = (before: Unit[] = [], now: Unit[]) => [...before.filter(u => !now.some(n => n.id === u.id)), ...now]
 
 // What a build did in its own pass: after a review, the units its fixed findings
@@ -799,7 +800,8 @@ async function finish(key: string) {
   }
   if (!state.local) await labelTicket(key, [stage.label], [LABELS.needsInfo, ...stage.unlabel])
   const checklist = state.stage === "plan" ? result.checklist : state.checklist
-  const scripts = state.stage === "plan" ? result.scripts : state.scripts
+  // A build may add scripts on the data (a fix that needs one): they join the plan's, by id.
+  const scripts = state.stage === "plan" ? result.scripts : state.stage === "build" && result.scripts.length ? withScripts(state.scripts, result.scripts) : state.scripts
   const order = state.stage === "plan" ? result.order : state.order
   const checked = state.stage === "build" ? checkedIn(await readText(join(dir, "build.checklist.json"))) : state.checked
   // Only a plan and a build leave units; the stages after them keep theirs.
@@ -1016,8 +1018,10 @@ const NEEDS: Partial<Record<Stage, [Stage[], string]>> = {
   prod: [["test"], "Prod needs staging tested first"],
   smoke: [["prod"], "The check in prod needs prod deployed first"],
 }
-export function stageToRun(state: PipelineState | null, asked?: Stage): Stage {
+export function stageToRun(state: PipelineState | null, asked?: Stage, pendingIn: Env[] = []): Stage {
   const stage = asked ?? state?.stage ?? "refine"
+  // Something staging does not run yet (a script a fix added): it goes there again from its test.
+  if (stage === "staging" && state?.stage === "test" && state.status === "ready" && pendingIn.includes("staging")) return stage
   const need = NEEDS[stage]
   const isBlocked = (state: PipelineState) => (stage === "staging" && blocking(state.findings).length > 0) || (stage === "prod" && failing(state.results).length + untried(state.results).length > 0)
   const isAfter = (prev: Stage) => state?.stage === prev && state.status === "ready" && !isBlocked(state)
@@ -1044,7 +1048,7 @@ export async function startPipeline(key: string, take = false, asked?: Stage, ch
 async function startNow(key: string, take: boolean, asked?: Stage, chosen?: string[], auto?: boolean, mine = false) {
   const state = await stateOf(key)
   if (state?.status === "running") throw new Error("A stage already runs on this ticket")
-  const stage = stageToRun(state, asked)
+  const stage = stageToRun(state, asked, await pendingEnvs(state))
   const local = await takeOn(key, state, take, mine)
   if (isRelease(stage)) return startRelease(state!, stage)
   const fixing = await writeFixes(key, state, stage, chosen)
@@ -1370,7 +1374,8 @@ async function tickRelease(key: string) {
 }
 // Each release to an environment adds to what it runs (a fix's release takes only the new units).
 export const shippedWith = (before: Release | undefined, release: Release): Release =>
-  ({ ...release, steps: [...(before?.steps ?? []).filter(s => s.status === "done" || !!s.sha), ...release.steps] })
+  // What went, and the scripts you skipped there (your call, kept so they are not offered again).
+  ({ ...release, steps: [...(before?.steps ?? []).filter(s => s.status === "done" || !!s.sha || (s.kind === "execute" && s.status === "skipped")), ...release.steps] })
 async function tickNow(key: string) {
   {
     const state = await stateOf(key)
@@ -1475,9 +1480,15 @@ export async function pipelineReport(key: string, file: string) {
 export const isPipelineOn = () => existsSync(join(STAGES_DIR, "refine.md"))
 
 // The steps a release would take, before you start it.
+// The environments with something of the ticket they do not run yet: after a test, staging (a script a fix added).
+async function pendingEnvs(state: PipelineState | null): Promise<Env[]> {
+  if (state?.stage !== "test" || state.status !== "ready") return []
+  return releaseSteps(state, "staging", await deployConfig()).length ? ["staging"] : []
+}
 async function previewOf(state: PipelineState | null) {
   if (!state || state.status !== "ready") return null
-  const env: Env | null = state.stage === "review" && !blocking(state.findings).length ? "staging" : state.stage === "test" && !failing(state.results).length && !untried(state.results).length ? "prod" : null
+  const toStaging = state.stage === "test" && (await pendingEnvs(state)).includes("staging")
+  const env: Env | null = state.stage === "review" && !blocking(state.findings).length ? "staging" : toStaging ? "staging" : state.stage === "test" && !failing(state.results).length && !untried(state.results).length ? "prod" : null
   if (!env) return null
   const config = await deployConfig()
   // What a person must have done first, for the repos this release takes there.
