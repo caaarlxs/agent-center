@@ -64,7 +64,7 @@ function factOf(stage: Stage, state: PipelineState, preview: Release | null): st
     return fix ? `${fix} to fix` : open.length ? `${open.length} minor` : "Clean"
   }
   if (state.stage === (stage === "staging" ? "test" : "smoke")) return testFact(state)
-  const release = state.release?.env === stage ? state.release : preview?.env === stage ? preview : null
+  const release = releaseShown(state, preview, stage)
   if (!release) return null
   return release === state.release ? `${release.steps.filter(isOver).length}/${release.steps.length} steps` : count(release.steps.length, "step")
 }
@@ -96,3 +96,11 @@ export const costOf = (runs: { spend?: { cost: number } | null }[]) => runs.redu
 const AGENT_OF: Partial<Record<Stage, Stage>> = { staging: "test", prod: "smoke" }
 export const passesOf = (history: Run[], stage: Stage) =>
   history.filter(r => (r.stage ?? "refine") === (AGENT_OF[stage] ?? stage) && r.status !== "running")
+
+// The release a column shows: the one about to start when it waits at that door (a fix goes to
+// staging again: its own few steps, not the last release's), else the one that ran there.
+export const releaseShown = (state: PipelineState, preview: Release | null, stage: Stage): Release | null => {
+  const isThere = state.stage === stage || state.stage === (stage === "staging" ? "test" : stage === "prod" ? "smoke" : stage)
+  if (preview?.env === stage && !isThere) return preview
+  return state.release?.env === stage ? state.release : preview?.env === stage ? preview : null
+}

@@ -392,3 +392,11 @@ describe("a script for real whose simulation was skipped", () => {
     expect(isGated(run, "staging", steps.map(s => (s.kind === "simulate" ? { ...s, status: "done" as const } : s)))).toBe(false)
   })
 })
+
+describe("a script you skipped in an environment", () => {
+  it("is not offered again in the next release there", () => {
+    const script = { id: "S1", unit: null, title: "Backfill", command: "python b.py", when: "", envs: ["staging" as const] }
+    const skipped = releaseSteps(state({ units: [], scripts: [script] }), "staging", config).map(s => ({ ...s, status: "skipped" as const }))
+    expect(releaseSteps(state({ units: [], scripts: [script], deployed: { staging: { env: "staging", steps: skipped } } }), "staging", config)).toEqual([])
+  })
+})

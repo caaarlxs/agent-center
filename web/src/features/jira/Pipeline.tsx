@@ -37,7 +37,7 @@ import { deliverablesOf } from "@server/scope"
 import type { Leftover } from "@server/cleanup"
 import { MODELS } from "@/features/prompt/Settings"
 import { PipelineMark, liveLine, startText, startingText, statusText } from "./PipelineMark"
-import { STAGE_KEYS, STAGES, costOf, dollars, isRelease, journeyOf, nextStage, passesOf, stageAt, toFix, tokens } from "./pipeline-board"
+import { STAGE_KEYS, STAGES, releaseShown, costOf, dollars, isRelease, journeyOf, nextStage, passesOf, stageAt, toFix, tokens } from "./pipeline-board"
 import { ReleaseRail, ReleaseSteps, SkipFailed, StepAtHand, type After } from "./Release"
 import { Journey } from "./Journey"
 import { CHANGED, changed, useConfirm } from "./confirm"
@@ -770,7 +770,7 @@ const nodeOf = (stage: Stage): Stage => (stage === "test" ? "staging" : stage ==
 function StagePanel({ stage, state, preview, onRun, onStep }: { stage: Stage; state: PipelineState; preview: Release | null; onRun: (stage?: Stage, fix?: string[]) => void; onStep: OnStep }) {
   const at = stageAt(state)
   const i = STAGE_KEYS.indexOf(stage)
-  const release = state.release?.env === stage ? state.release : preview?.env === stage ? preview : null
+  const release = releaseShown(state, preview, stage)
   // The column's agent stage at work, or done: its findings, the deploy folded.
   if (nodeOf(state.stage) === stage && state.stage !== stage) return state.status === "running"
     ? <div className="flex flex-col gap-3">{release && <ReleaseRail release={release} after={afterOf(stage, state)} />}<AtWork state={state} /></div>

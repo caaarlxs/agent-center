@@ -137,7 +137,8 @@ function notYetIn(state: PipelineState, env: Env) {
   const before = (state.deployed?.[env]?.steps ?? []).filter(s => s.status === "done")
   // A unit is there once a step of its own went (a merge in staging, a tag or a command in prod).
   const took = before.filter(s => s.unit && s.kind !== "simulate")
-  const ran = new Set(before.filter(s => s.kind === "execute" && s.script).map(s => s.script))
+  // A script that ran there, or that you skipped there (your call: it is not offered again).
+  const ran = new Set((state.deployed?.[env]?.steps ?? []).filter(s => s.kind === "execute" && s.script && (s.status === "done" || s.status === "skipped")).map(s => s.script))
   const done = new Set(before.filter(s => s.kind === "manual" && !s.unit).map(s => s.title))
   return { units: (state.units ?? []).filter(u => !tookUnit(took, u)), scripts: (state.scripts ?? []).filter(x => !ran.has(x.id)), manualDone: done }
 }
