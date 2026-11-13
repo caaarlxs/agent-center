@@ -91,7 +91,7 @@ export type ContextImpact = { file: string; quote: string | null; why: string; p
 export type Result = { jira?: string[]; verdict: "ready" | "needs-info"; questions: Question[]; units: Unit[]; checklist: ChecklistItem[]; findings: Finding[]; fixed: string[]; scripts: PlanScript[]; order: OrderItem[]; results: TestResult[]; contextImpact: ContextImpact[]; debt: DebtItem[]; tickets?: unknown }
 export type PipelineStatus = "running" | "needs-info" | "ready" | "failed"
 // kept: what the run left, to see each pass of a stage apart (a plan's or a build's units, a review's findings, a test's results).
-export type Kept = { units?: Unit[]; checklist?: ChecklistItem[]; findings?: Finding[]; results?: TestResult[] }
+export type Kept = { units?: Unit[]; checklist?: ChecklistItem[]; findings?: Finding[]; results?: TestResult[]; release?: Release }
 // cause: why it ran, in a word or two (Sent back, Your answers…); base: what its session had spent
 // before it (a stage's session goes on run after run: a run's spend is what it added).
 export type Run = { n: number; stage: Stage; sessionId: string | null; startedAt: number; endedAt: number | null; status: PipelineStatus; questions: number; units: number; findings?: number; error: string | null; spend?: Spend | null; kept?: Kept; cause?: string | null; base?: Spend | null }
@@ -486,6 +486,8 @@ const builtNow = (s: PipelineState) => {
 }
 // What a run that ended left, by its stage.
 const keptOf = (s: PipelineState): Kept | undefined => {
+  // A release to an environment, once it ended (well, or not): its steps, as they went.
+  if (isRelease(s.stage)) return s.status !== "running" && s.release?.env === s.stage ? { release: s.release } : undefined
   if (s.status !== "ready" && s.status !== "needs-info") return undefined
   if (s.stage === "plan") return { units: s.units ?? [], ...(s.checklist ? { checklist: s.checklist } : {}) }
   if (s.stage === "build") return { units: builtNow(s) }

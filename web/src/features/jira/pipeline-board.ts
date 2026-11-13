@@ -104,3 +104,22 @@ export const releaseShown = (state: PipelineState, preview: Release | null, stag
   if (preview?.env === stage && !isThere) return preview
   return state.release?.env === stage ? state.release : preview?.env === stage ? preview : null
 }
+
+// Staging's and prod's passes: each release there with the test (or the check) that followed it.
+// A pass shows its own steps and its own results; the first of a ticket from before kept its
+// steps only in what that environment runs. With a release waiting at the door, the live view is next.
+export type ReleasePass = { n: number; startedAt: number; isLive: boolean; past: PipelineState | null }
+export function releasePasses(state: PipelineState, stage: Stage): ReleasePass[] {
+  const runs = state.history ?? []
+  const agent = AGENT_OF[stage]!
+  const releases = runs.filter(r => r.stage === stage && r.status !== "running")
+  const isThere = state.stage === stage || state.stage === agent
+  return releases.map((r, i) => {
+    const next = releases[i + 1]
+    const test = runs.filter(t => t.stage === agent && t.n > r.n && (!next || t.n < next.n) && t.kept?.results).at(-1)
+    const release = r.kept?.release ?? (i === 0 ? state.deployed?.[stage as "staging" | "prod"] : undefined)
+    const isLive = isThere && i === releases.length - 1
+    const past = isLive ? null : { ...state, release: release ?? null, results: test?.kept?.results ?? [], stage: test ? agent : stage, status: "failed" as const, threads: {} }
+    return { n: r.n, startedAt: r.startedAt, isLive, past }
+  })
+}

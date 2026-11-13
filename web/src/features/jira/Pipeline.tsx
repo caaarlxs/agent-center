@@ -37,7 +37,7 @@ import { deliverablesOf } from "@server/scope"
 import type { Leftover } from "@server/cleanup"
 import { MODELS } from "@/features/prompt/Settings"
 import { PipelineMark, liveLine, startText, startingText, statusText } from "./PipelineMark"
-import { STAGE_KEYS, STAGES, releaseShown, costOf, dollars, isRelease, journeyOf, nextStage, passesOf, stageAt, toFix, tokens } from "./pipeline-board"
+import { STAGE_KEYS, STAGES, releasePasses, releaseShown, costOf, dollars, isRelease, journeyOf, nextStage, passesOf, stageAt, toFix, tokens } from "./pipeline-board"
 import { ReleaseRail, ReleaseSteps, SkipFailed, StepAtHand, type After } from "./Release"
 import { Journey } from "./Journey"
 import { CHANGED, changed, useConfirm } from "./confirm"
@@ -911,7 +911,36 @@ export const startedState = (state: PipelineState, stage?: Stage): PipelineState
 // A stage run more than once (a fix, a test again) shows each pass apart: the
 // latest at first; an earlier one as it left it (its units, findings or results,
 // and its document), only to read: no button acts on a past pass.
+// Staging and prod: a pass is a release there and the test that followed it; one waiting at the door is next.
+function ReleasePasses({ stage, ...props }: { stage: Stage; state: PipelineState; preview: Release | null; onRun: (stage?: Stage, fix?: string[]) => void; onStep: OnStep }) {
+  const passes = releasePasses(props.state, stage)
+  const hasNext = !passes.some(p => p.isLive) && props.preview?.env === stage
+  const tabs = [...passes.map((p, i) => ({ key: p.n, label: `Pass ${i + 1}`, title: `Run ${p.n} · ${new Date(p.startedAt).toLocaleString()}`, past: p.past })),
+    ...(hasNext ? [{ key: -1, label: "Next", title: "The release about to start", past: null }] : [])]
+  const [picked, setPicked] = useState<number | null>(null)
+  const shown = tabs.find(t => t.key === picked) ?? tabs.at(-1)
+  return (
+    <div className="flex flex-col gap-3">
+      {tabs.length > 1 && (
+        <div className="flex flex-wrap items-center gap-1.5" role="tablist" aria-label="Passes">
+          {tabs.map((t, i) => {
+            const isOn = t === shown
+            return (
+              <button key={t.key} role="tab" aria-selected={isOn} onClick={() => setPicked(t.key)} title={t.title}
+                className={cn("h-6 rounded-md px-2 text-[11.5px] font-semibold transition-colors duration-100", isOn ? "bg-surface text-text" : "text-faint hover:text-text")}>
+                {t.label}{i === tabs.length - 1 && t.key !== -1 ? " · latest" : ""}
+              </button>
+            )
+          })}
+        </div>
+      )}
+      {shown?.past ? <StagePanel stage={stage} {...props} state={shown.past} onRun={() => {}} /> : <StagePanel stage={stage} {...props} />}
+    </div>
+  )
+}
+
 function StagePasses({ stage, ...props }: { stage: Stage; state: PipelineState; preview: Release | null; onRun: (stage?: Stage, fix?: string[]) => void; onStep: OnStep }) {
+  if (isRelease(stage)) return <ReleasePasses stage={stage} {...props} />
   const passes = passesOf(props.state.history ?? [], stage)
   const [picked, setPicked] = useState<number | null>(null)
   const run = passes.find(r => r.n === picked)
