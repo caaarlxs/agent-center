@@ -15,6 +15,11 @@ describe("reachOf", () => {
     expect(reachOf(bridge({ wake: atCap }), false).tone).toBe("off")
   })
 
+  it("names where sessions open when one did not wake", () => {
+    expect(reachOf(bridge({ stuck: ["m1"] }), false).text).toBe("The session did not wake: open it in Claude")
+    expect(reachOf(bridge({ stuck: ["m1"] }), false, false, Date.now(), "Terminal").text).toBe("The session did not wake: open it in Terminal")
+  })
+
   it("says busy while a turn runs with a recent beat", () => {
     expect(reachOf(bridge({ lastSeen: 1000 }), true, false, 2000).text).toBe("Busy: delivered when the turn ends")
   })

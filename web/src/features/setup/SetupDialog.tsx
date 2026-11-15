@@ -36,6 +36,15 @@ const STEPS: Record<string, Meta> = {
     text: "The board shows, wakes and opens the sessions of the Claude desktop app.",
     unavailable: <>Install it from <a className="text-brand underline underline-offset-2" href="https://claude.ai/download">claude.ai/download</a> and come back here.</>,
   },
+  "claude-cli": {
+    title: "Claude Code CLI", need: "Required",
+    text: "Sessions run in Claude Code's CLI (the `claude` command), so the board uses the one your terminal runs.",
+    unavailable: <>Install it from <a className="text-brand underline underline-offset-2" href="https://docs.claude.com/en/docs/claude-code/setup">Claude Code's setup page</a> and come back here.</>,
+  },
+  terminal: {
+    title: "Without Claude desktop", need: "Optional", action: "Turn on", canTurnOff: true,
+    text: <>Sessions run in Claude Code's CLI instead of the Claude desktop app, and nothing comes to the front. A message to a sleeping session starts <code>claude --resume</code> in a tmux session of the board's own, in the background; Open shows it in a Terminal window. Sessions nobody uses for 30 minutes end, and the next message starts them again. Installs tmux with Homebrew if it is missing. A folder Claude Code was never told to trust runs headless until you open the session once and accept.</>,
+  },
   hook: {
     title: "Session tracking", need: "Required", action: "Install", outdated: "Update",
     text: "Copies a hook to ~/.claude/hooks and adds it to ~/.claude/settings.json (it saves a backup first). This way the board knows what each session does and whether it asks you something.",
@@ -247,7 +256,7 @@ function Appearance() {
 // One step of the Mac's setup: what it is, its state, and the button that does it.
 type StepProps = { step: Status["steps"][number]; status: Status; busy: string | null; language: string; setLanguage: (l: string) => void; run: (id: string, options?: Record<string, unknown>) => void }
 function SetupStep({ step, status, busy, language, setLanguage, run }: StepProps) {
-  const meta = STEPS[step.id]
+  const meta = STEPS[step.id === "claude" && step.detail === "cli" ? "claude-cli" : step.id]
   if (!meta) return null
   // Installed dictation keeps the language picker: a new choice applies at once.
   const newLanguage = step.id === "whisper" && step.state === "done" && language !== status.voiceLanguage

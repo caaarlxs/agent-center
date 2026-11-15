@@ -109,11 +109,19 @@ One writer per file is a rule of the code: it keeps every file consistent withou
    the same session headless (`claude -p --resume`), with its folder, mode, model and effort
    (`lib/deliver.ts`).
 
+**Without Claude desktop** (`settings.sessions = "terminal"`), steps 3 and 4 change: the server
+starts `claude --resume <id>` in a detached tmux session of its own (`lib/terminal.ts`, socket
+`agent-center`), and the mod takes the message as in step 2. When tmux cannot run it (tmux
+missing, a folder Claude Code was never told to trust, 6 sessions alive and none idle), the server
+runs the turn headless as in step 4. `lib/client.ts` is the one place that picks between the two:
+every wake, open and new session goes through it.
+
 ## How a new session starts
 
 The first turn runs headless (`claude -p`) in the chosen folder, with the first message
 (`lib/launch.ts`). The hooks then show it on the board. Claude desktop imports it with
-`claude://resume?session=<id>`, which keeps its id.
+`claude://resume?session=<id>`, which keeps its id. Without Claude desktop, it is not imported:
+it sleeps until a message wakes it in tmux.
 
 ## The repository
 
@@ -137,7 +145,7 @@ The first turn runs headless (`claude -p`) in the chosen folder, with the first 
 | Area | Modules |
 |---|---|
 | Sessions and the board | `snapshot`, `live`, `live-patch`, `sessions`, `desktop`, `board`, `repo`, `memory`, `processes`, `background`, `saying`, `retrying` |
-| Talking to sessions | `bridge`, `wake`, `deliver`, `launch`, `client`, `fork`, `handoff`, `diagnose` |
+| Talking to sessions | `bridge`, `wake`, `deliver`, `launch`, `client`, `terminal`, `fork`, `handoff`, `diagnose` |
 | Conversations | `transcript`, `session-events`, `search`, `plan`, `plan-op`, `trace`, `tests`, `widgets`, `response-actions`, `response-views` |
 | Code and files | `changes`, `session-changes`, `session-commits`, `code`, `session-files`, `uploads`, `office`, `monaco`, `editor-theme`, `commands`, `runner`, `servers` |
 | GitHub | `github`, `prs` |

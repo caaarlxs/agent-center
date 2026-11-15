@@ -34,7 +34,10 @@ export const DESKTOP_LOG = join(HOME, "Library", "Logs", "Claude", "main.log")
 // jira: your Jira site, email and project keys (lib/jira.ts; the token is in the keychain).
 // responseActions: buttons under each finished answer (lib/response-actions.ts).
 // responseViews: other ways to read a long answer, in its place (lib/response-views.ts).
-export type Settings = { voiceLanguage?: string; organizer?: boolean; runCommands?: boolean; appIcon?: string; jira?: { site: string; email: string; projects: string[] }; responseActions?: unknown; responseViews?: unknown }
+// sessions: where sessions run when the board wakes, opens or starts them:
+// "desktop" (the Claude desktop app, the default) or "terminal" (Claude Code's
+// CLI, in tmux sessions of its own: lib/terminal.ts).
+export type Settings = { sessions?: "desktop" | "terminal"; voiceLanguage?: string; organizer?: boolean; runCommands?: boolean; appIcon?: string; jira?: { site: string; email: string; projects: string[] }; responseActions?: unknown; responseViews?: unknown }
 function readSettings(): Settings {
   try {
     return JSON.parse(readFileSync(SETTINGS_PATH, "utf8"))
@@ -43,6 +46,7 @@ function readSettings(): Settings {
   }
 }
 export const settings: Settings = readSettings()
+export const inTerminal = () => settings.sessions === "terminal"
 
 // Set at install (./install.sh writes it into the launchd agent).
 export const PORT = Number(process.env.AGENT_CENTER_PORT || 7777)

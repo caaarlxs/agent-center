@@ -1,6 +1,7 @@
 // Messages for a session Claude desktop does not start: it runs as many
 // sessions as the Mac's memory allows and turns down every background start
-// past that (lib/wake.ts). The board then runs the turn itself, as it does a
+// past that (lib/wake.ts). In terminal mode, a session tmux cannot run
+// (lib/terminal.ts). The board then runs the turn itself, as it does a
 // new session's first one: Claude Code resumes the same session headless
 // (`--resume`, same id and transcript) in its folder, with its permission
 // mode, model and effort, and the messages as one prompt. The client shows
@@ -29,7 +30,7 @@ export async function deliverHere(id: string): Promise<boolean> {
   try {
     const ran = await launch(group.lead.cwd, messages.map(m => m.text).join("\n\n"), () => refreshSoon(), extra, mode)
     if (ran !== id) console.error(`delivered here: Claude Code resumed ${id} as ${ran}`)
-    console.log(`delivered ${messages.length} message(s) to ${id} here: Claude desktop is at its cap`)
+    console.log(`delivered ${messages.length} message(s) to ${id} here, headless`)
     refreshSoon()
     return true
   } catch (err) {

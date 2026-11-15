@@ -27,6 +27,7 @@ import { hasWhisper } from "@/features/prompt/voice"
 import { useModels } from "@/features/prompt/Settings"
 import { repoDot } from "@/features/session/state"
 import { Anim } from "@/components/icons/animated"
+import { useClientName } from "@/lib/sessions-client"
 
 const DEFAULTS = { model: "claude-fable-5-1", effort: "high" } // the first prefs; Reset goes to the newest Fable
 const prefs = persistedStore("newPrefs", { mode: "auto", ...DEFAULTS })
@@ -93,6 +94,7 @@ function Folders({ root, onPick }: { root: string | null; onPick: (root: string)
 
 // The prompt with its tools, the explanation and the two ways to start.
 function Prompt({ root, draft, onClose }: { root: string | null; draft?: NewDraft; onClose: () => void }) {
+  const where = useClientName()
   const chosen = prefs.use()
   const defaults = { ...DEFAULTS, model: useModels()[0]![0] } // Reset goes to the most capable model Claude desktop ships
   const { textInput } = usePromptInputController()
@@ -149,10 +151,10 @@ function Prompt({ root, draft, onClose }: { root: string | null; draft?: NewDraf
       <div className="mt-1 flex items-center gap-2">
         <span className="flex-1 text-xs text-text-muted">
           {hasContent
-            ? "Send: the first turn runs here, headless, with this mode, model and effort, and the session shows up at once. Open it in Claude when you want."
-            : "Without a prompt, it opens in Claude for you to write there (with Claude's settings)."}
+            ? `Send: the first turn runs here, headless, with this mode, model and effort, and the session shows up at once. Open it in ${where} when you want.`
+            : `Without a prompt, it opens in ${where} for you to write there.`}
         </span>
-        <Button type="button" variant="outline" onClick={() => launch(false)} disabled={!root || isSending}>Open in Claude</Button>
+        <Button type="button" variant="outline" onClick={() => launch(false)} disabled={!root || isSending}>Open in {where}</Button>
         <Button type="button" onClick={() => launch(true)} disabled={!root || !hasContent || isSending}>{isSending ? "Launching…" : "Send"} <Kbd>⌘↵</Kbd></Button>
       </div>
     </div>

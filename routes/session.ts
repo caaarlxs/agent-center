@@ -5,7 +5,7 @@
 
 import { applyAction, isBoardAction, isTaskId, setSuggestion } from "../lib/board"
 import { answer as answerQuestion, isBusy, permit, requestSettings, send as sendMessage, setEffort, status as bridgeStatus, stop as stopTurn, unsend } from "../lib/bridge"
-import { activate, openInClient } from "../lib/client"
+import { activate, adopt, openInClient } from "../lib/client"
 import { isArchivedInApp, readDesktop } from "../lib/desktop"
 import { commandStatus, runCommand, stopCommand } from "../lib/commands"
 import { EFFORTS, MODES } from "../lib/config"
@@ -54,7 +54,7 @@ async function fork(id: string, body: Record<string, unknown>) {
   // must not start editing on its own.
   const mode = MODES.includes(String(group.lead.mode)) ? String(group.lead.mode) : "default"
   try {
-    const forked = await launch(group.lead.cwd, prompt, done => void activate(done), resume, mode)
+    const forked = await launch(group.lead.cwd, prompt, done => void adopt(done), resume, mode)
     refreshSoon()
     return json({ ok: true, id: forked })
   } catch (err) {
@@ -72,7 +72,7 @@ async function fresh(id: string) {
   if (!paths.length) return json({ error: "Cannot find this session's conversation" }, 404)
   const mode = MODES.includes(String(group.lead.mode)) ? String(group.lead.mode) : "default"
   try {
-    const started = await startFresh({ title: card?.title ?? "this session", folder: group.lead.cwd, paths, model: card?.usage?.model ?? null, mode, onDone: done => void activate(done) })
+    const started = await startFresh({ title: card?.title ?? "this session", folder: group.lead.cwd, paths, model: card?.usage?.model ?? null, mode, onDone: done => void adopt(done) })
     refreshSoon()
     return json({ ok: true, id: started })
   } catch (err) {

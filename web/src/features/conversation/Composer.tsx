@@ -30,6 +30,7 @@ import { DRAFT_MS, draftOf, joinText, keepDraft } from "./drafts"
 import { boxOpened, composerAppend } from "@/features/prompt/voice-handoff"
 import { Anim } from "@/components/icons/animated"
 import { SendMark, useSendMoment } from "@/components/icona/marks"
+import { useClientName } from "@/lib/sessions-client"
 
 // The files picked, per session, while the page stays open; kept in the
 // browser too (draft-files.ts), so they come back after a reload.
@@ -198,7 +199,8 @@ function Box({ id, card, bridge }: { id: string; card: Card | undefined; bridge:
   const live = micLive.use()
   // The microphone's glow, only when it writes into this field.
   const mic = live.isOn && !!live.form && !!box.current?.contains(live.form) ? live : { ...live, isOn: false }
-  const reach = reachOf(bridge, isWorking, isWaking)
+  const where = useClientName()
+  const reach = reachOf(bridge, isWorking, isWaking, Date.now(), where)
   const isStuck = isStuckNow(bridge)
   const isBusy = isBusyNow(bridge, isWorking)
   const canWake = !!bridge && !bridge.isOpen && !isBusy && !isWaking && !bridge.pending
@@ -242,8 +244,8 @@ function Box({ id, card, bridge }: { id: string; card: Card | undefined; bridge:
           {isWorking && card && (
             <button type="button" className={cn(subtle, "hover:text-bad")} onClick={() => stopTurn(card)} title="Stops the running turn, like Esc in Claude desktop (S)"><Square />Stop</button>
           )}
-          {isStuck ? <button type="button" className={subtle} onClick={() => launch(id)} title="Opens the session in Claude desktop">Open in Claude</button>
-            : canWake ? <button type="button" className={subtle} onClick={startWake} title="Starts the session in Claude, in the background, so it gets messages">Wake</button>
+          {isStuck ? <button type="button" className={subtle} onClick={() => launch(id)} title={where === "Terminal" ? "Opens the session in a Terminal window" : "Opens the session in Claude desktop"}>Open in {where}</button>
+            : canWake ? <button type="button" className={subtle} onClick={startWake} title={`Starts the session in ${where === "Terminal" ? "tmux" : "Claude"}, in the background, so it gets messages`}>Wake</button>
             : canSleep && <button type="button" className={subtle} onClick={startSleep} title="Stops the session's process to free memory; Wake or a message starts it again">Sleep</button>}
           <button type="submit" disabled={!!bridge?.isArchived}
             title={bridge?.isArchived ? "Archived in Claude: unarchive it there to write" : "Send (↵) · new line (⇧↵)"}

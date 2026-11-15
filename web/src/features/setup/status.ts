@@ -3,5 +3,5 @@
 import type { Step } from "@/lib/api-types"
 import { cachedGet } from "@/lib/cached"
 
-export type Status = { steps: Step[]; isReady: boolean; voiceLanguage: string; organizerNote: string }
+export type Status = { steps: Step[]; isReady: boolean; voiceLanguage: string; organizerNote: string; sessions?: "desktop" | "terminal" }
 export const setupStatus = cachedGet<Status>("/api/setup")

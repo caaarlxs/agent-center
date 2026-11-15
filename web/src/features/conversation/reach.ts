@@ -15,13 +15,14 @@ export const isBusyNow = (bridge: Bridge | null, isWorking: boolean, now = Date.
 export const isStuckNow = (bridge: Bridge | null) =>
   !!bridge && (bridge.stuck.length > 0 || !!bridge.wake?.untrusted || !!bridge.wake?.atCap || bridge.isArchived)
 
-export function reachOf(bridge: Bridge | null, isWorking: boolean, isWaking = false, now = Date.now()): Reach {
+// `where`: the place sessions open in ("Claude" desktop, or "Terminal").
+export function reachOf(bridge: Bridge | null, isWorking: boolean, isWaking = false, now = Date.now(), where = "Claude"): Reach {
   if (!bridge) return { tone: "off", text: "Checking the session…" }
   if (bridge.isArchived) return { tone: "bad", text: "Archived in Claude: it does not wake until you unarchive it there (Open in Claude)" }
   if (bridge.wake?.untrusted) return { tone: "bad", text: "Claude does not trust this session's folder: open it in Claude and accept" }
   if (bridge.wake?.atCap && bridge.pending && !bridge.isOpen)
     return { tone: "bad", text: "Claude already runs as many sessions as this Mac's memory allows, so it does not wake this one in the background: write to it in Claude, or close sessions you are not using" }
-  if (bridge.stuck.length) return { tone: "bad", text: "The session did not wake: open it in Claude" }
+  if (bridge.stuck.length) return { tone: "bad", text: `The session did not wake: open it in ${where}` }
   if (bridge.isOpen) return { tone: "on", text: "Session open: it arrives in a few seconds" }
   if (isBusyNow(bridge, isWorking, now)) return { tone: "busy", text: "Busy: delivered when the turn ends" }
   if (bridge.pending || isWaking) return { tone: "busy", text: "Waking the session in the background…" }

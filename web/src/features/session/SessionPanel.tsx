@@ -27,6 +27,7 @@ import { useIsDots } from "@/lib/board-style"
 import { PanelTabs } from "./PanelTabs"
 import { EditActions } from "./EditActions"
 import { jiraSetup } from "@/features/jira/jira"
+import { useClientName } from "@/lib/sessions-client"
 
 // The conversation (with its markdown renderer) is not needed to draw the
 // board: it loads once the browser is idle, before you open one. The
@@ -212,6 +213,7 @@ function Title({ card, fallback }: { card: Card | undefined; fallback: string })
 
 export function SessionPanel({ id, tab: asked, file }: { id: string; tab: Tab; file?: string }) {
   const isDots = useIsDots()
+  const where = useClientName()
   const card = useLive(l => l.snapshot?.cards.find(c => c.id === id))
   const hasTasks = useLive(l => l.snapshot?.features?.organizer !== false)
   const result = openedResult.use()
@@ -252,8 +254,8 @@ export function SessionPanel({ id, tab: asked, file }: { id: string; tab: Tab; f
           <span className="ml-auto flex shrink-0 items-center gap-1 max-[860px]:order-first max-[860px]:w-full max-[860px]:justify-end">
             {card && <Actions card={card} />}
             <button className="dots-line inline-flex h-7 items-center gap-1.5 rounded-md border border-brand bg-brand px-2.5 text-[12.5px] font-medium whitespace-nowrap text-brand-text transition-[filter,transform] duration-[120ms] hover:brightness-106 active:scale-[0.97]"
-              onClick={() => launch(id)} title="Open in Claude (O)">
-              <span className="max-[860px]:hidden">Open in Claude</span><Anim.ArrowUpRight size={12} />
+              onClick={() => launch(id)} title={`Open in ${where} (O)`}>
+              <span className="max-[860px]:hidden">Open in {where}</span><Anim.ArrowUpRight size={12} />
             </button>
             {!isWorkspace && (
               <button className={cn(iconBtn(), "size-7 [&_svg]:size-[15px] max-[1100px]:hidden")} onClick={toggleWide} title={wide ? "Normal width" : "Widen the panel"}>
