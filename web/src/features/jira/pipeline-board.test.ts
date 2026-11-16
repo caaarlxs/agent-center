@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { columnOf, isQueued, nextStage, passesOf, toFix, tonesOf, untested, waitingStep } from "./pipeline-board"
+import { carriedResults, columnOf, isQueued, nextStage, passesOf, toFix, tonesOf, untested, waitingStep } from "./pipeline-board"
 
 type At = "refine" | "plan" | "build" | "review" | "staging" | "test" | "prod" | "smoke"
 const at = (stage: At, status: "running" | "needs-info" | "ready" | "failed", findings?: { id: string; severity: string }[], release?: unknown) => ({ stage, status, findings, release }) as never
@@ -113,5 +113,24 @@ describe("the passes of a stage", () => {
     expect(passesOf(history as never, "build").map(r => r.n)).toEqual([3, 7])
     expect(passesOf(history as never, "staging").map(r => r.n)).toEqual([6])
     expect(passesOf(history as never, "review").map(r => r.n)).toEqual([4])
+  })
+})
+
+describe("carriedResults", () => {
+  const r = (id: string, status = "pass") => ({ id, status, criterion: id })
+  const first = [r("CA1"), r("CA2", "fail"), r("CA3", "fail")]
+  const second = [r("CA2"), r("CA3", "fail")]
+  const third = [r("CA3")]
+  const history = [{ stage: "test", kept: { results: first } }, { stage: "build" }, { stage: "test", kept: { results: second } }, { stage: "test", kept: { results: third } }]
+  it("adds what earlier passes tried and this one did not, the latest first", () => {
+    const state = { stage: "test", results: third, history } as never
+    expect(carriedResults(state).map(x => [x.id, x.status])).toEqual([["CA2", "pass"], ["CA1", "pass"]])
+  })
+  it("a past pass carries only what came before it", () => {
+    expect(carriedResults({ stage: "test", results: second, history } as never).map(x => x.id)).toEqual(["CA1"])
+    expect(carriedResults({ stage: "test", results: first, history } as never)).toEqual([])
+  })
+  it("the live state, read apart from its history, counts every pass", () => {
+    expect(carriedResults({ stage: "test", results: [r("CA3")], history } as never).map(x => x.id)).toEqual(["CA2", "CA1"])
   })
 })

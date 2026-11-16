@@ -14,7 +14,9 @@ import { Markdown } from "@/features/conversation/Markdown"
 import { ago, repoDot } from "@/features/session/state"
 import type { Job } from "@server/jobs"
 import type { AgentStage } from "@server/pipeline"
-import { AtWork, BuildPanel, FoldButton, PlanPanel, ReviewPanel, Runs, StopAgent, TestPanel, openLog, useConfirm } from "./Pipeline"
+import { AtWork, Runs, StopAgent, openLog, useConfirm } from "./Pipeline"
+import { BuildPanel, PlanPanel, ReviewPanel, TestPanel } from "./StagePanels"
+import { FoldButton } from "./Fold"
 import { act } from "./feedback"
 import { PipelineMark, liveLine } from "./PipelineMark"
 import { SPECIALISTS, jobLabel } from "./jobs-board"
@@ -83,7 +85,7 @@ function OnInPipeline({ job, onClose }: { job: Job; onClose: () => void }) {
 // What it left, by specialist: a plan's units, a build's PRs, a review's
 // findings, a test's results; and the questions it could not decide.
 function StagePanel({ job }: { job: Job }) {
-  if (job.stage === "plan") return <PlanPanel state={job} steps={null} />
+  if (job.stage === "plan") return <PlanPanel state={job} />
   if (job.stage === "build") return <BuildPanel state={job} />
   if (job.stage === "review") return <ReviewPanel state={job} onFix={() => {}} onPublish={ids => void act("/api/jobs/publish", { id: job.id, findings: ids }, "Published to the PRs")} />
   if (job.stage === "test" || job.stage === "smoke") return <TestPanel state={job} release={null} />
@@ -102,7 +104,7 @@ function JobResult({ job }: { job: Job }) {
             <li key={q.id} className="flex flex-col gap-1.5">
               <span className="font-semibold">{q.question}</span>
               {q.context && <Markdown className="text-[13px] text-text-muted">{q.context}</Markdown>}
-              {q.proposal && <Markdown className="border-l-2 border-line-strong pl-3 text-[13px] text-text-muted">{q.proposal}</Markdown>}
+              {q.proposal && <Markdown className="border-l border-line-strong pl-3 text-[13px] text-text-muted">{q.proposal}</Markdown>}
             </li>
           ))}
         </ol>

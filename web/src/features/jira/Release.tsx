@@ -4,8 +4,8 @@
 // would push (yours to change) and the changes that go with it, a script's
 // simulation and its report, what to test. The steps of a release not
 // started yet show what it will do. Each step's icon tells its kind: a merge,
-// a tag, a release PR, a script on the data, something only a person does,
-// the check at the end.
+// a tag, a release PR, a script on the data, something only a person does
+// (it stands out until done), the check at the end.
 import { AlertTriangle, Bot, Check, History, SquareTerminal, Undo2, ChevronRight, ClipboardCheck, Database, Download, GitMerge, GitPullRequestArrow, Hand, Tag, type LucideIcon } from "lucide-react"
 import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
@@ -13,6 +13,7 @@ import { Shimmer } from "@/components/ai-elements/shimmer"
 import { get } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import type { Release, ReleaseStep, StepKind } from "@server/release"
+import { Section } from "./kinds"
 
 type Report = { head: string[]; total: number; rows: string[][]; text: string }
 const reportUrl = (key: string, file: string) => `/api/pipeline/report?key=${encodeURIComponent(key)}&file=${encodeURIComponent(file)}`
@@ -133,14 +134,16 @@ function StepDetail({ step, ticketKey }: { step: ReleaseStep; ticketKey: string 
   )
 }
 
+// A step a person does (a store release, a merge only its owner approves) stands out until it is done.
+const isYours = (step: ReleaseStep) => step.kind === "manual" && (step.status === "pending" || step.status === "waiting")
 function StepRow({ step, ticketKey, isAtHand, onAct }: { step: ReleaseStep; ticketKey: string; isAtHand: boolean; onAct: (action: "approve" | "skip", value?: string) => void }) {
   const isFaint = step.status === "pending" || step.status === "skipped"
   const { icon: Icon, name } = kindOf(step)
   return (
-    <li className="grid grid-cols-[15px_minmax(0,1fr)] gap-x-2.5 gap-y-1.5 border-t border-line py-2.5 first:border-t-0">
+    <li className={cn("grid grid-cols-[15px_minmax(0,1fr)] gap-x-2.5 gap-y-1.5 border-t border-line py-2.5 first:border-t-0", isYours(step) && "-mx-2.5 rounded-[8px] border-transparent bg-ask-soft px-2.5 [&+li]:border-transparent")}>
       <span className="mt-[2px]"><Mark step={step} /></span>
-      <span className={cn("flex items-baseline gap-2 text-[13px] leading-[1.45]", isFaint ? "text-text-muted" : "text-text", step.status === "waiting" && "font-semibold")}>
-        <Icon size={13} className="shrink-0 translate-y-[2px] text-faint" aria-label={name} />
+      <span className={cn("flex items-baseline gap-2 text-[13px] leading-[1.45]", isFaint && !isYours(step) ? "text-text-muted" : "text-text", step.status === "waiting" && "font-semibold")}>
+        <Icon size={13} className={cn("shrink-0 translate-y-[2px]", isYours(step) ? "text-ask" : "text-faint")} aria-label={name} />
         <span className="min-w-0">{step.title}{step.kind === "tag" && step.value && step.status !== "waiting" ? <span className="font-mono text-xs text-faint"> {step.value}</span> : null}</span>
       </span>
       <StepDetail step={step} ticketKey={ticketKey} />
@@ -162,77 +165,20 @@ function StepRow({ step, ticketKey, isAtHand, onAct }: { step: ReleaseStep; tick
 export function ReleaseSteps({ ticketKey, release, after, isPreview = false, onAct }: { ticketKey: string; release: Release; after?: After; isPreview?: boolean; onAct?: (step: string, action: "approve" | "skip", value?: string) => void }) {
   const atHand = isPreview ? undefined : release.steps.find(s => s.status !== "done" && s.status !== "skipped")
   return (
-    <div className="flex flex-col gap-1">
-      <h3 className="m-0 flex items-baseline gap-2 text-[13px] font-semibold">
-        {isPreview ? `What the deploy to ${release.env} does` : release.env === "staging" ? "Staging" : "Prod"}
-        {!isPreview && <span className="text-xs font-medium text-faint tabular-nums">{release.steps.filter(s => s.status === "done" || s.status === "skipped").length} of {release.steps.length}</span>}
-      </h3>
+    <Section title="Deploy" extra={isPreview ? release.steps.length : `${release.steps.filter(s => s.status === "done" || s.status === "skipped").length} of ${release.steps.length}`}>
       <ol className="m-0 list-none p-0">
         {release.steps.map(s => <StepRow key={s.id} step={s} ticketKey={ticketKey} isAtHand={s.id === atHand?.id} onAct={(action, value) => onAct?.(s.id, action, value)} />)}
         {after && <AfterRow after={after} />}
       </ol>
-    </div>
+    </Section>
   )
 }
 
-// The steps as a row of their kinds' icons, each in its state's colour (its
-// name on hover); the step at hand stands out. Under it, a legend of the
-// kinds it has.
-const RAIL: Record<ReleaseStep["status"], string> = {
-  done: "bg-work-soft text-work border-transparent",
-  skipped: "border-dashed border-line-strong text-faint",
-  waiting: "bg-ask-soft text-ask border-ask",
-  running: "bg-work-soft text-work border-work animate-pulse",
-  failed: "bg-bad-soft text-bad border-bad",
-  pending: "border-line-strong text-faint",
-}
 // After its steps, the agent stage that follows the release (the test in
-// staging, the check in prod): dashed until it starts, so the whole way shows.
+// staging, the check in prod), so the whole way shows.
 export type After = { title: string; status: ReleaseStep["status"] }
-export function ReleaseRail({ release, after }: { release: Release; after?: After }) {
-  const kinds = [...new Set(release.steps.map(s => kindOf(s).name)), ...(after ? ["Agent"] : [])]
-  return (
-    <div className="flex flex-col gap-2.5">
-      <ol className="m-0 flex list-none items-center p-0">
-        {release.steps.map((s, i) => {
-          const { icon: Icon, name } = kindOf(s)
-          return (
-            <li key={s.id} className="flex min-w-0 flex-1 items-center last:flex-none">
-              <span title={`${s.title}${s.detail ? ` · ${s.detail}` : ""}`} aria-label={`${name}: ${s.title}, ${s.status}`}
-                className={cn("grid size-8 shrink-0 place-items-center rounded-[8px] border", RAIL[s.status])}>
-                {s.status === "done" ? <Check size={14} strokeWidth={2.6} /> : <Icon size={15} />}
-              </span>
-              {(i < release.steps.length - 1 || after) && <i className={cn("h-px min-w-1 flex-1", s.status === "done" || s.status === "skipped" ? "bg-work" : "bg-line-strong")} />}
-            </li>
-          )
-        })}
-        {after && (
-          <li className="flex flex-none items-center">
-            <span title={after.title} aria-label={`Agent: ${after.title}, ${after.status}`}
-              className={cn("grid size-8 shrink-0 place-items-center rounded-full border", after.status === "pending" ? "border-dashed border-text-muted text-text-muted" : RAIL[after.status])}>
-              {after.status === "done" ? <Check size={14} strokeWidth={2.6} /> : <Bot size={15} />}
-            </span>
-          </li>
-        )}
-      </ol>
-      <span className="flex flex-wrap gap-x-3.5 gap-y-1 text-[11.5px] text-faint">
-        {kinds.map(k => {
-          const Icon = k === "Agent" ? Bot : k === COMMAND.name ? COMMAND.icon : Object.values(KIND).find(x => x.name === k)!.icon
-          return <span key={k} className="inline-flex items-center gap-1"><Icon size={12} />{k}</span>
-        })}
-      </span>
-    </div>
-  )
-}
 
-// Only the step at hand, with its button, report and links.
-export function StepAtHand({ ticketKey, release, onAct }: { ticketKey: string; release: Release; onAct: (step: string, action: "approve" | "skip", value?: string) => void }) {
-  const step = release.steps.find(s => s.status !== "done" && s.status !== "skipped")
-  if (!step) return null
-  return <ol className="m-0 list-none rounded-[10px] border border-line bg-surface px-3"><StepRow step={step} ticketKey={ticketKey} isAtHand onAct={(action, value) => onAct(step.id, action, value)} /></ol>
-}
-
-// The agent stage after the release, as the list's last row: the same as the rail's last node.
+// The agent stage after the release, as the list's last row.
 function AfterRow({ after }: { after: After }) {
   const step = { status: after.status } as ReleaseStep
   return (

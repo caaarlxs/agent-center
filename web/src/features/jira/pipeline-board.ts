@@ -28,6 +28,8 @@ export const nodeOf = (stage: Stage): Stage => (stage === "test" ? "staging" : s
 export const waitingStep = (state: PipelineState): ReleaseStep | undefined =>
   state.status === "running" ? state.release?.steps.find(s => s.status === "waiting") : undefined
 export const isRelease = (stage: Stage) => stage === "staging" || stage === "prod"
+// A job of a specialist (lib/jobs.ts), not a ticket of the pipeline.
+export const isJob = (state: PipelineState) => "loose" in state
 
 // Done with its stage (and nothing to fix or failing), a ticket waits at the
 // next one's door (its column). Checked in prod, it is done: it waits for nothing.
@@ -90,4 +92,13 @@ export function releasePasses(state: PipelineState, stage: Stage): ReleasePass[]
     const past = isLive ? null : { ...state, release: release ?? null, results: test?.kept?.results ?? [], stage: test ? agent : stage, status: "failed" as const, threads: {} }
     return { n: r.n, startedAt: r.startedAt, isLive, past }
   })
+}
+
+// What a test (or a check in prod) left: its own results, and the ones of the passes
+// before it that it did not try again (a test again tries only what failed), the latest first.
+export function carriedResults(state: PipelineState): TestResult[] {
+  const runs = (state.history ?? []).filter(r => r.stage === state.stage && r.kept?.results)
+  const at = runs.findIndex(r => r.kept!.results === state.results)
+  const seen = new Set((state.results ?? []).map(r => r.id))
+  return (at >= 0 ? runs.slice(0, at) : runs).reverse().flatMap(r => r.kept!.results!).filter(r => !seen.has(r.id) && !!seen.add(r.id))
 }

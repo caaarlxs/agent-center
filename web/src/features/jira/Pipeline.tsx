@@ -10,7 +10,7 @@
 // it; the answers go to Jira and start the stage again. The Ticket tab holds
 // what Jira says of it and every run with what it spent. On someone else's
 // ticket it runs only once you take it (two clicks: it is assigned to you).
-import { AlertTriangle, Check, ChevronRight, CircleHelp, Database, FastForward, FlaskConical, ListChecks, Play, Route, Send, ShieldCheck } from "lucide-react"
+import { AlertTriangle, Check, ChevronRight, FastForward, Play, ShieldCheck } from "lucide-react"
 import { useEffect, useState, type ReactNode } from "react"
 import { toast } from "@/lib/notify"
 import { Button } from "@/components/ui/button"
@@ -30,23 +30,24 @@ import { ago } from "@/features/session/state"
 import { repoDot } from "@/features/session/state"
 import type { Helper, Step } from "@server/activity"
 import { sentBackSince } from "@server/sent-back"
-import type { Asked, ChecklistItem, Finding, PipelineState, PlanScript, Run, Severity, Stage, TestResult, Turn, Unit } from "@server/pipeline"
+import type { PipelineState, Run, Stage, Unit } from "@server/pipeline"
 import type { Check as BoardCheck } from "@server/checks"
 import { deliverablesOf } from "@server/scope"
 import { MODELS } from "@/features/prompt/Settings"
 import { PipelineMark, liveLine, startText, startingText, statusText } from "./PipelineMark"
-import { STAGES, STAGE_KEYS, releasePasses, releaseShown, costOf, dollars, isRelease, nextStage, nodeOf, passesOf, stageAt, toFix, tokens, tonesOf } from "./pipeline-board"
-import { ReleaseRail, ReleaseSteps, SkipFailed, StepAtHand, type After } from "./Release"
+import { STAGES, STAGE_KEYS, releasePasses, releaseShown, costOf, dollars, failed, isJob, isRelease, nextStage, nodeOf, passesOf, stageAt, toFix, tokens, tonesOf } from "./pipeline-board"
+import { SkipFailed } from "./Release"
 import { StageTabs, type Tab } from "./StageTabs"
+import { AskedList, BuildPanel, Checklist, PlanPanel, lastDecisions, RefinePanel, ReleasePanel, ReviewPanel, TestPanel, afterOf, subtasksOf } from "./StagePanels"
+import { Details, FoldButton } from "./Fold"
 import { PassPicker, type Pass } from "./PassPicker"
 import { TicketMenu } from "./TicketMenu"
 import { Section } from "./kinds"
-import { CHANGED, changed, useConfirm } from "./confirm"
+import { CHANGED, useConfirm } from "./confirm"
 import { act } from "./feedback"
 import { Proposed, TicketsIfAgreed } from "./Proposals"
 import type { Proposal } from "@server/proposals"
 export { useConfirm }
-import { Evidence } from "./Evidence"
 import { Ask, isWaiting } from "./Ask"
 import { SendBack } from "./SendBack"
 import type { Release } from "@server/release"
@@ -77,7 +78,7 @@ function Decision({ ticketKey, n, question, context, proposal, tickets = [], tex
           <textarea autoFocus value={text} onChange={e => onChange(e.target.value)} rows={2}
             className="max-h-[280px] min-h-[60px] resize-none rounded-[8px] border border-brand bg-surface px-3 py-2 text-[13px] leading-[1.55] outline-none [field-sizing:content] focus:shadow-[0_0_0_3px_var(--brand-soft)]" />
         ) : (
-          <Markdown className="border-l-2 border-line-strong pl-3 text-[13px] text-text-muted">{proposal || "No proposal"}</Markdown>
+          <Markdown className="border-l border-line-strong pl-3 text-[13px] text-text-muted">{proposal || "No proposal"}</Markdown>
         )}
         {tickets.length > 0 && <TicketsIfAgreed ticketKey={ticketKey} tickets={tickets} />}
         <button className="self-start text-xs font-semibold text-faint transition-colors duration-120 hover:text-text"
@@ -127,7 +128,6 @@ type Activity = { steps: Step[]; helpers: Helper[]; units: Unit[]; checked?: str
 const ACTIVITY_MS = 4_000
 
 // A job's (lib/jobs.ts) by its id: a state with "loose" in it.
-export const isJob = (state: PipelineState) => "loose" in state
 export function useActivity(key: string, isOn = true, isOfJob = false) {
   const [activity, setActivity] = useState<Activity | null>(null)
   useEffect(() => {
@@ -138,29 +138,6 @@ export function useActivity(key: string, isOn = true, isOfJob = false) {
     return () => clearInterval(timer)
   }, [key, isOn, isOfJob])
   return activity
-}
-
-// The plan's to-do list in plain words, each item ticked once the build has
-// done it (the one it works on next, breathing, while it builds).
-function Checklist({ items, checked, isBuilding }: { items: ChecklistItem[]; checked: string[]; isBuilding: boolean }) {
-  const done = new Set(checked)
-  const next = isBuilding ? items.find(i => !done.has(i.id))?.id : undefined
-  return (
-    <div className="flex flex-col gap-2">
-      <h3 className="m-0 flex items-baseline gap-2 text-[13px] font-semibold">To do<span className="text-xs font-medium text-faint tabular-nums">{items.filter(i => done.has(i.id)).length} of {items.length}</span></h3>
-      <ol className="m-0 flex list-none flex-col gap-1.5 p-0">
-        {items.map(i => (
-          <li key={i.id} className="flex items-start gap-2.5 text-[13px] leading-[1.45]">
-            <span className={cn("mt-[3px] grid size-[15px] shrink-0 place-items-center rounded-full border transition-colors duration-200",
-              done.has(i.id) ? "border-work bg-work text-background" : i.id === next ? "border-work" : "border-line-strong")}>
-              {done.has(i.id) ? <Check size={10} strokeWidth={3} /> : i.id === next ? <i className="run-dot size-[5px] rounded-full bg-work" /> : null}
-            </span>
-            <span className={done.has(i.id) ? "text-text-muted" : "text-text"}>{i.text}</span>
-          </li>
-        ))}
-      </ol>
-    </div>
-  )
 }
 
 const stepText = (s: Step) => `${s.tool} · ${s.text}`
@@ -213,122 +190,6 @@ function Units({ units }: { units: Unit[] }) {
         </li>
       ))}
     </ol>
-  )
-}
-
-// The scripts the plan runs on the data: what each does, in which repo,
-// when, and where (the staging stage runs them, a report each time).
-function Scripts({ scripts, units }: { scripts: PlanScript[]; units: Unit[] }) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <h3 className="m-0 text-[13px] font-semibold">Scripts on the data</h3>
-      <ol className="m-0 flex list-none flex-col gap-2 p-0">
-        {scripts.map(x => {
-          const unit = units.find(u => u.id === x.unit)
-          return (
-            <li key={x.id} className="flex flex-col gap-0.5">
-              <span className="text-[13px] leading-[1.45]">{x.title}</span>
-              <span className="flex min-w-0 items-baseline gap-2 text-[11.5px] text-faint">
-                {unit && <span className="inline-flex shrink-0 items-center gap-1.5"><i className="size-[7px] rounded-[2px]" style={{ background: repoDot(unit.repo) }} />{unit.repo}</span>}
-                <span className="min-w-0 truncate font-mono text-[11px]">{x.command}</span>
-              </span>
-              {(x.when || x.envs.length > 0) && <span className="text-[11.5px] text-faint">{[x.when, x.envs.join(" → ")].filter(Boolean).join(" · ")}</span>}
-            </li>
-          )
-        })}
-      </ol>
-    </div>
-  )
-}
-
-// What the review found, the worst first: each says what fails and where (a
-// click shows why and the fix); the ones a build fixed since, ticked.
-const SEVERITY: Record<Severity, { rank: number; dot: string }> = { blocker: { rank: 0, dot: "bg-bad" }, major: { rank: 1, dot: "bg-ask" }, minor: { rank: 2, dot: "bg-line-strong" } }
-
-function FindingRow({ finding: f, unit, isFixed, isPublished = false, isChosen, onChoose, ask }: { finding: Finding; unit: Unit | undefined; isFixed: boolean; isPublished?: boolean; isChosen: boolean | null; onChoose: () => void; ask?: ReactNode }) {
-  const [isOpen, setOpen] = useState(false)
-  const where = f.file ? `${f.file}${f.line ? `:${f.line}` : ""}` : ""
-  return (
-    <li className="flex items-start gap-2.5 border-t border-line first:border-t-0">
-      {isChosen !== null && (
-        <input type="checkbox" checked={isChosen} onChange={onChoose} aria-label={`Fix ${f.title}`}
-          className="mt-[13px] size-3.5 shrink-0 cursor-pointer accent-(--brand)" />
-      )}
-      <div className="min-w-0 flex-1">
-      <button className="grid w-full grid-cols-[14px_minmax(0,1fr)_auto] items-baseline gap-x-2.5 gap-y-0.5 py-2 text-left" onClick={() => setOpen(o => !o)} aria-expanded={isOpen}>
-        {isFixed ? <Check size={12} className="text-work" /> : <i className={cn("size-2 translate-y-[-1px] rounded-full", SEVERITY[f.severity].dot)} title={f.severity} />}
-        <span className={cn("text-[13px] leading-[1.45]", isFixed ? "text-text-muted" : "text-text")}>{f.title}</span>
-        {/* The build says it fixed it: only the next review confirms it. */}
-        <span className={cn("text-[11px]", isFixed ? "font-semibold text-ask" : "text-faint")}>{isFixed ? "fixed · to confirm" : isPublished ? `${f.severity} · published` : f.severity}</span>
-        <span className="col-start-2 flex min-w-0 items-baseline gap-2 text-[11.5px] text-faint">
-          {unit && <span className="inline-flex shrink-0 items-center gap-1.5"><i className="size-[7px] rounded-[2px]" style={{ background: repoDot(unit.repo) }} />{unit.repo}</span>}
-        </span>
-      </button>
-      {isOpen && (
-        <div className="ml-6 flex flex-col gap-2 pb-3 text-[13px] leading-[1.55]">
-          {/* For you first; the agent's own words (the file, the case, the fix) folded. */}
-          {f.plain ? (
-            <>
-              <p className="m-0 text-text">{f.plain}</p>
-              <Details label="Technical detail"><Technical where={where} finding={f} /></Details>
-            </>
-          ) : <Technical where={where} finding={f} />}
-          {ask}
-          {unit?.pr && <a href={`${unit.pr}/files`} target="_blank" rel="noreferrer" className="self-start text-xs font-semibold text-brand no-underline hover:underline">Open in PR #{unit.pr.split("/").pop()}</a>}
-        </div>
-      )}
-      </div>
-    </li>
-  )
-}
-
-function Technical({ where, finding: f }: { where: string; finding: Finding }) {
-  return (
-    <div className="flex flex-col gap-2">
-      {where && <span className="truncate font-mono text-[11px] text-faint">{where}</span>}
-      {f.detail && <p className="m-0 text-text-muted">{f.detail}</p>}
-      {f.fix && <p className="m-0 border-l-2 border-line-strong pl-3 text-text-muted">{f.fix}</p>}
-    </div>
-  )
-}
-
-// You choose what the build fixes: the blockers and majors come chosen, the
-// minors not; one button fixes them all in one run. With blockers chosen it
-// is the next step; with only minors, a quiet one beside staging.
-// A job's review (lib/jobs.ts) publishes what you chose to its PRs instead: it asks once more.
-function PublishButton({ n, onGo }: { n: number; onGo: () => void }) {
-  const [isAsking, confirm] = useConfirm()
-  const label = `Publish ${n} to the PRs`
-  return (
-    <Button variant={isAsking ? "destructive" : "outline"} className="mt-1 h-8 self-start gap-1.5 text-xs" onClick={() => confirm(onGo)}>
-      <Send size={13} />{isAsking ? `Sure? ${label}` : label}
-    </Button>
-  )
-}
-
-function Findings({ state, onFix, onPublish }: { state: PipelineState; onFix: (ids: string[]) => void; onPublish?: (ids: string[]) => void }) {
-  const findings = [...(state.findings ?? [])].sort((a, b) => SEVERITY[a.severity].rank - SEVERITY[b.severity].rank)
-  const fixed = new Set(state.fixed ?? [])
-  const published = new Set((state as { published?: string[] }).published ?? [])
-  const canChoose = state.stage === "review" && (state.status === "ready" || state.status === "needs-info") && (isJob(state) ? !!onPublish : state.status === "ready")
-  const [picked, setChosen] = useState(() => new Set(findings.filter(f => f.severity !== "minor").map(f => f.id)))
-  // What is published already is never chosen again.
-  const chosen = new Set([...picked].filter(id => !published.has(id)))
-  const choose = (id: string) => setChosen(c => (c.has(id) ? new Set([...c].filter(x => x !== id)) : new Set([...c, id])))
-  const isBlocking = findings.some(f => chosen.has(f.id) && f.severity !== "minor")
-  return (
-    <div className="flex flex-col gap-1">
-      <ol className="m-0 list-none p-0">
-        {findings.map(f => <FindingRow key={f.id} finding={f} unit={state.units?.find(u => u.id === f.unit)} isFixed={fixed.has(f.id)} isPublished={published.has(f.id)} isChosen={canChoose && !published.has(f.id) ? chosen.has(f.id) : null} onChoose={() => choose(f.id)}
-          ask={isJob(state) ? undefined : <Ask ticketKey={state.key} about={`finding:${f.id}`} turns={state.threads?.[`finding:${f.id}`]} />} />)}
-      </ol>
-      {canChoose && chosen.size > 0 && onPublish && <PublishButton n={chosen.size} onGo={() => onPublish([...chosen])} />}
-      {canChoose && chosen.size > 0 && !onPublish && (
-        <Button variant={isBlocking ? "default" : "outline"} className="mt-1 h-8 self-start gap-1.5 text-xs" onClick={() => onFix([...chosen])}>
-          <Play size={13} className="fill-current" />Fix {chosen.size} with build
-        </Button>
-      )}
-    </div>
   )
 }
 
@@ -444,34 +305,7 @@ export function Runs({ history, now }: { history: Run[]; now: number }) {
   )
 }
 
-export function FoldButton({ label, isOpen, onToggle }: { label: ReactNode; isOpen: boolean; onToggle: () => void }) {
-  return (
-    <button className={cn("inline-flex items-center gap-1 text-xs font-semibold transition-colors duration-120", isOpen ? "text-text" : "text-text-muted hover:text-text")} onClick={onToggle} aria-expanded={isOpen}>
-      <ChevronRight size={13} className={cn("transition-transform duration-150 ease-(--ease-out)", isOpen && "rotate-90")} />{label}
-    </button>
-  )
-}
-
 // ---------- the stage you pick ----------
-
-const Tile = ({ children, className }: { children: ReactNode; className?: string }) => (
-  <div className={cn("flex min-w-0 flex-col gap-1 rounded-[10px] bg-surface px-3 py-2.5", className)}>{children}</div>
-)
-const RepoName = ({ repo }: { repo: string }) => (
-  <span className="inline-flex min-w-0 items-center gap-1.5 text-[13px] font-semibold"><i className="size-2 shrink-0 rounded-[3px]" style={{ background: repoDot(repo) }} /><span className="truncate">{repo}</span></span>
-)
-const Tiles = ({ children }: { children: ReactNode }) => <div className="grid grid-cols-[repeat(auto-fit,minmax(130px,1fr))] gap-2">{children}</div>
-
-// What a stage keeps for whoever goes looking: folded.
-function Details({ children, label = "Details" }: { children: ReactNode; label?: string }) {
-  const [isOpen, setOpen] = useState(false)
-  return (
-    <div className="flex flex-col gap-3">
-      <FoldButton label={label} isOpen={isOpen} onToggle={() => setOpen(o => !o)} />
-      {isOpen && children}
-    </div>
-  )
-}
 
 // An agent at work in this stage: how far it got (its to-do list, its units),
 // its subagents; every step it took, folded.
@@ -504,152 +338,7 @@ function ThisPass({ text }: { text: string }) {
   return (
     <div className="flex flex-col gap-1.5">
       <span className="text-xs font-semibold text-text-muted">This pass</span>
-      <p className="m-0 line-clamp-6 border-l-2 border-line-strong pl-3 text-[13px] leading-[1.55] whitespace-pre-wrap text-text-muted">{text}</p>
-    </div>
-  )
-}
-
-// The sub-tasks a unit covers, in a line (the single one of older plans too).
-const subtasksOf = (u: Unit) => (u.subtasks?.length ? u.subtasks.join(", ") : u.subtask) || null
-
-// The refinement: the decisions it asked for and how many runs it took.
-function RefinePanel({ state }: { state: PipelineState }) {
-  const runs = (state.history ?? []).filter(r => (r.stage ?? "refine") === "refine")
-  const asked = runs.reduce((n, r) => n + r.questions, 0)
-  return (
-    <Tiles>
-      <Tile><span className="text-[11.5px] text-faint">Decisions asked</span><span className="text-[20px] leading-none font-semibold tabular-nums">{asked}</span></Tile>
-      <Tile><span className="text-[11.5px] text-faint">Runs</span><span className="text-[20px] leading-none font-semibold tabular-nums">{runs.length}</span></Tile>
-      <Tile><span className="text-[11.5px] text-faint">Cost</span><span className="text-[20px] leading-none font-semibold tabular-nums">≈{dollars(costOf(runs))}</span></Tile>
-    </Tiles>
-  )
-}
-
-export function PlanPanel({ state, steps }: { state: PipelineState; steps: number | null }) {
-  const units = state.units ?? []
-  return (
-    <div className="flex flex-col gap-3">
-      <Tiles>{units.map(u => <Tile key={u.id}><RepoName repo={u.repo} /><span className="text-[11.5px] text-faint">{subtasksOf(u) ?? u.id}</span></Tile>)}</Tiles>
-      <span className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-text-muted">
-        {state.checklist?.length ? <span className="inline-flex items-center gap-1.5"><ListChecks size={13} />{state.checklist.length} to-dos</span> : null}
-        {state.scripts?.length ? <span className="inline-flex items-center gap-1.5"><Database size={13} />{state.scripts.length} script{state.scripts.length === 1 ? "" : "s"} on the data</span> : null}
-        {steps ? <span className="inline-flex items-center gap-1.5"><Route size={13} />release in {steps} steps</span> : null}
-      </span>
-      <Details>
-        <Units units={units} />
-        {state.scripts?.length ? <Scripts scripts={state.scripts} units={units} /> : null}
-        {state.checklist?.length ? <Checklist items={state.checklist} checked={state.checked ?? []} isBuilding={false} /> : null}
-      </Details>
-    </div>
-  )
-}
-
-export function BuildPanel({ state }: { state: PipelineState }) {
-  const units = state.units ?? []
-  return (
-    <div className="flex flex-col gap-3">
-      <Tiles>
-        {units.map(u => (
-          <Tile key={u.id}>
-            <RepoName repo={u.repo} />
-            <span className="flex items-center justify-between text-[11.5px]">
-              {u.pr ? <a href={u.pr} target="_blank" rel="noreferrer" className="font-mono font-semibold text-brand no-underline hover:underline">PR #{u.pr.split("/").pop()}</a> : <span className="text-faint">No PR</span>}
-              {u.status === "done" ? <span className="inline-flex items-center gap-1 text-work" title="Tests and checks passed"><FlaskConical size={12} /><Check size={12} strokeWidth={2.6} /></span>
-                : u.status === "failed" ? <span className="text-bad">Failed</span> : null}
-            </span>
-          </Tile>
-        ))}
-      </Tiles>
-      <Details>
-        <Units units={units} />
-        {state.checklist?.length ? <Checklist items={state.checklist} checked={state.checked ?? []} isBuilding={false} /> : null}
-      </Details>
-    </div>
-  )
-}
-
-const COUNTS: [Severity, string, string][] = [["blocker", "Blocker", "text-bad"], ["major", "Major", "text-ask"], ["minor", "Minor", "text-text"]]
-export function ReviewPanel({ state, onFix, onPublish }: { state: PipelineState; onFix: (ids: string[]) => void; onPublish?: (ids: string[]) => void }) {
-  const findings = state.findings ?? []
-  return (
-    <div className="flex flex-col gap-3">
-      <div className="grid grid-cols-3 gap-2">
-        {COUNTS.map(([severity, label, tone]) => {
-          const n = findings.filter(f => f.severity === severity).length
-          return <Tile key={severity}><span className="text-[11.5px] text-faint">{label}</span><span className={cn("text-[20px] leading-none font-semibold tabular-nums", n ? tone : "text-faint")}>{n}</span></Tile>
-        })}
-      </div>
-      {findings.length > 0 && <Findings state={state} onFix={onFix} onPublish={onPublish} />}
-    </div>
-  )
-}
-
-// A release: its steps as a row, the one at hand with its button; every step, folded.
-// The agent stage after a release, as the rail's last node: the test in staging, the check in prod.
-const afterOf = (env: Stage, state: PipelineState): After => {
-  const agent = env === "staging" ? "test" : "smoke"
-  const title = env === "staging" ? "Test in staging" : "Check prod"
-  if (state.stage !== agent) return { title, status: "pending" }
-  const status = state.status === "running" ? "running" : state.status === "failed" || failing(state.results).length ? "failed" : state.status === "needs-info" || (state.results ?? []).some(r => r.status === "untested") ? "waiting" : "done"
-  return { title, status }
-}
-const failing = (results: TestResult[] | undefined) => (results ?? []).filter(r => r.status === "fail")
-
-function ReleasePanel({ ticketKey, release, after, isLive, isPreview, onStep }: { ticketKey: string; release: Release; after: After; isLive: boolean; isPreview: boolean; onStep: OnStep }) {
-  return (
-    <div className="flex flex-col gap-3">
-      <ReleaseRail release={release} after={after} />
-      {isLive && <StepAtHand ticketKey={ticketKey} release={release} onAct={onStep} />}
-      <Details label="Every step"><ReleaseSteps ticketKey={ticketKey} release={release} after={after} isPreview={isPreview} /></Details>
-    </div>
-  )
-}
-
-// What a test (in staging) or a check (in prod) found: how many criteria
-// pass and fail, then each one (its evidence a click away).
-// One the test could not try says why, and you check it by hand (it then passes, saying so).
-const RESULT_MARK = {
-  pass: <Check size={13} strokeWidth={2.6} className="shrink-0 translate-y-[2px] text-work" />,
-  fail: <AlertTriangle size={13} className="shrink-0 translate-y-[2px] text-bad" />,
-  untested: <CircleHelp size={13} className="shrink-0 translate-y-[2px] text-ask" />,
-}
-function ResultRow({ result: r, ticketKey, canCheck, turns }: { result: TestResult; ticketKey: string; canCheck: boolean; turns?: Turn[] }) {
-  const [isOpen, setOpen] = useState(false)
-  return (
-    <li className="border-t border-line first:border-t-0">
-      <div className="flex items-baseline gap-2">
-        <button className="flex min-w-0 flex-1 items-baseline gap-2.5 py-2 text-left" onClick={() => setOpen(o => !o)} aria-expanded={isOpen}>
-          {RESULT_MARK[r.status]}
-          <span className="text-[13px] leading-[1.45]">{r.criterion}</span>
-        </button>
-        {r.status === "untested" && canCheck && (
-          <button className="shrink-0 text-xs font-semibold text-text-muted hover:text-text" onClick={() => void act("/api/pipeline/checked", { key: ticketKey, ids: [r.id] }, "Checked by hand").then(ok => ok && changed())}>Checked by hand</button>
-        )}
-      </div>
-      {r.summary && r.status !== "pass" && <p className="m-0 ml-6 pb-2 text-[13px] leading-[1.55] text-text-muted">{r.summary}</p>}
-      {isOpen && r.evidence && <p className="m-0 ml-6 pb-3 font-mono text-[11.5px] leading-[1.55] break-words whitespace-pre-wrap text-text-muted">{r.evidence}</p>}
-      {canCheck && r.status !== "pass" && <Ask ticketKey={ticketKey} about={`result:${r.id}`} turns={turns} className="mb-2.5 ml-6" />}
-      <Evidence ticketKey={ticketKey} files={r.files ?? []} />
-    </li>
-  )
-}
-
-const RESULT_ORDER: TestResult["status"][] = ["fail", "untested", "pass"]
-const RESULT_TILES: [TestResult["status"], string, string][] = [["pass", "Pass", "text-work"], ["fail", "Fail", "text-bad"], ["untested", "Untested", "text-ask"]]
-export function TestPanel({ state, release }: { state: PipelineState; release: Release | null }) {
-  const results = state.results ?? []
-  const count = (status: TestResult["status"]) => results.filter(r => r.status === status).length
-  const canCheck = state.status === "ready" && !isJob(state)
-  return (
-    <div className="flex flex-col gap-3">
-      {release && <ReleaseRail release={release} after={afterOf(release.env, state)} />}
-      <div className="grid grid-cols-3 gap-2">
-        {RESULT_TILES.map(([status, label, tone]) => (
-          <Tile key={status}><span className="text-[11.5px] text-faint">{label}</span><span className={cn("text-[20px] leading-none font-semibold tabular-nums", count(status) ? tone : "text-faint")}>{count(status)}</span></Tile>
-        ))}
-      </div>
-      {results.length > 0 && <ol className="m-0 list-none p-0">{[...results].sort((a, b) => RESULT_ORDER.indexOf(a.status) - RESULT_ORDER.indexOf(b.status)).map(r => <ResultRow key={r.id} result={r} ticketKey={state.key} canCheck={canCheck} turns={state.threads?.[`result:${r.id}`]} />)}</ol>}
-      {release && <Details label="The deploy"><ReleaseSteps ticketKey={state.key} release={release} after={afterOf(release.env, state)} /></Details>}
+      <p className="m-0 line-clamp-6 max-w-[72ch] text-[13px] leading-[1.55] whitespace-pre-wrap text-text-muted">{text}</p>
     </div>
   )
 }
@@ -682,20 +371,19 @@ function Checks({ checks }: { checks: BoardCheck[] }) {
   )
 }
 
-function StagePanel({ stage, state, preview, onRun, onStep }: { stage: Stage; state: PipelineState; preview: Release | null; onRun: (stage?: Stage, fix?: string[]) => void; onStep: OnStep }) {
+// A stage's pass in its own shape (StagePanels.tsx); all: every unit of the ticket, for a build's pass.
+function StagePanel({ stage, state, preview, all, onRun, onStep }: { stage: Stage; state: PipelineState; preview: Release | null; all?: Unit[]; onRun: (stage?: Stage, fix?: string[]) => void; onStep: OnStep }) {
   const at = stageAt(state)
   const i = STAGE_KEYS.indexOf(stage)
   const release = releaseShown(state, preview, stage)
   // The column's agent stage at work, or done: its findings, the deploy folded.
-  if (nodeOf(state.stage) === stage && state.stage !== stage) return state.status === "running"
-    ? <div className="flex flex-col gap-3">{release && <ReleaseRail release={release} after={afterOf(stage, state)} />}<AtWork state={state} /></div>
-    : <TestPanel state={state} release={release} />
-  if (isRelease(stage) && release) return <ReleasePanel ticketKey={state.key} release={release} after={afterOf(stage, state)} isLive={release === state.release && state.status === "running"} isPreview={release === preview} onStep={onStep} />
+  if (nodeOf(state.stage) === stage && state.stage !== stage) return state.status === "running" ? <AtWork state={state} /> : <TestPanel state={state} release={release} />
+  if (isRelease(stage) && release) return <ReleasePanel ticketKey={state.key} release={release} after={afterOf(stage, state)} isPreview={release === preview} onStep={release === state.release && state.status === "running" ? onStep : undefined} />
   if (i > at) return <p className="m-0 text-[13px] text-faint">Starts after {STAGES[i - 1]}.</p>
   if (i === at && state.status === "running") return <AtWork state={state} />
   if (stage === "refine") return <RefinePanel state={state} />
-  if (stage === "plan") return <PlanPanel state={state} steps={(state.release ?? preview)?.steps.length ?? null} />
-  if (stage === "build") return <BuildPanel state={state} />
+  if (stage === "plan") return <PlanPanel state={state} />
+  if (stage === "build") return <BuildPanel state={state} all={all} />
   if (stage === "review") return <ReviewPanel state={state} onFix={ids => onRun("build", ids)} />
   return null
 }
@@ -770,7 +458,7 @@ function NowActions({ state, preview, now, onRun, onStep }: { state: PipelineSta
 // Something a fix added that staging does not run yet (a script on the data): it goes there first, then the test.
 function AfterTest({ state, preview, onRun }: { state: PipelineState; preview: Release | null; onRun: (stage?: Stage) => void }) {
   if (state.stage !== "test" && state.stage !== "smoke") return null
-  const fails = failing(state.results).length
+  const fails = failed(state).length
   const isRetest = (state.results ?? []).some(r => r.status !== "pass")
   const hasPending = state.stage === "test" && preview?.env === "staging" && preview.steps.length > 0
   return (
@@ -810,9 +498,9 @@ const hours = (ms: number) => (ms < 3_600_000 ? `${Math.max(1, Math.round(ms / 6
 export const startedState = (state: PipelineState, stage?: Stage): PipelineState =>
   ({ ...state, stage: stage ?? state.stage, status: "running", startedAt: Date.now(), endedAt: null, error: null, sessionId: null, questions: [] })
 
-// A stage's document, folded.
-function Doc({ text }: { text: string }) {
-  const [isOpen, setOpen] = useState(false)
+// A stage's document, folded (open: all a stage left to read, as a refinement without its decisions).
+function Doc({ text, isOpenFirst = false }: { text: string; isOpenFirst?: boolean }) {
+  const [isOpen, setOpen] = useState(isOpenFirst)
   return (
     <div className="flex flex-col gap-3">
       <FoldButton label="Document" isOpen={isOpen} onToggle={() => setOpen(o => !o)} />
@@ -862,7 +550,7 @@ function StagePasses({ docs, ...props }: PassProps & { docs: number[] }) {
     <div className="flex flex-col gap-3">
       {latest && <Passes passes={passes.map(r => ({ key: r.n, at: r.startedAt, isFailed: r.status === "failed", why: r.status === "failed" ? r.error : r.cause }))}
         picked={isPast ? run.n : latest.n} onPick={n => setPicked(n === latest.n ? null : n)} />}
-      {isPast ? <PastPass run={run} {...props} /> : <><StagePanel {...props} state={latestPass(props.state, passes)} />{doc && <Doc text={doc} />}</>}
+      {isPast ? <PastPass run={run} {...props} /> : <><StagePanel {...props} all={props.state.units} state={latestPass(props.state, passes)} />{doc && <Doc text={doc} isOpenFirst={stage === "refine" && !lastDecisions(props.state)} />}</>}
     </div>
   )
 }
@@ -884,20 +572,6 @@ function Failed({ run }: { run: Run }) {
   )
 }
 
-// What a pass asked you, and what you answered (a proposal you took, dimmed).
-function AskedList({ asked }: { asked: Asked[] }) {
-  return (
-    <ol className="m-0 flex list-none flex-col gap-3 p-0">
-      {asked.map(q => (
-        <li key={q.id} className="flex flex-col gap-1">
-          <span className="text-[13px] leading-[1.45] font-semibold">{q.question}</span>
-          {q.answer !== undefined && <span className={cn("max-w-[72ch] text-[13px] leading-[1.55] whitespace-pre-wrap", q.isProposal ? "text-faint" : "text-text-muted")}>{q.answer}</span>}
-        </li>
-      ))}
-    </ol>
-  )
-}
-
 function PastPass({ stage, run, state, preview, onStep }: PassProps & { run: Run }) {
   const [doc, setDoc] = useState<string | null>(null)
   useEffect(() => void get<{ doc: string | null }>(`/api/pipeline/run-doc?key=${encodeURIComponent(state.key)}&n=${run.n}`).then(r => setDoc(r.doc), () => {}), [state.key, run.n])
@@ -907,7 +581,7 @@ function PastPass({ stage, run, state, preview, onStep }: PassProps & { run: Run
     <div className="flex flex-col gap-3">
       {run.status === "failed" && <Failed run={run} />}
       {run.kept?.asked?.length ? <AskedList asked={run.kept.asked} /> : null}
-      {run.kept && !(run.kept.asked && Object.keys(run.kept).length === 1) && <StagePanel stage={stage} state={past} preview={preview} onRun={() => {}} onStep={onStep} />}
+      {run.kept && !(run.kept.asked && Object.keys(run.kept).length === 1) && <StagePanel stage={stage} state={past} preview={preview} all={state.units} onRun={() => {}} onStep={onStep} />}
       {doc && <Doc text={doc} />}
     </div>
   )
