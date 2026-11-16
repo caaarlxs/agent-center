@@ -4,6 +4,9 @@
 
 /* Dark: <html data-theme=dark> (lib/theme.ts), the system's or Setup's choice. */
 @custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
+/* A short window: a page zoomed in (⌘+), or a small screen. What is fixed in
+   height (the sidebar, a session's header, the reply box) gets smaller. */
+@custom-variant short (@media (max-height: 620px));
 
 /* The board's own palette (the classic board's tokens, styles.css:3-81).
    Surfaces climb in lightness, the same hues in both modes: the frame
@@ -344,6 +347,8 @@ html[data-theme-switch]::view-transition-new(root) { animation: theme-curtain 60
 /* While you dictate the voice glow speaks: the box keeps a quiet border. */
 .composer-box.listening [data-slot=input-group], .composer-box.listening [data-slot=input-group]:focus-within { border-color: var(--line-strong); box-shadow: none; }
 .composer-box textarea { font-size: 13.5px; line-height: 1.5; padding: 11px 14px 4px; min-height: 96px; max-height: 220px; field-sizing: content; }
+/* A short window (a page zoomed in): the reply box leaves room for the conversation. */
+@media (max-height: 620px) { .composer-box textarea { min-height: 44px; max-height: 120px; padding-top: 8px; } }
 .composer-box textarea::placeholder { color: var(--faint); }
 
 /* The board's spinner: a brand ring with a gap (styles.css:1141). */
