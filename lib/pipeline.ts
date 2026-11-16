@@ -91,7 +91,9 @@ export type ContextImpact = { file: string; quote: string | null; why: string; p
 export type Result = { jira?: string[]; verdict: "ready" | "needs-info"; questions: Question[]; units: Unit[]; checklist: ChecklistItem[]; findings: Finding[]; fixed: string[]; scripts: PlanScript[]; order: OrderItem[]; results: TestResult[]; contextImpact: ContextImpact[]; debt: DebtItem[]; tickets?: unknown }
 export type PipelineStatus = "running" | "needs-info" | "ready" | "failed"
 // kept: what the run left, to see each pass of a stage apart (a plan's or a build's units, a review's findings, a test's results).
-export type Kept = { units?: Unit[]; checklist?: ChecklistItem[]; findings?: Finding[]; results?: TestResult[]; release?: Release }
+// asked: the questions a run left for you, each with your answer once you gave it (none: its proposal, taken).
+export type Asked = Question & { answer?: string; isProposal?: boolean }
+export type Kept = { units?: Unit[]; checklist?: ChecklistItem[]; findings?: Finding[]; results?: TestResult[]; release?: Release; asked?: Asked[] }
 // cause: why it ran, in a word or two (Sent back, Your answers…); base: what its session had spent
 // before it (a stage's session goes on run after run: a run's spend is what it added).
 export type Run = { n: number; stage: Stage; sessionId: string | null; startedAt: number; endedAt: number | null; status: PipelineStatus; questions: number; units: number; findings?: number; error: string | null; spend?: Spend | null; kept?: Kept; cause?: string | null; base?: Spend | null }
@@ -486,7 +488,7 @@ const builtNow = (s: PipelineState) => {
   return s.deployed?.staging ? unshipped(s) : units
 }
 // What a run that ended left, by its stage.
-const keptOf = (s: PipelineState): Kept | undefined => {
+const leftBy = (s: PipelineState): Kept | undefined => {
   // A release to an environment, once it ended (well, or not): its steps, as they went.
   if (isRelease(s.stage)) return s.status !== "running" && s.release?.env === s.stage ? { release: s.release } : undefined
   if (s.status !== "ready" && s.status !== "needs-info") return undefined
@@ -496,6 +498,17 @@ const keptOf = (s: PipelineState): Kept | undefined => {
   if (s.stage === "test" || s.stage === "smoke") return { results: s.results ?? [] }
   return undefined
 }
+// And the questions it asked you, whatever its stage.
+const keptOf = (s: PipelineState): Kept | undefined => {
+  const left = leftBy(s)
+  return s.status === "needs-info" && s.questions.length ? { ...left, asked: s.questions } : left
+}
+// Your answers, kept in the run that asked: a question left blank took its proposal.
+export const withAnswers = (history: Run[], n: number, questions: Question[], answers: Record<string, string>): Run[] =>
+  history.map(r => r.n !== n ? r : { ...r, kept: { ...r.kept, asked: questions.map(q => {
+    const answer = answers[q.id]?.trim()
+    return answer ? { ...q, answer } : { ...q, answer: q.proposal, isProposal: true }
+  }) } })
 export function withRun(s: PipelineState): PipelineState {
   const kept = keptOf(s)
   const run: Run = { n: s.runs, stage: s.stage, sessionId: s.sessionId, startedAt: s.startedAt, endedAt: s.endedAt, status: s.status, questions: s.questions.length, units: s.units?.length ?? 0, ...(s.stage === "review" ? { findings: s.findings?.length ?? 0 } : {}), error: s.error, ...(kept ? { kept } : {}), ...(s.cause ? { cause: s.cause } : {}), ...(s.base ? { base: s.base } : {}) }
@@ -549,7 +562,7 @@ export async function pipelineOf(key: string) {
   const doc = async (stage: Stage) => (state ? ((await readText(join(dirOf(key), `${stage}.md`))) ?? readText(join(dirOf(key), `${stage}.summary.md`))) : null)
   // What runs put aside left: their folders, and the branches you kept when one went.
   const putAside = (await archivesOf(key)).length + (await keptBranchesOf(key)).length
-  return { putAside, state: state && (await withSpend(state)), refine: await doc("refine"), plan: await doc("plan"), build: await doc("build"), review: await doc("review"), test: await doc("test"), smoke: await doc("smoke"), preview: await previewOf(state) }
+  return { putAside, docs: await runDocs(key), state: state && (await withSpend(state)), refine: await doc("refine"), plan: await doc("plan"), build: await doc("build"), review: await doc("review"), test: await doc("test"), smoke: await doc("smoke"), preview: await previewOf(state) }
 }
 
 // What the running stage does now: its session's steps and subagents, and,
@@ -827,6 +840,9 @@ async function keepDoc(dir: string, state: PipelineState) {
   await mkdir(join(dir, "runs"), { recursive: true })
   await Bun.write(join(dir, "runs", `${state.runs}-${state.stage}.md`), text)
 }
+// The runs that left a document: the passes there is something to read of.
+const runDocs = async (key: string) =>
+  (await readdir(join(dirOf(key), "runs")).catch(() => [] as string[])).map(f => Number(f.split("-")[0])).filter(n => n > 0)
 export async function runDoc(key: string, n: number) {
   const run = (await stateOf(key))?.history?.find(r => r.n === n)
   if (!isKey(key) || !run) throw new Error("No such run")
@@ -1509,7 +1525,8 @@ export async function answerPipeline(key: string, answers: Record<string, string
       await commentOn(key, answersComment(state.questions, answers))
       await labelTicket(key, [], [LABELS.needsInfo])
     }
-    await save({ ...(await fresh(key, state.runs + 1, state.stage)), summary: state.summary })
+    const next = await fresh(key, state.runs + 1, state.stage)
+    await save({ ...next, summary: state.summary, history: withAnswers(next.history ?? [], state.runs, state.questions, answers) })
     void run(key, state.runs + 1, state.stage, undefined, { cause: "Your answers", text: answersWhy(state, answers) })
   } finally {
     starting.delete(key)

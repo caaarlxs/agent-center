@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { isStuck, releasedUnits, retestOf, sessionOf, shippedWith, unitsNow, withUnits, testedIn, askPrompt, askRefusal, fixesNow, isAbout, testFix, unshipped, blocking, checkedByHand, checkedIn, isAdopted, toFixNow, MARK, answeredAfter, answersComment, argsFor, parseResult, pipelineKeyOf, stageToRun, unbuilt, withRun, questionsComment, snapshotOf, prodWarning, autoNext, linksFigma, impactRepos } from "../lib/pipeline"
+import { isStuck, releasedUnits, retestOf, sessionOf, shippedWith, unitsNow, withUnits, testedIn, askPrompt, askRefusal, fixesNow, isAbout, testFix, unshipped, blocking, checkedByHand, checkedIn, isAdopted, toFixNow, MARK, answeredAfter, answersComment, argsFor, parseResult, pipelineKeyOf, stageToRun, unbuilt, withRun, withAnswers, questionsComment, snapshotOf, prodWarning, autoNext, linksFigma, impactRepos } from "../lib/pipeline"
 
 const questions = [
   { id: "Q1", question: "¿Cuál es el copy?", proposal: "El del ticket" },
@@ -165,6 +165,23 @@ describe("withRun", () => {
     expect(asked.history![0]).toMatchObject({ status: "needs-info", endedAt: 900, questions: 1 })
     const two = withRun({ ...asked, status: "running", runs: 2, sessionId: "s2", startedAt: 1000, endedAt: null, questions: [] })
     expect(two.history!.map(r => [r.n, r.status])).toEqual([[1, "needs-info"], [2, "running"]])
+  })
+  it("keeps the questions a run asked, whatever its stage", () => {
+    const q = { id: "Q1", question: "¿A?", proposal: "Sí" }
+    expect(withRun({ ...base, status: "needs-info", runs: 1, questions: [q] }).history![0]!.kept).toEqual({ asked: [q] })
+    expect(withRun({ ...base, stage: "review", findings: [], status: "needs-info", runs: 1, questions: [q] }).history![0]!.kept).toEqual({ findings: [], asked: [q] })
+    expect(withRun({ ...base, status: "ready", runs: 1 }).history![0]!.kept).toBeUndefined()
+  })
+})
+
+describe("withAnswers", () => {
+  const [q1, q2] = [{ id: "Q1", question: "¿A?", proposal: "Sí" }, { id: "Q2", question: "¿B?", proposal: "No" }]
+  const qs = [q1, q2]
+  const run = { n: 1, stage: "refine" as const, sessionId: null, startedAt: 0, endedAt: 1, status: "needs-info" as const, questions: 2, units: 0, error: null, kept: { asked: qs } }
+  it("keeps your answers in the run that asked; one left blank took its proposal", () => {
+    const [one, two] = withAnswers([run, { ...run, n: 2, kept: undefined }], 1, qs, { Q1: " Depende ", Q2: "" })
+    expect(one!.kept!.asked).toEqual([{ ...q1, answer: "Depende" }, { ...q2, answer: "No", isProposal: true }])
+    expect(two!.kept).toBeUndefined()
   })
 })
 

@@ -31,7 +31,7 @@ import { ago } from "@/features/session/state"
 import { repoDot } from "@/features/session/state"
 import type { Helper, Step } from "@server/activity"
 import { sentBackSince } from "@server/sent-back"
-import type { ChecklistItem, Finding, PipelineState, PlanScript, Run, Severity, Stage, TestResult, Turn, Unit } from "@server/pipeline"
+import type { Asked, ChecklistItem, Finding, PipelineState, PlanScript, Run, Severity, Stage, TestResult, Turn, Unit } from "@server/pipeline"
 import type { Check as BoardCheck } from "@server/checks"
 import { deliverablesOf } from "@server/scope"
 import type { Leftover } from "@server/cleanup"
@@ -50,7 +50,7 @@ import { Ask, isWaiting } from "./Ask"
 import { SendBack } from "./SendBack"
 import type { Release } from "@server/release"
 
-type Data = { putAside: number; state: PipelineState | null; refine: string | null; plan: string | null; build: string | null; review: string | null; test: string | null; smoke: string | null; preview: Release | null }
+type Data = { putAside: number; docs: number[]; state: PipelineState | null; refine: string | null; plan: string | null; build: string | null; review: string | null; test: string | null; smoke: string | null; preview: Release | null }
 type OnStep = (step: string, action: "approve" | "skip", value?: string) => void
 type Fold = Stage | "runs"
 const FOLLOW_MS = 5_000
@@ -946,12 +946,14 @@ function ReleasePasses({ stage, ...props }: { stage: Stage; state: PipelineState
   )
 }
 
-function StagePasses({ stage, ...props }: { stage: Stage; state: PipelineState; preview: Release | null; onRun: (stage?: Stage, fix?: string[]) => void; onStep: OnStep }) {
+// A pass there is something to see of: what it left, its document, or why it failed (the latest, always).
+const isShown = (r: Run, i: number, all: Run[], docs: number[]) => !!r.kept || docs.includes(r.n) || r.status === "failed" || i === all.length - 1
+function StagePasses({ stage, docs, ...props }: { stage: Stage; docs: number[]; state: PipelineState; preview: Release | null; onRun: (stage?: Stage, fix?: string[]) => void; onStep: OnStep }) {
   if (isRelease(stage)) return <ReleasePasses stage={stage} {...props} />
-  const passes = passesOf(props.state.history ?? [], stage)
+  const passes = passesOf(props.state.history ?? [], stage).filter((r, i, all) => isShown(r, i, all, docs))
   const [picked, setPicked] = useState<number | null>(null)
   const run = passes.find(r => r.n === picked)
-  const isPast = !!run && run !== passes.at(-1) && !!run.kept
+  const isPast = !!run && run !== passes.at(-1)
   return (
     <div className="flex flex-col gap-3">
       {passes.length > 1 && (
@@ -959,9 +961,9 @@ function StagePasses({ stage, ...props }: { stage: Stage; state: PipelineState; 
           {passes.map((r, i) => {
             const isOn = r.n === (isPast ? run!.n : passes.at(-1)!.n)
             return (
-              <button key={r.n} role="tab" aria-selected={isOn} disabled={!r.kept && i < passes.length - 1} onClick={() => setPicked(i === passes.length - 1 ? null : r.n)}
+              <button key={r.n} role="tab" aria-selected={isOn} onClick={() => setPicked(i === passes.length - 1 ? null : r.n)}
                 title={`Run ${r.n} · ${new Date(r.startedAt).toLocaleString()}`}
-                className={cn("h-6 rounded-md px-2 text-[11.5px] font-semibold transition-colors duration-100 disabled:opacity-40", isOn ? "bg-surface text-text" : "text-faint hover:text-text")}>
+                className={cn("h-6 rounded-md px-2 text-[11.5px] font-semibold transition-colors duration-100", isOn ? "bg-surface text-text" : "text-faint hover:text-text")}>
                 Pass {i + 1}{i === passes.length - 1 ? " · latest" : ""}
               </button>
             )
@@ -979,15 +981,42 @@ const latestPass = (state: PipelineState, passes: Run[]): PipelineState => {
   return passes.length > 1 && last?.kept ? { ...state, ...last.kept } : state
 }
 
+// A pass that failed: why, and its log.
+function Failed({ run }: { run: Run }) {
+  return (
+    <div className="flex items-baseline gap-2 text-[13px]">
+      <AlertTriangle size={13} className="shrink-0 translate-y-[2px] text-bad" />
+      <span className="min-w-0 flex-1 text-text-muted">{run.error ?? "Failed"}</span>
+      {run.sessionId && <button className="shrink-0 text-xs font-semibold text-text-muted hover:text-text" onClick={() => openLog(run.sessionId!)}>Log</button>}
+    </div>
+  )
+}
+
+// What a pass asked you, and what you answered (a proposal you took, dimmed).
+function AskedList({ asked }: { asked: Asked[] }) {
+  return (
+    <ol className="m-0 flex list-none flex-col gap-3 p-0">
+      {asked.map(q => (
+        <li key={q.id} className="flex flex-col gap-1">
+          <span className="text-[13px] leading-[1.45] font-semibold">{q.question}</span>
+          {q.answer !== undefined && <span className={cn("border-l-2 border-line-strong pl-3 text-[13px] leading-[1.55] whitespace-pre-wrap", q.isProposal ? "text-faint" : "text-text-muted")}>{q.answer}</span>}
+        </li>
+      ))}
+    </ol>
+  )
+}
+
 function PastPass({ stage, run, state, preview, onStep }: { stage: Stage; run: Run; state: PipelineState; preview: Release | null; onStep: OnStep }) {
   const [doc, setDoc] = useState<string | null>(null)
   const [isOpen, setOpen] = useState(false)
   useEffect(() => void get<{ doc: string | null }>(`/api/pipeline/run-doc?key=${encodeURIComponent(state.key)}&n=${run.n}`).then(r => setDoc(r.doc), () => {}), [state.key, run.n])
-  // As that pass left it; "failed" keeps every button of the panels away.
+  // As that pass left it; "failed" keeps every button of the panels away. One that left nothing shows no panel (it would show today's).
   const past: PipelineState = { ...state, ...run.kept, stage: run.stage, status: "failed", threads: {} }
   return (
     <div className="flex flex-col gap-3">
-      <StagePanel stage={stage} state={past} preview={preview} onRun={() => {}} onStep={onStep} />
+      {run.status === "failed" && <Failed run={run} />}
+      {run.kept?.asked?.length ? <AskedList asked={run.kept.asked} /> : null}
+      {run.kept && !(run.kept.asked && Object.keys(run.kept).length === 1) && <StagePanel stage={stage} state={past} preview={preview} onRun={() => {}} onStep={onStep} />}
       {doc && <FoldButton label="This pass's document" isOpen={isOpen} onToggle={() => setOpen(o => !o)} />}
       {isOpen && doc && <Markdown className="text-[13px]">{doc}</Markdown>}
     </div>
@@ -1053,7 +1082,7 @@ export function Pipeline({ ticket, onTaken }: { ticket: Ticket; onTaken: () => v
         {state?.checks?.length && state.status !== "running" ? <Checks checks={state.checks} /> : null}
         {state && <Proposed state={state} />}
         {state?.status === "needs-info" ? <Decisions key={state.askedAt} ticketKey={ticket.key} state={state} onSent={() => void load()} />
-          : state && <StagePasses key={shown} stage={shown} state={state} preview={data.preview} onRun={(stage, fix) => void start(stage, fix)} onStep={step} />}
+          : state && <StagePasses key={shown} stage={shown} docs={data.docs ?? []} state={state} preview={data.preview} onRun={(stage, fix) => void start(stage, fix)} onStep={step} />}
       </div>
       {(docs.length > 0 || runs.length > 0) && (
         <footer className="border-t border-line px-4 py-2.5">
