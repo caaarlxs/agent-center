@@ -243,17 +243,17 @@ export function SessionPanel({ id, tab: asked, file }: { id: string; tab: Tab; f
   const repo = card?.repo ?? fromSearch?.repo
   const counts: Partial<Record<Tab, number>> = { prs: card?.prs?.length ?? 0, tasks: card?.taskCount ?? 0 }
   return (
-    <aside aria-label="Conversation" className="flex h-full min-h-0 min-w-0 flex-1 flex-col border-l border-line bg-surface">
-      <header className="flex flex-col gap-1.5 py-2.5 pr-3 pl-5 max-[860px]:px-3 max-[860px]:pl-4 short:gap-0.5 short:py-1.5">
-        <div className="flex min-h-[30px] min-w-0 items-center gap-2.5 max-[860px]:flex-wrap short:flex-nowrap!">
+    <aside aria-label="Conversation" className="@container/panel flex h-full min-h-0 min-w-0 flex-1 flex-col border-l border-line bg-surface">
+      <header className="flex flex-col gap-1.5 py-2.5 pr-3 pl-5 @max-[640px]/panel:px-3 @max-[640px]/panel:pl-4 short:gap-0.5 short:py-1.5">
+        <div className="flex min-h-[30px] min-w-0 items-center gap-2.5 @max-[640px]/panel:flex-wrap @min-[600px]/panel:short:flex-nowrap!">
           {card && <StatusChip card={card} />}
           {repo && <RepoTag name={repo} />}
           {card?.branch && <span className="inline-flex min-w-0 items-center gap-1 truncate font-mono text-[11.5px] text-text-muted"><GitBranch className="size-3 shrink-0" /><span className="truncate">{card.branch}</span></span>}
-          <span className="ml-auto flex shrink-0 items-center gap-1 max-[860px]:order-first max-[860px]:w-full max-[860px]:justify-end short:order-none! short:w-auto!">
+          <span className="ml-auto flex shrink-0 items-center gap-1 @max-[640px]/panel:order-first @max-[640px]/panel:w-full @max-[640px]/panel:justify-end @min-[600px]/panel:short:order-none! @min-[600px]/panel:short:w-auto!">
             {card && <Actions card={card} />}
             <button className="dots-line inline-flex h-7 items-center gap-1.5 rounded-md border border-brand bg-brand px-2.5 text-[12.5px] font-medium whitespace-nowrap text-brand-text transition-[filter,transform] duration-[120ms] hover:brightness-106 active:scale-[0.97]"
               onClick={() => launch(id)} title="Open in Claude (O)">
-              <span className="max-[860px]:hidden">Open in Claude</span><Anim.ArrowUpRight size={12} />
+              <span className="@max-[640px]/panel:hidden">Open in Claude</span><Anim.ArrowUpRight size={12} />
             </button>
             {!isWorkspace && (
               <button className={cn(iconBtn(), "size-7 [&_svg]:size-[15px] max-[1100px]:hidden")} onClick={toggleWide} title={wide ? "Normal width" : "Widen the panel"}>
