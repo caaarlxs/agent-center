@@ -59,7 +59,7 @@ import { forgetPr, prStates, scenarioOf } from "./stage-extras"
 import { conflictsPrompt, parseResolved } from "./conflicts"
 import { canJudge, gatePrompt, parseAdvice } from "./gate"
 import { readdir } from "node:fs/promises"
-import { DEFAULT_CONFIG, tookUnit, advanceRelease, approveStep, releaseSteps, retryStep, rollbackSteps, skipStep, type DeployConfig, type OrderItem, type Ops, type Release, type ReleaseStep } from "./release"
+import { DEFAULT_CONFIG, tookUnit, advanceRelease, approveStep, releaseSteps, retryStep, rollbackSteps, skipStep, stopRelease, type DeployConfig, type OrderItem, type Ops, type Release, type ReleaseStep } from "./release"
 
 export type Stage = "refine" | "plan" | "build" | "review" | "staging" | "test" | "prod" | "smoke"
 const STAGE_NAMES: Stage[] = ["refine", "plan", "build", "review", "staging", "test", "prod", "smoke"]
@@ -356,7 +356,12 @@ export function retestOf(state: Pick<PipelineState, "fixing" | "results" | "unit
 }
 // A test of only what is new keeps the results of before it did not test again.
 export const withEarlier = (earlier: TestResult[], now: TestResult[]) => [...earlier.filter(r => !now.some(n => n.id === r.id)), ...now]
-const earlierResults = (state: PipelineState) => [...(state.history ?? [])].reverse().find(r => r.stage === state.stage && r.status === "ready" && r.kept?.results)?.kept?.results ?? []
+// The results of the last test that ended, unless a refinement or a plan ran after it (its criteria may have changed).
+export function earlierResults(state: Pick<PipelineState, "stage" | "history" | "runs">): TestResult[] {
+  const runs = (state.history ?? []).filter(r => r.n < state.runs)
+  const last = runs.findLast(r => r.stage === state.stage && r.status === "ready" && r.kept?.results)
+  return last && !runs.some(r => r.n > last.n && (r.stage === "refine" || r.stage === "plan")) ? last.kept!.results! : []
+}
 
 // The [Fix] sub-tasks of what fails now (all of them, before a test has results).
 export const fixesNow = (state: Pick<PipelineState, "results" | "fixOf" | "fixes" | "fixing">) => {
@@ -830,9 +835,8 @@ async function finish(key: string) {
   // A build after a fix may list only its new units: the ones before stay, each as its last build left it.
   const units = state.stage === "plan" ? result.units : state.stage === "build" ? withUnits(state.units, result.units) : state.units
   const found = state.stage === "review" ? { findings: result.findings, fixed: [] } : state.stage === "build" ? { fixed: result.fixed } : {}
-  // Only what is new was tested (retest.json): the rest keeps its result of before.
-  const isRetest = existsSync(join(dir, "retest.json")) && (state.stage === "test" || state.stage === "smoke")
-  const tested = state.stage === "test" || state.stage === "smoke" ? { results: isRetest ? withEarlier(earlierResults(state), shown.results) : shown.results } : {}
+  // What it did not try again (only what is new, or not all of it) keeps its result of before.
+  const tested = state.stage === "test" || state.stage === "smoke" ? { results: withEarlier(earlierResults(state), shown.results) } : {}
   const context = state.stage === "refine" ? { contextImpact: result.contextImpact } : {}
   const proposals = withProposals(state.proposals, proposalsIn(result.tickets, state.runs, state.stage), state.stage)
   const done: PipelineState = { ...state, publishedRun: state.runs, status: "ready", questions: [], proposals, units, checklist, checked, scripts, order, ...(state.stage === "smoke" ? { backNote: null } : {}), ...found, ...tested, ...context, checks: withJira([...checks, ...attached.checks], state.checks), endedAt: Date.now() }
@@ -1242,10 +1246,20 @@ export const stopAuto = (key: string) => locked(key, async () => {
 })
 
 // Stop the agent at work: its process group ends, and the stage fails, to run again.
+// A release stops at the step at hand: what that step started ends, and the release fails there.
+const endGroup = (pid: number | null | undefined) => {
+  if (pid) try { process.kill(-pid, "SIGTERM") } catch { try { process.kill(pid, "SIGTERM") } catch {} }
+}
 export const stopPipeline = (key: string) => locked(key, async () => {
   const state = await stateOf(key)
-  if (state?.status !== "running" || isRelease(state.stage)) throw new Error("No agent at work on this ticket")
-  if (state.pid) try { process.kill(-state.pid, "SIGTERM") } catch { try { process.kill(state.pid, "SIGTERM") } catch {} }
+  if (state?.status !== "running") throw new Error("Nothing runs on this ticket")
+  if (isRelease(state.stage) && state.release) {
+    const stopped = stopRelease(state.release)
+    endGroup(stopped.pid)
+    await save({ ...state, release: stopped.release, status: "failed", error: "Stopped by you", endedAt: Date.now() })
+    return
+  }
+  endGroup(state.pid)
   await save({ ...state, status: "failed", error: "Stopped by you", endedAt: Date.now() })
 })
 
@@ -1371,13 +1385,19 @@ async function deployConfig(): Promise<DeployConfig> {
   return { ...DEFAULT_CONFIG, ...data, default: { ...DEFAULT_CONFIG.default, ...data.default }, tag: { ...DEFAULT_CONFIG.tag, ...data.tag } }
 }
 
-// A release to an environment: its steps, from the plan; or, when it failed,
-// the same one again from the step that failed.
+// The plan's order for a release: the state's, or plan.json's for a plan from before the state kept it.
+const withOrder = async (state: PipelineState): Promise<PipelineState> =>
+  state.order?.length ? state : { ...state, order: orderIn(jsonOf(await readText(join(dirOf(state.key), "plan.json")))?.release) }
+
+// A release to an environment: its steps, from the plan; or, when it failed (or you stopped it),
+// the same one again from that step. A rollback that went is no release to go on with: a new one starts.
 async function startRelease(state: PipelineState, env: Env) {
-  const resumed = state.stage === env && state.release ? retryStep(state.release, state.release.steps.find(s => s.status === "failed")?.id ?? "") : null
-  const release = resumed ?? { env, steps: releaseSteps(state, env, await deployConfig()) }
+  const failedStep = state.stage === env && state.release && !state.release.rollback ? state.release.steps.find(s => s.status === "failed") : undefined
+  const resumed = failedStep ? retryStep(state.release!, failedStep.id) : null
+  const ordered = await withOrder(state)
+  const release = resumed ?? { env, steps: releaseSteps(ordered, env, await deployConfig()) }
   const next = resumed ? state : { ...(await fresh(state.key, state.runs + 1, env)), summary: state.summary }
-  await save({ ...next, stage: env, status: "running", error: null, endedAt: null, release })
+  await save({ ...next, order: ordered.order, stage: env, status: "running", error: null, endedAt: null, release })
   void tickRelease(state.key)
 }
 
@@ -1552,9 +1572,10 @@ export const isPipelineOn = () => existsSync(join(STAGES_DIR, "refine.md"))
 
 // The steps a release would take, before you start it.
 // The environments with something of the ticket they do not run yet: after a test, staging (a script a fix added).
+// What only a person does there (a plan's note for staging, once it was tested) brings no release back.
 async function pendingEnvs(state: PipelineState | null): Promise<Env[]> {
   if (state?.stage !== "test" || state.status !== "ready") return []
-  return releaseSteps(state, "staging", await deployConfig()).length ? ["staging"] : []
+  return releaseSteps(await withOrder(state), "staging", await deployConfig()).some(s => s.kind !== "manual") ? ["staging"] : []
 }
 async function previewOf(state: PipelineState | null) {
   if (!state || state.status !== "ready") return null
@@ -1564,7 +1585,7 @@ async function previewOf(state: PipelineState | null) {
   const config = await deployConfig()
   // What a person must have done first, for the repos this release takes there.
   const reminders = [...new Set((state.units ?? []).map(u => config.remind?.[u.repo]?.[env]).filter((r): r is string => !!r))]
-  return { env, steps: releaseSteps(state, env, config), reminders }
+  return { env, steps: releaseSteps(await withOrder(state), env, config), reminders }
 }
 
 // Your answers, written here: to Jira, and the stage again.

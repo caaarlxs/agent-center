@@ -340,14 +340,21 @@ async function prepare(step: ReleaseStep, release: Release, ctx: Ctx, ops: Ops):
     const items = lines((await ops.sh(["git", "-C", clone, "log", "--first-parent", "--format=%s", `${tag.latest}..${sha}`, "-n", "30"])).out)
     return { sha, value: step.value ?? tag.next, previous: tag.latest, items, detail: `${items.length} change${items.length === 1 ? "" : "s"} since ${tag.latest} go to prod${tested ? "" : " (staging's commit unknown: the default branch's head)"}` }
   }
-  if (step.kind === "promote") {
-    const slug = slugOf(prOf(step, ctx))
-    if (!slug) return { detail: "No PR to tell the repo by" }
-    const head = await defaultBranch(slug, ops)
-    const out = lines((await ops.sh(["gh", "api", `repos/${slug}/compare/${step.value}...${head}`, "--jq", ".total_commits, (.commits[] | .commit.message | split(\"\\n\")[0])"])).out)
-    return { items: out.slice(1).slice(-30), detail: `${out[0] ?? "?"} commits go from ${head} to ${step.value}` }
-  }
+  if (step.kind === "promote") return preparePromote(step, ctx, ops)
   return {}
+}
+
+// A release PR: the commits it takes to the target, and how many of them staging did not test.
+async function preparePromote(step: ReleaseStep, ctx: Ctx, ops: Ops): Promise<Patch> {
+  const slug = slugOf(prOf(step, ctx))
+  if (!slug) return { detail: "No PR to tell the repo by" }
+  const head = await defaultBranch(slug, ops)
+  const out = lines((await ops.sh(["gh", "api", `repos/${slug}/compare/${step.value}...${head}`, "--jq", ".total_commits, (.commits[] | .commit.message | split(\"\\n\")[0])"])).out)
+  // It takes the default branch's head: what merged there after staging's commit was not tested.
+  const tested = ctx.tested?.[step.repo ?? ""]
+  const untested = tested ? Number((await ops.sh(["gh", "api", `repos/${slug}/compare/${tested}...${head}`, "--jq", ".ahead_by"])).out) || 0 : null
+  const note = untested === null ? " (staging's commit unknown)" : untested ? `: ${untested} of them merged after staging's test` : ""
+  return { items: out.slice(1).slice(-30), detail: `${out[0] ?? "?"} commits go from ${head} to ${step.value}${note}` }
 }
 
 // Where a script runs: a checkout of what the environment runs, once its
@@ -490,8 +497,12 @@ async function tag(step: ReleaseStep, ctx: Ctx, ops: Ops): Promise<Patch> {
   const clone = cloneOf(step, ctx)
   const name = step.value ?? ""
   if (!/^v\d+\.\d+\.\d+$/.test(name)) throw new Error(`${name || "No tag"} is not a vX.Y.Z version`)
-  if (lines((await ops.sh(["git", "-C", clone, "tag", "--list", "v*"])).out).includes(name)) throw new Error(`${name} is already there`)
   if (!step.sha) throw new Error("No commit to tag")
+  if (lines((await ops.sh(["git", "-C", clone, "tag", "--list", "v*"])).out).includes(name)) {
+    const at = (await ops.sh(["git", "-C", clone, "rev-list", "-n", "1", name])).out
+    if (at !== step.sha) throw new Error(`${name} is already there, on another commit`)
+    return { status: "running", phase: "deploy", since: ops.now(), detail: `${name} was there already, on this commit: waiting for the deploy` }
+  }
   await must(ops, ["git", "-C", clone, "tag", name, step.sha])
   await must(ops, ["git", "-C", clone, "push", "origin", name], { timeoutMs: 60_000 })
   return { status: "running", phase: "deploy", since: ops.now(), detail: `${name} pushed: waiting for the deploy` }
@@ -504,17 +515,19 @@ async function promote(step: ReleaseStep, ctx: Ctx, ops: Ops): Promise<Patch> {
   const head = await defaultBranch(slug, ops)
   const open = jsonOf((await ops.sh(["gh", "pr", "list", "-R", slug, "--base", step.value!, "--head", head, "--state", "open", "--json", "url"])).out)?.[0]?.url
   const url = open ?? (await must(ops, ["gh", "pr", "create", "-R", slug, "--base", step.value!, "--head", head, "--title", `Release ${ctx.key}: ${ctx.summary}`, "--body", `Release of ${ctx.key}, from Agent Center.`]))
-  return { status: "running", phase: "checks", links: [...step.links, { label: `Release PR #${prNumber(url)}`, url }], value: step.value, detail: "Waiting for the release checks" }
+  return { status: "running", phase: "checks", since: ops.now(), links: [...step.links, { label: `Release PR #${prNumber(url)}`, url }], value: step.value, detail: "Waiting for the release checks" }
 }
 
+const NO_CHECKS_MS = 5 * 60_000
 async function checkPromote(step: ReleaseStep, ops: Ops): Promise<Patch> {
   const url = step.links.find(l => l.label.startsWith("Release PR"))?.url
   if (!url) return { status: "failed", error: "The release PR is gone" }
   const pr = jsonOf(await must(ops, ["gh", "pr", "view", url, "--json", "state,statusCheckRollup,mergeCommit,mergedAt"])) ?? {}
   if (pr.state !== "MERGED") {
-    const rollup = rollupOf(pr.statusCheckRollup ?? [])
+    const checks = pr.statusCheckRollup ?? []
+    const rollup = rollupOf(checks)
     if (rollup === "fail") return { status: "failed", error: "A release check failed (or needs a person)" }
-    if (rollup === "pending") return {}
+    if (rollup === "pending" && !(checks.length === 0 && ops.now() - (step.since ?? ops.now()) > NO_CHECKS_MS)) return {}
     await must(ops, ["gh", "pr", "merge", url, "--merge"], { timeoutMs: 60_000 })
     return { phase: "deploy", since: ops.now(), detail: "Merged: waiting for the deploy", ...(await mergedSha(url, ops)) }
   }
@@ -612,8 +625,16 @@ export function approveStep(release: Release, id: string, value?: string): Relea
   return withStep(release, id, { status: "pending", isApproved: true, ...(value?.trim() ? { value: value.trim() } : {}) })
 }
 export function retryStep(release: Release, id: string): Release {
-  if (!current(release, id) || release.steps.find(s => s.id === id)!.status !== "failed") throw new Error("That step has not failed")
-  return withStep(release, id, { status: "pending", error: null, phase: null, pid: null, advice: null, attempts: 0 })
+  const step = release.steps.find(s => s.id === id)
+  if (!current(release, id) || step!.status !== "failed") throw new Error("That step has not failed")
+  const isTaken = step!.kind === "tag" && /already there/.test(step!.error ?? "")
+  return withStep(release, id, { status: "pending", error: null, phase: null, pid: null, advice: null, attempts: 0, ...(isTaken ? { value: null, isApproved: false } : {}) })
+}
+// You stop a release: the step at hand fails (what it started, its pid, ends), to Retry, Skip or roll back.
+export function stopRelease(release: Release): { release: Release; pid: number | null } {
+  const step = release.steps.find(s => s.status !== "done" && s.status !== "skipped")
+  if (!step) throw new Error("The release is over")
+  return { release: withStep(release, step.id, { status: "failed", error: "Stopped by you", pid: null, phase: null }), pid: step.pid ?? null }
 }
 export function skipStep(release: Release, id: string): Release {
   if (!current(release, id)) throw new Error("Only the step at hand can be skipped")

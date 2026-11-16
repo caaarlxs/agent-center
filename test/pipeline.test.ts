@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { isStuck, releasedUnits, retestOf, sessionOf, shippedWith, unitsNow, withUnits, testedIn, askPrompt, askRefusal, fixesNow, isAbout, testFix, unshipped, blocking, checkedByHand, checkedIn, isAdopted, toFixNow, MARK, answeredAfter, answersComment, argsFor, parseResult, pipelineKeyOf, stageToRun, unbuilt, withRun, withAnswers, questionsComment, snapshotOf, prodWarning, autoNext, linksFigma, impactRepos } from "../lib/pipeline"
+import { isStuck, releasedUnits, retestOf, sessionOf, shippedWith, unitsNow, withUnits, testedIn, askPrompt, askRefusal, fixesNow, isAbout, testFix, unshipped, blocking, checkedByHand, checkedIn, isAdopted, toFixNow, MARK, answeredAfter, answersComment, argsFor, parseResult, pipelineKeyOf, stageToRun, unbuilt, withRun, withAnswers, earlierResults, questionsComment, snapshotOf, prodWarning, autoNext, linksFigma, impactRepos } from "../lib/pipeline"
 
 const questions = [
   { id: "Q1", question: "¿Cuál es el copy?", proposal: "El del ticket" },
@@ -541,5 +541,18 @@ describe("a test after a fix", () => {
       release: { env: "staging", steps: [{ kind: "merge", unit: "X1", status: "done" }] } } as never
     expect(retestOf(state)).toEqual({ fixed: ["CA3"], before: ["BE4", "M1"], repos: ["company-service"] })
     expect(retestOf({ results: [] } as never)).toBeNull()
+  })
+})
+
+describe("earlierResults", () => {
+  const r = (id: string) => ({ id, criterion: id, status: "pass", evidence: "" })
+  const run = (n: number, stage: string, results?: unknown[]) => ({ n, stage, status: "ready", ...(results ? { kept: { results } } : {}) })
+  it("are the last test's, for the next test to keep what it does not try again", () => {
+    const history = [run(1, "test", [r("CA1"), r("CA2")]), run(2, "staging"), run(3, "test", [r("CA2")]), run(4, "test")]
+    expect(earlierResults({ stage: "test", runs: 4, history } as never).map(x => x.id)).toEqual(["CA2"])
+  })
+  it("are none once a refinement or a plan ran after them: the criteria may have changed", () => {
+    const history = [run(1, "test", [r("CA1")]), run(2, "plan"), run(3, "test")]
+    expect(earlierResults({ stage: "test", runs: 3, history } as never)).toEqual([])
   })
 })

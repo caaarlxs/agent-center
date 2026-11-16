@@ -25,11 +25,13 @@ function SureItem({ icon, label, sure, isDanger = false, onGo }: { icon: ReactNo
   )
 }
 
-// Where a release ended in this column, and was not rolled back already, it can be undone.
+// Where a release went in this column (all of it, or part: it failed or you stopped it, with
+// steps done), and was not rolled back already, it can be undone. Not while it runs.
 const deployedEnv = (state: PipelineState) => {
   const env = nodeOf(state.stage)
-  if (env !== "staging" && env !== "prod") return null
-  const isDeployed = !!state.deployed?.[env] || (state.release?.env === env && !state.release.rollback && state.status !== "failed")
+  if ((env !== "staging" && env !== "prod") || state.status === "running") return null
+  const isHere = state.release?.env === env && !state.release.rollback
+  const isDeployed = !!state.deployed?.[env] || (isHere && state.release!.steps.some(s => s.status === "done"))
   return isDeployed && !(state.release?.rollback && state.release.env === env) ? env : null
 }
 

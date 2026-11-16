@@ -429,7 +429,7 @@ function NowActions({ state, preview, now, onRun, onStep }: { state: PipelineSta
   if (state.status === "running") return (
     <>
       {isAuto(state) && <StopAuto ticketKey={state.key} />}
-      {!release && <StopAgent path="/api/pipeline/stop" body={{ key: state.key }} />}
+      <StopAgent path="/api/pipeline/stop" body={{ key: state.key }} />
       {state.sessionId && <button className="shrink-0 text-xs font-semibold text-text-muted hover:text-text" onClick={() => openLog(state.sessionId!)}>Log</button>}
     </>
   )

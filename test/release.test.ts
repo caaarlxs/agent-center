@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import { conflictsPrompt } from "../lib/conflicts"
-import { DEFAULT_CONFIG, setupFor, rollbackSteps, approveStep, deployState, isGated, nextTag, releaseSteps, reportOf, skipStep, retryStep, advanceRelease, type Ops, type Release, rollupOf } from "../lib/release"
+import { DEFAULT_CONFIG, setupFor, rollbackSteps, approveStep, deployState, isGated, nextTag, releaseSteps, reportOf, skipStep, retryStep, stopRelease, advanceRelease, type Ops, type Release, rollupOf } from "../lib/release"
 
 const unit = (id: string, repo: string, n: number) => ({ id, repo, subtask: null, branch: `feat/${id}`, title: id, dependsOn: [], status: "done" as const, pr: `https://github.com/acme/${repo}/pull/${n}` })
 const units = [unit("U1", "api-service", 7), unit("U2", "web-app", 8), unit("U3", "mobile-app", 9)]
@@ -151,6 +151,31 @@ describe("advanceRelease", () => {
     expect(calls).toContain("git -C /d/repos/api-service push origin v0.17.0")
     expect(r.release.steps[0]).toMatchObject({ status: "running", phase: "deploy" })
   })
+  it("a tag taken meanwhile is chosen again on Retry: the next one, waiting for you", async () => {
+    const { ops } = fake({ "tag --list": "v0.17.0\nv0.16.1", "rev-parse": "abc123", "rev-list -n 1 v0.17.0": "other" })
+    const release: Release = { env: "prod", steps: [{ ...releaseSteps(state({ units: [units[0]], scripts: [] }), "prod", config)[0]!, status: "pending", isApproved: true, value: "v0.17.0", sha: "abc123" }] }
+    let r = await advanceRelease(release, ctx, ops)
+    expect(r.release.steps[0]).toMatchObject({ status: "failed", error: "v0.17.0 is already there, on another commit" })
+    r = await advanceRelease(retryStep(r.release, "R1"), ctx, ops)
+    expect(r.release.steps[0]).toMatchObject({ status: "waiting", value: "v0.18.0" })
+  })
+  it("a tag already there on its own commit goes on to its deploy, without pushing again", async () => {
+    const { calls, ops } = fake({ "tag --list": "v0.17.0", "rev-list -n 1 v0.17.0": "abc123" })
+    const release: Release = { env: "prod", steps: [{ ...releaseSteps(state({ units: [units[0]], scripts: [] }), "prod", config)[0]!, status: "pending", isApproved: true, value: "v0.17.0", sha: "abc123" }] }
+    const r = await advanceRelease(release, ctx, ops)
+    expect(r.release.steps[0]).toMatchObject({ status: "running", phase: "deploy" })
+    expect(calls.some(c => c.includes("push"))).toBe(false)
+  })
+  it("a release PR with no checks at all merges a while after it opened", async () => {
+    const pr = "https://github.com/acme/web-app/pull/99"
+    const step = { ...releaseSteps(state({ units: [units[1]], scripts: [] }), "prod", config)[0]!, status: "running" as const, phase: "checks" as const, since: 1_000_000, links: [{ label: "Release PR #99", url: pr }] }
+    const { calls, ops } = fake({ [`pr view ${pr} --json state`]: JSON.stringify({ state: "OPEN", statusCheckRollup: [] }) })
+    let r = await advanceRelease({ env: "prod", steps: [{ ...step, since: 1_900_000 }] }, ctx, ops)
+    expect(calls.some(c => c.includes("pr merge"))).toBe(false)
+    r = await advanceRelease({ env: "prod", steps: [step] }, ctx, ops)
+    expect(calls).toContain(`gh pr merge ${pr} --merge`)
+    expect(r.release.steps[0]).toMatchObject({ phase: "deploy" })
+  })
   it("simulates on the PR's branch before it is deployed, then waits for you to look at it", async () => {
     const { calls, ops } = fake({})
     const files: Record<string, string> = { "/d/PP-1/scripts/S1-staging-simulate.exit": "0\n", "/d/PP-1/scripts/S1-staging-simulate.csv": "id,action,reason,before,after,result,error\nc1,write,,,,simulated,\n" }
@@ -289,6 +314,17 @@ describe("a PR with conflicts", () => {
     const r = await advanceRelease(start(), ctx, ops)
     expect(r.release.steps[0]!.status).toBe("pending")
     expect(calls.some(c => c.includes("pr merge"))).toBe(false)
+  })
+})
+
+describe("stopRelease", () => {
+  it("fails the step at hand, with what it started to end", () => {
+    const release = { env: "prod", steps: [{ id: "R1", status: "done" }, { id: "R2", status: "running", phase: "script", pid: 77 }, { id: "R3", status: "pending" }] } as never
+    const { release: stopped, pid } = stopRelease(release)
+    expect(pid).toBe(77)
+    expect(stopped.steps.map(s => s.status)).toEqual(["done", "failed", "pending"])
+    expect(stopped.steps[1]).toMatchObject({ error: "Stopped by you", pid: null })
+    expect(() => stopRelease({ env: "prod", steps: [{ id: "R1", status: "done" }] } as never)).toThrow()
   })
 })
 
