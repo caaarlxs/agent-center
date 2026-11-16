@@ -1,6 +1,6 @@
 // Where a ticket stands on the pipeline's board: the column of the stage it
 // is at, or, once that stage is done, the next one's, waiting at its door.
-import type { Finding, PipelineState, Run, Stage, TestResult } from "@server/pipeline"
+import type { Finding, Kept, PipelineState, Run, Stage, TestResult } from "@server/pipeline"
 import type { Release, ReleaseStep } from "@server/release"
 
 export const STAGES = ["Refine", "Plan", "Build", "Review", "Staging", "Prod"]
@@ -94,11 +94,23 @@ export function releasePasses(state: PipelineState, stage: Stage): ReleasePass[]
   })
 }
 
-// What a test (or a check in prod) left: its own results, and the ones of the passes
-// before it that it did not try again (a test again tries only what failed), the latest first.
-export function carriedResults(state: PipelineState): TestResult[] {
-  const runs = (state.history ?? []).filter(r => r.stage === state.stage && r.kept?.results)
-  const at = runs.findIndex(r => r.kept!.results === state.results)
-  const seen = new Set((state.results ?? []).map(r => r.id))
-  return (at >= 0 ? runs.slice(0, at) : runs).reverse().flatMap(r => r.kept!.results!).filter(r => !seen.has(r.id) && !!seen.add(r.id))
+// What a pass carries from the passes before it of the same stage: what they
+// left (pick) that this one did not leave again (by key), the latest first.
+// A test again tries only what failed; a review again looks only at the fix.
+function carriedOf<T>(state: PipelineState, pick: (k: Kept) => T[] | undefined, keyOf: (t: T) => string, own: T[] = []): T[] {
+  const runs = (state.history ?? []).filter(r => r.stage === state.stage && r.kept && pick(r.kept))
+  const at = runs.findIndex(r => pick(r.kept!) === own)
+  const seen = new Set(own.map(keyOf))
+  return (at >= 0 ? runs.slice(0, at) : runs).reverse().flatMap(r => pick(r.kept!)!).filter(t => !seen.has(keyOf(t)) && !!seen.add(keyOf(t)))
+}
+export const carriedResults = (state: PipelineState): TestResult[] => carriedOf(state, k => k.results, r => r.id, state.results)
+// A review's findings from passes before that this one did not find again: fixed since.
+export const carriedFindings = (state: PipelineState): Finding[] => carriedOf(state, k => k.findings, f => f.title, state.findings)
+
+// A stage's summary in plain words, apart from what it says is still pending (its last part, under "Pendiente").
+const PENDING = /^(\*\*Pendiente\b|#+\s*Pendiente\b)/m
+export function summaryParts(text: string): { done: string; pending: string | null } {
+  const body = text.replace(/^#\s.*\n+/, "")
+  const cut = body.search(PENDING)
+  return cut < 0 ? { done: body.trim(), pending: null } : { done: body.slice(0, cut).trim(), pending: body.slice(cut).trim() }
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { carriedResults, columnOf, isQueued, nextStage, passesOf, toFix, tonesOf, untested, waitingStep } from "./pipeline-board"
+import { carriedFindings, carriedResults, columnOf, summaryParts, isQueued, nextStage, passesOf, toFix, tonesOf, untested, waitingStep } from "./pipeline-board"
 
 type At = "refine" | "plan" | "build" | "review" | "staging" | "test" | "prod" | "smoke"
 const at = (stage: At, status: "running" | "needs-info" | "ready" | "failed", findings?: { id: string; severity: string }[], release?: unknown) => ({ stage, status, findings, release }) as never
@@ -132,5 +132,23 @@ describe("carriedResults", () => {
   })
   it("the live state, read apart from its history, counts every pass", () => {
     expect(carriedResults({ stage: "test", results: [r("CA3")], history } as never).map(x => x.id)).toEqual(["CA2", "CA1"])
+  })
+})
+
+describe("carriedFindings", () => {
+  it("keeps what an earlier review found and the latest did not find again, by its title", () => {
+    const f = (id: string, title: string) => ({ id, title, severity: "minor" })
+    const first = [f("F1", "A"), f("F2", "B")]
+    const second = [f("F1", "B")]
+    const history = [{ stage: "review", kept: { findings: first } }, { stage: "review", kept: { findings: second } }]
+    expect(carriedFindings({ stage: "review", findings: second, history } as never).map(x => x.title)).toEqual(["A"])
+  })
+})
+
+describe("summaryParts", () => {
+  it("drops the title and sets what is pending apart", () => {
+    const text = "# PP-1 · Prueba\n\nYa funciona.\n\n**Pendiente**\n- La del asesor."
+    expect(summaryParts(text)).toEqual({ done: "Ya funciona.", pending: "**Pendiente**\n- La del asesor." })
+    expect(summaryParts("Todo listo.")).toEqual({ done: "Todo listo.", pending: null })
   })
 })

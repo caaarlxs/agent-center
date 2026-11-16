@@ -55,6 +55,7 @@ import { activityOf } from "./activity"
 import { existsSync, readdirSync, readFileSync } from "node:fs"
 import { exec } from "./proc"
 import { overLimits, prChecks, reposClean, type Check } from "./checks"
+import { prStates, scenarioOf } from "./stage-extras"
 import { canJudge, gatePrompt, parseAdvice } from "./gate"
 import { readdir } from "node:fs/promises"
 import { DEFAULT_CONFIG, tookUnit, advanceRelease, approveStep, releaseSteps, retryStep, rollbackSteps, skipStep, type DeployConfig, type OrderItem, type Ops, type Release, type ReleaseStep } from "./release"
@@ -93,7 +94,7 @@ export type PipelineStatus = "running" | "needs-info" | "ready" | "failed"
 // kept: what the run left, to see each pass of a stage apart (a plan's or a build's units, a review's findings, a test's results).
 // asked: the questions a run left for you, each with your answer once you gave it (none: its proposal, taken).
 export type Asked = Question & { answer?: string; isProposal?: boolean }
-export type Kept = { units?: Unit[]; checklist?: ChecklistItem[]; findings?: Finding[]; results?: TestResult[]; release?: Release; asked?: Asked[] }
+export type Kept = { units?: Unit[]; checklist?: ChecklistItem[]; findings?: Finding[]; results?: TestResult[]; release?: Release; asked?: Asked[]; fixing?: Fixing }
 // cause: why it ran, in a word or two (Sent back, Your answers…); base: what its session had spent
 // before it (a stage's session goes on run after run: a run's spend is what it added).
 export type Run = { n: number; stage: Stage; sessionId: string | null; startedAt: number; endedAt: number | null; status: PipelineStatus; questions: number; units: number; findings?: number; error: string | null; spend?: Spend | null; kept?: Kept; cause?: string | null; base?: Spend | null }
@@ -493,7 +494,7 @@ const leftBy = (s: PipelineState): Kept | undefined => {
   if (isRelease(s.stage)) return s.status !== "running" && s.release?.env === s.stage ? { release: s.release } : undefined
   if (s.status !== "ready" && s.status !== "needs-info") return undefined
   if (s.stage === "plan") return { units: s.units ?? [], ...(s.checklist ? { checklist: s.checklist } : {}) }
-  if (s.stage === "build") return { units: builtNow(s) }
+  if (s.stage === "build") return { units: builtNow(s), ...(s.fixing ? { fixing: s.fixing } : {}) }
   if (s.stage === "review") return { findings: s.findings ?? [] }
   if (s.stage === "test" || s.stage === "smoke") return { results: s.results ?? [] }
   return undefined
@@ -558,11 +559,16 @@ export async function pipelineOf(key: string) {
     state = { ...state, status: "failed", error: "The session ended without a result", endedAt: Date.now() }
     await save(state)
   }
-  // A stage's document; the build has only its summary.
-  const doc = async (stage: Stage) => (state ? ((await readText(join(dirOf(key), `${stage}.md`))) ?? readText(join(dirOf(key), `${stage}.summary.md`))) : null)
+  // A stage's document, and its summary in plain words (the build has only its summary).
+  const read = (stage: Stage, end: string) => (state ? readText(join(dirOf(key), `${stage}${end}`)) : Promise.resolve(null))
+  const docOf = async (stage: Stage) => ({ [stage]: await read(stage, ".md") })
+  const summaries = Object.fromEntries(await Promise.all(SUMMED.map(async stage => [stage, await read(stage, ".summary.md")] as const)))
   // What runs put aside left: their folders, and the branches you kept when one went.
   const putAside = (await archivesOf(key)).length + (await keptBranchesOf(key)).length
-  return { putAside, docs: await runDocs(key), state: state && (await withSpend(state)), refine: await doc("refine"), plan: await doc("plan"), build: await doc("build"), review: await doc("review"), test: await doc("test"), smoke: await doc("smoke"), preview: await previewOf(state) }
+  const prs = await prStates((state?.units ?? []).map(u => u.pr).filter((p): p is string => !!p), releaseOps.sh)
+  const scenario = state ? scenarioOf(jsonOf(await readText(join(dirOf(key), "scenario.json")))) : null
+  const stageDocs = Object.assign({}, ...(await Promise.all(SUMMED.map(docOf))))
+  return { putAside, docs: await runDocs(key), state: state && (await withSpend(state)), ...stageDocs, summaries, prs, scenario, preview: await previewOf(state) }
 }
 
 // What the running stage does now: its session's steps and subagents, and,
@@ -840,6 +846,8 @@ async function keepDoc(dir: string, state: PipelineState) {
   await mkdir(join(dir, "runs"), { recursive: true })
   await Bun.write(join(dir, "runs", `${state.runs}-${state.stage}.md`), text)
 }
+// The stages that leave a document and a summary.
+const SUMMED: Stage[] = ["refine", "plan", "build", "review", "test", "smoke"]
 // The runs that left a document: the passes there is something to read of.
 const runDocs = async (key: string) =>
   (await readdir(join(dirOf(key), "runs")).catch(() => [] as string[])).map(f => Number(f.split("-")[0])).filter(n => n > 0)

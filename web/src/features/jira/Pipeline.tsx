@@ -38,7 +38,7 @@ import { PipelineMark, liveLine, startText, startingText, statusText } from "./P
 import { STAGES, STAGE_KEYS, releasePasses, releaseShown, costOf, dollars, failed, isJob, isRelease, nextStage, nodeOf, passesOf, stageAt, toFix, tokens, tonesOf } from "./pipeline-board"
 import { SkipFailed } from "./Release"
 import { StageTabs, type Tab } from "./StageTabs"
-import { AskedList, BuildPanel, Checklist, PlanPanel, lastDecisions, RefinePanel, ReleasePanel, ReviewPanel, TestPanel, afterOf, subtasksOf } from "./StagePanels"
+import { AskedList, BuildPanel, Checklist, PlanPanel, Summary, RefinePanel, ReleasePanel, ReviewPanel, TestPanel, afterOf, subtasksOf } from "./StagePanels"
 import { Details, FoldButton } from "./Fold"
 import { PassPicker, type Pass } from "./PassPicker"
 import { TicketMenu } from "./TicketMenu"
@@ -51,8 +51,11 @@ export { useConfirm }
 import { Ask, isWaiting } from "./Ask"
 import { SendBack } from "./SendBack"
 import type { Release } from "@server/release"
+import type { PrState, Scenario } from "@server/stage-extras"
+import type { DebtEntry } from "@server/debt"
+import { StageDataContext } from "./stage-data"
 
-type Data = { putAside: number; docs: number[]; state: PipelineState | null; refine: string | null; plan: string | null; build: string | null; review: string | null; test: string | null; smoke: string | null; preview: Release | null }
+type Data = { putAside: number; docs: number[]; summaries: Partial<Record<Stage, string | null>>; prs: Record<string, PrState>; scenario: Scenario | null; state: PipelineState | null; refine: string | null; plan: string | null; build: string | null; review: string | null; test: string | null; smoke: string | null; preview: Release | null }
 type OnStep = (step: string, action: "approve" | "skip", value?: string) => void
 const FOLLOW_MS = 5_000
 const IDLE_MS = 30_000
@@ -498,9 +501,9 @@ const hours = (ms: number) => (ms < 3_600_000 ? `${Math.max(1, Math.round(ms / 6
 export const startedState = (state: PipelineState, stage?: Stage): PipelineState =>
   ({ ...state, stage: stage ?? state.stage, status: "running", startedAt: Date.now(), endedAt: null, error: null, sessionId: null, questions: [] })
 
-// A stage's document, folded (open: all a stage left to read, as a refinement without its decisions).
-function Doc({ text, isOpenFirst = false }: { text: string; isOpenFirst?: boolean }) {
-  const [isOpen, setOpen] = useState(isOpenFirst)
+// A stage's document, folded.
+function Doc({ text }: { text: string }) {
+  const [isOpen, setOpen] = useState(false)
   return (
     <div className="flex flex-col gap-3">
       <FoldButton label="Document" isOpen={isOpen} onToggle={() => setOpen(o => !o)} />
@@ -509,7 +512,7 @@ function Doc({ text, isOpenFirst = false }: { text: string; isOpenFirst?: boolea
   )
 }
 
-type PassProps = { stage: Stage; doc: string | null; state: PipelineState; preview: Release | null; onRun: (stage?: Stage, fix?: string[]) => void; onStep: OnStep }
+type PassProps = { stage: Stage; doc: string | null; summary: string | null; state: PipelineState; preview: Release | null; onRun: (stage?: Stage, fix?: string[]) => void; onStep: OnStep }
 const Passes = (props: { passes: Pass[]; picked: number; onPick: (key: number) => void }) =>
   props.passes.length > 1 ? <div className="-mb-1 flex justify-end"><PassPicker {...props} /></div> : null
 
@@ -517,7 +520,7 @@ const Passes = (props: { passes: Pass[]; picked: number; onPick: (key: number) =
 // latest at first; an earlier one as it left it (its units, findings or results,
 // and its document), only to read: no button acts on a past pass.
 // Staging and prod: a pass is a release there and the test that followed it; one waiting at the door is next.
-function ReleasePasses({ stage, doc, ...props }: PassProps) {
+function ReleasePasses({ stage, doc, summary, ...props }: PassProps) {
   const passes = releasePasses(props.state, stage)
   // A release about to start: at the door, or from the test (what a fix added that staging does not run yet).
   const isLive = passes.some(p => p.isLive)
@@ -530,6 +533,7 @@ function ReleasePasses({ stage, doc, ...props }: PassProps) {
   return (
     <div className="flex flex-col gap-3">
       {shown && <Passes passes={all} picked={shown.key} onPick={setPicked} />}
+      {!shown?.past && summary && <Summary text={summary} />}
       {shown?.past ? <StagePanel stage={stage} {...props} state={shown.past} onRun={() => {}} /> : <StagePanel stage={stage} {...props} />}
       {!shown?.past && doc && <Doc text={doc} />}
     </div>
@@ -539,7 +543,7 @@ function ReleasePasses({ stage, doc, ...props }: PassProps) {
 // A pass there is something to see of: what it left, its document, or why it failed (the latest, always).
 const isShown = (r: Run, i: number, all: Run[], docs: number[]) => !!r.kept || docs.includes(r.n) || r.status === "failed" || i === all.length - 1
 function StagePasses({ docs, ...props }: PassProps & { docs: number[] }) {
-  const { stage, doc } = props
+  const { stage, doc, summary } = props
   if (isRelease(stage)) return <ReleasePasses {...props} />
   const passes = passesOf(props.state.history ?? [], stage).filter((r, i, all) => isShown(r, i, all, docs))
   const [picked, setPicked] = useState<number | null>(null)
@@ -550,7 +554,7 @@ function StagePasses({ docs, ...props }: PassProps & { docs: number[] }) {
     <div className="flex flex-col gap-3">
       {latest && <Passes passes={passes.map(r => ({ key: r.n, at: r.startedAt, isFailed: r.status === "failed", why: r.status === "failed" ? r.error : r.cause }))}
         picked={isPast ? run.n : latest.n} onPick={n => setPicked(n === latest.n ? null : n)} />}
-      {isPast ? <PastPass run={run} {...props} /> : <><StagePanel {...props} all={props.state.units} state={latestPass(props.state, passes)} />{doc && <Doc text={doc} isOpenFirst={stage === "refine" && !lastDecisions(props.state)} />}</>}
+      {isPast ? <PastPass run={run} {...props} /> : <>{summary && <Summary text={summary} />}<StagePanel {...props} all={props.state.units} state={latestPass(props.state, passes)} />{doc && <Doc text={doc} />}</>}
     </div>
   )
 }
@@ -601,7 +605,7 @@ function StageBody({ stage, data, onRun, onStep, onSent }: { stage: Stage; data:
     <div className="flex flex-col gap-4">
       {isHere && state.checks?.length && state.status !== "running" ? <Checks checks={state.checks} /> : null}
       <Proposed state={state} stage={stage} />
-      <StagePasses key={stage} stage={stage} docs={data.docs ?? []} doc={data[DOC[stage]]} state={state} preview={data.preview} onRun={onRun} onStep={onStep} />
+      <StagePasses key={stage} stage={stage} docs={data.docs ?? []} doc={data[DOC[stage]]} summary={data.summaries?.[DOC[stage]] ?? null} state={state} preview={data.preview} onRun={onRun} onStep={onStep} />
     </div>
   )
 }
@@ -621,7 +625,9 @@ function RunsSection({ runs, now }: { runs: Run[]; now: number }) {
 export function Pipeline({ ticket, details, onTaken }: { ticket: Ticket; details: ReactNode; onTaken: () => void }) {
   const now = useNow()
   const [data, setData] = useState<Data | null>(null)
+  const [debt, setDebt] = useState<DebtEntry[]>([])
   const [picked, setPicked] = useState<Tab | null>(null)
+  useEffect(() => void get<{ debt: DebtEntry[] }>("/api/pipeline/debt").then(r => setDebt(r.debt), () => {}), [ticket.key])
   const load = () => get<Data>(`/api/pipeline?key=${encodeURIComponent(ticket.key)}`).then(setData, () => {})
   const isRunning = data?.state?.status === "running" || Object.values(data?.state?.threads ?? {}).some(t => isWaiting(t))
   useEffect(() => {
@@ -656,6 +662,7 @@ export function Pipeline({ ticket, details, onTaken }: { ticket: Ticket; details
   const runs = state.history ?? []
   const shown = picked ?? focusOf(state)
   return (
+    <StageDataContext.Provider value={{ prs: data.prs ?? {}, scenario: data.scenario ?? null, comments: ticket.comments, debt }}>
     <div className="flex flex-col gap-3">
       <Now state={state} preview={data.preview} now={now} putAside={data.putAside} onRun={stage => void start(stage)} onStep={step} onChanged={() => void load()} />
       <StageTabs tones={tonesOf(state)} picked={shown} onPick={setPicked} />
@@ -663,5 +670,6 @@ export function Pipeline({ ticket, details, onTaken }: { ticket: Ticket; details
         ? <div className="flex flex-col gap-5 pt-1">{details}{runs.length > 0 && <RunsSection runs={runs} now={now} />}</div>
         : <div className="pt-1"><StageBody stage={shown} data={{ ...data, state }} onRun={(stage, fix) => void start(stage, fix)} onStep={step} onSent={() => void load()} /></div>}
     </div>
+    </StageDataContext.Provider>
   )
 }

@@ -2,21 +2,25 @@
 // the refinement's decisions; the plan's PRs, its scripts and its to-dos; the
 // build's PRs; the review's findings; a release's steps; the test's criteria,
 // each with its evidence. One line a thing, a hairline between them.
-import { AlertTriangle, Check, CircleHelp, Database, GitPullRequestArrow, Play, Send } from "lucide-react"
+import { AlertTriangle, Check, CircleHelp, Database, FileText, GitPullRequestArrow, Hand, Play, Send, UserRound } from "lucide-react"
 import { type ReactNode, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { repoDot } from "@/features/session/state"
-import type { Asked, ChecklistItem, Finding, PipelineState, Severity, Stage, TestResult, Turn, Unit } from "@server/pipeline"
+import type { Asked, ChecklistItem, ContextImpact, Finding, PipelineState, Severity, Stage, TestResult, Turn, Unit } from "@server/pipeline"
 import type { Release } from "@server/release"
+import type { DebtEntry } from "@server/debt"
 import { Ask } from "./Ask"
 import { Evidence } from "./Evidence"
 import { Details } from "./Fold"
 import { ReleaseSteps, type After } from "./Release"
 import { changed, useConfirm } from "./confirm"
 import { act } from "./feedback"
+import { Markdown } from "@/features/conversation/Markdown"
 import { Section } from "./kinds"
-import { carriedResults, failed, isJob } from "./pipeline-board"
+import { carriedFindings, carriedResults, failed, isJob, summaryParts } from "./pipeline-board"
+import { lastAnswers } from "./comment"
+import { useStageData } from "./stage-data"
 
 // ---------- the parts every stage shares ----------
 
@@ -35,6 +39,36 @@ function Row({ mark, end, isDim = false, children }: { mark: ReactNode; end?: Re
 }
 const Rows = ({ children }: { children: ReactNode }) => <ol className="m-0 list-none p-0">{children}</ol>
 const PrLink = ({ url }: { url: string }) => <a href={url} target="_blank" rel="noreferrer" className="font-mono text-xs font-semibold text-brand no-underline hover:underline">#{url.split("/").pop()}</a>
+// What a stage did, in plain words: its first lines (a click shows it all); what it says
+// is still pending, apart, in amber and always in view.
+const LONG_SUMMARY = 420
+export function Summary({ text }: { text: string }) {
+  const { done, pending } = summaryParts(text)
+  const [isOpen, setOpen] = useState(false)
+  const isLong = done.length > LONG_SUMMARY
+  return (
+    <div className="flex flex-col gap-2.5">
+      {done && (
+        <div className="flex flex-col gap-1">
+          <div className={cn(isLong && !isOpen && "max-h-[7.5em] overflow-hidden [mask-image:linear-gradient(to_bottom,black_50%,transparent)]")}>
+            <Markdown className="max-w-[72ch] text-[13px]">{done}</Markdown>
+          </div>
+          {isLong && <button className="self-start text-xs font-semibold text-text-muted transition-colors duration-120 hover:text-text" onClick={() => setOpen(o => !o)} aria-expanded={isOpen}>{isOpen ? "Show less" : "Show all"}</button>}
+        </div>
+      )}
+      {pending && <div className="rounded-[8px] bg-ask-soft px-3 py-2"><Markdown className="text-[13px]">{pending}</Markdown></div>}
+    </div>
+  )
+}
+
+// What GitHub says of a PR now: merged, closed, or open (a draft, with conflicts).
+function PrState({ url }: { url: string }) {
+  const pr = useStageData().prs[url]
+  if (!pr) return null
+  const [word, tone] = pr.state === "MERGED" ? ["merged", "text-work"] : pr.state === "CLOSED" ? ["closed", "text-faint"]
+    : pr.isConflicting ? [pr.isDraft ? "draft · conflicts" : "conflicts", "text-bad"] : pr.isDraft ? ["draft", "text-ask"] : ["open", "text-text-muted"]
+  return <span className={cn("text-[11.5px] font-semibold", tone)}>{word}</span>
+}
 // The sub-tasks a unit covers, in a line (the single one of older plans too).
 export const subtasksOf = (u: Unit) => (u.subtasks?.length ? u.subtasks.join(", ") : u.subtask) || null
 
@@ -55,11 +89,34 @@ export function AskedList({ asked }: { asked: Asked[] }) {
 }
 
 // The decisions you took last in the refinement, as questions and answers (none: a refinement from before they were kept).
-export const lastDecisions = (state: PipelineState) =>
+const lastDecisions = (state: PipelineState) =>
   [...(state.history ?? [])].reverse().find(r => (r.stage ?? "refine") === "refine" && r.kept?.asked?.some(q => q.answer !== undefined))?.kept?.asked
 export function RefinePanel({ state }: { state: PipelineState }) {
-  const asked = lastDecisions(state)
-  return asked ? <Section title="Decisions" extra={asked.length}><AskedList asked={asked} /></Section> : null
+  const { comments } = useStageData()
+  const asked = lastDecisions(state) ?? lastAnswers(comments)?.map(a => ({ ...a, proposal: "" }))
+  const impact = state.contextImpact ?? []
+  return (
+    <div className="flex flex-col gap-5">
+      {asked && <Section title="Decisions" extra={asked.length}><AskedList asked={asked} /></Section>}
+      {impact.length > 0 && <Section title="Team context it changes" extra={impact.length}><Rows>{impact.map(c => <ImpactRow key={c.file + c.why} impact={c} />)}</Rows></Section>}
+    </div>
+  )
+}
+
+// A document of the team's context the ticket changes: which and why; a click shows what it says and what it would say.
+function ImpactRow({ impact: c }: { impact: ContextImpact }) {
+  const [isOpen, setOpen] = useState(false)
+  return (
+    <Row mark={<FileText size={13} />} end={<span className="font-mono text-[11.5px]">{c.file.split("/").pop()}</span>}>
+      <button className="text-left hover:underline hover:decoration-line-strong hover:underline-offset-[3px]" onClick={() => setOpen(o => !o)} aria-expanded={isOpen}>{c.why}</button>
+      {isOpen && (
+        <span className="mt-1.5 flex flex-col gap-1.5 text-text-muted">
+          {c.quote && <span className="line-through decoration-line-strong">{c.quote}</span>}
+          {c.proposal && <span>{c.proposal}</span>}
+        </span>
+      )}
+    </Row>
+  )
 }
 
 // ---------- plan ----------
@@ -96,14 +153,28 @@ export function PlanPanel({ state }: { state: PipelineState }) {
   return (
     <div className="flex flex-col gap-5">
       <Section title="Pull requests" extra={units.length}>
-        <Rows>{units.map(u => <Row key={u.id} mark={<GitPullRequestArrow size={13} />} end={subtasksOf(u) && <span className="font-mono text-[11.5px]">{subtasksOf(u)}</span>}><Repo repo={u.repo} /> <span className="text-text-muted">{u.title}</span></Row>)}</Rows>
+        <Rows>
+          {units.map((u, i) => {
+            const after = u.dependsOn.map(d => units.findIndex(x => x.id === d) + 1).filter(n => n > 0)
+            return (
+              <Row key={u.id} mark={<span className="font-mono text-[11.5px]">{i + 1}</span>} end={subtasksOf(u) && <span className="font-mono text-[11.5px]">{subtasksOf(u)}</span>}>
+                <Repo repo={u.repo} /> <span className="text-text-muted">{u.title}</span>{after.length > 0 && <span className="text-faint"> · after {after.join(", ")}</span>}
+              </Row>
+            )
+          })}
+        </Rows>
       </Section>
       {scripts.length > 0 && (
         <Section title="Scripts on the data" extra={scripts.length}>
           <Rows>
             {scripts.map(x => {
               const repo = units.find(u => u.id === x.unit)?.repo
-              return <Row key={x.id} mark={<Database size={13} />} end={repo && <Repo repo={repo} />}><span title={[x.command, x.when, x.envs.join(" → ")].filter(Boolean).join(" · ")}>{x.title}</span></Row>
+              return (
+                <Row key={x.id} mark={<Database size={13} />} end={repo && <Repo repo={repo} />}>
+                  <span title={x.command}>{x.title}</span>
+                  {(x.when || x.envs.length > 0) && <span className="block text-xs text-faint">{[x.when, x.envs.join(" → ")].filter(Boolean).join(" · ")}</span>}
+                </Row>
+              )
             })}
           </Rows>
         </Section>
@@ -119,7 +190,10 @@ export function PlanPanel({ state }: { state: PipelineState }) {
 // whether its tests passed; the ones this pass did not touch, dimmed.
 export function BuildPanel({ state, all = state.units ?? [] }: { state: PipelineState; all?: Unit[] }) {
   const pass = new Map((state.units ?? []).map(u => [u.id, u]))
+  const debt = useStageData().debt.filter(d => d.tickets.includes(state.key) && d.status === "open")
   return (
+    <div className="flex flex-col gap-5">
+    {state.fixing && <p className="m-0 text-[13px] text-text-muted">Fixes {state.fixing.ids.join(", ")}, from the {state.fixing.from}</p>}
     <Section title="Pull requests" extra={all.length}>
       <Rows>
         {all.map(unit => {
@@ -127,8 +201,9 @@ export function BuildPanel({ state, all = state.units ?? [] }: { state: Pipeline
           return (
             <Row key={u.id} isDim={!pass.has(u.id)} mark={<GitPullRequestArrow size={13} />} end={
               <>
+                {u.pr && <PrState url={u.pr} />}
                 {u.pr && <PrLink url={u.pr} />}
-                {u.status === "done" ? <Check size={13} strokeWidth={2.6} className="text-work" aria-label="Tests and checks passed" /> : u.status === "failed" ? <AlertTriangle size={13} className="text-bad" aria-label="Failed" /> : null}
+                <UnitMark unit={u} warns={(state.checks ?? []).filter(c => c.status === "warn" && c.id.startsWith(`${u.id}-`)).map(c => c.label)} />
               </>}>
               <Repo repo={u.repo} /> <span className="text-text-muted">{u.title}</span>
             </Row>
@@ -136,7 +211,35 @@ export function BuildPanel({ state, all = state.units ?? [] }: { state: Pipeline
         })}
       </Rows>
     </Section>
+    {debt.length > 0 && <DebtSeen debt={debt} />}
+    </div>
   )
+}
+
+// The code debt the ticket's runs saw and left alone, the worst first: a few, then all on a click.
+const DEBT_SHOWN = 5
+function DebtSeen({ debt }: { debt: DebtEntry[] }) {
+  const [isAll, setAll] = useState(false)
+  const sorted = [...debt].sort((a, b) => SEVERITY[a.severity].rank - SEVERITY[b.severity].rank)
+  return (
+    <Section title="Code debt it saw" extra={debt.length}>
+      <Rows>
+        {(isAll ? sorted : sorted.slice(0, DEBT_SHOWN)).map(d => (
+          <Row key={d.key} mark={<i className={cn("inline-block size-2 rounded-full", SEVERITY[d.severity].dot)} />} end={<Repo repo={d.repo} />}>
+            {d.note}<span className="block font-mono text-[11.5px] text-faint">{d.file}{d.line ? `:${d.line}` : ""}</span>
+          </Row>
+        ))}
+      </Rows>
+      {debt.length > DEBT_SHOWN && <button className="self-start text-xs font-semibold text-text-muted transition-colors duration-120 hover:text-text" onClick={() => setAll(v => !v)} aria-expanded={isAll}>{isAll ? "Show less" : `Show all ${debt.length}`}</button>}
+    </Section>
+  )
+}
+
+// Whether a PR's tests passed, and what the board's own checks of it warn about (on hover).
+function UnitMark({ unit: u, warns }: { unit: Unit; warns: string[] }) {
+  if (u.status === "failed") return <AlertTriangle size={13} className="text-bad" aria-label="Failed" />
+  if (warns.length) return <AlertTriangle size={13} className="text-ask" aria-label={warns.join(" · ")}><title>{warns.join("\n")}</title></AlertTriangle>
+  return u.status === "done" ? <Check size={13} strokeWidth={2.6} className="text-work" aria-label="Tests and checks passed" /> : null
 }
 
 // ---------- review ----------
@@ -148,29 +251,27 @@ const SEVERITY: Record<Severity, { rank: number; dot: string; name: string }> = 
 }
 const SEVERITIES: Severity[] = ["blocker", "major", "minor"]
 
-function FindingRow({ finding: f, unit, isFixed, isPublished = false, isChosen, onChoose, ask }: { finding: Finding; unit: Unit | undefined; isFixed: boolean; isPublished?: boolean; isChosen: boolean | null; onChoose: () => void; ask?: ReactNode }) {
+// isGone: an earlier pass found it and this one did not: fixed since.
+function FindingRow({ finding: f, unit, isFixed, isGone = false, isPublished = false, isChosen, onChoose, ask }: { finding: Finding; unit: Unit | undefined; isFixed: boolean; isGone?: boolean; isPublished?: boolean; isChosen: boolean | null; onChoose: () => void; ask?: ReactNode }) {
   const [isOpen, setOpen] = useState(false)
   const where = f.file ? `${f.file}${f.line ? `:${f.line}` : ""}` : ""
   return (
-    <li className="border-t border-line first:border-t-0">
-      <div className="grid grid-cols-[14px_minmax(0,1fr)_auto] items-baseline gap-x-2.5 py-2">
+    <li className={cn("border-t border-line first:border-t-0", isGone && "opacity-45")}>
+      <div className="grid grid-cols-[14px_minmax(0,1fr)_auto] items-baseline gap-x-2.5 pt-2">
         {isFixed ? <Check size={12} className="text-work" /> : <i className={cn("size-2 translate-y-[-1px] rounded-full", SEVERITY[f.severity].dot)} aria-label={f.severity} />}
         <button className={cn("text-left text-[13px] leading-[1.45] font-semibold hover:underline hover:decoration-line-strong hover:underline-offset-[3px]", isFixed ? "text-text-muted" : "text-text")} onClick={() => setOpen(o => !o)} aria-expanded={isOpen}>{f.title}</button>
         <span className="flex items-center gap-2.5 text-xs text-faint">
           {/* The build says it fixed it: only the next review confirms it. */}
-          {isFixed ? <span className="font-semibold text-ask">fixed · to confirm</span> : isPublished ? <span>published</span> : unit && <Repo repo={unit.repo} />}
+          {isGone ? <span>fixed</span> : isFixed ? <span className="font-semibold text-ask">fixed · to confirm</span> : isPublished ? <span>published</span> : unit && <Repo repo={unit.repo} />}
           {isChosen !== null && <input type="checkbox" checked={isChosen} onChange={onChoose} aria-label={`Fix ${f.title}`} className="size-3.5 cursor-pointer accent-(--brand)" />}
         </span>
       </div>
+      {/* For you, in view (two lines; a click shows it whole); the agent's own words (the file, the case, the fix) folded. */}
+      {f.plain && <p className={cn("m-0 ml-6 max-w-[72ch] pt-0.5 text-[13px] leading-[1.55] text-text-muted", !isOpen && "line-clamp-2")}>{f.plain}</p>}
+      <div className="pb-2" />
       {isOpen && (
         <div className="ml-6 flex flex-col gap-2 pb-3 text-[13px] leading-[1.55]">
-          {/* For you first; the agent's own words (the file, the case, the fix) folded. */}
-          {f.plain ? (
-            <>
-              <p className="m-0 max-w-[72ch] text-text-muted">{f.plain}</p>
-              <Details label="Technical detail"><Technical where={where} finding={f} /></Details>
-            </>
-          ) : <Technical where={where} finding={f} />}
+          {f.plain ? <Details label="Technical detail"><Technical where={where} finding={f} /></Details> : <Technical where={where} finding={f} />}
           {ask}
           {unit?.pr && <a href={`${unit.pr}/files`} target="_blank" rel="noreferrer" className="self-start text-xs font-semibold text-brand no-underline hover:underline">Open in PR #{unit.pr.split("/").pop()}</a>}
         </div>
@@ -204,26 +305,32 @@ function PublishButton({ n, onGo }: { n: number; onGo: () => void }) {
 // the blockers and majors come chosen, the minors not; one button fixes them all in one run.
 export function ReviewPanel({ state, onFix, onPublish }: { state: PipelineState; onFix: (ids: string[]) => void; onPublish?: (ids: string[]) => void }) {
   const findings = [...(state.findings ?? [])].sort((a, b) => SEVERITY[a.severity].rank - SEVERITY[b.severity].rank)
+  const gone = isJob(state) ? [] : carriedFindings(state)
   const [only, setOnly] = useState<Severity | null>(null)
   const fixed = new Set(state.fixed ?? [])
   const published = new Set((state as { published?: string[] }).published ?? [])
   const canChoose = state.stage === "review" && (state.status === "ready" || state.status === "needs-info") && (isJob(state) ? !!onPublish : state.status === "ready")
-  const [picked, setChosen] = useState(() => new Set(findings.filter(f => f.severity !== "minor").map(f => f.id)))
-  // What is published already is never chosen again.
-  const chosen = new Set([...picked].filter(id => !published.has(id)))
-  const choose = (id: string) => setChosen(c => (c.has(id) ? new Set([...c].filter(x => x !== id)) : new Set([...c, id])))
-  if (!findings.length) return <Section title="Findings" extra={0}>{null}</Section>
+  const [chosen, choose] = useChosen(findings, published)
+  if (!findings.length && !gone.length) return null
   return (
     <div className="flex flex-col gap-2">
-      <SeverityChips findings={findings} only={only} onPick={setOnly} />
+      {findings.length > 0 && <SeverityChips findings={findings} only={only} onPick={setOnly} />}
       <ol className="m-0 list-none p-0">
         {findings.filter(f => !only || f.severity === only).map(f => <FindingRow key={f.id} finding={f} unit={state.units?.find(u => u.id === f.unit)} isFixed={fixed.has(f.id)} isPublished={published.has(f.id)} isChosen={canChoose && !published.has(f.id) ? chosen.has(f.id) : null} onChoose={() => choose(f.id)}
           ask={isJob(state) ? undefined : <Ask ticketKey={state.key} about={`finding:${f.id}`} turns={state.threads?.[`finding:${f.id}`]} />} />)}
+        {!only && gone.map(f => <FindingRow key={`gone-${f.id}-${f.title}`} finding={f} unit={state.units?.find(u => u.id === f.unit)} isFixed isGone isChosen={null} onChoose={() => {}} />)}
       </ol>
       {canChoose && chosen.size > 0 && (onPublish ? <PublishButton n={chosen.size} onGo={() => onPublish([...chosen])} />
         : <FixButton n={chosen.size} isBlocking={findings.some(f => chosen.has(f.id) && f.severity !== "minor")} onGo={() => onFix([...chosen])} />)}
     </div>
   )
+}
+
+// What the build fixes: the blockers and majors come chosen, the minors not; what is published already, never.
+function useChosen(findings: Finding[], published: Set<string>): [Set<string>, (id: string) => void] {
+  const [picked, setPicked] = useState(() => new Set(findings.filter(f => f.severity !== "minor").map(f => f.id)))
+  const toggle = (id: string) => setPicked(c => (c.has(id) ? new Set([...c].filter(x => x !== id)) : new Set([...c, id])))
+  return [new Set([...picked].filter(id => !published.has(id))), toggle]
 }
 
 // One severity at a time, or all: a chip each, with how many (none: it cannot be picked).
@@ -285,6 +392,7 @@ function ResultRow({ result: r, ticketKey, canCheck, isCarried, turns }: { resul
         <span className="translate-y-[2px]">{RESULT_MARK[r.status]}</span>
         <button className="text-left text-[13px] leading-[1.45]" onClick={() => setOpen(o => !o)} aria-expanded={isOpen}>{r.criterion}</button>
         <span className="flex items-center gap-2.5 text-xs text-faint">
+          {r.status === "pass" && r.evidence?.startsWith("Comprobado a mano") && <span className="inline-flex items-center gap-1"><Hand size={12} />by hand</span>}
           {r.status === "untested" && canCheck && (
             <button className="font-semibold text-text-muted hover:text-text" onClick={() => void act("/api/pipeline/checked", { key: ticketKey, ids: [r.id] }, "Checked by hand").then(ok => ok && changed())}>Checked by hand</button>
           )}
@@ -311,6 +419,7 @@ export function TestPanel({ state, release }: { state: PipelineState; release: R
   const canCheck = state.status === "ready" && !isJob(state)
   return (
     <div className="flex flex-col gap-3">
+      {release && <Details label={`Deploy · ${release.steps.filter(s => s.status === "done" || s.status === "skipped").length} of ${release.steps.length}`}><ReleaseSteps ticketKey={state.key} release={release} after={afterOf(release.env, state)} /></Details>}
       {all.length > 3 && (
         <div className="flex flex-wrap gap-[3px]">
           {all.map(r => <button key={r.id} title={`${r.id}: ${r.criterion}`} aria-label={`${r.id}, ${r.status}`} className={cn("size-[18px] rounded-[4px] transition-[filter] duration-100 hover:brightness-150", CELL[r.status])}
@@ -323,7 +432,21 @@ export function TestPanel({ state, release }: { state: PipelineState; release: R
           {carried.map(r => <ResultRow key={r.id} result={r} ticketKey={state.key} canCheck={false} isCarried />)}
         </ol>
       )}
-      {release && <Details label="The deploy"><ReleaseSteps ticketKey={state.key} release={release} after={afterOf(release.env, state)} /></Details>}
+      <TestData />
     </div>
+  )
+}
+
+// The test data the test made in staging: the accounts it used and what it created.
+function TestData() {
+  const { scenario } = useStageData()
+  if (!scenario?.pieces.length && !scenario?.accounts.length) return null
+  return (
+    <Details label="Test data">
+      <Rows>
+        {scenario.accounts.map(a => <Row key={a} mark={<UserRound size={13} />}>{a}</Row>)}
+        {scenario.pieces.map(p => <Row key={p.id} mark={<Database size={13} />} end={<span className="font-mono text-[11.5px]">{p.model}</span>}>{p.name ?? p.id}</Row>)}
+      </Rows>
+    </Details>
   )
 }

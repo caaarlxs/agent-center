@@ -14,6 +14,7 @@ import { get } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import type { Release, ReleaseStep, StepKind } from "@server/release"
 import { Section } from "./kinds"
+import { useStageData } from "./stage-data"
 
 type Report = { head: string[]; total: number; rows: string[][]; text: string }
 const reportUrl = (key: string, file: string) => `/api/pipeline/report?key=${encodeURIComponent(key)}&file=${encodeURIComponent(file)}`
@@ -121,6 +122,19 @@ function Mark({ step }: { step: ReleaseStep }) {
   return <span className={cn(box, "border border-line-strong")} />
 }
 
+// A PR a step still has to merge that cannot go as it is: a draft, or with conflicts.
+function PrBlock({ step }: { step: ReleaseStep }) {
+  const { prs } = useStageData()
+  if (step.status === "done" || step.status === "skipped") return null
+  const stuck = step.links.map(l => [l, prs[l.url]] as const).filter(([, pr]) => pr?.state === "OPEN" && (pr.isDraft || pr.isConflicting))
+  if (!stuck.length) return null
+  return (
+    <span className="col-start-2 flex flex-col gap-0.5 pl-[21px] text-[11.5px] font-semibold text-ask">
+      {stuck.map(([l, pr]) => <span key={l.url}>{l.label} is {[pr!.isDraft && "a draft", pr!.isConflicting && "in conflict with its base"].filter(Boolean).join(" and ")}</span>)}
+    </span>
+  )
+}
+
 // What a step did or does now, its error, and its links (the PR, the deploy, a script's log).
 function StepDetail({ step, ticketKey }: { step: ReleaseStep; ticketKey: string }) {
   if (!step.detail && !step.error && !step.links.length) return null
@@ -147,6 +161,7 @@ function StepRow({ step, ticketKey, isAtHand, onAct }: { step: ReleaseStep; tick
         <span className="min-w-0">{step.title}{step.kind === "tag" && step.value && step.status !== "waiting" ? <span className="font-mono text-xs text-faint"> {step.value}</span> : null}</span>
       </span>
       <StepDetail step={step} ticketKey={ticketKey} />
+      <PrBlock step={step} />
       {(step.items.length > 0 || step.report) && (
         <div className="col-start-2 flex min-w-0 flex-col gap-2 pl-[21px]">
           <Items items={step.items} isOpen={step.status === "waiting" && step.kind === "check"} />
