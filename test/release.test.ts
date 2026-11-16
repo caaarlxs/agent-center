@@ -294,11 +294,12 @@ describe("a PR with conflicts", () => {
 
 describe("conflictsPrompt", () => {
   it("works on a branch of its own (the PR's may be open in the build's worktree), pushes to the PR's, and cleans up", () => {
-    const text = conflictsPrompt("PP-1", "staging", { url: "https://github.com/o/api/pull/7", repo: "api", head: "feat/x", base: "master" }, { dir: "/d/PP-1", clone: "/r/api", stages: "/s", answer: "/d/PP-1/conflicts/R1-1.json" })
+    const text = conflictsPrompt("PP-1", "el merge del release de PP-1 a staging", { url: "https://github.com/o/api/pull/7", repo: "api", head: "feat/x", base: "master" }, { dir: "/d/PP-1", clone: "/r/api", stages: "/s", answer: "/d/PP-1/conflicts/R1-1.json" })
     expect(text).toContain("worktree add -b conflicts/PP-1-7 /d/PP-1/conflicts/api-7 origin/feat/x")
     expect(text).toContain("git push origin HEAD:feat/x")
     expect(text).toContain("branch -D conflicts/PP-1-7")
     expect(text).toContain("Nunca rebase, nunca --force")
+    expect(text).toContain("antes de el merge del release de PP-1 a staging")
   })
 })
 

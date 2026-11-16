@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils"
 import type { Release, ReleaseStep, StepKind } from "@server/release"
 import { Section } from "./kinds"
 import { useStageData } from "./stage-data"
+import { ConflictFix } from "./ConflictFix"
 
 type Report = { head: string[]; total: number; rows: string[][]; text: string }
 const reportUrl = (key: string, file: string) => `/api/pipeline/report?key=${encodeURIComponent(key)}&file=${encodeURIComponent(file)}`
@@ -129,8 +130,13 @@ function PrBlock({ step }: { step: ReleaseStep }) {
   const stuck = step.links.map(l => [l, prs[l.url]] as const).filter(([, pr]) => pr?.state === "OPEN" && (pr.isDraft || pr.isConflicting))
   if (!stuck.length) return null
   return (
-    <span className="col-start-2 flex flex-col gap-0.5 pl-[21px] text-[11.5px] font-semibold text-ask">
-      {stuck.map(([l, pr]) => <span key={l.url}>{l.label} is {[pr!.isDraft && "a draft", pr!.isConflicting && "in conflict with its base"].filter(Boolean).join(" and ")}</span>)}
+    <span className="col-start-2 flex flex-col gap-1 pl-[21px]">
+      {stuck.map(([l, pr]) => (
+        <span key={l.url} className="flex flex-col gap-0.5">
+          <span className="text-[11.5px] font-semibold text-ask">{l.label} is {[pr!.isDraft && "a draft", pr!.isConflicting && "in conflict with its base"].filter(Boolean).join(" and ")}</span>
+          <ConflictFix url={l.url} />
+        </span>
+      ))}
     </span>
   )
 }

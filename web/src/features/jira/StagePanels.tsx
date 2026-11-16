@@ -21,6 +21,7 @@ import { Section } from "./kinds"
 import { carriedFindings, carriedResults, failed, isJob, summaryParts } from "./pipeline-board"
 import { lastAnswers } from "./comment"
 import { useStageData } from "./stage-data"
+import { ConflictFix } from "./ConflictFix"
 
 // ---------- the parts every stage shares ----------
 
@@ -206,6 +207,7 @@ export function BuildPanel({ state, all = state.units ?? [] }: { state: Pipeline
                 <UnitMark unit={u} warns={(state.checks ?? []).filter(c => c.status === "warn" && c.id.startsWith(`${u.id}-`)).map(c => c.label)} />
               </>}>
               <Repo repo={u.repo} /> <span className="text-text-muted">{u.title}</span>
+              {u.pr && <span className="mt-1 block empty:hidden"><ConflictFix url={u.pr} /></span>}
             </Row>
           )
         })}

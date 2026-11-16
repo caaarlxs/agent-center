@@ -30,7 +30,7 @@ import { ago } from "@/features/session/state"
 import { repoDot } from "@/features/session/state"
 import type { Helper, Step } from "@server/activity"
 import { sentBackSince } from "@server/sent-back"
-import type { PipelineState, Run, Stage, Unit } from "@server/pipeline"
+import type { PipelineState, PrFix, Run, Stage, Unit } from "@server/pipeline"
 import type { Check as BoardCheck } from "@server/checks"
 import { deliverablesOf } from "@server/scope"
 import { MODELS } from "@/features/prompt/Settings"
@@ -55,7 +55,7 @@ import type { PrState, Scenario } from "@server/stage-extras"
 import type { DebtEntry } from "@server/debt"
 import { StageDataContext } from "./stage-data"
 
-type Data = { putAside: number; docs: number[]; summaries: Partial<Record<Stage, string | null>>; prs: Record<string, PrState>; scenario: Scenario | null; state: PipelineState | null; refine: string | null; plan: string | null; build: string | null; review: string | null; test: string | null; smoke: string | null; preview: Release | null }
+type Data = { putAside: number; docs: number[]; summaries: Partial<Record<Stage, string | null>>; prs: Record<string, PrState>; fixes: Record<string, PrFix>; scenario: Scenario | null; state: PipelineState | null; refine: string | null; plan: string | null; build: string | null; review: string | null; test: string | null; smoke: string | null; preview: Release | null }
 type OnStep = (step: string, action: "approve" | "skip", value?: string) => void
 const FOLLOW_MS = 5_000
 const IDLE_MS = 30_000
@@ -662,7 +662,7 @@ export function Pipeline({ ticket, details, onTaken }: { ticket: Ticket; details
   const runs = state.history ?? []
   const shown = picked ?? focusOf(state)
   return (
-    <StageDataContext.Provider value={{ prs: data.prs ?? {}, scenario: data.scenario ?? null, comments: ticket.comments, debt }}>
+    <StageDataContext.Provider value={{ prs: data.prs ?? {}, fixes: data.fixes ?? {}, onResolve: url => void act("/api/pipeline/conflicts", { key: ticket.key, url }, "An agent resolves the conflicts").then(ok => ok && loadSoon()), scenario: data.scenario ?? null, comments: ticket.comments, debt }}>
     <div className="flex flex-col gap-3">
       <Now state={state} preview={data.preview} now={now} putAside={data.putAside} onRun={stage => void start(stage)} onStep={step} onChanged={() => void load()} />
       <StageTabs tones={tonesOf(state)} picked={shown} onPick={setPicked} />

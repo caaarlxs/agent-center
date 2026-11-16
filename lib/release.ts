@@ -476,7 +476,7 @@ async function resolveConflicts(step: ReleaseStep, release: Release, ctx: Ctx, o
   if ((step.attempts ?? 0) >= 1) throw new Error(`Conflicts with ${pr.base} again after an agent took them on: resolve them by hand, then Retry`)
   const next = { ...step, attempts: (step.attempts ?? 0) + 1 }
   const answer = answerOf(next, ctx)
-  const pid = await ops.agent(ctx.dir, conflictsPrompt(ctx.key, release.env, pr, { dir: ctx.dir, clone: cloneOf(step, ctx), stages: ctx.stages, answer }), answer.replace(/\.json$/, ".log"))
+  const pid = await ops.agent(ctx.dir, conflictsPrompt(ctx.key, `el merge del release de ${ctx.key} a ${release.env}`, pr, { dir: ctx.dir, clone: cloneOf(step, ctx), stages: ctx.stages, answer }), answer.replace(/\.json$/, ".log"))
   return { status: "running", phase: "conflicts", pid, attempts: next.attempts, detail: `Conflicts with ${pr.base}: an agent resolves them` }
 }
 async function checkConflicts(step: ReleaseStep, ctx: Ctx, ops: Ops): Promise<Patch> {

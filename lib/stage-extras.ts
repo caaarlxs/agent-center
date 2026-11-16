@@ -28,6 +28,9 @@ export async function prStates(urls: string[], sh: Sh, now = Date.now()): Promis
   return out
 }
 
+// A PR that changed now (an agent pushed to it): read again next time.
+export const forgetPr = (url: string) => void read.delete(url)
+
 // The test data of a test in staging: the accounts it used and what it made, each by its name.
 export type Scenario = { accounts: string[]; pieces: { id: string; model: string; name: string | null }[] }
 export function scenarioOf(raw: unknown): Scenario | null {

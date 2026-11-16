@@ -1,20 +1,21 @@
-// An agent that resolves a PR's conflicts with its base before the release
-// merges it: it merges the base into the PR's branch (never a rebase, never a
-// force push), keeps what each side does, runs the tests and pushes to the
-// PR's branch. Where a conflict asks which behaviour wins, or the tests fail
-// after the merge, it pushes nothing and says why: the release stops there.
+// An agent that resolves a PR's conflicts with its base before it merges (a
+// release's merge, or yours from the ticket): it merges the base into the PR's
+// branch (never a rebase, never a force push), keeps what each side does, runs
+// the tests and pushes to the PR's branch. Where a conflict asks which
+// behaviour wins, or the tests fail after the merge, it pushes nothing and
+// says why: whoever merges it decides.
 
 import { join } from "node:path"
-import type { Env } from "./pipeline"
 
 export type Resolved = { resolved: boolean; reason: string }
 export type ConflictPr = { url: string; repo: string; head: string; base: string }
 
-export function conflictsPrompt(key: string, env: Env, pr: ConflictPr, paths: { dir: string; clone: string; stages: string; answer: string }) {
+// before: what merges it next ("el merge del release de PP-1 a staging").
+export function conflictsPrompt(key: string, before: string, pr: ConflictPr, paths: { dir: string; clone: string; stages: string; answer: string }) {
   const n = pr.url.split("/").pop()
   const tree = join(paths.dir, "conflicts", `${pr.repo}-${n}`)
   const local = `conflicts/${key}-${n}`
-  return `Eres quien resuelve los conflictos de una PR antes del merge del release de ${key} a ${env}.
+  return `Eres quien resuelve los conflictos de una PR de ${key} antes de ${before}.
 
 La PR: ${pr.url}, rama ${pr.head}, contra ${pr.base}. GitHub no la puede mergear: tiene conflictos con ${pr.base}.
 

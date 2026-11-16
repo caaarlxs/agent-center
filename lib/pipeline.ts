@@ -55,7 +55,8 @@ import { activityOf } from "./activity"
 import { existsSync, readdirSync, readFileSync } from "node:fs"
 import { exec } from "./proc"
 import { overLimits, prChecks, reposClean, type Check } from "./checks"
-import { prStates, scenarioOf } from "./stage-extras"
+import { forgetPr, prStates, scenarioOf } from "./stage-extras"
+import { conflictsPrompt, parseResolved } from "./conflicts"
 import { canJudge, gatePrompt, parseAdvice } from "./gate"
 import { readdir } from "node:fs/promises"
 import { DEFAULT_CONFIG, tookUnit, advanceRelease, approveStep, releaseSteps, retryStep, rollbackSteps, skipStep, type DeployConfig, type OrderItem, type Ops, type Release, type ReleaseStep } from "./release"
@@ -565,10 +566,12 @@ export async function pipelineOf(key: string) {
   const summaries = Object.fromEntries(await Promise.all(SUMMED.map(async stage => [stage, await read(stage, ".summary.md")] as const)))
   // What runs put aside left: their folders, and the branches you kept when one went.
   const putAside = (await archivesOf(key)).length + (await keptBranchesOf(key)).length
-  const prs = await prStates((state?.units ?? []).map(u => u.pr).filter((p): p is string => !!p), releaseOps.sh)
+  const urls = (state?.units ?? []).map(u => u.pr).filter((p): p is string => !!p)
+  const fixes = await prFixes(key, urls)
+  const prs = await prStates(urls, releaseOps.sh)
   const scenario = state ? scenarioOf(jsonOf(await readText(join(dirOf(key), "scenario.json")))) : null
   const stageDocs = Object.assign({}, ...(await Promise.all(SUMMED.map(docOf))))
-  return { putAside, docs: await runDocs(key), state: state && (await withSpend(state)), ...stageDocs, summaries, prs, scenario, preview: await previewOf(state) }
+  return { putAside, docs: await runDocs(key), state: state && (await withSpend(state)), ...stageDocs, summaries, prs, fixes, scenario, preview: await previewOf(state) }
 }
 
 // What the running stage does now: its session's steps and subagents, and,
@@ -856,6 +859,50 @@ export async function runDoc(key: string, n: number) {
   if (!isKey(key) || !run) throw new Error("No such run")
   return readText(join(dirOf(key), "runs", `${n}-${run.stage}.md`))
 }
+
+// ---------- a PR's conflicts, on your click (lib/conflicts.ts) ----------
+
+// An agent's files on a PR of the ticket: its answer, its pid while it works, its log.
+const fixFiles = (key: string, url: string) => {
+  const [, repo = "", n = ""] = url.match(/github\.com\/[^/]+\/([^/]+)\/pull\/(\d+)/) ?? []
+  const base = join(dirOf(key), "conflicts", `pr-${repo}-${n}`)
+  return { answer: `${base}.json`, pid: `${base}.pid`, log: `${base}.log` }
+}
+// A PR of the ticket with conflicts: an agent merges its base into it and pushes, or says why not.
+// The merge stays with whoever merges it (a release's step, or the person its step names).
+export async function resolvePr(key: string, url: string) {
+  const unit = (await stateOf(key))?.units?.find(u => u.pr === url)
+  if (!isKey(key) || !unit) throw new Error("That PR is not this ticket's")
+  const files = fixFiles(key, url)
+  if ((await prFixOf(files)).status === "running") throw new Error("An agent is on it already")
+  const pr = jsonOf((await releaseOps.sh(["gh", "pr", "view", url, "--json", "state,mergeable,headRefName,baseRefName"])).out)
+  if (pr?.state !== "OPEN" || pr.mergeable !== "CONFLICTING") throw new Error("GitHub sees no conflicts in it")
+  await rm(files.answer, { force: true })
+  settled.delete(files.answer)
+  const prompt = conflictsPrompt(key, "su merge", { url, repo: unit.repo, head: pr.headRefName, base: pr.baseRefName }, { dir: dirOf(key), clone: join(ROOT, "repos", unit.repo), stages: STAGES_DIR, answer: files.answer })
+  await Bun.write(files.pid, String(await releaseOps.agent(dirOf(key), prompt, files.log)))
+  forgetPr(url)
+}
+// What the agent on a PR did: at work, resolved (and pushed), or not, and why; none: no agent took it.
+export type PrFix = { status: "running" | "resolved" | "failed"; reason: string | null }
+async function prFixOf(files: ReturnType<typeof fixFiles>): Promise<PrFix | { status: null }> {
+  const [answer, pid] = await Promise.all([readText(files.answer), readText(files.pid)])
+  if (answer !== null) {
+    const r = parseResolved(answer)
+    return { status: r.resolved ? "resolved" : "failed", reason: r.reason }
+  }
+  if (!pid) return { status: null }
+  return isAlive(Number(pid)) ? { status: "running", reason: null } : { status: "failed", reason: "The agent stopped without an answer" }
+}
+// A PR an agent resolved is read again from GitHub the first time its answer is read.
+const settled = new Set<string>()
+const prFixes = async (key: string, urls: string[]) =>
+  Object.fromEntries((await Promise.all(urls.map(async url => {
+    const files = fixFiles(key, url)
+    const fix = await prFixOf(files)
+    if (fix.status === "resolved" && !settled.has(files.answer)) (settled.add(files.answer), forgetPr(url))
+    return [url, fix] as const
+  }))).filter(([, f]) => f.status !== null))
 
 // ---------- findings in plain words ----------
 
