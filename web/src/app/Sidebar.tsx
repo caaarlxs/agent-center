@@ -184,14 +184,16 @@ export function Sidebar() {
           isDrawerOpen ? "max-[860px]:shadow-pop" : "max-[860px]:-translate-x-full",
         )}
         ref={el => void el?.ownerDocument.documentElement.style.setProperty("--side-w", isSlim ? "60px" : "256px")}>
-        <div className={cn("flex items-center gap-[9px] px-2 pt-0.5 pb-4 text-sm font-[650] tracking-[-0.01em]", isSlim && "flex-col gap-3 px-0 pb-3.5")}>
+        <div className={cn("flex items-center gap-[9px] px-2 pt-0.5 pb-4 text-sm font-[650] short:pb-2.5 tracking-[-0.01em]", isSlim && "flex-col gap-3 px-0 pb-3.5")}>
           <BrandMark />
           {!isSlim && <span>Agent Center</span>}
           <button className={cn(footBtn(), !isSlim && "ml-auto", "max-[860px]:hidden")} onClick={toggleFolded} title={isSlim ? "Show the sidebar" : "Fold the sidebar to icons"}>
             <PanelLeft className="size-[15px]" />
           </button>
         </div>
-        <div className="mx-0.5 mb-3.5 flex flex-col gap-1.5">
+        {/* Everything up to the footer scrolls when the window is too short for it (a page zoomed in). */}
+        <div className={cn("-mx-1 flex min-h-0 flex-1 flex-col overflow-y-auto px-1 [scrollbar-width:thin]", isSlim && "mx-0 px-0")}>
+        <div className="mx-0.5 mb-3.5 flex flex-col gap-1.5 short:mb-2.5">
           <Button className={cn("h-[34px] w-full justify-start gap-2", isSlim && "justify-center gap-0 px-0")} onClick={() => openDialog({ kind: "new" })} title="New session (N)">
             <Anim.Plus size={15} />{!isSlim && <>New session<Kbd className="ml-auto">N</Kbd></>}
           </Button>
@@ -226,7 +228,7 @@ export function Sidebar() {
           ))}
         </nav>
         {!isSlim && <div className="mx-2 mt-[18px] mb-1.5 text-[11px] font-semibold tracking-[0.05em] text-faint uppercase">Repos</div>}
-        <nav className={cn("-mx-1 flex min-h-0 flex-1 flex-col gap-px overflow-y-auto px-1", isSlim && "mx-0 mt-2 px-0")}>
+        <nav className={cn("-mx-1 flex min-h-[88px] flex-1 flex-col gap-px overflow-y-auto px-1", isSlim && "mx-0 mt-2 px-0")}>
           <button className={cn(navRow(!chosen, isSlim), "h-7 font-[450]")} onClick={() => chooseRepo(null)} title={isSlim ? "All" : undefined}>
             <i className="size-[9px] shrink-0 rounded-[3px] bg-[conic-gradient(hsl(20_70%_58%),hsl(140_50%_50%),hsl(220_70%_62%),hsl(300_50%_60%),hsl(20_70%_58%))]" />
             {!isSlim && <>All<span className="ml-auto text-[11.5px] text-faint tabular-nums">{open.length}</span></>}
@@ -250,7 +252,8 @@ export function Sidebar() {
         {isSlim ? <SlimLimits /> : <Limits />}
         <SessionsMemory cards={cards} isSlim={isSlim} />
         <SentFiles isSlim={isSlim} />
-        <footer className={cn("mt-2 flex items-center justify-between border-t border-line px-1.5 pt-2.5", isSlim && "flex-col gap-2 px-0")}>
+        </div>
+        <footer className={cn("mt-2 flex shrink-0 items-center justify-between border-t border-line px-1.5 pt-2.5", isSlim && "flex-col gap-2 px-0")}>
           {/* The version under "Live", so the row of buttons never breaks in a narrow window. */}
           {/* Two columns: the dot beside "Live", the version under its text. */}
           <span className="grid shrink-0 grid-cols-[7px_auto] items-center gap-x-1.5 text-xs leading-tight text-text-muted" title={isSlim ? (isConnected ? "Live" : "Reconnecting…") : undefined}>
