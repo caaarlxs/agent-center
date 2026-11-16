@@ -12,11 +12,12 @@ import { Textarea } from "@/components/ui/textarea"
 import { get } from "@/lib/api"
 import { dialog } from "@/app/open-dialog"
 import { Markdown } from "@/features/conversation/Markdown"
-import type { PipelineState } from "@server/pipeline"
+import type { PipelineState, Stage } from "@server/pipeline"
 import { KINDS, PRIORITIES, anchorOf, newDescription, ticketsOfYours, waitsOn, type Edit, type Proposal } from "@server/proposals"
 import { loadPets } from "@/features/pets/pets"
 import { changed, useConfirm } from "./confirm"
 import { sendWithFeedback } from "./feedback"
+import { nodeOf } from "./pipeline-board"
 
 const KIND_WORD: Record<Proposal["kind"], string> = { bug: "Bug", story: "Story", task: "Task", subtask: "Sub-task" }
 const Kind = ({ kind }: { kind: Proposal["kind"] }) => <span className="shrink-0 rounded-[4px] bg-hover px-1.5 text-[11px] font-semibold text-text-muted">{KIND_WORD[kind]}</span>
@@ -35,11 +36,12 @@ function Row({ p, anchor, onOpen }: { p: Proposal; anchor: string | null; onOpen
   )
 }
 
-export function Proposed({ state }: { state: PipelineState }) {
+// The tickets a stage proposed, in its tab (one of no stage, the refinement's).
+export function Proposed({ state, stage }: { state: PipelineState; stage: Stage }) {
   const [openId, setOpenId] = useState<string | null>(null)
   // One that waits on a question still open shows in that question, not here.
   const open = state.status === "needs-info" ? state.questions.map(q => q.id) : []
-  const shown = (state.proposals ?? []).filter(p => p.status !== "dismissed" && !waitsOn(p, open))
+  const shown = (state.proposals ?? []).filter(p => p.status !== "dismissed" && !waitsOn(p, open) && nodeOf((p.stage ?? "refine") as Stage) === stage)
   const yours = ticketsOfYours(state)
   const picked = shown.find(p => p.id === openId)
   if (!shown.length) return null

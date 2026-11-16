@@ -14,7 +14,7 @@ const ContextDialog = lazyView(() => import("@/features/context/ContextDialog").
 const DigestDialog = lazyView(() => import("@/features/digest/DigestDialog").then(m => m.DigestDialog), { isFloating: true })
 const NewSessionDialog = lazyView(() => import("@/features/new-session/NewSessionDialog").then(m => m.NewSessionDialog), { isFloating: true })
 const RunDialog = lazyView(() => import("@/features/run/RunDialog").then(m => m.RunDialog), { isFloating: true })
-const TicketDialog = lazyView(() => import("@/features/jira/TicketDialog").then(m => m.TicketDialog), { isFloating: true })
+const TicketPanel = lazyView(() => import("@/features/jira/TicketPanel").then(m => m.TicketPanel), { isFloating: true })
 const JobDialog = lazyView(() => import("@/features/jira/Job").then(m => m.JobDialog), { isFloating: true })
 const PetsDialog = lazyView(() => import("@/features/pets/PetsDialog").then(m => m.PetsDialog), { isFloating: true })
 const SpendDialog = lazyView(() => import("@/features/spend/SpendDialog").then(m => m.SpendDialog), { isFloating: true })
@@ -43,7 +43,7 @@ export function Dialogs() {
   useEffect(() => whenIdle(() => {
     NewSessionDialog.preload()
     SetupDialog.preload()
-    TicketDialog.preload()
+    TicketPanel.preload()
     void knownRepos.load().catch(() => {})
   }), [])
   if (!open) return null
@@ -54,7 +54,7 @@ export function Dialogs() {
   if (open.kind === "pets") return <PetsDialog onClose={closeDialog} />
   if (open.kind === "spend") return <SpendDialog onClose={closeDialog} />
   if (open.kind === "run") return <RunDialog card={open.card} onClose={closeDialog} />
-  if (open.kind === "ticket") return <TicketDialog ticketKey={open.key} onClose={closeDialog} />
+  if (open.kind === "ticket") return <TicketPanel ticketKey={open.key} onClose={closeDialog} />
   if (open.kind === "job") return <JobDialog id={open.id} onClose={closeDialog} />
   return null // help: the guide draws itself
 }

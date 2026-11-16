@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { columnOf, isQueued, journeyOf, nextStage, passesOf, toFix, untested, waitingStep } from "./pipeline-board"
+import { columnOf, isQueued, nextStage, passesOf, toFix, tonesOf, untested, waitingStep } from "./pipeline-board"
 
 type At = "refine" | "plan" | "build" | "review" | "staging" | "test" | "prod" | "smoke"
 const at = (stage: At, status: "running" | "needs-info" | "ready" | "failed", findings?: { id: string; severity: string }[], release?: unknown) => ({ stage, status, findings, release }) as never
@@ -62,7 +62,7 @@ describe("a release", () => {
     const failed = { stage: "test", status: "ready", results: [{ id: "T1", status: "fail" }, { id: "T2", status: "pass" }] } as never
     expect(nextStage(failed)).toBeNull()
     expect(columnOf(failed)).toBe(4)
-    expect(journeyOf(failed, null)[4]).toEqual({ stage: "staging", tone: "ask", fact: "1/2 pass" })
+    expect(tonesOf(failed)[4]).toBe("ask")
   })
   it("tells the step that waits for you", () => {
     const release = { env: "staging", steps: [{ id: "R1", status: "done" }, { id: "R2", status: "waiting" }, { id: "R3", status: "pending" }] }
@@ -72,24 +72,18 @@ describe("a release", () => {
   })
 })
 
-describe("journeyOf", () => {
-  const units = [{ id: "U1", repo: "a", pr: "https://x/pull/1" }, { id: "U2", repo: "b", pr: null }]
-  const history = [{ stage: "refine", questions: 4 }, { stage: "refine", questions: 0 }, { stage: "plan", questions: 0 }]
-  it("says each stage done so far in one fact, the one at hand by its state, and the next one waiting", () => {
-    const state = { stage: "review", status: "ready", units, history, findings: [{ id: "F1", severity: "minor" }] } as never
-    const preview = { env: "staging", steps: [{ status: "pending" }, { status: "pending" }] } as never
-    expect(journeyOf(state, preview).map(n => [n.tone, n.fact])).toEqual([
-      ["done", "4 decisions"], ["done", "2 units"], ["done", "1 PR"], ["done", "1 minor"], ["next", "2 steps"], ["todo", null],
-    ])
+describe("tonesOf", () => {
+  it("marks the stages done, the one at hand by its state, and the next one waiting", () => {
+    const state = { stage: "review", status: "ready", findings: [{ id: "F1", severity: "minor" }] } as never
+    expect(tonesOf(state)).toEqual(["done", "done", "done", "done", "next", "todo"])
   })
-  it("shows what waits for you, and a release under way by its steps", () => {
-    const fix = { stage: "review", status: "ready", units, history, findings: [{ id: "F1", severity: "major" }] } as never
-    expect(journeyOf(fix, null)[3]).toEqual({ stage: "review", tone: "ask", fact: "1 to fix" })
+  it("shows what waits for you, a release under way and one that failed", () => {
+    expect(tonesOf({ stage: "review", status: "ready", findings: [{ id: "F1", severity: "major" }] } as never)[3]).toBe("ask")
     const release = { env: "staging", steps: [{ status: "done" }, { status: "waiting" }, { status: "pending" }] }
-    const deploying = { stage: "staging", status: "running", units, history, release } as never
-    expect(journeyOf(deploying, null)[4]).toEqual({ stage: "staging", tone: "ask", fact: "1/3 steps" })
-    expect(journeyOf({ ...(deploying as object), status: "failed" } as never, null)[4]!.tone).toBe("bad")
-    expect(journeyOf({ stage: "plan", status: "running", history } as never, null).map(n => n.tone)).toEqual(["done", "work", "todo", "todo", "todo", "todo"])
+    const deploying = { stage: "staging", status: "running", release } as never
+    expect(tonesOf(deploying)[4]).toBe("ask")
+    expect(tonesOf({ ...(deploying as object), status: "failed" } as never)[4]).toBe("bad")
+    expect(tonesOf({ stage: "plan", status: "running" } as never)).toEqual(["done", "work", "todo", "todo", "todo", "todo"])
   })
 })
 
@@ -119,9 +113,5 @@ describe("the passes of a stage", () => {
     expect(passesOf(history as never, "build").map(r => r.n)).toEqual([3, 7])
     expect(passesOf(history as never, "staging").map(r => r.n)).toEqual([6])
     expect(passesOf(history as never, "review").map(r => r.n)).toEqual([4])
-  })
-  it("a plan says the units it planned, not the ones a fix added later", () => {
-    const state = { stage: "build", status: "ready", units: Array(4).fill({ pr: "x" }), history } as never
-    expect(journeyOf(state, null).find(n => n.stage === "plan")!.fact).toBe("3 units")
   })
 })

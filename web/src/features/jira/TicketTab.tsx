@@ -1,9 +1,9 @@
 // A Jira ticket whole (lib/jira.ts), read live when it opens and every
-// minute: what it is and where it sits (its parent, what sits in it, its
-// links to others), the description and the comments; beside them its
-// details, the sessions linked to it (link another, or unlink one) and a
-// new one about it. On a ticket
-// assigned to you: move its status (confirmed first) and comment.
+// minute: what it is and where it sits, then the pipeline (Pipeline.tsx),
+// whose Ticket tab holds what Jira says of it: its details, the description,
+// what sits in it, its links, the comments, and the sessions linked to it
+// (link another, unlink one, or start one about it). On a ticket assigned
+// to you: move its status (confirmed first) and comment.
 // The "Tickets" tab of a session: the tickets linked to it and why (started
 // from it, linked by you, its branch or title, you named it), one open whole;
 // link another by its key, or unlink one that is not its own.
@@ -26,7 +26,7 @@ import { StateIcon } from "@/features/session/StateIcon"
 import { ago } from "@/features/session/state"
 import { Anim } from "@/components/icons/animated"
 import { WHY, keptTicket, loadTicket, sessionsOf, startFrom } from "./jira"
-import { KindMark, TONE, TicketRefRow } from "./kinds"
+import { KindMark, Section, TONE, TicketRefRow } from "./kinds"
 import { Pipeline } from "./Pipeline"
 import { TicketTree } from "./TicketTree"
 import { readComment } from "./comment"
@@ -132,32 +132,81 @@ function Comment({ author, at, body, now }: { author: string; at: number; body: 
   )
 }
 
-function Section({ title, extra, children }: { title: string; extra?: ReactNode; children: ReactNode }) {
-  return (
-    <section className="flex flex-col gap-1.5">
-      <h4 className="m-0 flex items-center gap-2 text-[11.5px] font-bold tracking-[0.05em] text-text-muted uppercase">{title}{extra}</h4>
-      {children}
-    </section>
-  )
-}
-
 const Fact = ({ label, children }: { label: string; children: ReactNode }) => (
   <><dt className="text-xs text-text-muted">{label}</dt><dd className="m-0 min-w-0 truncate text-[13px]">{children}</dd></>
 )
 
-// Its shape while it loads, so the dialog does not grow under the eye.
+// Its shape while it loads, so the panel does not grow under the eye.
 const TicketSkeleton = () => (
-  <div className="@container flex animate-pulse flex-col gap-4" aria-busy>
+  <div className="flex animate-pulse flex-col gap-4" aria-busy>
     <div className="h-3.5 w-40 rounded bg-hover" />
     <div className="h-6 w-3/4 rounded bg-hover" />
-    <div className="grid gap-5 @[680px]:grid-cols-[minmax(0,1fr)_240px]">
-      <div className="flex flex-col gap-2.5">{[96, 88, 92, 70, 84, 60].map((w, i) => <div key={i} className="h-3 rounded bg-hover" style={{ width: `${w}%` }} />)}</div>
-      <div className="h-56 rounded-[12px] bg-hover" />
-    </div>
+    <div className="h-8 rounded-[8px] bg-hover" />
+    <div className="flex flex-col gap-2.5">{[96, 88, 92, 70, 84, 60].map((w, i) => <div key={i} className="h-3 rounded bg-hover" style={{ width: `${w}%` }} />)}</div>
   </div>
 )
 
-export function TicketView({ ticketKey }: { ticketKey: string }) {
+// What Jira says of it, in the Ticket tab: its status (yours: moved here), who and when,
+// the description, what sits in it, its links, the comments, and the sessions about it.
+function TicketDetails({ ticket, cards, now, onDone }: { ticket: Ticket; cards: Card[]; now: number; onDone: () => void }) {
+  const sessions = sessionsOf(cards, ticket.key)
+  const done = ticket.children.filter(c => c.tone === "done").length
+  return (
+    <>
+      <dl className="m-0 grid grid-cols-[76px_minmax(0,1fr)] items-baseline gap-x-2 gap-y-1.5">
+        <Fact label="Status"><Status ticket={ticket} onDone={onDone} /></Fact>
+        <Fact label="Assignee">{ticket.assignee ?? <span className="text-faint">Unassigned</span>}</Fact>
+        <Fact label="Reporter">{ticket.reporter ?? "—"}</Fact>
+        <Fact label="Priority">{ticket.priority ?? "—"}</Fact>
+        <Fact label="Sprint">{ticket.sprint ?? "—"}</Fact>
+        <Fact label="Created">{day(ticket.created)}</Fact>
+        <Fact label="Updated"><span title={new Date(ticket.updated).toLocaleString("en-GB")}>{ago(ticket.updated, now)} ago</span></Fact>
+      </dl>
+      <Section title="Description">
+        {ticket.description ? <Markdown className="text-[13.5px]">{ticket.description}</Markdown> : <p className="m-0 text-[13px] text-faint">No description.</p>}
+      </Section>
+      {ticket.children.length > 0 && (
+        <Section title={ticket.kind === "epic" ? "In this epic" : "Sub-tasks"} extra={`${done} of ${ticket.children.length} done`}>
+          <div className="h-1 overflow-hidden rounded-full bg-hover"><div className="h-full bg-work" style={{ width: `${(done / ticket.children.length) * 100}%` }} /></div>
+          <div className="-mx-1.5 flex flex-col">{ticket.children.map(c => <TicketRefRow key={c.key} ticket={c} />)}</div>
+        </Section>
+      )}
+      {ticket.links.length > 0 && (
+        <Section title="Links">
+          <div className="-mx-1.5 flex flex-col">{ticket.links.map(l => <TicketRefRow key={`${l.how}${l.ticket.key}`} ticket={l.ticket} note={l.how} />)}</div>
+        </Section>
+      )}
+      <Section title="Comments" extra={ticket.comments.length}>
+        <ol className="m-0 flex list-none flex-col p-0">
+          {ticket.comments.map((c, i) => <Comment key={i} author={c.author} at={c.at} body={c.body} now={now} />)}
+        </ol>
+        {ticket.isMine && <CommentBox ticket={ticket} onDone={onDone} />}
+      </Section>
+      <Section title="Sessions" extra={sessions.length || undefined}>
+        {sessions.map(s => (
+          <div key={s.id} className="group -mx-1.5 flex min-w-0 items-center gap-1 rounded-md pr-1 hover:bg-hover">
+            <button className="flex min-w-0 flex-1 items-center gap-2 px-1.5 py-1 text-left text-[13px]" onClick={() => (dialog.set(null), openSession(s.id))}
+              title={WHY[s.tickets.find(t => t.key === ticket.key)?.why ?? "named"]}>
+              <StateIcon card={s} size={14} /><span className="truncate">{s.title}</span>
+            </button>
+            <button className="grid size-5 shrink-0 place-items-center rounded text-faint opacity-0 group-hover:opacity-100 hover:bg-press hover:text-text focus-visible:opacity-100" title={`Unlink from ${s.title}`}
+              onClick={() => void linkTo(s, { unlink: ticket.key })}>
+              <X size={13} />
+            </button>
+          </div>
+        ))}
+        <div className="flex max-w-[360px] gap-1.5">
+          <Button variant="outline" className="h-7 flex-1 gap-1 text-xs" onClick={() => void startFrom([ticket], cards)}><Plus size={13} />{sessions.length ? "New" : "Start session"}</Button>
+          <LinkSession ticketKey={ticket.key} cards={cards.filter(c => !sessions.includes(c))} />
+        </div>
+      </Section>
+    </>
+  )
+}
+
+// A ticket whole: where it sits and what it is; then the pipeline, its tabs, and the ticket's own.
+// actions: what the place it opens in adds to its first line (the panel: go to the next ticket, close).
+export function TicketView({ ticketKey, actions }: { ticketKey: string; actions?: ReactNode }) {
   const now = useNow()
   const cards = useBoardCards()
   // The one read on hover, if any, at once; then fresh from Jira (unless it
@@ -173,10 +222,8 @@ export function TicketView({ ticketKey }: { ticketKey: string }) {
   }, [ticketKey])
   if (error && !ticket) return <p className="m-0 text-[13px] text-bad">{ticketKey}: {error}</p>
   if (!ticket) return <TicketSkeleton />
-  const sessions = sessionsOf(cards, ticket.key)
-  const done = ticket.children.filter(c => c.tone === "done").length
   return (
-    <article className="@container flex flex-col gap-4">
+    <article className="flex flex-col gap-4">
       <header className="flex flex-col gap-2">
         <div className="flex min-w-0 items-center gap-2">
           {ticket.parent && <><TicketRefRow ticket={ticket.parent} className="-ml-1.5 w-auto max-w-[60%] text-xs" /><span className="text-faint">/</span></>}
@@ -185,63 +232,11 @@ export function TicketView({ ticketKey }: { ticketKey: string }) {
           <a href={ticket.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-0.5 font-mono text-xs font-semibold text-text-muted no-underline hover:text-text" title="Open in Jira">
             {ticket.key}<Anim.ArrowUpRight size={12} />
           </a>
+          {actions && <span className="ml-auto flex items-center gap-0.5">{actions}</span>}
         </div>
         <h2 className="m-0 text-lg leading-[1.3] font-semibold text-balance">{ticket.summary}</h2>
       </header>
-      <div className="grid gap-5 @[680px]:grid-cols-[minmax(0,1fr)_240px]">
-        <div className="flex min-w-0 flex-col gap-5">
-          <Pipeline ticket={ticket} onTaken={() => void load()} />
-          <Section title="Description">
-            {ticket.description ? <Markdown className="text-[13.5px]">{ticket.description}</Markdown> : <p className="m-0 text-[13px] text-faint">No description.</p>}
-          </Section>
-          {ticket.children.length > 0 && (
-            <Section title={ticket.kind === "epic" ? "In this epic" : "Sub-tasks"} extra={<span className="font-medium tracking-normal text-faint normal-case">{done} of {ticket.children.length} done</span>}>
-              <div className="h-1 overflow-hidden rounded-full bg-hover"><div className="h-full bg-work" style={{ width: `${(done / ticket.children.length) * 100}%` }} /></div>
-              <div className="-mx-1.5 flex flex-col">{ticket.children.map(c => <TicketRefRow key={c.key} ticket={c} />)}</div>
-            </Section>
-          )}
-          {ticket.links.length > 0 && (
-            <Section title="Links">
-              <div className="-mx-1.5 flex flex-col">{ticket.links.map(l => <TicketRefRow key={`${l.how}${l.ticket.key}`} ticket={l.ticket} note={l.how} />)}</div>
-            </Section>
-          )}
-          <Section title={ticket.comments.length === 1 ? "1 comment" : `${ticket.comments.length} comments`}>
-            <ol className="m-0 flex list-none flex-col p-0">
-              {ticket.comments.map((c, i) => <Comment key={i} author={c.author} at={c.at} body={c.body} now={now} />)}
-            </ol>
-            {ticket.isMine && <CommentBox ticket={ticket} onDone={() => void load()} />}
-          </Section>
-        </div>
-        <aside className="flex flex-col gap-4 self-start rounded-[12px] border border-line bg-side p-3 @[680px]:sticky @[680px]:top-0">
-          <Status ticket={ticket} onDone={() => void load()} />
-          <dl className="m-0 grid grid-cols-[76px_minmax(0,1fr)] items-baseline gap-x-2 gap-y-1.5">
-            <Fact label="Assignee">{ticket.assignee ?? <span className="text-faint">Unassigned</span>}</Fact>
-            <Fact label="Reporter">{ticket.reporter ?? "—"}</Fact>
-            <Fact label="Priority">{ticket.priority ?? "—"}</Fact>
-            <Fact label="Sprint">{ticket.sprint ?? "—"}</Fact>
-            <Fact label="Created">{day(ticket.created)}</Fact>
-            <Fact label="Updated"><span title={new Date(ticket.updated).toLocaleString("en-GB")}>{ago(ticket.updated, now)} ago</span></Fact>
-          </dl>
-          <Section title="Sessions">
-            {sessions.map(s => (
-              <div key={s.id} className="group -mx-1.5 flex min-w-0 items-center gap-1 rounded-md pr-1 hover:bg-hover">
-                <button className="flex min-w-0 flex-1 items-center gap-2 px-1.5 py-1 text-left text-[13px]" onClick={() => (dialog.set(null), openSession(s.id))}
-                  title={WHY[s.tickets.find(t => t.key === ticket.key)?.why ?? "named"]}>
-                  <StateIcon card={s} size={14} /><span className="truncate">{s.title}</span>
-                </button>
-                <button className="grid size-5 shrink-0 place-items-center rounded text-faint opacity-0 group-hover:opacity-100 hover:bg-press hover:text-text focus-visible:opacity-100" title={`Unlink from ${s.title}`}
-                  onClick={() => void linkTo(s, { unlink: ticket.key })}>
-                  <X size={13} />
-                </button>
-              </div>
-            ))}
-            <div className="flex gap-1.5">
-              <Button variant="outline" className="h-7 flex-1 gap-1 text-xs" onClick={() => void startFrom([ticket], cards)}><Plus size={13} />{sessions.length ? "New" : "Start session"}</Button>
-              <LinkSession ticketKey={ticket.key} cards={cards.filter(c => !sessions.includes(c))} />
-            </div>
-          </Section>
-        </aside>
-      </div>
+      <Pipeline ticket={ticket} onTaken={() => void load()} details={<TicketDetails ticket={ticket} cards={cards} now={now} onDone={() => void load()} />} />
     </article>
   )
 }

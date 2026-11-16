@@ -52,3 +52,6 @@ export async function sendWithFeedback<T = { ok: boolean }>(path: string, body: 
     inFlight.delete(key)
   }
 }
+
+// The same, saying only whether it went.
+export const act = async (path: string, body: object, done: string) => (await sendWithFeedback(path, body, done)) !== null

@@ -9,7 +9,7 @@ import { get } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import type { DebtEntry } from "@server/debt"
 import { loadPets } from "@/features/pets/pets"
-import { act } from "./Pipeline"
+import { act } from "./feedback"
 
 type Show = "open" | "all"
 const KINDS = [["debt", "Debt"], ["improvement", "Improvements"]] as const

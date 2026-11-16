@@ -22,6 +22,8 @@ export const nextStage = (state: PipelineState): Stage | null =>
   state.status !== "ready" || failed(state).length || untested(state).length ? null : toFix(state).length ? "build" : (AFTER[state.stage] ?? null)
 
 export const stageAt = (state: PipelineState) => AT[state.stage]
+// The column a stage is shown in: the test in staging's, the check in prod's.
+export const nodeOf = (stage: Stage): Stage => (stage === "test" ? "staging" : stage === "smoke" ? "prod" : stage)
 // The step of a release at work that waits for you.
 export const waitingStep = (state: PipelineState): ReleaseStep | undefined =>
   state.status === "running" ? state.release?.steps.find(s => s.status === "waiting") : undefined
@@ -34,40 +36,13 @@ export const columnOf = (state: PipelineState) => {
   const next = isQueued(state) ? nextStage(state) : null
   return next ? AT[next] : stageAt(state)
 }
+// The tickets of each column, left to right.
+export const inColumns = (states: PipelineState[]) => STAGES.map((_, i) => states.filter(s => columnOf(s) === i))
 
 // The stages at a glance: each one's state (done, at work, waiting for you,
-// failed, next, still ahead) and the one fact that says what it did.
+// failed, next, still ahead).
 export type Tone = "done" | "work" | "ask" | "bad" | "next" | "todo"
-export type JourneyNode = { stage: Stage; tone: Tone; fact: string | null }
 export const STAGE_KEYS: Stage[] = ["refine", "plan", "build", "review", "staging", "prod"]
-const count = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`
-const isOver = (s: { status: string }) => s.status === "done" || s.status === "skipped"
-
-// A column's agent stage (the test, the check in prod) says what it found.
-function testFact(state: PipelineState) {
-  const results = state.results ?? []
-  return state.status === "running" || !results.length ? null : `${results.filter(r => r.status === "pass").length}/${results.length} pass`
-}
-
-function factOf(stage: Stage, state: PipelineState, preview: Release | null): string | null {
-  const units = state.units ?? []
-  if (stage === "refine") {
-    const asked = (state.history ?? []).filter(r => (r.stage ?? "refine") === "refine").reduce((n, r) => n + r.questions, 0)
-    return asked ? count(asked, "decision") : "Refined"
-  }
-  if (stage === "plan") return count(passesOf(state.history ?? [], "plan").at(-1)?.units ?? units.length, "unit")
-  if (stage === "build") return count(units.filter(u => u.pr).length, "PR")
-  if (stage === "review") {
-    // By their severity, whatever stage the ticket is at now; the ones a build fixed since are not counted.
-    const open = (state.findings ?? []).filter(f => !state.fixed?.includes(f.id))
-    const fix = open.filter(f => f.severity !== "minor").length
-    return fix ? `${fix} to fix` : open.length ? `${open.length} minor` : "Clean"
-  }
-  if (state.stage === (stage === "staging" ? "test" : "smoke")) return testFact(state)
-  const release = releaseShown(state, preview, stage)
-  if (!release) return null
-  return release === state.release ? `${release.steps.filter(isOver).length}/${release.steps.length} steps` : count(release.steps.length, "step")
-}
 
 function toneOf(i: number, at: number, state: PipelineState): Tone {
   if (i < at) return "done"
@@ -76,14 +51,7 @@ function toneOf(i: number, at: number, state: PipelineState): Tone {
   if (state.status === "needs-info" || toFix(state).length || failed(state).length || untested(state).length || waitingStep(state)) return "ask"
   return state.status === "running" ? "work" : "done"
 }
-
-export function journeyOf(state: PipelineState, preview: Release | null): JourneyNode[] {
-  const at = stageAt(state)
-  return STAGE_KEYS.map((stage, i) => {
-    const tone = toneOf(i, at, state)
-    return { stage, tone, fact: tone === "todo" || (tone === "work" && i === at && !isRelease(stage)) ? null : factOf(stage, state, preview) }
-  })
-}
+export const tonesOf = (state: PipelineState): Tone[] => STAGE_KEYS.map((_, i) => toneOf(i, stageAt(state), state))
 
 // What runs spent, in a few characters: tokens (3.9M, 55k) and the
 // API-equivalent cost ($4.10, $12).

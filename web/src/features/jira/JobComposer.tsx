@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils"
 import { repoDot } from "@/features/session/state"
 import type { Resolved } from "@server/jobs"
 import type { AgentStage } from "@server/pipeline"
-import { act } from "./Pipeline"
+import { act } from "./feedback"
 import { SPECIALISTS, addToDraft, canSendDraft, draftProblem, jobToSend, sendText, type Draft } from "./jobs-board"
 
 const LOOKUP_MS = 350

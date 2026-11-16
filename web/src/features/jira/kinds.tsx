@@ -2,6 +2,7 @@
 // Jira's own (epic purple, story green, task blue, sub-task light blue, bug
 // red); and a ticket named from another (its parent, a child, a link) as one row.
 import { Bookmark, Bug, Check, CornerDownRight, Zap } from "lucide-react"
+import type { ReactNode } from "react"
 import type { TicketKind, TicketRef } from "@/lib/api-types"
 import { cn } from "@/lib/utils"
 import { openDialog } from "@/app/open-dialog"
@@ -44,5 +45,15 @@ export function TicketRefRow({ ticket, note, className }: { ticket: TicketRef; n
       <span className={cn("min-w-0 flex-1 truncate", ticket.tone === "done" && "text-text-muted line-through decoration-faint")}>{ticket.summary}</span>
       <span className={cn("shrink-0 rounded px-1.5 text-[11px] font-semibold", TONE[ticket.tone])}>{ticket.status}</span>
     </button>
+  )
+}
+
+// A part of a ticket's tab (its description, its comments, its runs): a quiet heading and what it holds.
+export function Section({ title, extra, children }: { title: string; extra?: ReactNode; children: ReactNode }) {
+  return (
+    <section className="flex flex-col gap-1.5">
+      <h4 className="m-0 flex items-baseline gap-2 text-xs font-semibold text-text-muted">{title}{extra !== undefined && <span className="font-normal text-faint tabular-nums">{extra}</span>}</h4>
+      {children}
+    </section>
   )
 }

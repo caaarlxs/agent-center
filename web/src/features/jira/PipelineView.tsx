@@ -27,7 +27,7 @@ import { StageEffect } from "./StageEffect"
 import { DebtButton } from "./Debt"
 import { effectOf, sceneOf } from "./stage-effects"
 import { PipelineMark, liveLine } from "./PipelineMark"
-import { BUILT, STAGES, STAGE_KEYS, columnOf, costOf, dollars, isQueued, toFix, waitingStep } from "./pipeline-board"
+import { BUILT, STAGES, STAGE_KEYS, columnOf, costOf, dollars, inColumns, isQueued, toFix, waitingStep } from "./pipeline-board"
 import { StageHelp } from "./StageHelp"
 
 // A ticket opens the ticket; a job, the job.
@@ -215,8 +215,8 @@ export function PipelineView() {
       <div className="sticky left-0 self-start px-6 pt-2"><DebtButton /></div>
       <div ref={halves} className="flex min-h-0 flex-1 flex-col">
         <div ref={board} className={cn(COLUMNS, "min-h-0 flex-none pt-2 pb-2")} style={{ height: `${split * 100}%` }}>
-          {STAGES.map((name, i) => {
-            const here = states.filter(s => columnOf(s) === i)
+          {inColumns(states).map((here, i) => {
+            const name = STAGES[i]!
             return (
               <section key={name} className={cn(COLUMN, i >= BUILT && !here.length && "opacity-50")}>
                 <StageHead n={i + 1} name={name} stage={STAGE_KEYS[i]!} tickets={here} />
