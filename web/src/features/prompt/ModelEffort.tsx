@@ -43,9 +43,9 @@ export function ModelEffort({ model, effort, title, defaults, isEffortLocked, is
     <Popover.Root open={isOpen} onOpenChange={o => (setOpen(o), o || setView("main"))}>
       <Popover.Trigger asChild disabled={isDisabled}>
         <button type="button" title={title}
-          className={cn(pill, "group/pick cursor-pointer hover:bg-hover hover:text-text disabled:cursor-default disabled:opacity-55 aria-expanded:bg-hover aria-expanded:text-text")}>
+          className={cn(pill, "group/pick min-w-0 cursor-pointer hover:bg-hover hover:text-text disabled:cursor-default disabled:opacity-55 aria-expanded:bg-hover aria-expanded:text-text")}>
           <Gauge />
-          <span className="font-[550] whitespace-nowrap text-text">{effortLabel ? `${effortLabel} · ${modelLabel}` : modelLabel}</span>
+          <span className="min-w-0 truncate font-[550] whitespace-nowrap text-text">{effortLabel ? `${effortLabel} · ${modelLabel}` : modelLabel}</span>
           <ChevronDown className="size-[11px]! text-faint transition-transform duration-150 ease-(--ease-out) group-aria-expanded/pick:rotate-180" />
           {isWaiting && <i className="blink mr-1 size-1.5 rounded-full bg-ask" />}
         </button>
