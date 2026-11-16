@@ -5,7 +5,7 @@
 
 import { readdir } from "node:fs/promises"
 import { join } from "node:path"
-import { DESKTOP_DIR } from "./config"
+import { DESKTOP_DIR, HOME, inTerminal } from "./config"
 import { claudeEnv } from "./proc"
 
 export const APP_CLI = join(DESKTOP_DIR, "claude-code")
@@ -15,9 +15,14 @@ const ID_TIMEOUT_MS = 30_000
 // would put two processes on one transcript.
 export const running = new Set<string>()
 
-// The newest Claude Code the desktop app ships (it loads the bridge mod).
+// The newest Claude Code the desktop app ships (it loads the bridge mod). In
+// terminal mode, the person's own `claude` first: the one their terminal runs.
 export async function claudeBinary() {
   if (process.env.AGENT_CENTER_CLAUDE) return process.env.AGENT_CENTER_CLAUDE
+  if (inTerminal()) {
+    const own = Bun.which("claude", { PATH: `${process.env.PATH ?? ""}:${HOME}/.local/bin:/opt/homebrew/bin:/usr/local/bin` })
+    if (own) return own
+  }
   const versions = (await readdir(APP_CLI).catch(() => [] as string[]))
     .filter(v => /^\d+\.\d+\.\d+$/.test(v))
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))

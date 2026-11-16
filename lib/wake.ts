@@ -17,12 +17,17 @@
 
 import { open, stat } from "node:fs/promises"
 import { isBusy, status, waitingSessions } from "./bridge"
-import { DESKTOP_LOG } from "./config"
+import { DESKTOP_LOG, inTerminal } from "./config"
 import { readDesktop } from "./desktop"
 import { hostIdOf } from "./sessions"
 
 const WAKE_EVERY_MS = 20_000
 const WAKE_TRIES = 4
+// Terminal mode (lib/terminal.ts): a call while the session already starts in
+// tmux does nothing, and one that runs it headless must come soon after the
+// message's undo window, so it is called more often, for about as long.
+const TERMINAL_EVERY_MS = 6000
+const TERMINAL_TRIES = 12
 const LOOP_MS = 5000
 const LOG = DESKTOP_LOG
 const LOG_TAIL = 512 * 1024
@@ -90,7 +95,8 @@ async function tick(activate: Activate, deliver: Deliver) {
     }
     const w = wakes.get(id) ?? { tries: 0, at: 0, untrusted: false, atCap: false, isOver: false }
     wakes.set(id, w)
-    if (w.at && !w.untrusted) {
+    const terminal = inTerminal()
+    if (w.at && !w.untrusted && !terminal) {
       const hostId = (await hostIdOf(id, await readDesktop())).hostId
       const found = await refusal([`local_${id}`, ...(hostId ? [hostId] : [])], w.at)
       w.untrusted = found.untrusted
@@ -100,12 +106,12 @@ async function tick(activate: Activate, deliver: Deliver) {
         continue
       }
     }
-    if (w.untrusted || w.tries >= WAKE_TRIES) {
+    if (w.untrusted || w.tries >= (terminal ? TERMINAL_TRIES : WAKE_TRIES)) {
       w.isOver = true
       asked.delete(id)
       continue
     }
-    if (Date.now() - w.at < WAKE_EVERY_MS) continue
+    if (Date.now() - w.at < (terminal ? TERMINAL_EVERY_MS : WAKE_EVERY_MS)) continue
     w.tries++
     w.at = Date.now()
     await activate(id).catch(() => {})

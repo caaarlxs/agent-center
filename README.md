@@ -42,7 +42,9 @@ list as its guide (press `?`).
 ## Quick start
 
 You need macOS, the [Claude desktop app](https://claude.ai/download) (with its Code tab used at
-least once), [Bun](https://bun.sh) and Python 3.8 or later.
+least once), [Bun](https://bun.sh) and Python 3.8 or later. To work without Claude desktop, with
+Claude Code's CLI instead, turn on [Without Claude desktop](docs/install.md#without-claude-desktop)
+in Setup.
 
 ```bash
 git clone https://github.com/caaarlxs/agent-center.git
@@ -71,9 +73,9 @@ To update, run `git pull` and press **Update** on the board. To remove it, run `
 
 ## Limits
 
-- macOS and the Claude desktop app only. The board reads the app's session records and its log,
-  and uses its `claude://` links. None of these are a documented interface: a new version of the
-  app can change them.
+- macOS only. With Claude desktop, the board reads the app's session records and its log, and
+  uses its `claude://` links. None of these are a documented interface: a new version of the app
+  can change them. Without it, sessions run in Claude Code's CLI in tmux.
 - The bridge mod uses Claude Code's plugin hooks API, which is in early access.
 - Costs are shown at API prices. They approximate how fast you use your plan's limits; they are
   not what you pay.

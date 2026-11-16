@@ -2,7 +2,11 @@
 // person's yes (the setup dialog asks; install.sh only starts the server).
 // Each step answers its state and, where the board can do it, does it:
 //
-//   claude     Claude desktop is installed                    (checked only)
+//   claude     Claude desktop is installed (terminal mode: Claude Code's
+//              CLI is)                                         (checked only)
+//   terminal   sessions run in Claude Code's CLI, in tmux, instead of Claude
+//              desktop (settings.sessions; installs tmux with Homebrew), and
+//              open in Terminal or iTerm (settings.terminalApp)
 //   hook       hooks/session-inbox.py in ~/.claude/hooks and its entries in
 //              ~/.claude/settings.json                         (required)
 //   bridge     the bridge mod, from this folder's marketplace (required)
@@ -18,11 +22,12 @@
 
 import { copyFile, mkdir, readFile, rename, stat, writeFile } from "node:fs/promises"
 import { join } from "node:path"
-import { APP_DIR, CLAUDE_DIR, HOME, MODELS_DIR, SETTINGS_PATH, settings, type Settings } from "./config"
+import { APP_DIR, CLAUDE_DIR, HOME, MODELS_DIR, SETTINGS_PATH, inTerminal, settings, type Settings } from "./config"
 import { desktopAccount } from "./desktop"
 import { readJson, writeJsonAtomic } from "./files"
 import { claudeBinary } from "./launch"
 import { exec } from "./proc"
+import { hasITerm, terminalApp, tmuxPath } from "./terminal"
 
 export type StepState = "done" | "missing" | "outdated" | "working" | "unavailable"
 export type Step = { id: string; state: StepState; detail?: string; progress?: number }
@@ -182,6 +187,20 @@ function installWhisper() {
   })()
 }
 
+// ---------- terminal mode ----------
+
+// Sessions in Claude Code's CLI instead of Claude desktop (lib/terminal.ts).
+// tmux comes from Homebrew, in a minute at most.
+async function useTerminal(on: boolean) {
+  if (on && !tmuxPath()) {
+    const brew = which("brew")
+    if (!brew) throw new Error("Homebrew (brew.sh) is needed to install tmux")
+    const { code, stderr } = await exec([brew, "install", "tmux"], { timeoutMs: 10 * 60_000 })
+    if (code !== 0) throw new Error(stderr.trim().split("\n").at(-1) || "brew install tmux failed")
+  }
+  await saveSettings({ sessions: on ? "terminal" : "desktop" })
+}
+
 // ---------- organizer ----------
 
 const ORGANIZER_NOTE = `${NOTE_START}
@@ -245,13 +264,16 @@ async function cliAccount() {
   }
 }
 
-export async function setupStatus(): Promise<{ steps: Step[]; isReady: boolean; voiceLanguage: string; organizerNote: string }> {
+export async function setupStatus(): Promise<{ steps: Step[]; isReady: boolean; voiceLanguage: string; organizerNote: string; sessions: "desktop" | "terminal"; terminalApp: "Terminal" | "iTerm"; hasITerm: boolean }> {
   const s = await readClaudeSettings().catch(() => ({}) as ClaudeSettings)
   const { installed } = await pluginVersions()
   const ghAuth = which("gh") ? (await exec([which("gh")!, "auth", "status"], { timeoutMs: 8000 })).code === 0 : false
   const whisperReady = !!which("whisper-cli") && !!which("ffmpeg") && (await exists(join(MODELS_DIR, MODEL)))
   const steps: Step[] = [
-    { id: "claude", state: (await exists("/Applications/Claude.app")) ? "done" : "unavailable" },
+    inTerminal()
+      ? { id: "claude", state: (await claudeBinary()) !== "claude" || which("claude") ? "done" : "unavailable", detail: "cli" }
+      : { id: "claude", state: (await exists("/Applications/Claude.app")) ? "done" : "unavailable" },
+    { id: "terminal", state: inTerminal() && tmuxPath() ? "done" : "missing", detail: tmuxPath() ? undefined : "no-tmux" },
     bunStep(Bun.version),
     { id: "hook", state: await hookState(s) },
     { id: "bridge", state: await bridgeState(), detail: installed ?? undefined },
@@ -266,7 +288,7 @@ export async function setupStatus(): Promise<{ steps: Step[]; isReady: boolean; 
   ].filter((x): x is Step => !!x)
   const isReady = steps.filter(x => ["hook", "bridge"].includes(x.id)).every(x => x.state === "done")
   const organizerNote = ORGANIZER_NOTE.replace(NOTE_START, "").replace(NOTE_END, "").trim()
-  return { steps, isReady, voiceLanguage: settings.voiceLanguage ?? "auto", organizerNote }
+  return { steps, isReady, voiceLanguage: settings.voiceLanguage ?? "auto", organizerNote, sessions: inTerminal() ? "terminal" : "desktop", terminalApp: terminalApp(), hasITerm: hasITerm() }
 }
 
 export async function runStep(id: string, options: Record<string, unknown> = {}) {
@@ -285,6 +307,10 @@ export async function runStep(id: string, options: Record<string, unknown> = {})
       return options.off ? saveSettings({ organizer: false }) : installOrganizer()
     case "commands":
       return saveSettings({ runCommands: !options.off })
+    case "terminal":
+      // { app }: only which app shows the sessions the board opens.
+      if (options.app === "Terminal" || options.app === "iTerm") return saveSettings({ terminalApp: options.app })
+      return useTerminal(!options.off)
   }
   throw new Error(`unknown step: ${id}`)
 }

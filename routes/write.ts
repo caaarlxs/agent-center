@@ -9,7 +9,7 @@ import { choosePet, gainXp, openPack } from "../lib/pets"
 import { stat } from "node:fs/promises"
 import { applyAction, isTaskId, setNotes, setSuggestion, setZones } from "../lib/board"
 import { requestSettings } from "../lib/bridge"
-import { activate, newInClient, pickFolder } from "../lib/client"
+import { adopt, newInClient, pickFolder } from "../lib/client"
 import { logClientError } from "../lib/client-errors"
 import { logMemory } from "../lib/memory-log"
 import { EFFORTS, MODES } from "../lib/config"
@@ -72,7 +72,7 @@ async function newSession(body: Record<string, unknown>) {
   const suggestion = body.suggestion as { from?: unknown; taskId?: unknown } | undefined
   try {
     const id = await launch(folder, prompt, done => {
-      void activate(done)
+      void adopt(done)
       void keepMode(done, mode)
     }, extra, mode)
     if (typeof suggestion?.from === "string" && isTaskId(suggestion.taskId)) await setSuggestion(suggestion.taskId, suggestion.from, { session: id })

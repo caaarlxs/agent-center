@@ -28,6 +28,7 @@ import { stopAllCommands } from "./lib/commands"
 import { stopAll as stopRuns } from "./lib/runner"
 import { MAX_UPLOAD_BYTES } from "./lib/uploads"
 import { deliverHere } from "./lib/deliver"
+import { startReaping } from "./lib/terminal"
 import { startWaking } from "./lib/wake"
 import { startPipelinePoll } from "./lib/pipeline"
 import { startJobsWatch } from "./lib/jobs"
@@ -114,6 +115,7 @@ await mkdir(SESSIONS_DIR, { recursive: true })
 watch(SESSIONS_DIR, refreshSoon)
 startLive()
 startWaking(activate, deliverHere)
+startReaping()
 startPipelinePoll()
 startJobsWatch()
 

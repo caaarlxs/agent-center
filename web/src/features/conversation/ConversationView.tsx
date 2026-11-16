@@ -50,6 +50,7 @@ import { dialogAnswer, linesText, nameOf, partsOf, quoteOf, riskOf } from "./tex
 import { type Suggestions, useConversation } from "./useConversation"
 import { Anim } from "@/components/icons/animated"
 import { useIsDots } from "@/lib/board-style"
+import { useClientName } from "@/lib/sessions-client"
 
 const linkBtn = "text-brand underline underline-offset-2"
 // The "?" disc before a question (.next-ask span).
@@ -468,12 +469,13 @@ function PermissionCard({ sessionId, permission }: { sessionId: string; permissi
 
 function PendingMessage({ p, sessionId, bridge, isWorking }: { p: Pending; sessionId: string; bridge: Bridge | null; isWorking: boolean }) {
   const stamp = stampOf(p, bridge, isWorking)
+  const where = useClientName()
   return (
     <div className="flex max-w-[88%] flex-col items-end gap-[3px] self-end">
       <Bubble text={p.text} isPending />
       <span className={cn("text-[11px]", stamp.isBad ? "text-bad" : "text-faint")}>
         {stamp.text} ·{" "}
-        {stamp.isBad && !stamp.text.startsWith("Could not") && <><button className={linkBtn} onClick={() => launch(sessionId)} title="Opens the session in Claude desktop; when you write in it, it starts and gets the message">Open in Claude</button> · </>}
+        {stamp.isBad && !stamp.text.startsWith("Could not") && <><button className={linkBtn} onClick={() => launch(sessionId)} title={`Opens the session in ${where}; when you write in it, it starts and gets the message`}>Open in {where}</button> · </>}
         {/* As in Claude desktop: the running turn stops, and the bridge mod hands over what waits at once. */}
         {isWorking && !stamp.isBad && <><button className={linkBtn} onClick={() => stop(sessionId).catch((err: Error) => toast(err.message || "Could not send it now"))} title="Stops the running turn and sends this message now">Send now</button> · </>}
         <button className={linkBtn} onClick={() => takeBack(sessionId, p)} title="Remove the message before it arrives and put it back in the field">Undo</button>

@@ -58,7 +58,8 @@ live: Claude's answer shows as it is written.
   and effort, optionally in a new git worktree. The first turn runs headless, then the session
   moves into Claude desktop.
 - **Sleeping sessions.** Claude desktop stops idle sessions to save memory. A message to one wakes
-  it in the background. When the app runs as many sessions as the Mac's memory allows, the board
+  it in the background. [Without Claude desktop](install.md#without-claude-desktop), it wakes in
+  tmux instead, and Open shows it in a Terminal window. When the app runs as many sessions as the Mac's memory allows, the board
   runs the turn itself, headless, in the same session (marked "headless").
 - **Overlaps.** A card warns when another open session edited the same files in the last hours,
   or works in the same folder right now.
@@ -91,7 +92,7 @@ All costs are at API prices. They show how fast you use your plan; they are not 
 | `↵` | Open the conversation |
 | `R` | Reply |
 | `T` | Rename |
-| `O` | Open in Claude |
+| `O` | Open in Claude (without Claude desktop: in a Terminal window) |
 | `P` | Pin |
 | `C`, then `0`–`7` | Colour the card (`0` takes it off) |
 | `A`, then `1`–`5` | Later: pick when |

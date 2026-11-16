@@ -1,11 +1,16 @@
 // Acting on the Claude desktop app from the board, through its own links
 // (claude://) and macOS: open or wake a session, start a new one, pick a
-// folder.
+// folder. With settings.sessions = "terminal" the same actions go to Claude
+// Code's CLI instead (lib/terminal.ts), and Claude desktop is never opened.
 
+import { inTerminal } from "./config"
+import { deliverHere } from "./deliver"
 import { readDesktop } from "./desktop"
 import { running } from "./launch"
 import { exec } from "./proc"
 import { hostIdOf } from "./sessions"
+import { groupOf } from "./snapshot"
+import * as terminal from "./terminal"
 
 const CLAUDE_APP = "com.anthropic.claudefordesktop"
 
@@ -53,7 +58,8 @@ const importUrl = (id: string) => `claude://resume?session=${encodeURIComponent(
 // imported, which starts it too. lib/wake.ts tries again while messages wait.
 // At most once every 15 s per session.
 const activatedAt = new Map<string, number>()
-export async function activate(id: string): Promise<{ ok: boolean; error?: string; again?: boolean; imported?: boolean }> {
+export async function activate(id: string): Promise<{ ok: boolean; error?: string; again?: boolean; imported?: boolean; headless?: boolean }> {
+  if (inTerminal()) return wakeInTerminal(id)
   if (running.has(id)) return { ok: false, error: "A turn runs here, headless: it moves to Claude when it ends" }
   if (Date.now() - (activatedAt.get(id) ?? 0) < 15_000) return { ok: true, again: true }
   activatedAt.set(id, Date.now())
@@ -64,8 +70,38 @@ export async function activate(id: string): Promise<{ ok: boolean; error?: strin
   return { ok: await openUrl(continueUrl(hostId), { background: true }) }
 }
 
-// Shows the session in the app, in front.
+// The session's folder: the board's group for it, else the hook's record.
+async function folderOf(id: string) {
+  return groupOf(id)?.lead.cwd ?? (await hostIdOf(id, await readDesktop())).cwd
+}
+
+// Terminal mode: the session starts in tmux and its bridge mod delivers. When
+// tmux cannot run it (see lib/terminal.ts), what waits runs headless; the
+// wake loop (lib/wake.ts) calls again for messages still in their undo window.
+async function wakeInTerminal(id: string) {
+  const folder = await folderOf(id)
+  if (!folder) return { ok: false, error: "The board does not know this session's folder" }
+  const started = await terminal.wake(id, folder, groupOf(id)?.lead.mode)
+  if (started.ok) return { ok: true }
+  if (started.reason === "running") return { ok: false, error: "A turn runs here, headless: messages go when it ends" }
+  if (started.reason === "failed") return { ok: false, error: started.error }
+  await deliverHere(id)
+  return { ok: true, headless: true }
+}
+
+// After a turn the board ran headless (a new session, a fork, Start fresh):
+// Claude desktop imports the session, so it shows there; in terminal mode it
+// stays asleep until a message wakes it.
+export async function adopt(id: string) {
+  if (!inTerminal()) await activate(id)
+}
+
+// Shows the session in the app, in front (terminal mode: a Terminal window).
 export async function openInClient(id: string): Promise<{ ok: boolean; error?: string }> {
+  if (inTerminal()) {
+    const folder = await folderOf(id)
+    return folder ? terminal.open(id, folder) : { ok: false, error: "The board does not know this session's folder" }
+  }
   const { hostId } = await hostIdOf(id, await readDesktop())
   if (hostId) return { ok: await openUrl(continueUrl(hostId)) }
   // Never opened in the app (a terminal or headless session): import it.
@@ -75,6 +111,7 @@ export async function openInClient(id: string): Promise<{ ok: boolean; error?: s
 
 // A new session in the app, in `folder`, with `prompt` written but not sent.
 export async function newInClient(folder: string, prompt: string) {
+  if (inTerminal()) return terminal.openNew(folder, prompt)
   const params = new URLSearchParams({ folder })
   if (prompt) params.set("q", prompt)
   return openUrl(`claude://code/new?${params}`)

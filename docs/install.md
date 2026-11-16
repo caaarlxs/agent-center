@@ -5,7 +5,8 @@
 | What | Why | |
 |---|---|---|
 | macOS | The board uses launchd, `say`, Quick Look and the Claude desktop app. | required |
-| [Claude desktop](https://claude.ai/download), its Code tab used at least once | The app runs the sessions and ships the Claude Code CLI the board uses. A `claude` on your `PATH` works too. | required |
+| [Claude desktop](https://claude.ai/download), its Code tab used at least once | The app runs the sessions and ships the Claude Code CLI the board uses. A `claude` on your `PATH` works too. | required, unless you work [without Claude desktop](#without-claude-desktop) |
+| [Claude Code CLI](https://docs.claude.com/en/docs/claude-code/setup) and [tmux](https://github.com/tmux/tmux) | Only [without Claude desktop](#without-claude-desktop). Setup installs tmux with Homebrew. | optional |
 | [Bun](https://bun.sh) | Runs the server and builds the page. The installer offers to install it. | required |
 | Python 3.8 or later | The session hook is a Python script. `xcode-select --install` provides it. | required |
 | [GitHub CLI](https://cli.github.com) (`gh`), signed in | Pull requests, checks, merges and the release steps of the Pipeline. | optional |
@@ -50,10 +51,34 @@ step says what it changes and runs only when you press it.
 | Read sent files | Lets Claude read, without asking, the files you send from the board. The rule covers `~/.claude/agent-center/uploads` only. | recommended |
 | Dictation on this Mac | Runs `brew install whisper-cpp ffmpeg` and downloads the Whisper model (about 550 MB). Your voice never leaves the Mac. Without it, the microphone uses the browser's dictation where there is one. | optional |
 | Tasks | Installs `organizer.py` in `~/organizer`, adds a short note to `~/.claude/CLAUDE.md` (shown before it is written) that asks Claude to keep your task list, and lets Claude run `organizer.py` without asking. Without it there is no Tasks tab. | optional |
+| Without Claude desktop | Runs sessions in Claude Code's CLI instead of the app. See [below](#without-claude-desktop). Installs tmux with Homebrew if it is missing. **Turn off** goes back to Claude desktop. | optional |
 | Run commands | Adds **Run** to the shell blocks of a conversation. A click runs that command on your Mac, in the session's folder, with your shell. **Turn off** removes it. | optional |
 | GitHub PRs | Checks that `gh` is installed and signed in, and tells you the command when it is not. | optional |
 
 Sessions that were open before you installed the bridge mod load it the next time they start.
+
+### Without Claude desktop
+
+With this step on, the board never opens Claude desktop; it does not even need it installed.
+
+- **A message to a sleeping session** starts `claude --resume <id>` in the session's folder, in
+  a tmux session of the board's own (`tmux -L agent-center`, so your own tmux is not touched),
+  detached. The bridge mod loads in it and delivers the message, as in Claude desktop. Questions,
+  approvals, Stop and the live answer work the same.
+- **Open** (`O`) shows the session in a Terminal window attached to that tmux session: one process,
+  so what you type there and what you send from the board reach the same conversation. With iTerm
+  installed, the step lets you choose it instead of Terminal.
+- **New session**: Send runs the first turn headless, as before, and the session sleeps until a
+  message wakes it. Without a prompt, it opens in a Terminal window.
+- **Idle sessions end**: one nobody used for 30 minutes (no turn running, nothing waiting, no
+  window attached) ends; its transcript stays and the next message starts it again. At most 6 run
+  at once: past that the oldest idle one ends, or the turn runs headless.
+- **A folder Claude Code never trusted** would hold the session on its trust question, so the
+  board runs the turn headless instead (`claude -p --resume`). Open the session once and answer
+  the question; from then on it wakes in tmux.
+
+The board uses the `claude` your terminal runs (`~/.local/bin`, Homebrew), not the one Claude
+desktop ships.
 
 ### Alerts, Look and Jira
 
