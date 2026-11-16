@@ -887,6 +887,13 @@ export async function resolvePr(key: string, url: string) {
   await Bun.write(files.pid, String(await releaseOps.agent(dirOf(key), prompt, files.log)))
   forgetPr(url)
 }
+// A draft PR of the ticket that a person merges (a step of theirs): out of draft, for them to review it.
+export async function readyPr(key: string, url: string) {
+  if (!isKey(key) || !(await stateOf(key))?.units?.some(u => u.pr === url)) throw new Error("That PR is not this ticket's")
+  const r = await releaseOps.sh(["gh", "pr", "ready", url])
+  if (!r.ok) throw new Error(r.err || "GitHub did not take it")
+  forgetPr(url)
+}
 // What the agent on a PR did: at work, resolved (and pushed), or not, and why; none: no agent took it.
 export type PrFix = { status: "running" | "resolved" | "failed"; reason: string | null }
 async function prFixOf(files: ReturnType<typeof fixFiles>): Promise<PrFix | { status: null }> {

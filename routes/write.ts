@@ -2,7 +2,7 @@
 // notes, PR actions, tasks, files sent and dictation.
 
 import { commentOn, connect, disconnect, moveTicket } from "../lib/jira"
-import { actOnDebt, answerPipeline, askPipeline, explainFindings, sendBack, checkByHand, cleanUp, createProposed, dismissProposed, editProposed, isStage, stopPipeline, removePipeline, resetPipeline, resolvePr, rollBackPipeline, startPipeline, stopAuto, stepPipeline } from "../lib/pipeline"
+import { actOnDebt, answerPipeline, askPipeline, explainFindings, sendBack, checkByHand, cleanUp, createProposed, dismissProposed, editProposed, isStage, stopPipeline, readyPr, removePipeline, resetPipeline, resolvePr, rollBackPipeline, startPipeline, stopAuto, stepPipeline } from "../lib/pipeline"
 import { clearJob, continueJob, isLoose, publishReview, startJob, stopJob } from "../lib/jobs"
 import { chooseIcon, isIcon } from "../lib/app-icon"
 import { choosePet, gainXp, openPack } from "../lib/pets"
@@ -197,6 +197,9 @@ export async function handleWrite(path: string, body: Record<string, unknown>): 
     // A PR of the ticket with conflicts: an agent resolves them and pushes, or says why not.
     case "/api/pipeline/conflicts":
       return await resolvePr(String(body.key ?? ""), String(body.url ?? "")).then(() => json({ ok: true }), (err: Error) => json({ error: err.message }, 400))
+    // A draft PR a person merges: out of draft, for them to review it.
+    case "/api/pipeline/ready":
+      return await readyPr(String(body.key ?? ""), String(body.url ?? "")).then(() => json({ ok: true }), (err: Error) => json({ error: err.message }, 400))
     // Undo what a release did to an environment (staging or prod).
     case "/api/pipeline/rollback":
       return await rollBackPipeline(String(body.key ?? ""), body.env === "prod" ? "prod" : "staging").then(() => (refreshSoon(), json({ ok: true })), (err: Error) => json({ error: err.message }, 400))

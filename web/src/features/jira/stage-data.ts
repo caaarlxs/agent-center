@@ -8,6 +8,6 @@ import type { DebtEntry } from "@server/debt"
 import type { PrFix } from "@server/pipeline"
 import type { PrState, Scenario } from "@server/stage-extras"
 
-export type StageData = { prs: Record<string, PrState>; fixes: Record<string, PrFix>; onResolve: ((url: string) => void) | null; scenario: Scenario | null; comments: { body: string }[]; debt: DebtEntry[] }
-export const StageDataContext = createContext<StageData>({ prs: {}, fixes: {}, onResolve: null, scenario: null, comments: [], debt: [] })
+export type StageData = { prs: Record<string, PrState>; fixes: Record<string, PrFix>; onResolve: ((url: string) => void) | null; onReady: ((url: string) => void) | null; scenario: Scenario | null; comments: { body: string }[]; debt: DebtEntry[] }
+export const StageDataContext = createContext<StageData>({ prs: {}, fixes: {}, onResolve: null, onReady: null, scenario: null, comments: [], debt: [] })
 export const useStageData = () => useContext(StageDataContext)

@@ -662,7 +662,8 @@ export function Pipeline({ ticket, details, onTaken }: { ticket: Ticket; details
   const runs = state.history ?? []
   const shown = picked ?? focusOf(state)
   return (
-    <StageDataContext.Provider value={{ prs: data.prs ?? {}, fixes: data.fixes ?? {}, onResolve: url => void act("/api/pipeline/conflicts", { key: ticket.key, url }, "An agent resolves the conflicts").then(ok => ok && loadSoon()), scenario: data.scenario ?? null, comments: ticket.comments, debt }}>
+    <StageDataContext.Provider value={{ prs: data.prs ?? {}, fixes: data.fixes ?? {}, onResolve: url => void act("/api/pipeline/conflicts", { key: ticket.key, url }, "An agent resolves the conflicts").then(ok => ok && loadSoon()),
+      onReady: url => void act("/api/pipeline/ready", { key: ticket.key, url }, "Ready for review").then(ok => ok && loadSoon()), scenario: data.scenario ?? null, comments: ticket.comments, debt }}>
     <div className="flex flex-col gap-3">
       <Now state={state} preview={data.preview} now={now} putAside={data.putAside} onRun={stage => void start(stage)} onStep={step} onChanged={() => void load()} />
       <StageTabs tones={tonesOf(state)} picked={shown} onPick={setPicked} />

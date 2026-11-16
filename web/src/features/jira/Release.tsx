@@ -16,6 +16,7 @@ import type { Release, ReleaseStep, StepKind } from "@server/release"
 import { Section } from "./kinds"
 import { useStageData } from "./stage-data"
 import { ConflictFix } from "./ConflictFix"
+import { useConfirm } from "./confirm"
 
 type Report = { head: string[]; total: number; rows: string[][]; text: string }
 const reportUrl = (key: string, file: string) => `/api/pipeline/report?key=${encodeURIComponent(key)}&file=${encodeURIComponent(file)}`
@@ -133,12 +134,23 @@ function PrBlock({ step }: { step: ReleaseStep }) {
     <span className="col-start-2 flex flex-col gap-1 pl-[21px]">
       {stuck.map(([l, pr]) => (
         <span key={l.url} className="flex flex-col gap-0.5">
-          <span className="text-[11.5px] font-semibold text-ask">{l.label} is {[pr!.isDraft && "a draft", pr!.isConflicting && "in conflict with its base"].filter(Boolean).join(" and ")}</span>
+          <span className="flex flex-wrap items-baseline gap-x-3 text-[11.5px]">
+            <span className="font-semibold text-ask">{l.label} is {[pr!.isDraft && "a draft", pr!.isConflicting && "in conflict with its base"].filter(Boolean).join(" and ")}</span>
+            {pr!.isDraft && step.kind === "manual" && <ReadyButton url={l.url} />}
+          </span>
           <ConflictFix url={l.url} />
         </span>
       ))}
     </span>
   )
+}
+
+// A draft PR a person merges leaves draft, for them to review it (it asks once more: GitHub tells its reviewers).
+function ReadyButton({ url }: { url: string }) {
+  const { onReady } = useStageData()
+  const [isAsking, confirm] = useConfirm()
+  if (!onReady) return null
+  return <button className={cn("font-semibold transition-colors duration-120", isAsking ? "text-bad" : "text-text-muted hover:text-text")} onClick={() => confirm(() => onReady(url))}>{isAsking ? "Sure? Its reviewers are told" : "Ready for review"}</button>
 }
 
 // What a step did or does now, its error, and its links (the PR, the deploy, a script's log).
@@ -160,7 +172,7 @@ function StepRow({ step, ticketKey, isAtHand, onAct }: { step: ReleaseStep; tick
   const isFaint = step.status === "pending" || step.status === "skipped"
   const { icon: Icon, name } = kindOf(step)
   return (
-    <li className={cn("grid grid-cols-[15px_minmax(0,1fr)] gap-x-2.5 gap-y-1.5 border-t border-line py-2.5 first:border-t-0", isYours(step) && "-mx-2.5 rounded-[8px] border-transparent bg-ask-soft px-2.5 [&+li]:border-transparent")}>
+    <li className={cn("grid grid-cols-[15px_minmax(0,1fr)] gap-x-2.5 gap-y-1.5 border-t border-line py-2.5 first:border-t-0", isYours(step) && "-mx-2.5 my-2.5 rounded-[8px] border-transparent bg-ask-soft px-2.5 [&+li]:border-transparent")}>
       <span className="mt-[2px]"><Mark step={step} /></span>
       <span className={cn("flex items-baseline gap-2 text-[13px] leading-[1.45]", isFaint && !isYours(step) ? "text-text-muted" : "text-text", step.status === "waiting" && "font-semibold")}>
         <Icon size={13} className={cn("shrink-0 translate-y-[2px]", isYours(step) ? "text-ask" : "text-faint")} aria-label={name} />
