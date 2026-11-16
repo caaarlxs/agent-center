@@ -37,7 +37,9 @@ export const DESKTOP_LOG = join(HOME, "Library", "Logs", "Claude", "main.log")
 // sessions: where sessions run when the board wakes, opens or starts them:
 // "desktop" (the Claude desktop app, the default) or "terminal" (Claude Code's
 // CLI, in tmux sessions of its own: lib/terminal.ts).
-export type Settings = { sessions?: "desktop" | "terminal"; voiceLanguage?: string; organizer?: boolean; runCommands?: boolean; appIcon?: string; jira?: { site: string; email: string; projects: string[] }; responseActions?: unknown; responseViews?: unknown }
+// terminalApp: the app that shows a session the board opens in terminal mode:
+// "Terminal" (the default) or "iTerm".
+export type Settings = { sessions?: "desktop" | "terminal"; terminalApp?: "Terminal" | "iTerm"; voiceLanguage?: string; organizer?: boolean; runCommands?: boolean; appIcon?: string; jira?: { site: string; email: string; projects: string[] }; responseActions?: unknown; responseViews?: unknown }
 function readSettings(): Settings {
   try {
     return JSON.parse(readFileSync(SETTINGS_PATH, "utf8"))

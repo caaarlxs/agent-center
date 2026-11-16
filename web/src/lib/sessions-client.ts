@@ -4,11 +4,16 @@
 import { useEffect } from "react"
 import { setupStatus } from "@/features/setup/status"
 
-export function useInTerminal() {
+function useStatus() {
   const status = setupStatus.use()
   useEffect(() => void (!setupStatus.get() && setupStatus.load().catch(() => {})), [])
-  return status?.sessions === "terminal"
+  return status
 }
 
-// "Claude" (the desktop app) or "Terminal".
-export const useClientName = () => (useInTerminal() ? "Terminal" : "Claude")
+export const useInTerminal = () => useStatus()?.sessions === "terminal"
+
+// "Claude" (the desktop app), or the terminal app chosen in Setup ("Terminal", "iTerm").
+export function useClientName() {
+  const status = useStatus()
+  return status?.sessions === "terminal" ? (status.terminalApp ?? "Terminal") : "Claude"
+}

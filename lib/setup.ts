@@ -5,7 +5,8 @@
 //   claude     Claude desktop is installed (terminal mode: Claude Code's
 //              CLI is)                                         (checked only)
 //   terminal   sessions run in Claude Code's CLI, in tmux, instead of Claude
-//              desktop (settings.sessions; installs tmux with Homebrew)
+//              desktop (settings.sessions; installs tmux with Homebrew), and
+//              open in Terminal or iTerm (settings.terminalApp)
 //   hook       hooks/session-inbox.py in ~/.claude/hooks and its entries in
 //              ~/.claude/settings.json                         (required)
 //   bridge     the bridge mod, from this folder's marketplace (required)
@@ -26,7 +27,7 @@ import { desktopAccount } from "./desktop"
 import { readJson, writeJsonAtomic } from "./files"
 import { claudeBinary } from "./launch"
 import { exec } from "./proc"
-import { tmuxPath } from "./terminal"
+import { hasITerm, terminalApp, tmuxPath } from "./terminal"
 
 export type StepState = "done" | "missing" | "outdated" | "working" | "unavailable"
 export type Step = { id: string; state: StepState; detail?: string; progress?: number }
@@ -263,7 +264,7 @@ async function cliAccount() {
   }
 }
 
-export async function setupStatus(): Promise<{ steps: Step[]; isReady: boolean; voiceLanguage: string; organizerNote: string; sessions: "desktop" | "terminal" }> {
+export async function setupStatus(): Promise<{ steps: Step[]; isReady: boolean; voiceLanguage: string; organizerNote: string; sessions: "desktop" | "terminal"; terminalApp: "Terminal" | "iTerm"; hasITerm: boolean }> {
   const s = await readClaudeSettings().catch(() => ({}) as ClaudeSettings)
   const { installed } = await pluginVersions()
   const ghAuth = which("gh") ? (await exec([which("gh")!, "auth", "status"], { timeoutMs: 8000 })).code === 0 : false
@@ -287,7 +288,7 @@ export async function setupStatus(): Promise<{ steps: Step[]; isReady: boolean; 
   ].filter((x): x is Step => !!x)
   const isReady = steps.filter(x => ["hook", "bridge"].includes(x.id)).every(x => x.state === "done")
   const organizerNote = ORGANIZER_NOTE.replace(NOTE_START, "").replace(NOTE_END, "").trim()
-  return { steps, isReady, voiceLanguage: settings.voiceLanguage ?? "auto", organizerNote, sessions: inTerminal() ? "terminal" : "desktop" }
+  return { steps, isReady, voiceLanguage: settings.voiceLanguage ?? "auto", organizerNote, sessions: inTerminal() ? "terminal" : "desktop", terminalApp: terminalApp(), hasITerm: hasITerm() }
 }
 
 export async function runStep(id: string, options: Record<string, unknown> = {}) {
@@ -307,6 +308,8 @@ export async function runStep(id: string, options: Record<string, unknown> = {})
     case "commands":
       return saveSettings({ runCommands: !options.off })
     case "terminal":
+      // { app }: only which app shows the sessions the board opens.
+      if (options.app === "Terminal" || options.app === "iTerm") return saveSettings({ terminalApp: options.app })
       return useTerminal(!options.off)
   }
   throw new Error(`unknown step: ${id}`)

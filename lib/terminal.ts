@@ -16,10 +16,11 @@
 // nothing waiting, no window attached and no output for IDLE_MS. Their
 // transcript stays; the next message starts them again.
 
+import { existsSync } from "node:fs"
 import { mkdir, readFile, writeFile, chmod } from "node:fs/promises"
 import { join } from "node:path"
 import { isBusy, status } from "./bridge"
-import { HOME, MODES, STATE_DIR } from "./config"
+import { HOME, MODES, STATE_DIR, settings } from "./config"
 import { claudeBinary, running } from "./launch"
 import { claudeEnv, exec } from "./proc"
 
@@ -114,16 +115,22 @@ export function wake(id: string, folder: string, mode?: string | null) {
   return start(id, folder, ["--resume", id, ...(mode && MODES.includes(mode) ? ["--permission-mode", mode] : [])])
 }
 
-// A Terminal window (the person's default app for .command files) running
-// `command`: the one place the board brings something to the front, and only
-// when asked to open a session.
+// iTerm, when it is installed: it opens .command files as Terminal does.
+export const hasITerm = () => ["/Applications/iTerm.app", join(HOME, "Applications/iTerm.app")].some(p => existsSync(p))
+
+// The app that shows the sessions the board opens (Setup → "Without Claude
+// desktop"): Terminal, or iTerm when chosen and installed.
+export const terminalApp = () => (settings.terminalApp === "iTerm" && hasITerm() ? "iTerm" : "Terminal")
+
+// A window of terminalApp() running `command`: the one place the board brings
+// something to the front, and only when asked to open a session.
 async function openWindow(name: string, command: string) {
   if (process.env.AGENT_CENTER_DRY_RUN) return true
   await mkdir(SCRIPTS_DIR, { recursive: true })
   const path = join(SCRIPTS_DIR, `${name}.command`)
   await writeFile(path, `#!/bin/zsh -l\n${command}\n`)
   await chmod(path, 0o755)
-  return (await exec(["open", path])).code === 0
+  return (await exec(["open", "-a", terminalApp(), path])).code === 0
 }
 
 // Shows the session in a Terminal window: attached to its tmux session, which

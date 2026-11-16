@@ -43,7 +43,7 @@ const STEPS: Record<string, Meta> = {
   },
   terminal: {
     title: "Without Claude desktop", need: "Optional", action: "Turn on", canTurnOff: true,
-    text: <>Sessions run in Claude Code's CLI instead of the Claude desktop app, and nothing comes to the front. A message to a sleeping session starts <code>claude --resume</code> in a tmux session of the board's own, in the background; Open shows it in a Terminal window. Sessions nobody uses for 30 minutes end, and the next message starts them again. Installs tmux with Homebrew if it is missing. A folder Claude Code was never told to trust runs headless until you open the session once and accept.</>,
+    text: <>Sessions run in Claude Code's CLI instead of the Claude desktop app, and nothing comes to the front. A message to a sleeping session starts <code>claude --resume</code> in a tmux session of the board's own, in the background; Open shows it in a Terminal (or iTerm) window. Sessions nobody uses for 30 minutes end, and the next message starts them again. Installs tmux with Homebrew if it is missing. A folder Claude Code was never told to trust runs headless until you open the session once and accept.</>,
   },
   hook: {
     title: "Session tracking", need: "Required", action: "Install", outdated: "Update",
@@ -287,6 +287,19 @@ function SetupStep({ step, status, busy, language, setLanguage, run }: StepProps
           <summary className="cursor-pointer text-text-muted">The note for CLAUDE.md</summary>
           <pre className="mt-1.5 rounded-lg border border-line bg-side px-2.5 py-2 font-mono text-xs whitespace-pre-wrap">{status.organizerNote}</pre>
         </details>
+      )}
+      {step.id === "terminal" && step.state === "done" && status.hasITerm && (
+        <div role="radiogroup" aria-label="Open sessions in" className="mt-2 flex items-center gap-2">
+          <span className="text-xs text-text-muted">Open sessions in</span>
+          <span className="inline-flex rounded-lg border border-line-strong bg-surface p-0.5">
+            {(["Terminal", "iTerm"] as const).map(app => (
+              <button key={app} type="button" role="radio" aria-checked={(status.terminalApp ?? "Terminal") === app} disabled={busy !== null} onClick={() => run("terminal", { app })}
+                className={cn("h-6 rounded-md px-2.5 text-[12.5px] font-[550] transition-colors", (status.terminalApp ?? "Terminal") === app ? "bg-text text-bg" : "text-text-muted hover:text-text")}>
+                {app}
+              </button>
+            ))}
+          </span>
+        </div>
       )}
       {step.id === "account" && <p className={text}>Sign in with the same account in both: in the terminal, <code>claude</code> then <code>/login</code>; or in Claude desktop, your account menu.</p>}
       {step.id === "bun" && step.state !== "done" && <p className={text}>You have {step.detail}. In the terminal: <code>bun upgrade && launchctl kickstart -k gui/$(id -u)/local.agent-center</code></p>}

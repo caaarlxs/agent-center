@@ -66,7 +66,8 @@ With this step on, the board never opens Claude desktop; it does not even need i
   detached. The bridge mod loads in it and delivers the message, as in Claude desktop. Questions,
   approvals, Stop and the live answer work the same.
 - **Open** (`O`) shows the session in a Terminal window attached to that tmux session: one process,
-  so what you type there and what you send from the board reach the same conversation.
+  so what you type there and what you send from the board reach the same conversation. With iTerm
+  installed, the step lets you choose it instead of Terminal.
 - **New session**: Send runs the first turn headless, as before, and the session sleeps until a
   message wakes it. Without a prompt, it opens in a Terminal window.
 - **Idle sessions end**: one nobody used for 30 minutes (no turn running, nothing waiting, no
