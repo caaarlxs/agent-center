@@ -13,7 +13,7 @@
 // (lib/deliver.ts), as it does when Claude desktop is at its cap.
 //
 // Sessions the board started and nobody uses are ended: no turn running,
-// nothing waiting, no window attached and no output for IDLE_MS. Their
+// nothing waiting, no window attached, no Remote Control and no output for IDLE_MS. Their
 // transcript stays; the next message starts them again.
 
 import { existsSync } from "node:fs"
@@ -80,10 +80,11 @@ async function isIdle(id: string) {
 
 // Ends the session nobody used for longest, to make room. False: none can go.
 async function makeRoom() {
-  const idle = (await liveSessions()).filter(s => !s.attached).sort((a, b) => a.activityAt - b.activityAt)
+  const idle = (await liveSessions()).filter(s => !s.attached && !remote.has(s.id)).sort((a, b) => a.activityAt - b.activityAt)
   for (const s of idle) {
     if (!(await isIdle(s.id))) continue
     await tmux(["kill-session", "-t", nameOf(s.id)])
+    remote.delete(s.id)
     console.log(`terminal: ended ${s.id} to make room`)
     return true
   }
@@ -160,13 +161,119 @@ export async function openNew(folder: string, prompt: string) {
   return openWindow(nameOf(id), `exec ${quote(tmuxPath()!)} -L ${SOCKET} attach -t ${quote(nameOf(id))}`)
 }
 
+// ---------- Remote Control ----------
+//
+// Claude Code's Remote Control (`/remote-control`): the session can be used
+// from the Claude app on a phone or at claude.ai/code as well. A sleeping
+// session starts with `--remote-control`; in a running one the board types
+// the command, as the person would. Claude Code writes the session's link on
+// screen ("/remote-control is active · … https://claude.ai/code/session_…"),
+// which the board reads and keeps here while the tmux session lives.
+//
+// The screen's history is no proof of the state (it is redrawn, and an old
+// "disconnected" stays on it), so the board asks Claude Code itself: with
+// `/remote-control` typed and not sent, its hint reads "Disconnect Remote
+// Control" when it is on. Sent while on, the command opens a menu
+// (Disconnect / Show QR code / Continue).
+
+const remote = new Map<string, string>() // session → its claude.ai/code link
+const LINK = /https:\/\/claude\.ai\/code\/session_[A-Za-z0-9]+/g
+const MENU = "Disconnect this session"
+const ON_HINT = "Disconnect Remote Control"
+const COMMAND = "/remote-control"
+
+const keys = (id: string, ...k: string[]) => tmux(["send-keys", "-t", nameOf(id), ...k])
+const screenOf = async (id: string) => (await tmux(["capture-pane", "-p", "-J", "-t", nameOf(id)])).stdout
+
+// Waits up to `ms` for `test` to hold on the session's screen; what it saw, or null.
+async function waitScreen(id: string, test: (screen: string) => boolean, ms = 12_000) {
+  for (const end = Date.now() + ms; Date.now() < end; await Bun.sleep(300)) {
+    const screen = await screenOf(id)
+    if (test(screen)) return screen
+  }
+  return null
+}
+
+export const lastLink = (screen: string) => screen.match(LINK)?.at(-1) ?? null
+
+// Types the command and waits for its hint: whether Remote Control is on, and
+// the screen then (its link, if shown). The command stays typed, not sent.
+async function typeCommand(id: string) {
+  await keys(id, "-l", COMMAND)
+  const screen = await waitScreen(id, s => s.includes(ON_HINT) || s.includes("Control this session from"), 5000)
+  return { isOn: !!screen?.includes(ON_HINT), screen: screen ?? "" }
+}
+const eraseCommand = (id: string) => keys(id, ...Array<string>(COMMAND.length + 2).fill("BSpace"))
+
+// Whether Remote Control is on in the running session (asked as above).
+async function probe(id: string) {
+  const { isOn } = await typeCommand(id)
+  await eraseCommand(id)
+  return isOn
+}
+
+// The session's link while Remote Control is on, else null.
+export async function remoteOf(id: string) {
+  if (remote.has(id) && !(await isLive(id))) remote.delete(id)
+  return remote.get(id) ?? null
+}
+
+export type Remote = { ok: true; url: string | null } | { ok: false; error: string }
+
+// Turns Remote Control on: starts the session with it, or types it in.
+export async function remoteOn(id: string, folder: string, mode?: string | null): Promise<Remote> {
+  if (!isId(id)) return { ok: false, error: "not a session id" }
+  if (await isLive(id)) {
+    if (isBusy(await status(id))) return { ok: false, error: "It is working: turn Remote Control on when the turn ends" }
+    const { isOn } = await typeCommand(id)
+    await keys(id, "Enter")
+    // On already: the menu shows the link, and Esc (Continue) closes it.
+    const screen = await waitScreen(id, s => s.includes(MENU) || (!isOn && s.includes("is active")))
+    if (screen?.includes(MENU)) await keys(id, "Escape")
+    if (!screen) return { ok: false, error: "Remote Control did not answer: open the session to see why" }
+    await Bun.sleep(500)
+    if (!(await probe(id))) return { ok: false, error: "Remote Control did not turn on: open the session to see why" }
+    const url = lastLink(screen)
+    remote.set(id, url ?? "")
+    return { ok: true, url }
+  }
+  const started = await start(id, folder, ["--resume", id, ...(mode && MODES.includes(mode) ? ["--permission-mode", mode] : []), "--remote-control"])
+  if (!started.ok) {
+    const why = { "no-tmux": "tmux is not installed (Setup → Without Claude desktop)", untrusted: "Claude Code has not been told to trust this folder: open the session once and accept", full: "Too many sessions are running: end one first", running: "A turn runs here, headless: try again when it ends", failed: started.error ?? "tmux could not start the session" }
+    return { ok: false, error: why[started.reason] }
+  }
+  const url = lastLink((await waitScreen(id, s => s.includes("is active") && lastLink(s) !== null, 20_000)) ?? "")
+  remote.set(id, url ?? "")
+  return { ok: true, url }
+}
+
+// Turns Remote Control off: the command again, then Disconnect in its menu.
+export async function remoteOff(id: string): Promise<Remote> {
+  if (!isId(id)) return { ok: false, error: "not a session id" }
+  if (!(await isLive(id))) return remote.delete(id), { ok: true, url: null }
+  if (isBusy(await status(id))) return { ok: false, error: "It is working: turn Remote Control off when the turn ends" }
+  const { isOn } = await typeCommand(id)
+  if (!isOn) return await eraseCommand(id), remote.delete(id), { ok: true, url: null }
+  await keys(id, "Enter")
+  if (!(await waitScreen(id, s => s.includes(MENU), 6000))) return { ok: false, error: "Remote Control did not answer: open the session to see why" }
+  // The menu opens on Continue, two rows below Disconnect.
+  await keys(id, "Up", "Up")
+  await Bun.sleep(200)
+  await keys(id, "Enter")
+  await Bun.sleep(800)
+  if (await probe(id)) return { ok: false, error: "Remote Control is still on: open the session to turn it off there" }
+  remote.delete(id)
+  return { ok: true, url: null }
+}
+
 // Ends the sessions nobody used for IDLE_MS (see above).
 async function reap() {
   const now = Date.now()
   for (const s of await liveSessions()) {
-    if (s.attached || now - s.activityAt < IDLE_MS) continue
+    if (s.attached || remote.has(s.id) || now - s.activityAt < IDLE_MS) continue
     if (!(await isIdle(s.id))) continue
     await tmux(["kill-session", "-t", nameOf(s.id)])
+    remote.delete(s.id)
     console.log(`terminal: ended ${s.id}, idle for ${Math.round((now - s.activityAt) / 60_000)} min`)
   }
 }

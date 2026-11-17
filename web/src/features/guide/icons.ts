@@ -7,7 +7,7 @@ import {
   GitPullRequest, Hammer, HeartPulse, Inbox, Kanban, Keyboard, LayoutGrid, Lightbulb, Link, ListChecks,
   ListTodo, ListTree, Lock, LogOut, Map as MapIcon, MessageCircleQuestion, MessageSquare, MessagesSquare, MousePointerClick, Move,
   Orbit, Palette, PanelLeft, PanelRight, PawPrint, Play, Plus, RefreshCw, Reply, Rocket, Rows3, Scale, Search, Server,
-  Settings, Shapes, ShieldCheck, SlidersHorizontal, Sparkles, SquareCheck, SquareTerminal, StickyNote,
+  Settings, Shapes, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles, SquareCheck, SquareTerminal, StickyNote,
   Terminal, Ticket, TicketCheck, Timer, Trash2, Undo2, UserCheck, WandSparkles, Workflow, Wrench,
 } from "lucide-react"
 
@@ -72,6 +72,7 @@ export const ICONS: Record<string, LucideIcon | undefined> = {
   "shapes": Shapes,
   "shield-check": ShieldCheck,
   "sliders-horizontal": SlidersHorizontal,
+  "smartphone": Smartphone,
   "sparkles": Sparkles,
   "square-check": SquareCheck,
   "square-terminal": SquareTerminal,

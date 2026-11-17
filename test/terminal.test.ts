@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { mkdtemp, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { isTrusted } from "../lib/terminal"
+import { isTrusted, lastLink } from "../lib/terminal"
 
 describe("isTrusted", () => {
   test("counts only the folder's own answer, not a trusted parent's", async () => {
@@ -19,5 +19,22 @@ describe("isTrusted", () => {
     expect(await isTrusted("/r", join(dir, "missing.json"))).toBe(false)
     await writeFile(join(dir, "bad.json"), "{")
     expect(await isTrusted("/r", join(dir, "bad.json"))).toBe(false)
+  })
+})
+
+// What Claude Code 2.1 writes on screen for /remote-control (captured from a session).
+describe("lastLink", () => {
+  const on = (s: string) => `❯ /remote-control\n  /remote-control is active · Continue here, on your phone, or at https://claude.ai/code/session_${s}\n`
+  test("reads the link Claude Code shows", () => {
+    expect(lastLink(on("01Mm8TTcQ7rLSxW8Y2bGzCqN"))).toBe("https://claude.ai/code/session_01Mm8TTcQ7rLSxW8Y2bGzCqN")
+  })
+  test("takes the newest when it was turned on again", () => {
+    expect(lastLink(on("01AAA") + "  ⎿  Remote Control disconnected.\n" + on("01BBB"))).toBe("https://claude.ai/code/session_01BBB")
+  })
+  test("reads it from the menu shown when it is on already", () => {
+    expect(lastLink("   Remote Control\n   This session is available in the Claude mobile app and at https://claude.ai/code/session_01CCC.\n     Disconnect this session\n")).toBe("https://claude.ai/code/session_01CCC")
+  })
+  test("null when there is none", () => {
+    expect(lastLink("❯ \n")).toBeNull()
   })
 })

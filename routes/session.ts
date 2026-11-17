@@ -5,7 +5,7 @@
 
 import { applyAction, isBoardAction, isTaskId, setSuggestion } from "../lib/board"
 import { answer as answerQuestion, isBusy, permit, requestSettings, send as sendMessage, setEffort, status as bridgeStatus, stop as stopTurn, unsend } from "../lib/bridge"
-import { activate, adopt, openInClient } from "../lib/client"
+import { activate, adopt, openInClient, remoteControl, remoteLink } from "../lib/client"
 import { isArchivedInApp, readDesktop } from "../lib/desktop"
 import { commandStatus, runCommand, stopCommand } from "../lib/commands"
 import { EFFORTS, MODES } from "../lib/config"
@@ -205,6 +205,13 @@ export async function handleSession(id: string, action: string, body: Record<str
     case "activate": {
       const res = await activate(id)
       if (res.ok) wokeNow(id)
+      return json(res, res.ok ? 200 : 409)
+    }
+    // Remote Control: on/off ({ on }), or where it stands ({} → its link or null).
+    case "remote": {
+      if (typeof body.on !== "boolean") return json({ ok: true, url: await remoteLink(id) })
+      const res = await remoteControl(id, body.on)
+      refreshSoon()
       return json(res, res.ok ? 200 : 409)
     }
     case "open": {
