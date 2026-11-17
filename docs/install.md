@@ -80,6 +80,10 @@ With this step on, the board never opens Claude desktop; it does not even need i
   board's tmux between turns, or written to the transcript of one that is not running. A session
   that is working, or open in Claude desktop or a terminal of yours, keeps its name, and the board
   says so. One line, up to 200 characters; Remote Control started from the board uses the name too.
+- **Commands from the reply box** (`/compact`, `/clear`, `/model sonnet`…): Claude Code runs a
+  command only when it is typed in the session, so the board types it in (waking the session if
+  it sleeps) instead of sending it as a message. Without this step the board says so rather than
+  losing it: type it in the session's own window.
 - **Idle sessions end**: one nobody used for 30 minutes (no turn running, nothing waiting, no
   window attached, no Remote Control) ends; its transcript stays and the next message starts it again. At most 6 run
   at once: past that the oldest idle one ends, or the turn runs headless.

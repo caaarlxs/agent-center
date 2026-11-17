@@ -123,6 +123,35 @@ export const hasITerm = () => ["/Applications/iTerm.app", join(HOME, "Applicatio
 // desktop"): Terminal, or iTerm when chosen and installed.
 export const terminalApp = () => (settings.terminalApp === "iTerm" && hasITerm() ? "iTerm" : "Terminal")
 
+// ---------- Commands typed in ----------
+//
+// A slash command written on the board (/compact, /clear, /model…): the
+// bridge mod can only hand the session a prompt, and Claude Code drops a
+// command that comes that way without a word. So the board types it into the
+// session, as the person would, waking it first if it sleeps.
+
+export type Typed = { ok: true } | { ok: false; error: string }
+
+export async function typeInSession(id: string, folder: string, line: string, mode?: string | null): Promise<Typed> {
+  if (!isId(id)) return { ok: false, error: "not a session id" }
+  if (!(await isLive(id))) {
+    const started = await wake(id, folder, mode)
+    if (!started.ok) {
+      const why = { "no-tmux": "tmux is not installed (Setup → Without Claude desktop)", untrusted: "Claude Code has not been told to trust this folder: open the session once, accept, and type the command there", full: "Too many sessions are running: end one first", running: "A turn runs here, headless: send the command when it ends", failed: started.error ?? "tmux could not start the session" }
+      return { ok: false, error: why[started.reason] }
+    }
+    // Ready once the bridge mod beats in it: Claude Code has drawn its input.
+    for (const end = Date.now() + 20_000; !(await status(id)).isOpen; await Bun.sleep(400))
+      if (Date.now() > end) return { ok: false, error: "The session did not start in time: open it and type the command there" }
+    await Bun.sleep(500)
+  }
+  if (isBusy(await status(id))) return { ok: false, error: "It is working: send the command when the turn ends" }
+  await tmux(["send-keys", "-t", nameOf(id), "-l", line])
+  await Bun.sleep(300)
+  await tmux(["send-keys", "-t", nameOf(id), "Enter"])
+  return { ok: true }
+}
+
 // A window of terminalApp() running `command`: the one place the board brings
 // something to the front, and only when asked to open a session.
 async function openWindow(name: string, command: string) {

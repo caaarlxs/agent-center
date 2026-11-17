@@ -147,6 +147,26 @@ export async function renameSession(id: string, title: string): Promise<Renamed>
   return { renamed: true }
 }
 
+// ---------- slash commands ----------
+//
+// "/compact", "/clear", "/model sonnet"…: one line starting with a command
+// name. Claude Code runs them only when typed in the session itself; handed
+// over as a prompt (the bridge mod) they are dropped without a word. Without
+// Claude desktop the board types them in (lib/terminal.ts); otherwise it says
+// so instead of losing them.
+export const isCommand = (text: string) => /^\/[a-z][\w:.-]*(\s|$)/i.test(text.trimStart())
+
+export async function sendCommand(id: string, text: string): Promise<terminal.Typed> {
+  const line = text.trim()
+  if (line.includes("\n")) return { ok: false, error: "A command is one line: send it on its own" }
+  if (!inTerminal()) return { ok: false, error: "Commands (/…) reach a session only when typed in it: open it in Claude and type it there (Setup → Without Claude desktop lets the board type it for you)" }
+  if ((await bridgeStatus(id)).isOpen && !(await terminal.isLive(id)))
+    return { ok: false, error: "It is open in a window of its own: type the command there" }
+  const folder = await folderOf(id)
+  if (!folder) return { ok: false, error: "The board does not know this session's folder" }
+  return terminal.typeInSession(id, folder, line, groupOf(id)?.lead.mode)
+}
+
 // Remote Control (lib/terminal.ts): the session also usable from a phone or
 // claude.ai/code. Only in terminal mode: Claude desktop has its own switch.
 export async function remoteControl(id: string, on: boolean, name?: string): Promise<terminal.Remote> {

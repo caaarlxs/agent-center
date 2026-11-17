@@ -5,7 +5,7 @@
 
 import { applyAction, isBoardAction, isTaskId, setSuggestion } from "../lib/board"
 import { answer as answerQuestion, isBusy, permit, requestSettings, send as sendMessage, setEffort, status as bridgeStatus, stop as stopTurn, unsend } from "../lib/bridge"
-import { activate, adopt, openInClient, remoteControl, remoteLink, renameSession } from "../lib/client"
+import { activate, adopt, isCommand, openInClient, remoteControl, remoteLink, renameSession, sendCommand } from "../lib/client"
 import { isArchivedInApp, readDesktop } from "../lib/desktop"
 import { commandStatus, runCommand, stopCommand } from "../lib/commands"
 import { EFFORTS, MODES } from "../lib/config"
@@ -26,6 +26,12 @@ import { wokeNow } from "../lib/wake"
 async function send(id: string, body: Record<string, unknown>) {
   if (await isArchivedInApp(groupOf(id)?.ids ?? [id]))
     return json({ error: "This session is archived in Claude: unarchive it there (Open in Claude), then write" }, 409)
+  // A command (/compact…) is typed into the session, not sent as a message.
+  if (isCommand(String(body.text ?? ""))) {
+    const res = await sendCommand(id, String(body.text))
+    refreshSoon()
+    return res.ok ? json({ ok: true, command: true }) : json({ error: res.error }, 409)
+  }
   try {
     const messageId = await sendMessage(id, String(body.text ?? ""))
     refreshSoon()

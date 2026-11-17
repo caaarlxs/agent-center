@@ -9,9 +9,11 @@ const at = (id: string, action: string) => `/api/sessions/${encodeURIComponent(i
 
 // A message for the session (a reply Claude offered, or any text). It shows
 // as pending in the conversation until the transcript has it.
+// A command (/compact…) is typed into the session by the server (command:
+// true): nothing waits to be delivered, and there is nothing to take back.
 export async function sendText(id: string, text: string) {
-  const res = await post<{ ok: boolean; messageId: string; isOpen?: boolean; activated?: boolean }>(at(id, "send"), { text })
-  addPending(id, { id: res.messageId, text, at: Date.now() })
+  const res = await post<{ ok: boolean; messageId: string; isOpen?: boolean; activated?: boolean; command?: boolean }>(at(id, "send"), { text })
+  if (!res.command) addPending(id, { id: res.messageId, text, at: Date.now() })
   return res
 }
 

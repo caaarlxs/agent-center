@@ -36,6 +36,7 @@ export async function reply(id: string, text: string) {
   if (isTemplate(text)) return (composerFill.set({ id, text: text.trimEnd() + " " }), void setTimeout(() => focusComposer(id), 120))
   try {
     const res = await sendText(id, text)
+    if (res.command) return void toast(`Ran ${text.trim().split(/\s/)[0]} in the session`)
     const said = res.isOpen ? `Replied: “${text.slice(0, 60)}”` : "Reply queued: it arrives when the session is free"
     undoable(said, () => void takeBack(id, { id: res.messageId, text }))
   } catch (err) {
@@ -46,5 +47,6 @@ export async function reply(id: string, text: string) {
 // Throws the server's reason, so a caller can keep what was typed.
 export async function sendMessage(id: string, text: string, done = "Message sent") {
   const res = await sendText(id, text)
+  if (res.command) return void toast(`Ran ${text.trim().split(/\s/)[0]} in the session`)
   undoable(res.activated ? "The session was asleep: waking it in the background" : done, () => void takeBack(id, { id: res.messageId, text }))
 }
