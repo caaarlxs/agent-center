@@ -109,7 +109,7 @@ function ImpactRow({ impact: c }: { impact: ContextImpact }) {
   const [isOpen, setOpen] = useState(false)
   return (
     <Row mark={<FileText size={13} />} end={<span className="font-mono text-[11.5px]">{c.file.split("/").pop()}</span>}>
-      <button className="text-left hover:underline hover:decoration-line-strong hover:underline-offset-[3px]" onClick={() => setOpen(o => !o)} aria-expanded={isOpen}>{c.why}</button>
+      <button className="block w-full text-left hover:underline hover:decoration-line-strong hover:underline-offset-[3px]" onClick={() => setOpen(o => !o)} aria-expanded={isOpen}>{c.why}</button>
       {isOpen && (
         <span className="mt-1.5 flex flex-col gap-1.5 text-text-muted">
           {c.quote && <span className="line-through decoration-line-strong">{c.quote}</span>}
