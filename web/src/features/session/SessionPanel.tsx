@@ -115,7 +115,7 @@ function Actions({ card }: { card: Card }) {
           title={isWatched ? "You will hear when it finishes or asks you: click to stop" : "Tell me when it finishes or asks me something"}><Anim.Bell /></button>
       )}
       <button className={iconBtn(!!card.run)} title="Run: start this session's project" onClick={() => openDialog({ kind: "run", card })}><Anim.Play /></button>
-      {!isDone && <RemoteControl id={card.id} className={iconBtn} menuClass={menuPop} />}
+      {!isDone && <RemoteControl id={card.id} name={card.title} className={iconBtn} menuClass={menuPop} />}
       <DropdownMenu modal={false}>
         <DropdownMenuTrigger asChild>
           <button className={iconBtn()} title="Colour (C)" style={tint ? { color: tint } : undefined}><Palette /></button>
@@ -208,7 +208,7 @@ function Title({ card, fallback }: { card: Card | undefined; fallback: string })
     <h2 className="group m-0 flex items-center gap-1.5 text-base leading-[1.3] font-[650] tracking-[-0.01em]" title="Double-click or T to rename (on the board only)" onDoubleClick={() => setEditing(true)}>
       <span className="line-clamp-2 [overflow-wrap:anywhere]">{shown ?? card.title}</span>
       <button className={cn(iconBtn(), "size-[22px] opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 [&_svg]:size-[13px]")} onClick={() => setEditing(true)} aria-label="Rename"><Pencil /></button>
-      {card.hasOwnTitle && <span className="shrink-0 rounded-md bg-hover px-1.5 py-px text-[11px] font-medium text-text-muted" title="Name set on the board; Claude desktop keeps its own">renamed</span>}
+      {card.hasOwnTitle && <span className="shrink-0 rounded-md bg-hover px-1.5 py-px text-[11px] font-medium text-text-muted" title="Name set on the board, and the session's own when it could take it (/rename)">renamed</span>}
     </h2>
   )
 }

@@ -9,9 +9,11 @@ const at = (id: string, action: string) => `/api/sessions/${encodeURIComponent(i
 
 // A message for the session (a reply Claude offered, or any text). It shows
 // as pending in the conversation until the transcript has it.
+// A command (/compact…) is typed into the session by the server (command:
+// true): nothing waits to be delivered, and there is nothing to take back.
 export async function sendText(id: string, text: string) {
-  const res = await post<{ ok: boolean; messageId: string; isOpen?: boolean; activated?: boolean }>(at(id, "send"), { text })
-  addPending(id, { id: res.messageId, text, at: Date.now() })
+  const res = await post<{ ok: boolean; messageId: string; isOpen?: boolean; activated?: boolean; command?: boolean }>(at(id, "send"), { text })
+  if (!res.command) addPending(id, { id: res.messageId, text, at: Date.now() })
   return res
 }
 
@@ -61,7 +63,22 @@ export const stopTurn = (card: { id: string; title: string }) =>
   stop(card.id).then(() => toast(`Stopping “${card.title}”…`), (err: Error) => toast(err.message || "Could not stop"))
 
 // Its name on the board (Claude desktop keeps its own); empty: back to Claude's.
-export const rename = (id: string, title: string) => act(id, "rename", { title }).catch((err: Error) => toast(err.message || "Could not rename"))
+// The new name is the session's own too (lib/client.ts renameSession); when it
+// cannot reach the session now, the board says so.
+type Renamed = { ok: boolean; session?: { renamed: boolean; why?: "empty" | "working" | "open" | "unknown" } }
+const NOT_RENAMED = {
+  working: "It is working: rename it again when the turn ends to rename the session too.",
+  open: "It is open in Claude desktop or a terminal: run /rename there to rename the session too.",
+  unknown: "The board could not find its transcript: only the card has the new name.",
+}
+export const rename = (id: string, title: string) =>
+  (act(id, "rename", { title }) as Promise<Renamed>).then(
+    r => {
+      const why = r.session && !r.session.renamed ? r.session.why : undefined
+      if (why && why !== "empty") toast("Renamed on the board only", { description: NOT_RENAMED[why] })
+    },
+    (err: Error) => toast(err.message || "Could not rename"),
+  )
 
 // "Later" until… (park): the times the board offers.
 const todayAt = (days: number, hour: number) => {

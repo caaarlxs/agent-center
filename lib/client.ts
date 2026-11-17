@@ -3,6 +3,8 @@
 // folder. With settings.sessions = "terminal" the same actions go to Claude
 // Code's CLI instead (lib/terminal.ts), and Claude desktop is never opened.
 
+import { appendFile, readFile } from "node:fs/promises"
+import { isBusy, status as bridgeStatus } from "./bridge"
 import { inTerminal } from "./config"
 import { deliverHere } from "./deliver"
 import { readDesktop } from "./desktop"
@@ -11,6 +13,7 @@ import { exec } from "./proc"
 import { hostIdOf } from "./sessions"
 import { groupOf } from "./snapshot"
 import * as terminal from "./terminal"
+import { transcriptPath } from "./transcript"
 
 const CLAUDE_APP = "com.anthropic.claudefordesktop"
 
@@ -109,14 +112,69 @@ export async function openInClient(id: string): Promise<{ ok: boolean; error?: s
   return { ok: await openUrl(importUrl(id)) }
 }
 
+// ---------- the session's own name ----------
+//
+// Renaming a card on the board renames the session too, as `/rename` does, so
+// the Claude app, claude.ai/code (Remote Control) and `claude --resume` show
+// the same name. Claude Code takes one line of up to 200 characters.
+//
+// - Running in the board's tmux, between turns: `/rename <name>` typed in.
+// - Not running anywhere: the two records `/rename` writes, added to the
+//   transcript; the session starts under that name.
+// - Working, or open elsewhere (Claude desktop, a terminal of the person's):
+//   left alone, so the board never writes beside a live process.
+
+export const sessionName = (title: string) => title.replace(/\s+/g, " ").trim().slice(0, 200)
+
+export type Renamed = { renamed: true } | { renamed: false; why: "empty" | "working" | "open" | "unknown" }
+
+export async function renameSession(id: string, title: string): Promise<Renamed> {
+  const name = sessionName(title)
+  if (!name) return { renamed: false, why: "empty" }
+  const b = await bridgeStatus(id)
+  if (inTerminal() && (await terminal.isLive(id))) {
+    if (isBusy(b)) return { renamed: false, why: "working" }
+    return (await terminal.renameLive(id, name)) ? { renamed: true } : { renamed: false, why: "working" }
+  }
+  if (running.has(id)) return { renamed: false, why: "working" }
+  if (b.isOpen) return { renamed: false, why: "open" }
+  const path = await transcriptPath(id)
+  if (!path) return { renamed: false, why: "unknown" }
+  const text = await readFile(path, "utf8").catch(() => null)
+  if (text === null) return { renamed: false, why: "unknown" }
+  const records = [{ type: "custom-title", customTitle: name, sessionId: id }, { type: "agent-name", agentName: name, sessionId: id }]
+  await appendFile(path, (text.endsWith("\n") || !text ? "" : "\n") + records.map(r => JSON.stringify(r)).join("\n") + "\n")
+  return { renamed: true }
+}
+
+// ---------- slash commands ----------
+//
+// "/compact", "/clear", "/model sonnet"…: one line starting with a command
+// name. Claude Code runs them only when typed in the session itself; handed
+// over as a prompt (the bridge mod) they are dropped without a word. Without
+// Claude desktop the board types them in (lib/terminal.ts); otherwise it says
+// so instead of losing them.
+export const isCommand = (text: string) => /^\/[a-z][\w:.-]*(\s|$)/i.test(text.trimStart())
+
+export async function sendCommand(id: string, text: string): Promise<terminal.Typed> {
+  const line = text.trim()
+  if (line.includes("\n")) return { ok: false, error: "A command is one line: send it on its own" }
+  if (!inTerminal()) return { ok: false, error: "Commands (/…) reach a session only when typed in it: open it in Claude and type it there (Setup → Without Claude desktop lets the board type it for you)" }
+  if ((await bridgeStatus(id)).isOpen && !(await terminal.isLive(id)))
+    return { ok: false, error: "It is open in a window of its own: type the command there" }
+  const folder = await folderOf(id)
+  if (!folder) return { ok: false, error: "The board does not know this session's folder" }
+  return terminal.typeInSession(id, folder, line, groupOf(id)?.lead.mode)
+}
+
 // Remote Control (lib/terminal.ts): the session also usable from a phone or
 // claude.ai/code. Only in terminal mode: Claude desktop has its own switch.
-export async function remoteControl(id: string, on: boolean): Promise<terminal.Remote> {
+export async function remoteControl(id: string, on: boolean, name?: string): Promise<terminal.Remote> {
   if (!inTerminal()) return { ok: false, error: "Turn on Setup → Without Claude desktop to switch Remote Control from here; in Claude desktop, use its own switch" }
   if (!on) return terminal.remoteOff(id)
   const folder = await folderOf(id)
   if (!folder) return { ok: false, error: "The board does not know this session's folder" }
-  return terminal.remoteOn(id, folder, groupOf(id)?.lead.mode)
+  return terminal.remoteOn(id, folder, groupOf(id)?.lead.mode, name ? sessionName(name) : null)
 }
 
 export const remoteLink = (id: string) => (inTerminal() ? terminal.remoteOf(id) : Promise.resolve(null))

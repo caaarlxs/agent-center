@@ -6,7 +6,7 @@ import {
   Download, Eye, FastForward, FileDiff, FileText, FlaskConical, Folder, Frame, Gauge, GitCommitHorizontal, GitFork,
   GitPullRequest, Hammer, HeartPulse, Inbox, Kanban, Keyboard, LayoutGrid, Lightbulb, Link, ListChecks,
   ListTodo, ListTree, Lock, LogOut, Map as MapIcon, MessageCircleQuestion, MessageSquare, MessagesSquare, MousePointerClick, Move,
-  Orbit, Palette, PanelLeft, PanelRight, PawPrint, Play, Plus, RefreshCw, Reply, Rocket, Rows3, Scale, Search, Server,
+  Orbit, Palette, PanelLeft, PanelRight, PawPrint, Pencil, Play, Plus, RefreshCw, Reply, Rocket, Rows3, Scale, Search, Server,
   Settings, Shapes, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles, SquareCheck, SquareTerminal, StickyNote,
   Terminal, Ticket, TicketCheck, Timer, Trash2, Undo2, UserCheck, WandSparkles, Workflow, Wrench,
 } from "lucide-react"
@@ -59,6 +59,7 @@ export const ICONS: Record<string, LucideIcon | undefined> = {
   "panel-left": PanelLeft,
   "panel-right": PanelRight,
   "paw-print": PawPrint,
+  "pencil": Pencil,
   "play": Play,
   "plus": Plus,
   "refresh-cw": RefreshCw,

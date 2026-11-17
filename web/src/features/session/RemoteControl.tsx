@@ -13,12 +13,13 @@ import { useInTerminal } from "@/lib/sessions-client"
 import { cn } from "@/lib/utils"
 
 type Answer = { ok: boolean; url: string | null }
-const remote = (id: string, body: { on?: boolean } = {}) => post<Answer>(`/api/sessions/${encodeURIComponent(id)}/remote`, body)
+const remote = (id: string, body: { on?: boolean; name?: string } = {}) => post<Answer>(`/api/sessions/${encodeURIComponent(id)}/remote`, body)
 
 const copy = (url: string) =>
   navigator.clipboard.writeText(url).then(() => toast("Link copied"), () => toast("Could not copy the link"))
 
-export function RemoteControl({ id, className, menuClass }: { id: string; className: (isOn: boolean) => string; menuClass: string }) {
+// `name`: the card's title, the name a session started for it gets (it shows in the Claude app).
+export function RemoteControl({ id, name, className, menuClass }: { id: string; name?: string; className: (isOn: boolean) => string; menuClass: string }) {
   const isTerminal = useInTerminal()
   // undefined: not known yet; null: off; "": on without a link read; else the link.
   const [url, setUrl] = useState<string | null | undefined>(undefined)
@@ -36,7 +37,7 @@ export function RemoteControl({ id, className, menuClass }: { id: string; classN
 
   const turn = (on: boolean) => {
     setBusy(true)
-    remote(id, { on }).then(
+    remote(id, on ? { on, name } : { on }).then(
       r => {
         setUrl(on ? (r.url ?? "") : null)
         if (!on) return toast("Remote Control off")
