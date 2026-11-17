@@ -25,6 +25,7 @@ import { Num } from "@/components/common/Num"
 import { Anim } from "@/components/icons/animated"
 import { useIsDots } from "@/lib/board-style"
 import { PanelTabs } from "./PanelTabs"
+import { RemoteControl } from "./RemoteControl"
 import { EditActions } from "./EditActions"
 import { jiraSetup } from "@/features/jira/jira"
 import { useClientName } from "@/lib/sessions-client"
@@ -114,6 +115,7 @@ function Actions({ card }: { card: Card }) {
           title={isWatched ? "You will hear when it finishes or asks you: click to stop" : "Tell me when it finishes or asks me something"}><Anim.Bell /></button>
       )}
       <button className={iconBtn(!!card.run)} title="Run: start this session's project" onClick={() => openDialog({ kind: "run", card })}><Anim.Play /></button>
+      {!isDone && <RemoteControl id={card.id} className={iconBtn} menuClass={menuPop} />}
       <DropdownMenu modal={false}>
         <DropdownMenuTrigger asChild>
           <button className={iconBtn()} title="Colour (C)" style={tint ? { color: tint } : undefined}><Palette /></button>

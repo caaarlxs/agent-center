@@ -70,8 +70,13 @@ With this step on, the board never opens Claude desktop; it does not even need i
   installed, the step lets you choose it instead of Terminal.
 - **New session**: Send runs the first turn headless, as before, and the session sleeps until a
   message wakes it. Without a prompt, it opens in a Terminal window.
+- **Remote Control**: the phone button in a session's head turns on Claude Code's Remote Control
+  (`/remote-control`), so the session can also be used from the Claude app on your phone or at
+  claude.ai/code. A sleeping session starts with `--remote-control`; a running one gets the command
+  typed in. On, the button offers the session's link and **Turn off**. Turned on or off in the
+  session's own window, the board does not see it: use the button.
 - **Idle sessions end**: one nobody used for 30 minutes (no turn running, nothing waiting, no
-  window attached) ends; its transcript stays and the next message starts it again. At most 6 run
+  window attached, no Remote Control) ends; its transcript stays and the next message starts it again. At most 6 run
   at once: past that the oldest idle one ends, or the turn runs headless.
 - **A folder Claude Code never trusted** would hold the session on its trust question, so the
   board runs the turn headless instead (`claude -p --resume`). Open the session once and answer

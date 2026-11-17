@@ -33,6 +33,7 @@ Lucide's names, and must be in `web/src/features/guide/icons.ts`.
 - {play} **Run**: start a session's project in its folder, see where it listens and read its output.
 - {square-terminal} **Terminal sessions**: a session that runs in a terminal says so; Open in Claude asks first, as Claude desktop would open a separate copy. · 2026-11-04
 - {square-terminal} **Without Claude desktop**: Setup can run sessions in Claude Code's CLI instead of the app: a message wakes a sleeping session in tmux, in the background, and Open shows it in a Terminal window. Nothing comes to the front unless you open it. · 2026-11-15
+- {smartphone} **Remote Control**: without Claude desktop, a button in a session's head turns on Claude Code's Remote Control, to go on with it from your phone or claude.ai/code; it gives you the link and turns it off again. · 2026-11-17
 - {copy-x} **Open twice**: a session open in two places at once (a terminal and Claude desktop) is marked in red: neither sees the other's messages. · 2026-11-04
 
 ## {shapes} Canvas

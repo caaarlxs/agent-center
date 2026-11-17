@@ -109,6 +109,18 @@ export async function openInClient(id: string): Promise<{ ok: boolean; error?: s
   return { ok: await openUrl(importUrl(id)) }
 }
 
+// Remote Control (lib/terminal.ts): the session also usable from a phone or
+// claude.ai/code. Only in terminal mode: Claude desktop has its own switch.
+export async function remoteControl(id: string, on: boolean): Promise<terminal.Remote> {
+  if (!inTerminal()) return { ok: false, error: "Turn on Setup → Without Claude desktop to switch Remote Control from here; in Claude desktop, use its own switch" }
+  if (!on) return terminal.remoteOff(id)
+  const folder = await folderOf(id)
+  if (!folder) return { ok: false, error: "The board does not know this session's folder" }
+  return terminal.remoteOn(id, folder, groupOf(id)?.lead.mode)
+}
+
+export const remoteLink = (id: string) => (inTerminal() ? terminal.remoteOf(id) : Promise.resolve(null))
+
 // A new session in the app, in `folder`, with `prompt` written but not sent.
 export async function newInClient(folder: string, prompt: string) {
   if (inTerminal()) return terminal.openNew(folder, prompt)
