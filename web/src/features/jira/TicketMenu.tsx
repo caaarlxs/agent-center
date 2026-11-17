@@ -1,7 +1,7 @@
 // What you do to a ticket in the pipeline now and then, in one menu (each asks
-// once more): start over, take it off the pipeline, clean up what runs left,
-// roll back an environment.
-import { Ellipsis, History, LogOut, RotateCcw, Trash2 } from "lucide-react"
+// once more): close it (it leaves the pipeline, and what it left on this Mac
+// goes), start over, clean up what runs left, roll back an environment.
+import { Archive, Ellipsis, History, RotateCcw, Trash2 } from "lucide-react"
 import { useState, type ReactNode } from "react"
 import { toast } from "@/lib/notify"
 import { Button } from "@/components/ui/button"
@@ -39,11 +39,11 @@ export function TicketMenu({ state, putAside, onChanged }: { state: PipelineStat
   const [leftovers, setLeftovers] = useState<Leftover[] | null>(null)
   const isRunning = state.status === "running"
   const env = deployedEnv(state)
-  const canRemove = !(isRunning && isRelease(state.stage))
-  if (isRunning && !canRemove && !putAside && !env) return null
+  const canClose = !(isRunning && isRelease(state.stage))
+  if (!canClose && !putAside && !env) return null
   const key = state.key
   const reset = async () => (await act("/api/pipeline/reset", { key }, "Started over: the comments stay in Jira")) && onChanged()
-  const remove = async () => (await sendWithFeedback<{ warnings?: string[] }>("/api/pipeline/remove", { key }, r => ["Out of the pipeline", ...(r.warnings ?? [])].join(". "))) && onChanged()
+  const close = async () => (await sendWithFeedback<{ warnings?: string[] }>("/api/pipeline/close", { key }, r => ["Closed", ...(r.warnings ?? [])].join(". "))) && onChanged()
   const rollBack = (env: string) => void act("/api/pipeline/rollback", { key, env }, `Rolling back ${env}`).then(ok => ok && onChanged())
   const openLeftovers = () => void get<{ items: Leftover[] }>(`/api/pipeline/leftovers?key=${encodeURIComponent(key)}`).then(r => setLeftovers(r.items), (err: Error) => toast(err.message || "It did not work"))
   return (
@@ -53,8 +53,8 @@ export function TicketMenu({ state, putAside, onChanged }: { state: PipelineStat
           <button className="grid size-7 shrink-0 place-items-center rounded-md text-text-muted transition-colors duration-120 hover:bg-hover hover:text-text" aria-label="More"><Ellipsis size={15} /></button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="min-w-[220px]">
+          {canClose && <SureItem icon={<Archive size={13} />} label="Close" sure="Sure? Its copies go; code and Jira stay" onGo={() => void close()} />}
           {!isRunning && <SureItem icon={<RotateCcw size={13} />} label="Start over" sure="Sure? Clears runs and labels" onGo={() => void reset()} />}
-          {canRemove && <SureItem icon={<LogOut size={13} />} label="Take off the pipeline" sure="Sure? Jira and PRs stay" onGo={() => void remove()} />}
           {putAside > 0 && <DropdownMenuItem className="gap-2" onSelect={openLeftovers}><Trash2 size={13} />Clean up {putAside} left</DropdownMenuItem>}
           {env && <><DropdownMenuSeparator /><SureItem icon={<History size={13} />} label={`Roll back ${env}`} sure={`Sure? Roll back ${env}`} isDanger onGo={() => rollBack(env)} /></>}
         </DropdownMenuContent>

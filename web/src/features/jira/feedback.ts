@@ -18,7 +18,7 @@ const PENDING: Record<string, string> = {
   "/api/pipeline/ready": "Marking it ready…",
   "/api/pipeline/reset": "Starting over…",
   "/api/pipeline/back": "Sending it back…",
-  "/api/pipeline/remove": "Taking it out of the pipeline…",
+  "/api/pipeline/close": "Closing it…",
   "/api/pipeline/cleanup": "Deleting…",
   "/api/pipeline/debt": "Sending to Jira…",
   "/api/pipeline/proposal": "Sending to Jira…",

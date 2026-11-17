@@ -41,7 +41,7 @@ import { componentsOf, descendantsOf, relateTickets, assignToMe, attachTo, comme
 import { flowOf, followInJira, type Event as JiraEvent } from "./jira-flow"
 import { scopeLines, scopeOf, storiesOf, type TreeTicket } from "./scope"
 import { anchorOf, componentsFor, decidedForAgent, edited, newDescription, proposalsIn, ticketsOfYours, waitsOn, withProposals, type Edit, type Proposal } from "./proposals"
-import { archiveOf, cleanupSteps, keptAfter, leftoversOf, wantedBranches, worktreesIn, type Archive, type Clone, type Found, type Kept as KeptBranch } from "./cleanup"
+import { archiveOf, cleanupSteps, keptAfter, leftoversOf, wantedBranches, worktreesIn, type Archive, type Clone, type Found, type Kept as KeptBranch, type Leftover } from "./cleanup"
 import { JIRA_MAX, evidenceType, filesIn, forJira, keptFiles, type EvidenceFile } from "./evidence"
 import { debtIn, merged as debtMerged, ticketOf as debtTicket, type DebtEntry, type DebtItem } from "./debt"
 import { claudeBinary, running } from "./launch"
@@ -842,6 +842,7 @@ async function finish(key: string) {
   const done: PipelineState = { ...state, publishedRun: state.runs, status: "ready", questions: [], proposals, units, checklist, checked, scripts, order, ...(state.stage === "smoke" ? { backNote: null } : {}), ...found, ...tested, ...context, checks: withJira([...checks, ...attached.checks], state.checks), endedAt: Date.now() }
   await recordDebt(key, result.debt)
   await settle({ ...done, checks: withJira([...(done.checks ?? []), ...graveDebt(result.debt)], []) })
+  if (state.stage === "smoke" && !failing(done.results).length && !untried(done.results).length) void closePipeline(key).catch(err => console.error(`close ${key}:`, err))
   // Saved first: it explains the findings this review left.
   if (state.stage === "review") void explainFindings(key).catch(err => console.error(`explain ${key}:`, err))
 }
@@ -1630,28 +1631,63 @@ export async function resetPipeline(key: string) {
 // Out of the pipeline: the agent at work stops, the labels go (on a ticket of
 // yours) and the run is put aside (<key>.removed-<ts>, nothing deleted).
 // Jira's statuses, the PRs and the code stay as they are.
-export async function removePipeline(key: string): Promise<{ warnings: string[] }> {
+// Close a ticket: it leaves the pipeline, and what it left on this Mac goes (its worktrees and
+// releases' checkouts, its local branches GitHub has, its runs put aside); a short record of it
+// stays (closed/: its state, documents, evidence, scripts' reports). The code, its PRs and Jira
+// stay as they are, but for the pipeline's labels. A branch with commits GitHub lacks stays, said.
+// An agent at work stops first; a release at work does not: wait for it, or stop it.
+export async function closePipeline(key: string): Promise<{ warnings: string[] }> {
   if (!isKey(key)) throw new Error("Not a ticket key")
-  if (!(await stateOf(key))) throw new Error(`${key} is not in the pipeline`)
-  return { warnings: await takeOut(key) }
-}
-// Its agent stops, and it is put aside as stopped: nothing reads it as at work any more.
-async function stopToTakeOut(state: PipelineState) {
-  if (isRelease(state.stage)) throw new Error(`A release is at work on ${state.key}: wait for it to end first`)
-  if (!state.pid) throw new Error(`${state.key} is starting: wait a moment`)
-  try { process.kill(-state.pid, "SIGTERM") } catch { try { process.kill(state.pid, "SIGTERM") } catch {} }
-  await save({ ...state, status: "failed", error: "Taken out of the pipeline", endedAt: Date.now() })
-}
-async function takeOut(key: string): Promise<string[]> {
   if (starting.has(key)) throw new Error(`${key} is starting: wait a moment`)
+  const at = Date.now()
   const state = await locked(key, async () => {
     const state = await stateOf(key)
-    if (state?.status === "running") await stopToTakeOut(state)
-    await rename(dirOf(key), `${dirOf(key)}.removed-${Date.now()}`)
+    if (!state) throw new Error(`${key} is not in the pipeline`)
+    if (state.status === "running") await stopToClose(state)
+    await rename(dirOf(key), join(ROOT, `${key}.removed-${at}`))
     return state
   })
-  if (state?.local) return []
-  return labelTicket(key, [], Object.values(LABELS)).then(() => [], (err: Error) => [`${key}: its labels stay in Jira (${err.message})`])
+  const found = await foundFor(key)
+  const record = found.archives.find(a => a.at === at)!
+  const all = leftoversOf(found)
+  const { picked, kept } = closingOf(all, record.name)
+  const failed = await runCleanup(picked, found)
+  await keepBranches(key, keptAfter(all, picked))
+  await slim(record.path)
+  await mkdir(CLOSED, { recursive: true })
+  await rename(record.path, join(CLOSED, `${key}-${at}`))
+  const labels = state.local ? [] : await labelTicket(key, [], Object.values(LABELS)).then(() => [], (err: Error) => [`${key}: its labels stay in Jira (${err.message})`])
+  return { warnings: [...kept.map(l => `${l.label} stays: ${l.warn}`), ...failed, ...labels] }
+}
+const CLOSED = join(ROOT, "closed")
+// What a close removes: everything left but its own record and a branch with commits GitHub lacks.
+export const closingOf = (all: Leftover[], record: string) => ({
+  picked: all.filter(l => l.id !== `run:${record}` && l.isPicked),
+  kept: all.filter(l => l.kind === "branch" && !l.isPicked),
+})
+// A closed ticket's record keeps what it said and showed, not the code it worked on nor its logs.
+async function slim(dir: string) {
+  await Promise.all(["work", "release"].map(d => rm(join(dir, d), { recursive: true, force: true })))
+  const logs = (await readdir(dir).catch(() => [] as string[])).filter(f => f.endsWith(".log"))
+  await Promise.all(logs.map(f => rm(join(dir, f), { force: true })))
+}
+// Its agent stops, and it is put aside as stopped: nothing reads it as at work any more.
+async function stopToClose(state: PipelineState) {
+  if (isRelease(state.stage)) throw new Error(`A release is at work on ${state.key}: wait for it to end, or stop it`)
+  if (!state.pid) throw new Error(`${state.key} is starting: wait a moment`)
+  endGroup(state.pid)
+  await save({ ...state, status: "failed", error: "Closed", endedAt: Date.now() })
+}
+// The tickets closed, the latest first: what each was and where it got.
+export async function closedTickets() {
+  const names = await readdir(CLOSED).catch(() => [] as string[])
+  const found = await Promise.all(names.map(async name => {
+    const m = name.match(/^([A-Z][A-Z0-9]+-\d+)-(\d+)$/)
+    if (!m) return null
+    const state = jsonOf(await readText(join(CLOSED, name, "state.json"))) as PipelineState | null
+    return { key: m[1]!, at: Number(m[2]), summary: state?.summary ?? null, stage: state?.stage ?? null, deployed: Object.keys(state?.deployed ?? {}) }
+  }))
+  return found.filter((c): c is NonNullable<typeof c> => !!c).sort((a, b) => b.at - a.at)
 }
 
 // ---------- tickets the stages propose (proposals.ts) ----------
@@ -1747,6 +1783,10 @@ export async function cleanUp(key: string, ids: string[]) {
   const picked = all.filter(l => ids.includes(l.id))
   if (!picked.length) throw new Error("Nothing of that is left")
   await keepBranches(key, keptAfter(all, picked))
+  return { failed: await runCleanup(picked, found) }
+}
+// What was picked goes: worktrees, their branches, the runs put aside; what fails is said, the rest goes on.
+async function runCleanup(picked: Leftover[], found: Found): Promise<string[]> {
   const failed: string[] = []
   for (const step of cleanupSteps(picked, join(ROOT, "repos"), found.archives)) {
     if ("remove" in step) await rm(step.remove, { recursive: true, force: true }).catch((err: Error) => failed.push(`${basename(step.remove)}: ${err.message}`))
@@ -1755,7 +1795,9 @@ export async function cleanUp(key: string, ids: string[]) {
       if (!r.ok) failed.push(`${basename(step.cwd)}: ${step.cmd.slice(1, 3).join(" ")} ${step.cmd.at(-1)}: ${r.err}`)
     }
   }
-  return { failed }
+  // A worktree whose folder went with its run: git forgets it too.
+  for (const repo of new Set(picked.filter(l => l.kind === "worktree").map(l => l.id.split(":")[1]!))) await releaseOps.sh(["git", "worktree", "prune"], { cwd: join(ROOT, "repos", repo) })
+  return failed
 }
 
 // Every ticket in the pipeline (not the runs started over), the latest first.

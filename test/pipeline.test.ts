@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { isStuck, releasedUnits, retestOf, sessionOf, shippedWith, unitsNow, withUnits, testedIn, askPrompt, askRefusal, fixesNow, isAbout, testFix, unshipped, blocking, checkedByHand, checkedIn, isAdopted, toFixNow, MARK, answeredAfter, answersComment, argsFor, parseResult, pipelineKeyOf, stageToRun, unbuilt, withRun, withAnswers, earlierResults, questionsComment, snapshotOf, prodWarning, autoNext, linksFigma, impactRepos } from "../lib/pipeline"
+import { isStuck, releasedUnits, retestOf, sessionOf, shippedWith, unitsNow, withUnits, testedIn, askPrompt, askRefusal, fixesNow, isAbout, testFix, unshipped, blocking, checkedByHand, checkedIn, isAdopted, toFixNow, MARK, answeredAfter, answersComment, argsFor, parseResult, pipelineKeyOf, stageToRun, unbuilt, withRun, withAnswers, earlierResults, closingOf, questionsComment, snapshotOf, prodWarning, autoNext, linksFigma, impactRepos } from "../lib/pipeline"
 
 const questions = [
   { id: "Q1", question: "¿Cuál es el copy?", proposal: "El del ticket" },
@@ -554,5 +554,15 @@ describe("earlierResults", () => {
   it("are none once a refinement or a plan ran after them: the criteria may have changed", () => {
     const history = [run(1, "test", [r("CA1")]), run(2, "plan"), run(3, "test")]
     expect(earlierResults({ stage: "test", runs: 3, history } as never)).toEqual([])
+  })
+})
+
+describe("closingOf", () => {
+  const l = (id: string, kind: "run" | "worktree" | "branch", isPicked = true) => ({ id, kind, label: id, detail: null, warn: isPicked ? null : "2 commits not on GitHub", isPicked })
+  it("removes all a ticket left but its own record and a branch GitHub lacks commits of", () => {
+    const all = [l("run:PP-1.removed-9", "run"), l("run:PP-1.old-5", "run"), l("worktree:api:/w/U1", "worktree"), l("branch:api:feat/a", "branch"), l("branch:api:feat/b", "branch", false)]
+    const { picked, kept } = closingOf(all, "PP-1.removed-9")
+    expect(picked.map(x => x.id)).toEqual(["run:PP-1.old-5", "worktree:api:/w/U1", "branch:api:feat/a"])
+    expect(kept.map(x => x.id)).toEqual(["branch:api:feat/b"])
   })
 })

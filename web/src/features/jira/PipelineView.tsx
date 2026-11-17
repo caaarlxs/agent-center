@@ -25,6 +25,7 @@ import { SPECIALISTS, SPLIT, clampSplit, jobColumn, jobLabel } from "./jobs-boar
 import { JobComposer } from "./JobComposer"
 import { StageEffect } from "./StageEffect"
 import { DebtButton } from "./Debt"
+import { ClosedButton } from "./Closed"
 import { effectOf, sceneOf } from "./stage-effects"
 import { PipelineMark, liveLine } from "./PipelineMark"
 import { BUILT, STAGES, STAGE_KEYS, columnOf, costOf, dollars, inColumns, isJob, isQueued, toFix, waitingStep } from "./pipeline-board"
@@ -212,7 +213,7 @@ export function PipelineView() {
   const [split, setSplit] = useSplit()
   return (
     <div className="flex h-full min-w-min flex-col">
-      <div className="sticky left-0 self-start px-6 pt-2"><DebtButton /></div>
+      <div className="sticky left-0 flex items-center gap-4 self-start px-6 pt-2"><DebtButton /><ClosedButton /></div>
       <div ref={halves} className="flex min-h-0 flex-1 flex-col">
         <div ref={board} className={cn(COLUMNS, "min-h-0 flex-none pt-2 pb-2")} style={{ height: `${split * 100}%` }}>
           {inColumns(states).map((here, i) => {

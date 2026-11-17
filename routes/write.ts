@@ -2,7 +2,7 @@
 // notes, PR actions, tasks, files sent and dictation.
 
 import { commentOn, connect, disconnect, moveTicket } from "../lib/jira"
-import { actOnDebt, answerPipeline, askPipeline, explainFindings, sendBack, checkByHand, cleanUp, createProposed, dismissProposed, editProposed, isStage, stopPipeline, readyPr, removePipeline, resetPipeline, resolvePr, rollBackPipeline, startPipeline, stopAuto, stepPipeline } from "../lib/pipeline"
+import { actOnDebt, answerPipeline, askPipeline, explainFindings, sendBack, checkByHand, cleanUp, createProposed, dismissProposed, editProposed, isStage, stopPipeline, closePipeline, readyPr, resetPipeline, resolvePr, rollBackPipeline, startPipeline, stopAuto, stepPipeline } from "../lib/pipeline"
 import { clearJob, continueJob, isLoose, publishReview, startJob, stopJob } from "../lib/jobs"
 import { chooseIcon, isIcon } from "../lib/app-icon"
 import { choosePet, gainXp, openPack } from "../lib/pets"
@@ -216,9 +216,9 @@ export async function handleWrite(path: string, body: Record<string, unknown>): 
       return await stopJob(String(body.id ?? "")).then(() => (refreshSoon(), json({ ok: true })), (err: Error) => json({ error: err.message }, 400))
     case "/api/jobs/clear":
       return await clearJob(String(body.id ?? "")).then(() => (refreshSoon(), json({ ok: true })), (err: Error) => json({ error: err.message }, 400))
-    // Out of the pipeline: the agent stops, the labels go, the run is put aside.
-    case "/api/pipeline/remove":
-      return await removePipeline(String(body.key ?? "")).then(r => (refreshSoon(), json({ ok: true, ...r })), (err: Error) => json({ error: err.message }, 400))
+    // Close a ticket: out of the pipeline, and what it left on this Mac goes (lib/pipeline.ts closePipeline).
+    case "/api/pipeline/close":
+      return await closePipeline(String(body.key ?? "")).then(r => (refreshSoon(), json({ ok: true, ...r })), (err: Error) => json({ error: err.message }, 400))
     // What you picked of what it left: worktrees, branches, runs put aside.
     case "/api/pipeline/cleanup":
       return await cleanUp(String(body.key ?? ""), Array.isArray(body.ids) ? body.ids.map(String) : []).then(r => json({ ok: true, ...r }), (err: Error) => json({ error: err.message }, 400))
