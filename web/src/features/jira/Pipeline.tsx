@@ -24,7 +24,7 @@ import { useNow } from "@/lib/now"
 import { cn } from "@/lib/utils"
 import { dialog } from "@/app/open-dialog"
 import { openSession } from "@/app/open-session"
-import { Markdown } from "@/features/conversation/Markdown"
+import { Markdown, TicketDocsOf } from "@/features/conversation/Markdown"
 import { doingText } from "@/features/conversation/session-events"
 import { ago } from "@/features/session/state"
 import { repoDot } from "@/features/session/state"
@@ -54,8 +54,9 @@ import type { Release } from "@server/release"
 import type { PrState, Scenario } from "@server/stage-extras"
 import type { DebtEntry } from "@server/debt"
 import { StageDataContext } from "./stage-data"
+import { DocViewer } from "./DocViewer"
 
-type Data = { putAside: number; docs: number[]; summaries: Partial<Record<Stage, string | null>>; prs: Record<string, PrState>; fixes: Record<string, PrFix>; scenario: Scenario | null; state: PipelineState | null; refine: string | null; plan: string | null; build: string | null; review: string | null; test: string | null; smoke: string | null; preview: Release | null }
+type Data = { putAside: number; docs: number[]; files: string[]; summaries: Partial<Record<Stage, string | null>>; prs: Record<string, PrState>; fixes: Record<string, PrFix>; scenario: Scenario | null; state: PipelineState | null; refine: string | null; plan: string | null; build: string | null; review: string | null; test: string | null; smoke: string | null; preview: Release | null }
 type OnStep = (step: string, action: "approve" | "skip", value?: string) => void
 const FOLLOW_MS = 5_000
 const IDLE_MS = 30_000
@@ -626,6 +627,7 @@ export function Pipeline({ ticket, details, onTaken }: { ticket: Ticket; details
   const now = useNow()
   const [data, setData] = useState<Data | null>(null)
   const [debt, setDebt] = useState<DebtEntry[]>([])
+  const [doc, setDoc] = useState<string | null>(null)
   const [picked, setPicked] = useState<Tab | null>(null)
   useEffect(() => void get<{ debt: DebtEntry[] }>("/api/pipeline/debt").then(r => setDebt(r.debt), () => {}), [ticket.key])
   const load = () => get<Data>(`/api/pipeline?key=${encodeURIComponent(ticket.key)}`).then(setData, () => {})
@@ -662,6 +664,7 @@ export function Pipeline({ ticket, details, onTaken }: { ticket: Ticket; details
   const runs = state.history ?? []
   const shown = picked ?? focusOf(state)
   return (
+    <TicketDocsOf.Provider value={{ key: ticket.key, names: data.files ?? [], open: setDoc }}>
     <StageDataContext.Provider value={{ prs: data.prs ?? {}, fixes: data.fixes ?? {}, onResolve: url => void act("/api/pipeline/conflicts", { key: ticket.key, url }, "An agent resolves the conflicts").then(ok => ok && loadSoon()),
       onReady: url => void act("/api/pipeline/ready", { key: ticket.key, url }, "Ready for review").then(ok => ok && loadSoon()), scenario: data.scenario ?? null, comments: ticket.comments, debt }}>
     <div className="flex flex-col gap-3">
@@ -671,6 +674,8 @@ export function Pipeline({ ticket, details, onTaken }: { ticket: Ticket; details
         ? <div className="flex flex-col gap-5 pt-1">{details}{runs.length > 0 && <RunsSection runs={runs} now={now} />}</div>
         : <div className="pt-1"><StageBody stage={shown} data={{ ...data, state }} onRun={(stage, fix) => void start(stage, fix)} onStep={step} onSent={() => void load()} /></div>}
     </div>
+    {doc && <DocViewer ticketKey={ticket.key} name={doc} onClose={() => setDoc(null)} />}
     </StageDataContext.Provider>
+    </TicketDocsOf.Provider>
   )
 }

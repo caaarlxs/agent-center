@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { isStuck, releasedUnits, retestOf, sessionOf, shippedWith, unitsNow, withUnits, testedIn, askPrompt, askRefusal, fixesNow, isAbout, testFix, unshipped, blocking, checkedByHand, checkedIn, isAdopted, toFixNow, MARK, answeredAfter, answersComment, argsFor, parseResult, pipelineKeyOf, stageToRun, unbuilt, withRun, withAnswers, earlierResults, closingOf, questionsComment, snapshotOf, prodWarning, autoNext, linksFigma, impactRepos } from "../lib/pipeline"
+import { isStuck, releasedUnits, retestOf, sessionOf, shippedWith, unitsNow, withUnits, testedIn, askPrompt, askRefusal, fixesNow, isAbout, testFix, unshipped, blocking, checkedByHand, checkedIn, isAdopted, toFixNow, MARK, answeredAfter, answersComment, argsFor, parseResult, pipelineKeyOf, stageToRun, unbuilt, withRun, withAnswers, earlierResults, closingOf, pipelineFile, questionsComment, snapshotOf, prodWarning, autoNext, linksFigma, impactRepos } from "../lib/pipeline"
 
 const questions = [
   { id: "Q1", question: "¿Cuál es el copy?", proposal: "El del ticket" },
@@ -564,5 +564,12 @@ describe("closingOf", () => {
     const { picked, kept } = closingOf(all, "PP-1.removed-9")
     expect(picked.map(x => x.id)).toEqual(["run:PP-1.old-5", "worktree:api:/w/U1", "branch:api:feat/a"])
     expect(kept.map(x => x.id)).toEqual(["branch:api:feat/b"])
+  })
+})
+
+describe("pipelineFile", () => {
+  it("reads only a document of the ticket's own folder, never its state nor anything deeper", async () => {
+    for (const name of ["../PP-2/plan.md", "runs/1-plan.md", "state.json", "plan.sh", ""]) await expect(pipelineFile("PP-1", name)).rejects.toThrow()
+    await expect(pipelineFile("not a key", "plan.md")).rejects.toThrow()
   })
 })

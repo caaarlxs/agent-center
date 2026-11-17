@@ -576,7 +576,7 @@ export async function pipelineOf(key: string) {
   const prs = await prStates(urls, releaseOps.sh)
   const scenario = state ? scenarioOf(jsonOf(await readText(join(dirOf(key), "scenario.json")))) : null
   const stageDocs = Object.assign({}, ...(await Promise.all(SUMMED.map(docOf))))
-  return { putAside, docs: await runDocs(key), state: state && (await withSpend(state)), ...stageDocs, summaries, prs, fixes, scenario, preview: await previewOf(state) }
+  return { putAside, docs: await runDocs(key), files: await ticketFiles(key), state: state && (await withSpend(state)), ...stageDocs, summaries, prs, fixes, scenario, preview: await previewOf(state) }
 }
 
 // What the running stage does now: its session's steps and subagents, and,
@@ -1570,6 +1570,18 @@ export async function stepPipeline(key: string, id: string, action: "approve" | 
 }
 
 // A script's report (or its log), as it left it.
+// A document of the ticket's folder an agent names (plan.md, refine.md, ticket.md, sent-back.md…):
+// its own files, never deeper, never another ticket's.
+const DOC = /^[\w.-]+\.(md|json)$/
+export async function ticketFiles(key: string): Promise<string[]> {
+  if (!isKey(key)) return []
+  return (await readdir(dirOf(key)).catch(() => [] as string[])).filter(f => DOC.test(f) && f !== "state.json").sort()
+}
+export async function pipelineFile(key: string, name: string) {
+  if (!isKey(key) || !DOC.test(name) || name === "state.json") throw new Error("Not a document of the ticket")
+  return readText(join(dirOf(key), name))
+}
+
 export async function pipelineReport(key: string, file: string) {
   if (!isKey(key) || !/^[\w.-]+-(staging|prod)-(simulate|execute)\.(csv|log)$/.test(file) || file.includes("..")) throw new Error("Not a report")
   return readText(join(dirOf(key), "scripts", file))

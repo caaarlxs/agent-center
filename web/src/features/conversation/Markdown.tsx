@@ -22,6 +22,16 @@ import { showImage } from "@/components/common/Lightbox"
 
 // The session the text belongs to: a shell block runs in its folder.
 export const SessionOf = createContext<string | null>(null)
+// A ticket's documents (the pipeline's panel provides them): a name of one an agent writes
+// (plan.md, or its path in the ticket's folder) opens it.
+export type TicketDocs = { key: string; names: string[]; open: (name: string) => void }
+export const TicketDocsOf = createContext<TicketDocs | null>(null)
+const docOf = (text: string | null, docs: TicketDocs | null) => {
+  if (!text || !docs) return null
+  const name = text.split("/").pop()!.replace(/:\d+(-\d+)?$/, "")
+  const isThere = docs.names.includes(name) && (!text.includes("/") || text.includes(`/${docs.key}/`))
+  return isThere ? name : null
+}
 
 type Hast = { type: string; value?: string; tagName?: string; properties?: Record<string, unknown>; children?: Hast[] }
 const textOf = (n: Hast | undefined): string => (!n ? "" : n.type === "text" ? (n.value ?? "") : (n.children ?? []).map(textOf).join(""))
@@ -169,8 +179,11 @@ function usePlace(name: string | null) {
 // Inline code: a file or folder of the repository opens in Code; another path, beside.
 function InlineCode({ children, className }: ComponentProps<"code">) {
   const text = typeof children === "string" ? children : null
-  const place = usePlace(text)
-  const path = text ? pathInCode(text) : null
+  const docs = useContext(TicketDocsOf)
+  const doc = docOf(text, docs)
+  const place = usePlace(doc ? null : text)
+  const path = text && !doc ? pathInCode(text) : null
+  if (doc) return <button type="button" onClick={() => docs!.open(doc)} title={`Open ${doc}`} className="cursor-pointer underline decoration-line-strong underline-offset-2 hover:decoration-current"><code className={className}>{children}</code></button>
   if (place) return <CodeLink place={place} isCode>{children}</CodeLink>
   return path ? <FileLink path={path} isCode>{children}</FileLink> : <code className={className}>{children}</code>
 }
