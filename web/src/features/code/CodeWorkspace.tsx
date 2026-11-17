@@ -20,6 +20,7 @@ import { ensureMonacoLang } from "@/lib/code-theme"
 import { useMonaco, useMonacoTheme } from "@/lib/monaco"
 import { cn } from "@/lib/utils"
 import { SideFlyout, useSideRoom } from "@/features/session/SideFlyout"
+import { codeTarget } from "@/app/open-session"
 import { type Folder, changedFolders, parentsOf, rankFiles, spanOf, treeOf } from "./tree"
 
 const WATCH_MS = 3000
@@ -54,7 +55,7 @@ function TreeRows({ node, depth, open, toggle, status, ignored, changed, active,
     <>
       {dirs.map(([name, dir]) => (
         <div key={dir.path}>
-          <button onClick={() => toggle(dir.path)} className={cn(row, "gap-[5px]")} style={{ paddingLeft: 8 + depth * 12 }} aria-expanded={open.has(dir.path)}>
+          <button onClick={() => toggle(dir.path)} data-tree-path={dir.path} className={cn(row, "gap-[5px]")} style={{ paddingLeft: 8 + depth * 12 }} aria-expanded={open.has(dir.path)}>
             <ChevronRight className={cn("size-3 shrink-0 text-text-muted transition-transform duration-[120ms] ease-(--ease-out)", open.has(dir.path) && "rotate-90")} />
             <FolderIcon path={name} isOpen={open.has(dir.path)} />
             <span className="min-w-0 flex-1 truncate">{name}</span>
@@ -64,7 +65,7 @@ function TreeRows({ node, depth, open, toggle, status, ignored, changed, active,
         </div>
       ))}
       {node.files.map(path => (
-        <button key={path} onClick={() => onOpen(path)} title={path} style={{ paddingLeft: 24 + depth * 12 }}
+        <button key={path} onClick={() => onOpen(path)} title={path} data-tree-path={path} style={{ paddingLeft: 24 + depth * 12 }}
           className={cn(row, "gap-1.5", ignored.has(path) && "opacity-55", path === active && "bg-select hover:bg-select")}>
           <FileIcon path={path} />
           <span className={cn("min-w-0 flex-1 truncate", STATUS_TONE[status[path]])}>{nameOf(path)}</span>
@@ -347,8 +348,28 @@ export function CodeWorkspace({ id, isShown = true }: { id: string; isShown?: bo
     void (async () => {
       for (const path of saved.open) await open(path, undefined, false)
       if (saved.active) await open(saved.active, undefined, false)
+      setReady(true)
     })()
   }
+  // A file or folder the conversation pointed at (open-session.ts showInCode):
+  // once the editor is up, the file opens at its line, a folder unfolds; both
+  // scroll into view in the tree and take the focus there.
+  const [isReady, setReady] = useState(false)
+  const target = codeTarget.use()
+  const handled = useRef(0)
+  useEffect(() => {
+    if (!isReady || !target || target.id !== id || target.at <= handled.current) return
+    handled.current = target.at
+    setSide("files")
+    setOpenDirs(d => new Set([...d, ...parentsOf(target.path), ...(target.isDir ? [target.path] : [])]))
+    if (!target.isDir) void open(target.path, target.line)
+    const reveal = () => {
+      const el = document.querySelector<HTMLElement>(`[data-tree-path="${CSS.escape(target.path)}"]`)
+      el?.scrollIntoView({ block: "center" })
+      if (target.isDir) el?.focus()
+    }
+    requestAnimationFrame(() => requestAnimationFrame(reveal))
+  }, [isReady, target, id, open])
   useEffect(() => () => docs.current.forEach(d => d.model.dispose()), [])
   useEffect(() => {
     const onLeave = (e: BeforeUnloadEvent) => [...docs.current.keys()].some(isDirty) && e.preventDefault()

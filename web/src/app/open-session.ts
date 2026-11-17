@@ -43,6 +43,16 @@ export function openSession(id: string | null, tab: Tab = "chat") {
 }
 export const openNow = () => open
 export const showTab = (tab: Tab) => open && set({ id: open.id, tab })
+// A file or folder of the open session's repository, in its Code tab: the
+// file opens in the editor (at its line), a folder unfolds in the tree. `at`
+// tells two clicks on the same place apart.
+export type CodeTarget = { id: string; path: string; line?: number; isDir: boolean; at: number }
+export const codeTarget = createStore<CodeTarget | null>(null)
+export function showInCode(place: { path: string; line?: number; isDir: boolean }) {
+  if (!open) return
+  codeTarget.set({ id: open.id, ...place, at: Date.now() })
+  set({ id: open.id, tab: "code" })
+}
 // One of the open session's files, in its Files tab.
 export const showFile = (file: string) => open && set({ id: open.id, tab: "files", file })
 // A file from the conversation: beside the panel when the board has room, else in Files.

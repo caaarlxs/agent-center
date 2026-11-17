@@ -35,6 +35,8 @@ live: Claude's answer shows as it is written.
   conversation. The dialog in Claude closes by itself.
 - **Stop** a running turn (`S`), and change the permission mode, model and effort from the reply
   box.
+- **Open a path** the conversation names: a file or folder of the session's repository opens in
+  the Code tab (a file at its line, `src/api.ts:42`); a file elsewhere opens beside the panel.
 - **Fork** the conversation from any of your messages into a new session.
 - **Run** shell blocks on your Mac, if you turned on Run commands in Setup.
 

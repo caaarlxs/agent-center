@@ -1,7 +1,8 @@
 // Claude's Markdown as the classic board draws it (util.js md, styles.css:534-576):
 // plain code blocks that wrap, each with Copy (and Run for a shell block when
-// Setup allows it), inline code and links that name a file opening it beside
-// the panel (or in the Files tab), other links in a new window. Streamdown parses; the look is
+// Setup allows it), inline code and links that name a file or folder of the
+// session's repository opening it in the Code tab, other files beside the
+// panel (or in the Files tab), other links in a new window. Streamdown parses; the look is
 // the .md block in index.css.
 import { Check, Play } from "lucide-react"
 import { createContext, Fragment, memo, useContext, useEffect, useRef, useState, type ComponentProps, type ReactNode } from "react"
@@ -10,7 +11,8 @@ import { cjk } from "@streamdown/cjk"
 import { post } from "@/lib/api"
 import { useShikiTheme, useTokens } from "@/lib/code-theme"
 import { cn } from "@/lib/utils"
-import { openFile } from "@/app/open-session"
+import { openFile, showInCode } from "@/app/open-session"
+import { type CodePlace, mayBePath, placeOf, useCodeIndex } from "@/features/code/links"
 import { boxParts } from "@/features/files/beside"
 import { endOf, isShellLike, localHref, pathInCode, pathInLink, riskOf, SHELL_LANG, nameOf } from "./text"
 import { Anim } from "@/components/icons/animated"
@@ -148,10 +150,37 @@ function FileLink({ path, children, isCode }: { path: string; children: ReactNod
   )
 }
 
-// Inline code: a path opens the file here.
+// A file or folder of the session's repository, in the Code tab.
+function CodeLink({ place, children, isCode }: { place: CodePlace; children: ReactNode; isCode?: boolean }) {
+  const Tag = isCode ? "code" : "a"
+  const show = () => showInCode(place)
+  return (
+    <Tag role="link" tabIndex={0} className="file-link" title={`Open ${nameOf(place.path)} in Code${place.line ? `, line ${place.line}` : ""}`} onClick={show}
+      onKeyDown={e => e.key === "Enter" && show()}>{children}</Tag>
+  )
+}
+
+// Where a name points in the session's repository, once its tree is read (only for names that look like paths).
+function usePlace(name: string | null) {
+  const index = useCodeIndex(useContext(SessionOf), !!name && mayBePath(name))
+  return name && index ? placeOf(name, index) : null
+}
+
+// Inline code: a file or folder of the repository opens in Code; another path, beside.
 function InlineCode({ children, className }: ComponentProps<"code">) {
-  const path = typeof children === "string" ? pathInCode(children) : null
+  const text = typeof children === "string" ? children : null
+  const place = usePlace(text)
+  const path = text ? pathInCode(text) : null
+  if (place) return <CodeLink place={place} isCode>{children}</CodeLink>
   return path ? <FileLink path={path} isCode>{children}</FileLink> : <code className={className}>{children}</code>
+}
+
+// A link: to a file or folder of the repository, in Code; to another file, beside; else a new window.
+function LocalLink({ href, children }: { href?: string; children: ReactNode }) {
+  const path = pathInLink(href)
+  const place = usePlace(path)
+  if (place) return <CodeLink place={place}>{children}</CodeLink>
+  return path ? <FileLink path={path}>{children}</FileLink> : <a href={href} target="_blank" rel="noreferrer">{children}</a>
 }
 
 const components: Components = {
@@ -164,10 +193,7 @@ const components: Components = {
   inlineCode: props => <InlineCode {...props} />,
   // An image in an answer: large on a click.
   img: ({ src, alt }) => typeof src === "string" ? <img src={src} alt={alt ?? ""} onClick={() => showImage(src)} className="cursor-pointer" /> : null,
-  a: ({ href, children }) => {
-    const path = pathInLink(href)
-    return path ? <FileLink path={path}>{children}</FileLink> : <a href={href} target="_blank" rel="noreferrer">{children}</a>
-  },
+  a: ({ href, children }) => <LocalLink href={href}>{children}</LocalLink>,
 }
 
 // Links to files on this Mac get their own scheme before the guard (harden)

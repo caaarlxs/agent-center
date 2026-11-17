@@ -225,7 +225,13 @@ export function SessionPanel({ id, tab: asked, file }: { id: string; tab: Tab; f
   const tabs = TABS.filter(t => (t.key !== "tasks" || hasTasks) && (t.key !== "ticket" || hasJira))
   const tab = tabs.some(t => t.key === asked) ? asked : "chat"
   const isWorkspace = WORKSPACES.has(tab)
-  // Code stays mounted once opened, hidden while another tab shows.
+  // The conversation and Code stay mounted once opened, hidden while another
+  // tab shows: back from Code (a file a message named), the conversation is
+  // where you left it, with the earlier messages you had loaded. It hides in
+  // place, at its size (invisible, not display:none), or it would read itself
+  // as at its end and jump there.
+  const [hasChat, setHasChat] = useState(tab === "chat")
+  useEffect(() => void (tab === "chat" && setHasChat(true)), [tab])
   const [hasCode, setHasCode] = useState(tab === "code")
   useEffect(() => void (tab === "code" && setHasCode(true)), [tab])
   // A file beside the panel: loaded the first time one opens, then kept, so it folds away.
@@ -276,8 +282,8 @@ export function SessionPanel({ id, tab: asked, file }: { id: string; tab: Tab; f
         ...t, onHover: PRELOAD[t.key],
         count: (counts[t.key] ?? 0) > 0 && <span className="text-[11px] text-text-muted tabular-nums"><Num key={id} value={counts[t.key] ?? 0} /></span>,
       }))} />
-      <div role="tabpanel" className="flex min-h-0 flex-1 flex-col">
-        {tab === "chat" && <Guard key={id} where="chat"><Chat id={id} card={card} /></Guard>}
+      <div role="tabpanel" className="relative flex min-h-0 flex-1 flex-col">
+        {hasChat && <div className={cn("flex min-h-0 flex-1 flex-col", tab !== "chat" && "invisible absolute inset-0")}><Guard key={id} where="chat"><Chat id={id} card={card} /></Guard></div>}
         {tab === "changes" && <Guard key={id} where="changes"><Changes id={id} file={file} /></Guard>}
         {tab === "commits" && <Guard key={id} where="commits"><Commits id={id} /></Guard>}
         {tab === "prs" && <Guard key={id} where="prs"><Prs id={id} /></Guard>}
