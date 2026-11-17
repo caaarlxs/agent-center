@@ -350,8 +350,30 @@ describe("board", () => {
     expect((await post(`/api/sessions/${ID}/rank`, { rank: null })).status).toBe(200)
     expect((await post(`/api/sessions/${ID}/tier`, { tier: "other" })).status).toBe(200)
     expect(await tierOnCard("other")).toBe("other")
+    // Kept by its key, so it stays on that row wherever the person moves it.
     const board = JSON.parse(await readFile(join(data, "board.json"), "utf8"))
-    expect(Object.values(board.items).some((i: any) => "tier" in i)).toBe(false)
+    expect(Object.values(board.items).map((i: any) => i.tier)).toContain("other")
+  })
+
+  test("keeps the person's own tier rows, cleaned, and moves the cards of a row that goes to the last one", async () => {
+    const state = async () => jsonOf(fetch(`${base()}/api/state`))
+    expect((await state()).tiers.map((t: any) => t.key)).toEqual(["main", "fixes", "searches", "other"])
+    expect((await post(`/api/sessions/${ID}/tier`, { tier: "fixes" })).status).toBe(200)
+    const sent = [{ key: "now", label: "  Now  ", color: "#EF4444" }, { key: "now", label: "", color: "red" }, { key: "fixes", label: "Bugs", color: "#f97316" }]
+    const res = await jsonOf(post("/api/tiers", { tiers: sent }))
+    expect(res.tiers[0]).toEqual({ key: "now", label: "Now", color: "#ef4444" })
+    expect(res.tiers[1]).toMatchObject({ label: "Tier", color: "#64748b" })
+    expect(res.tiers[1].key).not.toBe("now")
+    expect(res.tiers[2]).toEqual({ key: "fixes", label: "Bugs", color: "#f97316" })
+    expect((await post(`/api/sessions/${ID}/tier`, { tier: "main" })).status).toBe(400) // gone with the old rows
+    expect((await post(`/api/sessions/${ID}/tier`, { tier: "now" })).status).toBe(200)
+    // Its row removed: the card goes to the last one (no tier kept).
+    await post("/api/tiers", { tiers: [{ key: "fixes", label: "Bugs", color: "#f97316" }] })
+    const item = Object.values(JSON.parse(await readFile(join(data, "board.json"), "utf8")).items).find((i: any) => i.tier === "now")
+    expect(item).toBeUndefined()
+    expect((await jsonOf(post("/api/tiers", { tiers: Array.from({ length: 30 }, (_, i) => ({ key: `k${i}`, label: `Row ${i}`, color: "#3b82f6" })) }))).tiers).toHaveLength(20)
+    // None: the default again.
+    expect((await jsonOf(post("/api/tiers", { tiers: [] }))).tiers.map((t: any) => t.key)).toEqual(["main", "fixes", "searches", "other"])
   })
 
   test("reads aloud this turn's recap once, without hashes or paths", async () => {

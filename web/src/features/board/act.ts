@@ -10,7 +10,7 @@ import { patchOf } from "./overrides"
 import { keepUnread } from "./seen"
 import { overrides, selected, showDone } from "./state"
 import type { Step } from "./columns"
-import { ranksAt, type TierKey, tierOf, TIERS, toTier } from "./tiers"
+import { labelOf, ranksAt, type TierKey, tierOf, toTier } from "./tiers"
 import { archivedIcon } from "@/components/icona/marks"
 
 export type Action = "pin" | "unpin" | "park" | "unpark" | "done" | "undone" | "archive" | "unarchive" | "seen" | "unseen" | "color" | "tier" | "rank"
@@ -63,7 +63,7 @@ export async function moveToTier(card: Card, key: TierKey) {
   const steps = toTier(card, key)
   if (!steps) return
   await boardSteps(card, steps)
-  if (key !== "paused") toast(`${TIERS.find(t => t.key === key)!.label}: ${card.title}`)
+  if (key !== "paused") toast(`${labelOf(key)}: ${card.title}`)
 }
 
 // A card put at `index` of a row (`row`: that row's cards, in order), from

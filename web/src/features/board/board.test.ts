@@ -3,7 +3,7 @@ import type { Card } from "@/lib/api-types"
 import { dropAction, inboxGroups, runsOf } from "./columns"
 import { canvasOrder, stepFrom, walkOrder } from "./order"
 import { patchOf, settle, withOverrides } from "./overrides"
-import { byRank, emptyText, ranksAt, tierOf, tierStep, toTier } from "./tiers"
+import { DEFAULT_ROWS, MAX_ROWS, addRow, byRank, emptyText, heirOf, moveRow, ranksAt, recolorRow, removeRow, renameRow, tierOf, tierStep, toTier } from "./tiers"
 import { onBoard } from "./state"
 
 const card = (id: string, extra: Partial<Card> = {}) =>
@@ -109,5 +109,34 @@ describe("onBoard", () => {
   it("leaves out the pipeline's sessions and the one you customize Agent Center from", () => {
     const cards = [{ id: "a" }, { id: "b", pipeline: { key: "PP-1" } }, { id: "c", isCustomize: true }] as unknown as Card[]
     expect(onBoard(cards).map(c => c.id)).toEqual(["a"])
+  })
+})
+
+describe("the person's own tiers", () => {
+  const rows = [{ key: "now", label: "Now", color: "#ef4444" }, { key: "later", label: "Later on", color: "#3b82f6" }]
+  test("place a card on its row, or on the last one when its row is unknown", () => {
+    expect(tierOf(card("a", { tier: "now" }), rows)).toBe("now")
+    expect(tierOf(card("a", { tier: "main" }), rows)).toBe("later")
+    expect(tierStep(card("a", { tier: "now" }), 1, rows)).toBe("later")
+    expect(tierStep(card("a", { tier: "later" }), 1, rows)).toBe("paused")
+    expect(toTier(card("a", { tier: "main" }), "later", rows)).toBeNull() // already there
+  })
+  test("are renamed, coloured and moved, keeping their keys", () => {
+    expect(renameRow(rows, "now", "  Today  ")[0]).toEqual({ key: "now", label: "Today", color: "#ef4444" })
+    expect(renameRow(rows, "now", "   ")[0]!.label).toBe("Now")
+    expect(recolorRow(rows, "later", "#22c55e")[1]!.color).toBe("#22c55e")
+    expect(moveRow(rows, "later", -1).map(r => r.key)).toEqual(["later", "now"])
+    expect(moveRow(rows, "now", -1)).toBe(rows)
+  })
+  test("are added up to the most, and removed down to one; a removed row's cards go to the last", () => {
+    const added = addRow(rows)
+    expect(added).toHaveLength(3)
+    expect(new Set(added.map(r => r.key)).size).toBe(3)
+    let many = DEFAULT_ROWS
+    for (let i = 0; i < 30; i++) many = addRow(many)
+    expect(many).toHaveLength(MAX_ROWS)
+    expect(removeRow(rows, "now").map(r => r.key)).toEqual(["later"])
+    expect(removeRow([rows[0]!], "now")).toHaveLength(1)
+    expect(heirOf(rows, "later")!.key).toBe("now")
   })
 })

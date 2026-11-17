@@ -18,7 +18,8 @@ import { ageOf, hueOf, repoDot, repoText, stateOf, urgencyOf } from "@/features/
 import { archiveAll, boardSteps, placeInTier } from "./act"
 import { COLUMN, type ColumnKey, type Step, TONE_DOT, byPin, columnsShown, dropAction, inboxGroups, runsOf } from "./columns"
 import { type View, dragging, drawingZone, groupBy, menu, noteAsked, selected, showDone } from "./state"
-import { byRank, emptyText, type TierKey, tierOf, TIERS, toTier } from "./tiers"
+import { DEFAULT_ROWS, type Row, type Tier, byRank, emptyText, tierOf, tiersOf, toTier } from "./tiers"
+import { TierHeadEdit, TiersBar } from "./TierEditor"
 import { Anim } from "@/components/icons/animated"
 import { useIsDots } from "@/lib/board-style"
 
@@ -325,11 +326,11 @@ function wheelSideways(e: React.WheelEvent<HTMLElement>) {
   el.scrollLeft += e.deltaY
 }
 
-function TierRow({ tier, i, list }: { tier: (typeof TIERS)[number]; i: number; list: Card[] }) {
-  const key = tier.key as TierKey
+function TierRow({ tier, i, list, rows, isEditing }: { tier: Tier; i: number; list: Card[]; rows: Row[]; isEditing: boolean }) {
+  const key = tier.key
   const [at, setAt] = useState<number | null>(null)
   // Its own cards drop here too: to change their place in the row.
-  const drop = useDrop(card => (tierOf(card) === key ? [] : toTier(card, key)), card => void placeInTier(card, key, list, at ?? list.length))
+  const drop = useDrop(card => (tierOf(card, rows) === key ? [] : toTier(card, key, rows)), card => void placeInTier(card, key, list, at ?? list.length))
   const shown = list
   const others = shown.filter(c => c.id !== drop.card?.id)
   const mark = drop.isOver && at !== null ? (others[at]?.id ?? "end") : null
@@ -339,16 +340,21 @@ function TierRow({ tier, i, list }: { tier: (typeof TIERS)[number]; i: number; l
       onDrop={e => (drop.handlers.onDrop(e), setAt(null))}
       style={{ ["--tier" as string]: tier.color }}
       className={cn("dots-veil grid min-h-24 flex-[1_1_0] grid-cols-[132px_minmax(0,1fr)] overflow-hidden rounded-[12px] bg-side transition-[background-color,box-shadow,opacity] duration-120 max-[860px]:flex-none max-[860px]:grid-cols-1",
-        tier.key === "paused" && "flex-grow-[0.8]",
+        tier.isPaused && "flex-grow-[0.8]",
         drop.isOver && "bg-brand-soft shadow-[inset_0_0_0_2px_var(--brand)]",
-        drop.card && !drop.steps && tierOf(drop.card) !== tier.key && "opacity-55")}
+        isEditing && "grid-cols-[188px_minmax(0,1fr)]",
+        drop.card && !drop.steps && tierOf(drop.card, rows) !== tier.key && "opacity-55")}
       data-index={i}>
-      <div title={tier.hint}
+      <div
         className={cn("flex flex-col items-center justify-center gap-1 p-2.5 text-center shadow-[inset_-1px_0_0_var(--line)] max-[860px]:flex-row max-[860px]:justify-start max-[860px]:px-3 max-[860px]:py-2 max-[860px]:shadow-[inset_0_-1px_0_var(--line)]",
-          "bg-[color-mix(in_srgb,var(--tier)_22%,var(--surface))]", tier.key === "paused" ? "text-text-muted" : "text-text")}>
-        {tier.key === "paused" && <Pause className="size-4" />}
-        <b className="text-sm leading-[1.25] font-bold">{tier.label}</b>
-        <span className="text-xs font-medium text-text-muted max-[860px]:ml-auto">{list.length || ""}</span>
+          "bg-[color-mix(in_srgb,var(--tier)_22%,var(--surface))]", tier.isPaused ? "text-text-muted" : "text-text")}>
+        {isEditing && !tier.isPaused ? <TierHeadEdit key={`${tier.key}:${tier.label}`} row={tier} rows={rows} count={list.length} /> : (
+          <>
+            {tier.isPaused && <Pause className="size-4" />}
+            <b className="text-sm leading-[1.25] font-bold [overflow-wrap:anywhere]">{tier.label}</b>
+            <span className="text-xs font-medium text-text-muted max-[860px]:ml-auto">{list.length || ""}</span>
+          </>
+        )}
       </div>
       {/* One line, left to right, in the order the person gave; a scrollbar to move along it. */}
       <div onWheel={wheelSideways}
@@ -361,16 +367,22 @@ function TierRow({ tier, i, list }: { tier: (typeof TIERS)[number]; i: number; l
           </div>
         ))}
         {mark === "end" && shown.length > 0 && <i className="w-[3px] flex-none self-stretch rounded-full bg-brand" />}
-        {shown.length === 0 && <Empty className="flex-1 self-center py-3.5">{emptyText(key, !!drop.card && !!drop.steps && tierOf(drop.card) !== key)}</Empty>}
+        {shown.length === 0 && <Empty className="flex-1 self-center py-3.5">{emptyText(key, !!drop.card && !!drop.steps && tierOf(drop.card, rows) !== key)}</Empty>}
       </div>
     </section>
   )
 }
 
+// The person's rows (Edit tiers), then Paused. With many rows, each keeps a
+// height to read its cards and the list scrolls.
 export function Tiers({ cards }: { cards: Card[] }) {
+  const rows = useLive(l => l.snapshot?.tiers) ?? DEFAULT_ROWS
+  const [isEditing, setEditing] = useState(false)
+  const isMany = rows.length > 6
   return (
-    <div className="box-border flex h-full flex-col gap-2 px-5 pt-3.5 pb-5 max-[860px]:h-auto max-[860px]:px-3 max-[860px]:pt-2.5 max-[860px]:pb-4">
-      {TIERS.map((tier, i) => <TierRow key={tier.key} tier={tier} i={i} list={cards.filter(c => tierOf(c) === tier.key).sort(byRank)} />)}
+    <div className={cn("box-border flex h-full flex-col gap-2 px-5 pt-2 pb-5 max-[860px]:h-auto max-[860px]:px-3 max-[860px]:pb-4", isMany && "h-auto min-h-full [&>section]:flex-none [&>section]:min-h-28")}>
+      <TiersBar rows={rows} isEditing={isEditing} onEditing={setEditing} />
+      {tiersOf(rows).map((tier, i) => <TierRow key={tier.key} tier={tier} i={i} rows={rows} isEditing={isEditing} list={cards.filter(c => tierOf(c, rows) === tier.key).sort(byRank)} />)}
     </div>
   )
 }

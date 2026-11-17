@@ -12,7 +12,7 @@ All views show the same sessions. A session's place follows what it waits for.
 | Inbox | `1` | A list grouped by state: what needs you comes first. |
 | Board | `2` | Columns: Asking you, To review, Working, Pending, Later, Done. Drag a card to move it. `G` splits the board into lanes, one per repository. |
 | Canvas | `3` | Cards you place freely, with named zones, sticky notes (with checklists), zoom and multi-select. |
-| Tiers | `4` | A ranking of your sessions by importance: Main task, Fixes, Searches, Other. Activity never reorders it. |
+| Tiers | `4` | A ranking of your sessions by importance: Main task, Fixes, Searches, Other, or your own rows (**Edit tiers**: names, colours, order, up to 20). Activity never reorders it. |
 | Tickets | | Your Jira tickets on your team's board columns. Needs [Jira](install.md#alerts-look-and-jira). |
 | Pipeline | | Tickets taken through the [Pipeline](pipeline.md) by agents. |
 

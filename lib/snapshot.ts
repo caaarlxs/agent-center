@@ -6,7 +6,7 @@ import { jiraSetup, keysIn, mentionsIn, sessionKeys, sessionTickets } from "./ji
 import { stat } from "node:fs/promises"
 import { HOME, settings } from "./config"
 import { backgroundOf } from "./background"
-import { board, itemOf, keepAcrossAccounts, type BoardItem } from "./board"
+import { board, itemOf, keepAcrossAccounts, tiersNow, type BoardItem } from "./board"
 import { doingOf, status as bridgeStatus, type Permission } from "./bridge"
 import { retryingOf } from "./retrying"
 import { sessionSaying } from "./saying"
@@ -315,6 +315,7 @@ export async function snapshot() {
   return {
     cards: visible,
     repos: [...repos.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)),
+    tiers: tiersNow(),
     zones: board.zones ?? [],
     notes: board.notes ?? [],
     limits: accountLimits(built.map(c => c.bridge.limits)),

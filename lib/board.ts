@@ -18,7 +18,7 @@ export type BoardItem = {
   seen_at?: number // the person last looked at it (opened it in the reader)
   title?: string // the person's own name for it, on the board only
   color?: string // the person's own colour for it (CARD_COLORS), on every view
-  tier?: string // its row on the tier list (TIERS); absent: the "other" row
+  tier?: string // its row on the tier list (tiersNow, by key); absent or gone: the last row
   tier_rank?: number // its place in that row, left to right, as the person put it
   pos?: { x: number; y: number } // where it sits on the canvas view
   // Its Jira tickets as the person set them (lib/jira.ts): the ones it was
@@ -39,9 +39,51 @@ const NOTE_COLORS = ["yellow", "pink", "blue", "green"]
 const NOTE_TEXT_SIZES = [11, 13, 16, 20, 26, 32] // web/src/features/canvas/notes.ts TEXT_SIZES
 // The colours a card can wear (public/js/components.js draws them).
 export const CARD_COLORS = ["lilac", "blue", "teal", "green", "yellow", "orange", "pink"]
-// The rows of the tier list, most important first (public/js/tiers.js names
-// them); its last row, "Close", is the done column and needs no tier.
-export const TIERS = ["main", "fixes", "searches", "other"]
+// The rows of the tier list, most important first: these, until the person
+// makes their own (Tiers › Edit tiers; up to MAX_TIERS, each with its name and
+// colour). A card keeps its row's key, so renaming or moving a row keeps its
+// cards; one with no row, or a row that was removed, sits in the last one.
+// Paused (Later) follows them on the page and is no tier.
+export type Tier = { key: string; label: string; color: string }
+export const DEFAULT_TIERS: Tier[] = [
+  { key: "main", label: "Main task", color: "#ef4444" },
+  { key: "fixes", label: "Fixes", color: "#f97316" },
+  { key: "searches", label: "Searches", color: "#eab308" },
+  { key: "other", label: "Other", color: "#22c55e" },
+]
+export const MAX_TIERS = 20
+export const tiersNow = (): Tier[] => board.tiers?.length ? board.tiers : DEFAULT_TIERS
+
+/** The rows sent, cleaned: unique keys, a name, a #rrggbb colour, at most MAX_TIERS; none (or an empty list) is the default. */
+export function cleanTiers(raw: unknown[]): Tier[] {
+  const seen = new Set<string>()
+  const out: Tier[] = []
+  for (const t of raw as any[]) {
+    const key = typeof t?.key === "string" && /^[\w-]{1,40}$/.test(t.key) && !seen.has(t.key) ? t.key : `t-${crypto.randomUUID().slice(0, 8)}`
+    const label = String(t?.label ?? "").replace(/\s+/g, " ").trim().slice(0, 40) || "Tier"
+    const color = typeof t?.color === "string" && /^#[0-9a-f]{6}$/i.test(t.color) ? t.color.toLowerCase() : "#64748b"
+    seen.add(key)
+    out.push({ key, label, color })
+    if (out.length === MAX_TIERS) break
+  }
+  return out
+}
+
+export async function setTiers(raw: unknown[]) {
+  const tiers = cleanTiers(raw)
+  const isDefault = !tiers.length || JSON.stringify(tiers) === JSON.stringify(DEFAULT_TIERS)
+  if (isDefault) delete board.tiers
+  else board.tiers = tiers
+  // A card on a row that is gone goes to the last one, at its end.
+  const keys = new Set(tiersNow().map(t => t.key))
+  for (const item of Object.values(board.items)) {
+    if (!item.tier || keys.has(item.tier)) continue
+    delete item.tier
+    delete item.tier_rank
+  }
+  await saveBoard()
+  return tiersNow()
+}
 
 // A task a session suggested (spawn_task) and what the board did with it:
 // the session it started, or when it was dismissed. Keyed by its task id;
@@ -52,7 +94,7 @@ export type Suggestion = { from: string; session?: string; dismissed_at?: number
 // customize: the board key of the session you change Agent Center from (the
 // sidebar's Customize opens it), chosen with a right-click.
 export type Board = {
-  items: Record<string, BoardItem>; seenEpoch?: number; zones?: Zone[]; notes?: Note[]
+  items: Record<string, BoardItem>; seenEpoch?: number; zones?: Zone[]; notes?: Note[]; tiers?: Tier[]
   suggestions?: Record<string, Suggestion>; customize?: string
 }
 
@@ -129,9 +171,9 @@ export async function applyAction(key: string, ids: string[], action: string, bo
   // An empty colour takes it off.
   const color = action === "color" ? String(body.color ?? "") : ""
   if (color && !CARD_COLORS.includes(color)) return `unknown colour: ${color}`
-  // An empty tier, or "other", puts it back in the default row.
+  // An empty tier puts it back in the last row.
   const tier = action === "tier" ? String(body.tier ?? "") : ""
-  if (tier && !TIERS.includes(tier)) return `unknown tier: ${tier}`
+  if (tier && !tiersNow().some(t => t.key === tier)) return `unknown tier: ${tier}`
   // A place in its row: any number (smaller is further left); null takes it off.
   const rank = action === "rank" && body.rank !== null ? Number(body.rank) : null
   if (action === "rank" && body.rank !== null && !Number.isFinite(rank)) return "invalid rank"
@@ -201,7 +243,7 @@ export async function applyAction(key: string, ids: string[], action: string, bo
       board.customize = customizeAfter(board.customize, key, body.off === true)
       break
     case "tier":
-      if (tier && tier !== "other") item.tier = tier
+      if (tier) item.tier = tier
       else delete item.tier
       break
     case "rank":

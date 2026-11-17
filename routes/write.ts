@@ -7,7 +7,7 @@ import { clearJob, continueJob, isLoose, publishReview, startJob, stopJob } from
 import { chooseIcon, isIcon } from "../lib/app-icon"
 import { choosePet, gainXp, openPack } from "../lib/pets"
 import { stat } from "node:fs/promises"
-import { applyAction, isTaskId, setNotes, setSuggestion, setZones } from "../lib/board"
+import { applyAction, isTaskId, setNotes, setSuggestion, setTiers, setZones } from "../lib/board"
 import { requestSettings } from "../lib/bridge"
 import { adopt, newInClient, pickFolder } from "../lib/client"
 import { logClientError } from "../lib/client-errors"
@@ -298,6 +298,13 @@ export async function handleWrite(path: string, body: Record<string, unknown>): 
       return newSession(body)
     case "/api/digest":
       return digest()
+    // The tier list's rows, whole: name, colour and order (lib/board.ts setTiers); none goes back to the default.
+    case "/api/tiers": {
+      if (!Array.isArray(body.tiers)) return json({ error: "missing tiers" }, 400)
+      const tiers = await setTiers(body.tiers)
+      refreshSoon()
+      return json({ ok: true, tiers })
+    }
     case "/api/canvas/zones": {
       if (!Array.isArray(body.zones)) return json({ error: "missing zones" }, 400)
       const zones = await setZones(body.zones)
