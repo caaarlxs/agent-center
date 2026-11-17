@@ -75,6 +75,11 @@ With this step on, the board never opens Claude desktop; it does not even need i
   claude.ai/code. A sleeping session starts with `--remote-control`; a running one gets the command
   typed in. On, the button offers the session's link and **Turn off**. Turned on or off in the
   session's own window, the board does not see it: use the button.
+- **Rename**: a new name on the board is the session's own name too, as `/rename` sets it (the
+  Claude app, claude.ai/code and `claude --resume` show it): typed into a session running in the
+  board's tmux between turns, or written to the transcript of one that is not running. A session
+  that is working, or open in Claude desktop or a terminal of yours, keeps its name, and the board
+  says so. One line, up to 200 characters; Remote Control started from the board uses the name too.
 - **Idle sessions end**: one nobody used for 30 minutes (no turn running, nothing waiting, no
   window attached, no Remote Control) ends; its transcript stays and the next message starts it again. At most 6 run
   at once: past that the oldest idle one ends, or the turn runs headless.

@@ -161,6 +161,22 @@ export async function openNew(folder: string, prompt: string) {
   return openWindow(nameOf(id), `exec ${quote(tmuxPath()!)} -L ${SOCKET} attach -t ${quote(nameOf(id))}`)
 }
 
+// ---------- Rename ----------
+//
+// The session's own name (what `/rename` sets: the Claude app, claude.ai/code
+// and `claude --resume` show it), typed into the running session as the
+// person would. False when it is not running here or a turn runs.
+
+export async function renameLive(id: string, title: string) {
+  if (!isId(id) || !(await isLive(id)) || isBusy(await status(id))) return false
+  await tmux(["send-keys", "-t", nameOf(id), "-l", `/rename ${title}`])
+  await Bun.sleep(300)
+  await tmux(["send-keys", "-t", nameOf(id), "Enter"])
+  for (const end = Date.now() + 6000; Date.now() < end; await Bun.sleep(300))
+    if ((await tmux(["capture-pane", "-p", "-J", "-t", nameOf(id)])).stdout.includes(`Session renamed to: ${title.slice(0, 40)}`)) return true
+  return false
+}
+
 // ---------- Remote Control ----------
 //
 // Claude Code's Remote Control (`/remote-control`): the session can be used
@@ -221,7 +237,7 @@ export async function remoteOf(id: string) {
 export type Remote = { ok: true; url: string | null } | { ok: false; error: string }
 
 // Turns Remote Control on: starts the session with it, or types it in.
-export async function remoteOn(id: string, folder: string, mode?: string | null): Promise<Remote> {
+export async function remoteOn(id: string, folder: string, mode?: string | null, name?: string | null): Promise<Remote> {
   if (!isId(id)) return { ok: false, error: "not a session id" }
   if (await isLive(id)) {
     if (isBusy(await status(id))) return { ok: false, error: "It is working: turn Remote Control on when the turn ends" }
@@ -237,7 +253,7 @@ export async function remoteOn(id: string, folder: string, mode?: string | null)
     remote.set(id, url ?? "")
     return { ok: true, url }
   }
-  const started = await start(id, folder, ["--resume", id, ...(mode && MODES.includes(mode) ? ["--permission-mode", mode] : []), "--remote-control"])
+  const started = await start(id, folder, ["--resume", id, ...(mode && MODES.includes(mode) ? ["--permission-mode", mode] : []), name ? `--remote-control=${name}` : "--remote-control"])
   if (!started.ok) {
     const why = { "no-tmux": "tmux is not installed (Setup → Without Claude desktop)", untrusted: "Claude Code has not been told to trust this folder: open the session once and accept", full: "Too many sessions are running: end one first", running: "A turn runs here, headless: try again when it ends", failed: started.error ?? "tmux could not start the session" }
     return { ok: false, error: why[started.reason] }

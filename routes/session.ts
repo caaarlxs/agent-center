@@ -5,7 +5,7 @@
 
 import { applyAction, isBoardAction, isTaskId, setSuggestion } from "../lib/board"
 import { answer as answerQuestion, isBusy, permit, requestSettings, send as sendMessage, setEffort, status as bridgeStatus, stop as stopTurn, unsend } from "../lib/bridge"
-import { activate, adopt, openInClient, remoteControl, remoteLink } from "../lib/client"
+import { activate, adopt, openInClient, remoteControl, remoteLink, renameSession } from "../lib/client"
 import { isArchivedInApp, readDesktop } from "../lib/desktop"
 import { commandStatus, runCommand, stopCommand } from "../lib/commands"
 import { EFFORTS, MODES } from "../lib/config"
@@ -210,7 +210,7 @@ export async function handleSession(id: string, action: string, body: Record<str
     // Remote Control: on/off ({ on }), or where it stands ({} → its link or null).
     case "remote": {
       if (typeof body.on !== "boolean") return json({ ok: true, url: await remoteLink(id) })
-      const res = await remoteControl(id, body.on)
+      const res = await remoteControl(id, body.on, typeof body.name === "string" ? body.name : undefined)
       refreshSoon()
       return json(res, res.ok ? 200 : 409)
     }
@@ -263,6 +263,8 @@ export async function handleSession(id: string, action: string, body: Record<str
   const group = groupOf(id)
   const error = await applyAction(group?.key ?? id, group?.ids ?? [], action, body)
   if (error) return json({ error }, 400)
+  // A new name on the board is the session's own name too (lib/client.ts).
+  const session = action === "rename" ? await renameSession(group?.id ?? id, String(body.title ?? "")) : undefined
   refreshSoon()
-  return json({ ok: true })
+  return json({ ok: true, ...(session && { session }) })
 }
