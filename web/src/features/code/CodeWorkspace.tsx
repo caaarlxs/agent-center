@@ -21,6 +21,7 @@ import { useMonaco, useMonacoTheme } from "@/lib/monaco"
 import { cn } from "@/lib/utils"
 import { SideFlyout, useSideRoom } from "@/features/session/SideFlyout"
 import { codeTarget } from "@/app/open-session"
+import { showImage } from "@/components/common/Lightbox"
 import { type Folder, changedFolders, parentsOf, rankFiles, spanOf, treeOf } from "./tree"
 
 const WATCH_MS = 3000
@@ -32,6 +33,8 @@ const sideBtn = "inline-grid size-6 place-items-center rounded-md text-text-mute
 const row = "flex h-6 w-full items-center rounded-[5px] pr-1.5 text-left text-[12.5px] text-text hover:bg-hover"
 const MARK_CLASS = { add: "gm-add", mod: "gm-mod", del: "gm-del" }
 const nameOf = (p: string) => p.split("/").pop() ?? p
+// The editor shows text: a picture opens large over the page instead (lib/code.ts IMAGE_TYPES).
+const isImage = (p: string) => /\.(png|jpe?g|gif|webp|avif|bmp|ico|svg)$/i.test(p)
 
 type Doc = { model: editor.ITextModel; mtime: number; saved: number; lang: string } // lang: Monaco's, by its name
 type Notice = { path: string; kind: "conflict" | "changed" }
@@ -229,6 +232,7 @@ export function CodeWorkspace({ id, isShown = true }: { id: string; isShown?: bo
   }, [id])
 
   const open = useCallback(async (path: string, line?: number, focus = true, span: [number, number] | null = null) => {
+    if (isImage(path)) return void (focus && showImage(api(id, "codeimage", { path })))
     const m = mon.current
     const e = ed.current
     if (!m || !e) return

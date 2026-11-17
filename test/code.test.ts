@@ -5,7 +5,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test"
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { codeTree, marksOf, readCode, saveCode, searchCode, versionsOf } from "../lib/code"
+import { codeImage, codeTree, marksOf, readCode, saveCode, searchCode, versionsOf } from "../lib/code"
 
 let repo = ""
 const git = (...args: string[]) => Bun.spawnSync(["git", "-C", repo, ...args], { env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" } })
@@ -88,4 +88,11 @@ test("marks the lines changed since the branch started", async () => {
   expect(await marksOf(repo, "src/c.ts")).toEqual([{ kind: "del", from: 1, to: 1 }])
   expect(await marksOf(repo, "src/b.ts")).toEqual([{ kind: "add", from: 1, to: 1 }]) // new
   expect(await marksOf(repo, "../outside.ts")).toBeNull()
+})
+
+test("shows a picture of the repository, not other files nor one outside it", async () => {
+  await writeFile(join(repo, "logo.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47]))
+  expect((await codeImage(repo, "logo.png"))?.type).toBe("image/png")
+  expect(await codeImage(repo, "README.md")).toBeNull()
+  expect(await codeImage(repo, "../outside.png")).toBeNull()
 })

@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test"
-import { mkdtemp, writeFile } from "node:fs/promises"
+import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { isTrusted, lastLink } from "../lib/terminal"
+import { isTrusted, lastLink, trust } from "../lib/terminal"
 
 describe("isTrusted", () => {
   test("counts only the folder's own answer, not a trusted parent's", async () => {
@@ -36,5 +36,20 @@ describe("lastLink", () => {
   })
   test("null when there is none", () => {
     expect(lastLink("❯ \n")).toBeNull()
+  })
+})
+
+describe("trust", () => {
+  test("marks a folder trusted, keeps the rest of the record and the file only yours", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "ac-trust-"))
+    const file = join(dir, ".claude.json")
+    await writeFile(file, JSON.stringify({ userID: "x", projects: { "/a": { hasTrustDialogAccepted: true }, "/b": { allowedTools: ["Read"] } } }), { mode: 0o600 })
+    expect(await trust("/b", file)).toBe(true)
+    expect(await trust("/new", file)).toBe(true)
+    const config = JSON.parse(await readFile(file, "utf8"))
+    expect(config.userID).toBe("x")
+    expect(config.projects["/b"]).toEqual({ allowedTools: ["Read"], hasTrustDialogAccepted: true })
+    expect(config.projects["/a"].hasTrustDialogAccepted).toBe(true)
+    expect((await stat(file)).mode & 0o777).toBe(0o600)
   })
 })

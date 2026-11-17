@@ -78,9 +78,10 @@ With this step on, the board never opens Claude desktop; it does not even need i
 - **Idle sessions end**: one nobody used for 30 minutes (no turn running, nothing waiting, no
   window attached, no Remote Control) ends; its transcript stays and the next message starts it again. At most 6 run
   at once: past that the oldest idle one ends, or the turn runs headless.
-- **A folder Claude Code never trusted** would hold the session on its trust question, so the
-  board runs the turn headless instead (`claude -p --resume`). Open the session once and answer
-  the question; from then on it wakes in tmux.
+- **Folder trust**: Claude Code asks once per folder whether to trust it, and a session in tmux
+  would wait on that question. The board answers yes for you before it starts a session: it marks
+  the folder trusted in `~/.claude.json`, as Claude Code does. If it cannot, the turn runs headless
+  (`claude -p --resume`).
 
 The board uses the `claude` your terminal runs (`~/.local/bin`, Homebrew), not the one Claude
 desktop ships.

@@ -17,7 +17,7 @@ import { changesOf, commitDiff } from "../lib/changes"
 import { sessionChanges, sessionVersions } from "../lib/session-changes"
 import { isContextPath, listContext, readContext } from "../lib/context"
 import { editorThemes } from "../lib/editor-theme"
-import { codeTree, marksOf, readCode, searchCode, versionsOf } from "../lib/code"
+import { codeImage, codeTree, marksOf, readCode, searchCode, versionsOf } from "../lib/code"
 import { HOME } from "../lib/config"
 import { board } from "../lib/board"
 import { isArchivedInApp, readDesktop, suggestionStates } from "../lib/desktop"
@@ -168,6 +168,13 @@ async function sessionRead(id: string, what: string, url: URL) {
       if (!group) return json({ error: "unknown session" }, 404)
       const { status = 200, ...file } = await readCode(group.lead.cwd, url.searchParams.get("path") ?? "", url.searchParams.has("time"))
       return json(file, status)
+    }
+    // A picture of the repository, for the Code tab: its bytes, never run (an SVG may hold a script).
+    case "codeimage": {
+      if (!group) return json({ error: "unknown session" }, 404)
+      const image = await codeImage(group.lead.cwd, url.searchParams.get("path") ?? "")
+      if (!image) return json({ error: "Not a picture of this repository" }, 404)
+      return new Response(Bun.file(image.path), { headers: { "content-type": image.type, "x-content-type-options": "nosniff", "content-security-policy": "sandbox" } })
     }
     case "codesearch": {
       if (!group) return json({ error: "unknown session" }, 404)

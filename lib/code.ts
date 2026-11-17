@@ -90,6 +90,20 @@ async function inside(root: string, rel: string) {
   return real && real.startsWith(realRoot + sep) ? real : null
 }
 
+// The pictures the Code tab shows as pictures (Monaco shows only text), by type.
+export const IMAGE_TYPES: Record<string, string> = {
+  png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp",
+  avif: "image/avif", bmp: "image/bmp", ico: "image/x-icon", svg: "image/svg+xml",
+}
+export const imageTypeOf = (rel: string) => IMAGE_TYPES[rel.split(".").pop()?.toLowerCase() ?? ""] ?? null
+
+/** A picture of the repository, to show: its path on disk and type; null when it is not one, or not inside. */
+export async function codeImage(cwd: string, rel: string) {
+  const type = imageTypeOf(rel)
+  const path = type ? await inside(await rootOf(cwd), rel) : null
+  return path && type ? { path, type } : null
+}
+
 // A file as text; `onlyTime`: only when it last changed (the page asks often).
 export async function readCode(cwd: string, rel: string, onlyTime = false) {
   const path = await inside(await rootOf(cwd), rel)

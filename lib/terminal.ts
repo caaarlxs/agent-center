@@ -7,9 +7,13 @@
 // questions and approvals, and stops turns. "Open" attaches a Terminal window
 // to that same tmux session, so there is still one process per transcript.
 //
-// When tmux cannot run the session (tmux missing, a folder Claude Code was
-// never told to trust, which would hold the session on its trust question, or
-// too many sessions alive already) the caller runs the turn headless instead
+// Claude Code asks once per folder whether to trust it, and a session would
+// wait on that question in tmux. The board answers it for the person (it is
+// their Mac and their folders: they asked for it), marking the folder trusted
+// in ~/.claude.json as Claude Code does when you say yes.
+//
+// When tmux cannot run the session (tmux missing, a folder it could not mark
+// trusted, or too many sessions alive already) the caller runs the turn headless instead
 // (lib/deliver.ts), as it does when Claude desktop is at its cap.
 //
 // Sessions the board started and nobody uses are ended: no turn running,
@@ -17,7 +21,7 @@
 // transcript stays; the next message starts them again.
 
 import { existsSync } from "node:fs"
-import { mkdir, readFile, writeFile, chmod } from "node:fs/promises"
+import { mkdir, readFile, rename, writeFile, chmod } from "node:fs/promises"
 import { join } from "node:path"
 import { isBusy, status } from "./bridge"
 import { HOME, MODES, STATE_DIR, settings } from "./config"
@@ -72,6 +76,23 @@ export async function isTrusted(folder: string, claudeJson = join(HOME, ".claude
   }
 }
 
+/** Marks `folder` trusted in Claude Code's own record, as answering yes to its question does; whether it is now. */
+export async function trust(folder: string, claudeJson = join(HOME, ".claude.json")) {
+  if (await isTrusted(folder, claudeJson)) return true
+  try {
+    const config = JSON.parse(await readFile(claudeJson, "utf8"))
+    config.projects ??= {}
+    config.projects[folder] = { ...config.projects[folder], hasTrustDialogAccepted: true }
+    // Aside, then renamed (a reader never sees half of it), only yours to read, as Claude Code keeps it.
+    const tmp = `${claudeJson}.${process.pid}.${crypto.randomUUID().slice(0, 8)}.tmp`
+    await writeFile(tmp, JSON.stringify(config, null, 2), { mode: 0o600 })
+    await rename(tmp, claudeJson)
+  } catch {
+    return false
+  }
+  return isTrusted(folder, claudeJson)
+}
+
 // Whether the session can be idle-ended: nothing running or waiting in it.
 async function isIdle(id: string) {
   const b = await status(id)
@@ -100,7 +121,7 @@ async function start(id: string, folder: string, args: string[]): Promise<Starte
   if (running.has(id)) return { ok: false, reason: "running" }
   const live = await liveSessions()
   if (live.some(s => s.id === id)) return { ok: true }
-  if (!(await isTrusted(folder))) return { ok: false, reason: "untrusted" }
+  if (!(await trust(folder))) return { ok: false, reason: "untrusted" }
   if (live.length >= MAX_LIVE && !(await makeRoom())) return { ok: false, reason: "full" }
   const claude = await claudeBinary()
   const res = await tmux(["new-session", "-d", "-s", nameOf(id), "-c", folder, "-x", "220", "-y", "50", "--", claude, ...args])
