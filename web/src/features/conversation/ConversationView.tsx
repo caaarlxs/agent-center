@@ -44,7 +44,7 @@ import { type Fold, foldedSteps } from "./steps"
 import { foldSteps } from "./fold-steps"
 import { TurnCosts, useTurnCost, useTurnCosts } from "@/features/spend/turn-costs"
 import { money } from "@/features/spend/spend"
-import { type Pending, deliveredOf, dropPending, stampOf, takenBack, usePending, waitingOf } from "./pending"
+import { type Pending, deliveredOf, dropPending, leftOutbox, stampOf, takenBack, usePending, waitingOf } from "./pending"
 import { composerHint, composerQuote, reply, takeBack } from "./send"
 import { dialogAnswer, linesText, nameOf, partsOf, quoteOf, riskOf } from "./text"
 import { type Suggestions, useConversation } from "./useConversation"
@@ -740,6 +740,12 @@ export function ConversationView({ sessionId, card: session, bridge }: { session
     seenUsers.current = userTexts.length
     if (delivered.length) dropPending(sessionId, delivered)
   }, [isLoaded, userTexts, mine, sessionId])
+  // Or the outbox no longer holds it (pending.ts leftOutbox).
+  useEffect(() => {
+    if (!bridge) return
+    const left = leftOutbox(mine, bridge.queued)
+    if (left.length) dropPending(sessionId, left)
+  }, [bridge, mine, sessionId])
 
   // Answers to the question the session asks gather here until each of its
   // questions has one, then go together (one question: at the first click).

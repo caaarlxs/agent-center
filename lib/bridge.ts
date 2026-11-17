@@ -80,12 +80,30 @@ export function isBusy(bridge: { busy: boolean | null; lastSeen: number | null }
   return bridge.busy === true && bridge.lastSeen !== null && Date.now() - bridge.lastSeen < BUSY_GRACE_MS
 }
 
+// Claude Code turns down what the mod submits after a stop until someone
+// writes in the session. Once the session works again, someone did: the
+// message goes back in the queue, under a new id, and the mod hands it over
+// when that turn ends. Only a recent one: a message from hours ago would
+// arrive out of place; it stays refused, to take back.
+export const RETRY_WITHIN_MS = 60 * 60_000
+export const retriesAfterStop = (reason: string, isWorking: boolean, sentAt: number, now = Date.now()) =>
+  isWorking && now - sentAt < RETRY_WITHIN_MS && /\bstopped\b/i.test(reason)
+const newId = () => `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`
+
+async function requeue(dir: string, name: string) {
+  const msg = (await readJson(join(dir, name))) as Message
+  const id = newId()
+  await writeJsonAtomic(join(dir, `${id}.json`), { ...msg, id, at: Date.now(), notBefore: 0 })
+  await unlink(join(dir, name)).catch(() => {})
+  return { id, text: String(msg.text ?? "") }
+}
+
 export async function send(sessionId: string, text: string) {
   if (!isId(sessionId)) throw new Error("invalid session")
   const body = text.trim()
   if (!body) throw new Error("the message is empty")
   if (body.length > MAX_TEXT) throw new Error(`the message is longer than ${MAX_TEXT.toLocaleString("en-GB")} characters: send it as a file`)
-  const id = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`
+  const id = newId()
   // The temp name does not end in .json: the mod never reads half a message.
   await writeJsonAtomic(join(BASE, "outbox", sessionId, `${id}.json`), { id, text: body, at: Date.now(), notBefore: Date.now() + UNDO_MS })
   return id
@@ -210,6 +228,47 @@ export async function doingOf(sessionId: string): Promise<Doing | null> {
   }
 }
 
+// What waits in a session's outbox: delivered messages are cleared, refused
+// ones listed (and queued again after a stop once the session works), and
+// the ones a sleeping session never took marked stuck.
+async function outboxOf(sessionId: string, o: { delivered: Set<string>; refused: Map<string, string>; isWorking: boolean; isOpen: boolean; lastSeen: number | null }) {
+  const { delivered, refused, isWorking, isOpen, lastSeen } = o
+  const dir = join(BASE, "outbox", sessionId)
+  let pending = 0
+  const stuck: string[] = []
+  const failed: BridgeStatus["failed"] = []
+  const queued: { id: string; text: string }[] = []
+  for (const name of await readdir(dir).catch(() => [] as string[])) {
+    if (!name.endsWith(".json")) continue
+    const id = name.slice(0, -5)
+    if (delivered.has(id)) {
+      await unlink(join(dir, name)).catch(() => {})
+      continue
+    }
+    if (refused.has(id) && retriesAfterStop(refused.get(id)!, isWorking, Number(id.split("-")[0]) || 0)) {
+      const again = await requeue(dir, name).catch(() => null)
+      if (again) {
+        queued.push(again)
+        pending++
+        continue
+      }
+    }
+    try {
+      queued.push({ id, text: String((await readJson(join(dir, name))).text ?? "") })
+    } catch {}
+    if (refused.has(id)) {
+      failed.push({ id, reason: refused.get(id)! })
+      continue
+    }
+    pending++
+    const sentAt = Number(id.split("-")[0]) || 0
+    const since = Math.max(sentAt + UNDO_MS, lastSeen ?? 0)
+    if (!isOpen && !isWorking && Date.now() - since > STUCK_MS) stuck.push(id)
+  }
+  queued.sort((a, b) => a.id.localeCompare(b.id))
+  return { pending, stuck, failed, queued }
+}
+
 export async function status(sessionId: string): Promise<BridgeStatus> {
   if (!isId(sessionId)) return { isOpen: false, pending: 0, lastSeen: null, busy: null, version: 0, limits: null, settings: null, stuck: [], failed: [], queued: [], question: null, permission: null, effort: null, model: null, inTerminal: false, isDoubled: false }
   let lastSeen: number | null = null
@@ -239,32 +298,8 @@ export async function status(sessionId: string): Promise<BridgeStatus> {
     refused = new Map((acks.failed ?? []).map((f: { id: string; reason: string }) => [f.id, f.reason]))
     settings = acks.settings ?? null
   } catch {}
-  const dir = join(BASE, "outbox", sessionId)
-  let pending = 0
-  const stuck: string[] = []
-  const failed: BridgeStatus["failed"] = []
-  const queued: { id: string; text: string }[] = []
   const isWorking = isBusy({ busy, lastSeen })
-  for (const name of await readdir(dir).catch(() => [] as string[])) {
-    if (!name.endsWith(".json")) continue
-    const id = name.slice(0, -5)
-    if (delivered.has(id)) {
-      await unlink(join(dir, name)).catch(() => {})
-      continue
-    }
-    try {
-      queued.push({ id, text: String((await readJson(join(dir, name))).text ?? "") })
-    } catch {}
-    if (refused.has(id)) {
-      failed.push({ id, reason: refused.get(id)! })
-      continue
-    }
-    pending++
-    const sentAt = Number(id.split("-")[0]) || 0
-    const since = Math.max(sentAt + UNDO_MS, lastSeen ?? 0)
-    if (!isOpen && !isWorking && Date.now() - since > STUCK_MS) stuck.push(id)
-  }
-  queued.sort((a, b) => a.id.localeCompare(b.id))
+  const { pending, stuck, failed, queued } = await outboxOf(sessionId, { delivered, refused, isWorking, isOpen, lastSeen })
   // Only while the session lives: a closed one asks nothing any more.
   let question: Question | null = null
   if (isOpen) {

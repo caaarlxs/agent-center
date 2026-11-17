@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import type { Bridge } from "@/lib/api-types"
-import { deliveredOf, stampOf, waitingOf } from "./pending"
+import { LEFT_AFTER_MS, deliveredOf, leftOutbox, stampOf, waitingOf } from "./pending"
 
 const bridge = (b: Partial<Bridge>) => ({ isOpen: false, failed: [], stuck: [], queued: [], wake: null, ...b }) as Bridge
 const p = (id: string, text = "hi") => ({ id, text, at: 1 })
@@ -25,7 +25,24 @@ describe("deliveredOf", () => {
   })
 })
 
+describe("leftOutbox", () => {
+  it("counts as delivered a message the outbox no longer holds, once it is not fresh", () => {
+    const sent = { id: "1-a", text: "hi", at: 1000 }
+    const later = 1000 + LEFT_AFTER_MS + 1
+    expect(leftOutbox([sent], [], later)).toEqual(["1-a"])
+    expect(leftOutbox([sent], [{ id: "1-a", text: "hi" }], later)).toEqual([])
+    expect(leftOutbox([sent], [], 1000 + 2000)).toEqual([])
+  })
+})
+
 describe("stampOf", () => {
+  it("holds a message refused after a stop, without calling it a failure", () => {
+    const reason = "the session was stopped and nobody has sent input since"
+    const sent = { id: "a", text: "hi", at: 1_000_000 }
+    expect(stampOf(sent, bridge({ failed: [{ id: "a", reason }] }), false, sent.at + 60_000)).toEqual({ text: "Held: the session was stopped. It goes once someone writes in it", isBad: false })
+    expect(stampOf(sent, bridge({ failed: [{ id: "a", reason }] }), false, sent.at + 2 * 60 * 60_000).isBad).toBe(true) // hours old: it will not go
+  })
+
   it("says a refusal first, with its reason", () => {
     expect(stampOf(p("a"), bridge({ failed: [{ id: "a", reason: "too long" }], isOpen: true }), true)).toEqual({ text: "Could not deliver: too long", isBad: true })
   })

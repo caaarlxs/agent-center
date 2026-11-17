@@ -44,12 +44,24 @@ export function deliveredOf(pending: Pending[], newUserTexts: string[]): string[
   }).map(p => p.id)
 }
 
+// The messages of mine that the server's outbox no longer holds: the mod
+// handed them over, or the board ran the turn itself, or another window took
+// them back. The transcript may show them only further up, past what is
+// loaded, so the outbox says it. A fresh one is left a moment: the outbox the
+// page knows may be from just before it was sent.
+export const LEFT_AFTER_MS = 15_000
+const RETRY_WITHIN_MS = 60 * 60_000 // as lib/bridge.ts: an older refused message is not queued again
+export const leftOutbox = (mine: Pending[], queued: Bridge["queued"], now = Date.now()): string[] =>
+  mine.filter(p => now - p.at > LEFT_AFTER_MS && !queued.some(q => q.id === p.id)).map(p => p.id)
+
 // What a pending message is doing, and whether only Claude desktop can help.
 // A session that runs without the bridge mod never takes it; one at Claude's
 // cap of sessions is not woken in the background.
 export type Stamp = { text: string; isBad: boolean }
 export function stampOf(p: Pending, bridge: Bridge | null, isWorking: boolean, now = Date.now()): Stamp {
   const refused = bridge?.failed.find(f => f.id === p.id)
+  // After a stop, Claude Code takes nothing from the board until someone writes in the session; then the server queues it again.
+  if (refused && /\bstopped\b/i.test(refused.reason) && now - p.at < RETRY_WITHIN_MS) return { text: "Held: the session was stopped. It goes once someone writes in it", isBad: false }
   if (refused) return { text: `Could not deliver: ${refused.reason}`, isBad: true }
   if (bridge?.blocker === "no-mod")
     return { text: `This session runs without the bridge mod${bridge.cliVersion ? ` (Claude Code ${bridge.cliVersion})` : ""}: update Claude desktop, then close the session and open it again`, isBad: true }
