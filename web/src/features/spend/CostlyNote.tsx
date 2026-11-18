@@ -1,12 +1,12 @@
 // Over the reply box of a conversation that is costly now (spend.ts): one that
-// re-reads too much at each step (what one more step costs), or one idle for an
-// hour whose cache has expired (what waking it costs). While its cache is
-// alive, Compact: /compact, a summary the same model writes from all it saw,
-// for a few cents. Once it has expired, compacting would write it all again,
+// grew a lot over what its task needs (what a step costs now, and without the
+// history), or one idle for an hour whose cache has expired (what waking it
+// costs). While its cache is alive, Compact: /compact, a summary the same
+// model writes from all it saw, for a few cents; or Start fresh. Once it has expired, compacting would write it all again,
 // so Start fresh: the board writes a handoff note from this conversation
 // (lib/handoff.ts) without waking it, and starts a new session in the same folder, with the same model and
 // mode, that picks up the work; it opens once started. Hidden with ×, the
-// step note comes back once the conversation grows 150K more; the cold note,
+// step note comes back once the conversation grows 200K more; the cold note,
 // the next time it goes cold.
 import { X } from "lucide-react"
 import { useEffect, useState } from "react"
@@ -16,7 +16,7 @@ import { toast } from "@/lib/notify"
 import { persistedStore } from "@/lib/store"
 import { openSession } from "@/app/open-session"
 import { sendMessage } from "@/features/conversation/send"
-import { costlyNow, hideKey, hideValue, isHidden, money, tokens } from "./spend"
+import { costlyNow, hideKey, hideValue, isHidden, money, stepWithout, tokens } from "./spend"
 
 const BUTTON = "h-6 shrink-0 rounded-md bg-ask px-2 text-[11.5px] font-semibold text-surface hover:brightness-108 disabled:opacity-60"
 // session → its context when hidden; `cold:` + session → its last step when hidden.
@@ -55,7 +55,7 @@ export function CostlyNote({ card }: { card: Card }) {
   const hiddenAt = hidden.use()
   const now = useMinute()
   const usage = card.usage
-  const why = usage && costlyNow(usage.context, usage.modelAt, now)
+  const why = usage && costlyNow(usage, usage.modelAt, now)
   if (!usage || !why) return null
   const key = hideKey(why, card.id)
   if (isHidden(why, hiddenAt[key], usage)) return null
@@ -67,15 +67,12 @@ export function CostlyNote({ card }: { card: Card }) {
         {why === "cold" ? (
           <>Idle for over an hour: the next message writes <b className="tabular-nums">{tokens(usage.context)}</b> tokens to the cache again (<b className="tabular-nums">{money(usage.wakeCost)}</b>).</>
         ) : (
-          <>Each step re-reads <b className="tabular-nums">{tokens(usage.context)}</b> tokens (<b className="tabular-nums">{money(usage.stepCost)}</b> a step).</>
+          <>It grew <b className="tabular-nums">{tokens(usage.context - usage.base)}</b> since it started: each step re-reads <b className="tabular-nums">{tokens(usage.context)}</b> tokens (<b className="tabular-nums">{money(usage.stepCost)}</b>). Without that history, about <b className="tabular-nums">{money(stepWithout(usage))}</b>.</>
         )}
       </span>
-      {why === "cold" ? (
-        <button className={BUTTON} onClick={start} disabled={isStarting}
-          title="A new session in the same folder, with the same model and mode, that picks up this work from a handoff note (this one is not woken)">{isStarting ? "Starting…" : "Start fresh"}</button>
-      ) : (
-        <button className={BUTTON} onClick={compact} title="/compact: the conversation goes on from a summary of itself, while its cache is alive">Compact</button>
-      )}
+      {why === "steps" && <button className={BUTTON} onClick={compact} title="/compact: the conversation goes on from a summary of itself, while its cache is alive">Compact</button>}
+      <button className={BUTTON} onClick={start} disabled={isStarting}
+        title="A new session in the same folder, with the same model and mode, that picks up this work from a handoff note (this one is not woken)">{isStarting ? "Starting…" : "Start fresh"}</button>
       <button className="grid size-6 shrink-0 place-items-center rounded-md text-text-muted hover:bg-hover hover:text-text" aria-label="Hide"
         onClick={() => hidden.set({ ...hidden.get(), [key]: hideValue(why, usage) })}><X className="size-3.5" /></button>
     </div>

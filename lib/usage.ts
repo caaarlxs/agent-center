@@ -64,6 +64,10 @@ type Scan = {
   cwd: string | null
   firstText: string | null
   userAts: number[] // when you wrote each of your messages, for each turn's cost
+  // What its task needed: its context after its first answer (or after the last compaction's).
+  base: number | null
+  turns: number // your messages since it started, or since the last compaction
+  wasCompacted: boolean
 }
 
 const scans = new Map<string, Scan>()
@@ -102,17 +106,25 @@ export function compactedTo(line: string): number | null {
   return n ? Number(n) : null
 }
 
+// Compacted: the context is the summary until the next response says more; what it needs is measured again.
+function compacted(scan: Scan, line: string) {
+  const to = compactedTo(line)
+  if (to !== null) Object.assign(scan, { lastContext: to, base: null, turns: 0, wasCompacted: true })
+}
+// When you wrote it; at your second message, the context its first answer left is what the task needs.
+function yourMessage(scan: Scan, line: string) {
+  const at = Date.parse(TIMESTAMP.exec(line)?.[1] ?? "")
+  if (at) scan.userAts.push(at)
+  if (++scan.turns === 2 && scan.base === null) scan.base = scan.lastContext
+}
+
 function ingest(scan: Scan, chunk: string) {
   for (const line of chunk.split("\n")) {
-    // Compacted: the context is the summary until the next response says more.
-    scan.lastContext = compactedTo(line) ?? scan.lastContext
+    compacted(scan, line)
     if (!scan.entrypoint) scan.entrypoint = ENTRY.exec(line)?.[1] ? own(ENTRY.exec(line)![1]!) : null
     if (!scan.cwd) scan.cwd = CWD.exec(line)?.[1] ? own(JSON.parse(`"${CWD.exec(line)![1]}"`)) : null
     if (!scan.firstText) scan.firstText = firstWords(line)
-    if (isYours(line)) {
-      const at = Date.parse(TIMESTAMP.exec(line)?.[1] ?? "")
-      if (at) scan.userAts.push(at)
-    }
+    if (isYours(line)) yourMessage(scan, line)
     if (!line.includes('"usage"') || !line.includes('"type":"assistant"')) continue
     let row: any
     try {
@@ -145,7 +157,7 @@ export async function scannedAt(path: string): Promise<Scan> {
   const { size } = await stat(path)
   let scan = scans.get(path)
   if (!scan || size < scan.offset) {
-    scan = { offset: 0, messages: new Map(), lastContext: 0, lastModel: null, lastModelAt: 0, entrypoint: null, cwd: null, firstText: null, userAts: [] }
+    scan = { offset: 0, messages: new Map(), lastContext: 0, lastModel: null, lastModelAt: 0, entrypoint: null, cwd: null, firstText: null, userAts: [], base: null, turns: 0, wasCompacted: false }
     scans.set(path, scan)
   }
   scan.offset = await readAppended(path, scan.offset, size, text => ingest(scan, text))
@@ -184,7 +196,13 @@ export async function sessionSpend(id: string): Promise<Spend | null> {
 // stepCost: what one more step costs it, its context read again from the cache.
 // wakeCost: what the first step costs once the cache has expired (an hour
 // idle): its context written to the 1-hour cache again, at 2x input.
-export type SessionUsage = { context: number; window: number; cost: number; recentCost: number; model: string | null; modelAt: number; stepCost: number; wakeCost: number }
+// base: what its task needed (its context after its first answer, or after the last compaction):
+// what it grew over that is history it re-reads at every step.
+export type SessionUsage = { context: number; base: number; window: number; cost: number; recentCost: number; model: string | null; modelAt: number; stepCost: number; wakeCost: number }
+// A session resumed in a new transcript starts it with what it had: the smallest base is its own;
+// the one it runs now, once compacted, measured again.
+export const baseOf = (live: Pick<Scan, "base" | "lastContext" | "wasCompacted">, all: Pick<Scan, "base" | "lastContext">[]) =>
+  live.wasCompacted ? (live.base ?? live.lastContext) : Math.min(...all.map(s => s.base ?? s.lastContext))
 const RECENT_MS = 5 * 3600_000
 
 // `current` is the CLI id running now (its last request is the live
@@ -205,5 +223,5 @@ export async function usageOf(current: string, ids: string[]): Promise<SessionUs
   const price = priceOf(live.lastModel ?? "")
   const stepCost = (live.lastContext * price.read) / 1_000_000
   const wakeCost = (live.lastContext * price.input * 2) / 1_000_000
-  return { context: live.lastContext, window: WINDOW, cost: Math.round(cost * 100) / 100, recentCost: Math.round(recentCost * 100) / 100, model: live.lastModel, modelAt: live.lastModelAt, stepCost: Math.round(stepCost * 1000) / 1000, wakeCost: Math.round(wakeCost * 100) / 100 }
+  return { context: live.lastContext, base: baseOf(live, scans), window: WINDOW, cost: Math.round(cost * 100) / 100, recentCost: Math.round(recentCost * 100) / 100, model: live.lastModel, modelAt: live.lastModelAt, stepCost: Math.round(stepCost * 1000) / 1000, wakeCost: Math.round(wakeCost * 100) / 100 }
 }
