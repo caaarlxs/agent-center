@@ -6,7 +6,7 @@
 // started yet show what it will do. Each step's icon tells its kind: a merge,
 // a tag, a release PR, a script on the data, something only a person does
 // (it stands out until done, with the plan's why and how, and a box to ask
-// the plan's agent about it), the check at the end.
+// the plan's agent about it, or to go on in a chat), the check at the end.
 import { AlertTriangle, Bot, Check, History, SquareTerminal, Undo2, ChevronRight, ClipboardCheck, Database, Download, GitMerge, GitPullRequestArrow, Hand, Tag, type LucideIcon } from "lucide-react"
 import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils"
 import type { Release, ReleaseStep, StepKind, StepNote } from "@server/release"
 import type { Turn } from "@server/pipeline"
 import { Ask } from "./Ask"
+import { ChatButton } from "./YourPart"
 import { Section } from "./kinds"
 import { useStageData } from "./stage-data"
 import { ConflictFix } from "./ConflictFix"
@@ -207,6 +208,7 @@ function StepRow({ step, ticketKey, isAtHand, threads, onAct }: { step: ReleaseS
         <div className="col-start-2 flex min-w-0 flex-col gap-2 pl-[21px]">
           <NoteView note={step.note} isOpen={step.status === "waiting"} />
           {threads && <Ask ticketKey={ticketKey} about={`step:${step.note.id}`} turns={threads[`step:${step.note.id}`]} />}
+          {threads && <ChatButton ticketKey={ticketKey} step={step.note.id} />}
         </div>
       )}
       {(step.items.length > 0 || step.report) && (

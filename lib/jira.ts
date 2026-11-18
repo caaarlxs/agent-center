@@ -432,14 +432,16 @@ export function sessionTickets(links: { key: string; why: LinkWhy }[]): SessionT
 
 // ---------- one ticket, and yours ----------
 
-// Who you are on the site, and its sprint field: asked once.
-let me: { site: string; id: string } | null = null
-async function myId(setup: JiraSetup) {
-  if (me?.site === setup.site) return me.id
+// Who you are on the site (your id and your name), and its sprint field: asked once.
+let me: { site: string; id: string; name: string | null } | null = null
+async function myself(setup: JiraSetup) {
+  if (me?.site === setup.site) return me
   const r = await call(setup, "/rest/api/3/myself")
-  me = { site: setup.site, id: String(r?.accountId ?? "") }
-  return me.id
+  me = { site: setup.site, id: String(r?.accountId ?? ""), name: r?.displayName ? String(r.displayName) : null }
+  return me
 }
+const myId = async (setup: JiraSetup) => (await myself(setup)).id
+export const myName = async () => (await myself(setupOrThrow())).name
 let sprintField: { site: string; id: string | null } | null = null
 async function sprintFieldOf(setup: JiraSetup) {
   if (sprintField?.site === setup.site) return sprintField.id

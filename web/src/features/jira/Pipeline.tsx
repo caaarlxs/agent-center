@@ -53,10 +53,11 @@ import { SendBack } from "./SendBack"
 import type { Release } from "@server/release"
 import type { PrState, Scenario } from "@server/stage-extras"
 import type { DebtEntry } from "@server/debt"
-import { StageDataContext } from "./stage-data"
+import { StageDataContext, type YourPartInfo } from "./stage-data"
+import { YourPartRow } from "./YourPart"
 import { DocViewer } from "./DocViewer"
 
-type Data = { putAside: number; docs: number[]; files: string[]; summaries: Partial<Record<Stage, string | null>>; prs: Record<string, PrState>; fixes: Record<string, PrFix>; scenario: Scenario | null; state: PipelineState | null; refine: string | null; plan: string | null; build: string | null; review: string | null; test: string | null; smoke: string | null; preview: Release | null }
+type Data = { putAside: number; docs: number[]; files: string[]; summaries: Partial<Record<Stage, string | null>>; prs: Record<string, PrState>; fixes: Record<string, PrFix>; scenario: Scenario | null; state: PipelineState | null; refine: string | null; plan: string | null; build: string | null; review: string | null; test: string | null; smoke: string | null; preview: Release | null; yourPart: YourPartInfo }
 type OnStep = (step: string, action: "approve" | "skip", value?: string) => void
 const FOLLOW_MS = 5_000
 const IDLE_MS = 30_000
@@ -382,11 +383,11 @@ function StagePanel({ stage, state, preview, all, onRun, onStep }: { stage: Stag
   const release = releaseShown(state, preview, stage)
   // The column's agent stage at work, or done: its findings, the deploy folded.
   if (nodeOf(state.stage) === stage && state.stage !== stage) return state.status === "running" ? <AtWork state={state} /> : <TestPanel state={state} release={release} />
-  if (isRelease(stage) && release) return <ReleasePanel ticketKey={state.key} release={release} after={afterOf(stage, state)} isPreview={release === preview} threads={isJob(state) ? undefined : (state.threads ?? {})} onStep={release === state.release && state.status === "running" ? onStep : undefined} />
+  if (isRelease(stage) && release) return <div className="flex flex-col gap-3"><YourPartRow ticketKey={state.key} release={release} /><ReleasePanel ticketKey={state.key} release={release} after={afterOf(stage, state)} isPreview={release === preview} threads={isJob(state) ? undefined : (state.threads ?? {})} onStep={release === state.release && state.status === "running" ? onStep : undefined} /></div>
   if (i > at) return <p className="m-0 text-[13px] text-faint">Starts after {STAGES[i - 1]}.</p>
   if (i === at && state.status === "running") return <AtWork state={state} />
   if (stage === "refine") return <RefinePanel state={state} />
-  if (stage === "plan") return <PlanPanel state={state} />
+  if (stage === "plan") return <div className="flex flex-col gap-3"><YourPartRow ticketKey={state.key} release={release} /><PlanPanel state={state} /></div>
   if (stage === "build") return <BuildPanel state={state} all={all} />
   if (stage === "review") return <ReviewPanel state={state} onFix={ids => onRun("build", ids)} />
   return null
@@ -666,7 +667,7 @@ export function Pipeline({ ticket, details, onTaken }: { ticket: Ticket; details
   return (
     <TicketDocsOf.Provider value={{ key: ticket.key, names: data.files ?? [], open: setDoc }}>
     <StageDataContext.Provider value={{ prs: data.prs ?? {}, fixes: data.fixes ?? {}, onResolve: url => void act("/api/pipeline/conflicts", { key: ticket.key, url }, "An agent resolves the conflicts").then(ok => ok && loadSoon()),
-      onReady: url => void act("/api/pipeline/ready", { key: ticket.key, url }, "Ready for review").then(ok => ok && loadSoon()), scenario: data.scenario ?? null, comments: ticket.comments, debt }}>
+      onReady: url => void act("/api/pipeline/ready", { key: ticket.key, url }, "Ready for review").then(ok => ok && loadSoon()), scenario: data.scenario ?? null, comments: ticket.comments, debt, yourPart: data.yourPart ?? null, reload: loadSoon }}>
     <div className="flex flex-col gap-3">
       <Now state={state} preview={data.preview} now={now} putAside={data.putAside} onRun={stage => void start(stage)} onStep={step} onChanged={() => void load()} />
       <StageTabs tones={tonesOf(state)} picked={shown} onPick={setPicked} />

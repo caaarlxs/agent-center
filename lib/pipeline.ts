@@ -37,7 +37,7 @@ import { appendFile, cp, mkdir, readFile, rename, rm } from "node:fs/promises"
 import { basename, join } from "node:path"
 import { DATA_DIR } from "./config"
 import { writeJsonAtomic } from "./files"
-import { componentsOf, descendantsOf, relateTickets, assignToMe, attachTo, commentOn, createIssue, confluenceIds, confluencePage, createSubtask, issueState, remoteLinks, type ConfluencePage, labelTicket, moveToStatus, openStatuses, ticket, type Ticket, type TicketComment } from "./jira"
+import { componentsOf, descendantsOf, myName, relateTickets, assignToMe, attachTo, commentOn, createIssue, confluenceIds, confluencePage, createSubtask, issueState, remoteLinks, type ConfluencePage, labelTicket, moveToStatus, openStatuses, ticket, type Ticket, type TicketComment } from "./jira"
 import { flowOf, followInJira, type Event as JiraEvent } from "./jira-flow"
 import { scopeLines, scopeOf, storiesOf, type TreeTicket } from "./scope"
 import { anchorOf, componentsFor, decidedForAgent, edited, newDescription, proposalsIn, ticketsOfYours, waitsOn, withProposals, type Edit, type Proposal } from "./proposals"
@@ -58,6 +58,7 @@ import { overLimits, prChecks, reposClean, type Check } from "./checks"
 import { forgetPr, prStates, scenarioOf } from "./stage-extras"
 import { conflictsPrompt, parseResolved } from "./conflicts"
 import { canJudge, gatePrompt, parseAdvice } from "./gate"
+import { chatPrompt, partIn, partPrompt, stepsForYou, stepsHash, type YourPart } from "./your-part"
 import { readdir } from "node:fs/promises"
 import { DEFAULT_CONFIG, tookUnit, advanceRelease, approveStep, releaseSteps, retryStep, rollbackSteps, skipStep, stopRelease, type DeployConfig, type OrderItem, type ManualCheck, manualStep, seenDone, type Ops, type Release, type ReleaseStep } from "./release"
 
@@ -586,7 +587,7 @@ export async function pipelineOf(key: string) {
   const prs = await prStates(urls, releaseOps.sh)
   const scenario = state ? scenarioOf(jsonOf(await readText(join(dirOf(key), "scenario.json")))) : null
   const stageDocs = Object.assign({}, ...(await Promise.all(SUMMED.map(docOf))))
-  return { putAside, docs: await runDocs(key), files: await ticketFiles(key), state: state && (await withSpend(state)), ...stageDocs, summaries, prs, fixes, scenario, preview: await previewOf(state) }
+  return { putAside, docs: await runDocs(key), files: await ticketFiles(key), state: state && (await withSpend(state)), ...stageDocs, summaries, prs, fixes, scenario, preview: await previewOf(state), yourPart: await yourPartOf(state) }
 }
 
 // What the running stage does now: its session's steps and subagents, and,
@@ -855,6 +856,8 @@ async function finish(key: string) {
   if (state.stage === "smoke" && !failing(done.results).length && !untried(done.results).length) void closePipeline(key).catch(err => console.error(`close ${key}:`, err))
   // Saved first: it explains the findings this review left.
   if (state.stage === "review") void explainFindings(key).catch(err => console.error(`explain ${key}:`, err))
+  // A plan done: the guide to what a person does by hand, from it.
+  if (state.stage === "plan") void writeYourPart(key).catch(err => console.error(`your part ${key}:`, err))
 }
 
 // Each run's document, apart (runs/<n>-<stage>.md), to read each pass of a stage.
@@ -966,6 +969,59 @@ const withPlain = (key: string, path: string) => locked(key, async () => {
 })
 export const plainFindings = (findings: Finding[], plain: Record<string, { title?: string; plain?: string }>) =>
   findings.map(f => (f.plain || !plain[f.id]?.plain ? f : { ...f, plain: textOf(plain[f.id]!.plain), title: textOf(plain[f.id]!.title) || f.title }))
+
+// ---------- your part (lib/your-part.ts) ----------
+
+const writingPart = new Set<string>()
+const partErrors = new Map<string, string>()
+const PART_MS = 20 * 60_000
+const partFile = (key: string) => join(dirOf(key), "your-part.json")
+const youDo = async (state: PipelineState) => stepsForYou(await withOrder(state), await deployConfig())
+// The guide, whether an agent writes it now, and whether the plan changed its steps since.
+export async function yourPartOf(state: PipelineState | null) {
+  if (!state) return null
+  const steps = await youDo(state)
+  const part = jsonOf(await readText(partFile(state.key))) as YourPart | null
+  if (!steps.length && !part) return null
+  return { part, isWriting: writingPart.has(state.key), isStale: !!part && part.from !== stepsHash(steps), error: partErrors.get(state.key) ?? null }
+}
+// An agent writes it (again); false when a person has nothing to do.
+export async function writeYourPart(key: string) {
+  const state = await stateOf(key)
+  if (!state || writingPart.has(key)) return true
+  const steps = await youDo(state)
+  if (!steps.length) return false
+  writingPart.add(key)
+  partErrors.delete(key)
+  const dir = dirOf(key)
+  const out = join(dir, "your-part.draft.json")
+  await rm(out, { force: true })
+  const args = ["-p", "--permission-mode", "auto", "--setting-sources", "project,local", "--strict-mcp-config", "--model", "claude-opus-5-5", "--effort", "medium",
+    "--disallowedTools", ...NEVER, "Bash(git push:*)", "Bash(git commit:*)", "Bash(gh pr create:*)", "Bash(aws:*)", `Edit(/${join(ROOT, "repos")}/**)`, `Write(/${join(ROOT, "repos")}/**)`, "--", partPrompt(TAG, key, dir, steps, out, await myName().catch(() => null))]
+  const proc = spawn(await claudeBinary(), args, { cwd: dir, env: claudeEnv({ AGENT_CENTER_LAUNCH: "1" }), stdio: "ignore" })
+  const timer = setTimeout(() => proc.kill(), PART_MS)
+  proc.on("exit", () => void partWritten(key, out, stepsHash(steps)).finally(() => (clearTimeout(timer), writingPart.delete(key))))
+  return true
+}
+async function partWritten(key: string, out: string, from: string) {
+  const part = partIn(jsonOf(await readText(out)), from, Date.now())
+  if (!part) return void partErrors.set(key, "The agent wrote no guide: write it again")
+  await writeJsonAtomic(partFile(key), part, { pretty: true })
+  await rm(out, { force: true })
+}
+// A chat on one step of the guide (by the plan's id, or a section's place): where it starts and its first message.
+export async function chatOnPart(key: string, step: string | null, section: number | null) {
+  const state = await stateOf(key)
+  if (!state) throw new Error("No such ticket in the pipeline")
+  const part = jsonOf(await readText(partFile(key))) as YourPart | null
+  const steps = await youDo(state)
+  const chosen = section !== null ? part?.sections[section] : part?.sections.find(s => s.step === step)
+  const id = chosen?.step ?? step
+  const plan = steps.find(s => s.id === id)
+  if (!chosen && !plan) throw new Error("No such step")
+  const dir = dirOf(key)
+  return { dir, prompt: chatPrompt(key, dir, chosen ?? { step: id, title: plan!.text.length > 80 ? `${plan!.text.slice(0, 79)}…` : plan!.text }, plan?.text ?? null) }
+}
 
 // ---------- the team's code debt (debt.ts) ----------
 

@@ -2,7 +2,7 @@
 // notes, PR actions, tasks, files sent and dictation.
 
 import { commentOn, connect, disconnect, moveTicket } from "../lib/jira"
-import { actOnDebt, answerPipeline, askPipeline, explainFindings, sendBack, checkByHand, cleanUp, createProposed, dismissProposed, editProposed, isStage, stopPipeline, closePipeline, readyPr, resetPipeline, resolvePr, rollBackPipeline, startPipeline, stopAuto, stepPipeline } from "../lib/pipeline"
+import { actOnDebt, answerPipeline, askPipeline, explainFindings, sendBack, checkByHand, cleanUp, createProposed, dismissProposed, editProposed, isStage, stopPipeline, closePipeline, readyPr, resetPipeline, resolvePr, rollBackPipeline, startPipeline, stopAuto, stepPipeline, writeYourPart, chatOnPart } from "../lib/pipeline"
 import { clearJob, continueJob, isLoose, publishReview, startJob, stopJob } from "../lib/jobs"
 import { chooseIcon, isIcon } from "../lib/app-icon"
 import { choosePet, gainXp, openPack } from "../lib/pets"
@@ -200,6 +200,14 @@ export async function handleWrite(path: string, body: Record<string, unknown>): 
     // A draft PR a person merges: out of draft, for them to review it.
     case "/api/pipeline/ready":
       return await readyPr(String(body.key ?? ""), String(body.url ?? "")).then(() => json({ ok: true }), (err: Error) => json({ error: err.message }, 400))
+    // The guide to what a person does by hand (lib/your-part.ts): written again by an agent.
+    case "/api/pipeline/your-part":
+      return await writeYourPart(String(body.key ?? "")).then(ok => (ok ? json({ ok: true }) : json({ error: "A person has nothing to do in this ticket" }, 400)), (err: Error) => json({ error: err.message }, 400))
+    // A chat on one step of it, that goes on with you until it is done: a session of yours, on the board.
+    case "/api/pipeline/chat":
+      return await chatOnPart(String(body.key ?? ""), typeof body.step === "string" ? body.step : null, Number.isInteger(body.section) ? Number(body.section) : null)
+        .then(({ dir, prompt }) => launch(dir, prompt, done => void adopt(done)))
+        .then(id => (refreshSoon(), json({ ok: true, id })), (err: Error) => json({ error: err.message }, 400))
     // Undo what a release did to an environment (staging or prod).
     case "/api/pipeline/rollback":
       return await rollBackPipeline(String(body.key ?? ""), body.env === "prod" ? "prod" : "staging").then(() => (refreshSoon(), json({ ok: true })), (err: Error) => json({ error: err.message }, 400))
