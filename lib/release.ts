@@ -54,11 +54,19 @@ export type ReleaseStep = {
   previous?: string | null // a tag's: the one before it, to deploy again if the release is rolled back
   runId?: number | null // a redeploy's: the run it ran again
   attempts?: number // a merge's: the times an agent took on its conflicts (lib/conflicts.ts)
+  note?: StepNote | null // a person's step: the plan's why, how and done
+  seenAt?: number | null // a person's step with a check: when the board last looked
 }
 // A release, or a rollback of one (its steps undo the release's, the other way round).
 export type Release = { env: Env; steps: ReleaseStep[]; reminders?: string[]; rollback?: boolean }
 // The plan's order for a release: a unit, a script, or something a person does.
-export type OrderItem = { kind: "unit" | "script" | "manual"; id: string | null; text: string | null; envs: Env[] }
+export type OrderItem = { kind: "unit" | "script" | "manual"; id: string | null; text: string | null; envs: Env[]; note?: Omit<StepNote, "id"> }
+// How the board sees a person's step done by itself: a tag that exists (that one, or any above a
+// version), or a PR that merged.
+export type ManualCheck = { tag: { repo: string; name: string | null; above: string | null } } | { merged: string }
+// A person's step as the plan explains it: why, how (in steps), how you know it is done.
+// Its id (M1, M2…) is its place among the plan's steps for a person, the same in staging and prod.
+export type StepNote = { id: string; why: string | null; how: string[]; done: string | null; check: ManualCheck | null }
 
 // A repo's way to an environment: one way, or several in a row (a merge, then its own command).
 type Way = string | string[]
@@ -143,6 +151,13 @@ function notYetIn(state: PipelineState, env: Env) {
   return { units: (state.units ?? []).filter(u => !tookUnit(took, u)), scripts: (state.scripts ?? []).filter(x => !ran.has(x.id)), manualDone: done }
 }
 
+// The notes of the plan's steps for a person, each with its id.
+const NO_NOTE = { why: null, how: [], done: null, check: null }
+export const notesOf = (order: OrderItem[]) =>
+  new Map(order.filter(o => o.kind === "manual" && o.text).map((o, i) => [o, { ...NO_NOTE, ...o.note, id: `M${i + 1}` } as StepNote]))
+// The plan's step for a person with that id: its text and note.
+export const manualStep = (order: OrderItem[], id: string) => [...notesOf(order)].find(([, n]) => n.id === id)?.[0]
+
 export function releaseSteps(state: PipelineState, env: Env, config: DeployConfig): ReleaseStep[] {
   // What this environment runs already (a release before a fix): only the rest goes.
   const { units, scripts, manualDone } = notYetIn(state, env)
@@ -150,15 +165,16 @@ export function releaseSteps(state: PipelineState, env: Env, config: DeployConfi
   const planned: OrderItem[] = state.order?.length ? state.order
     : [...units.map(asUnit), ...scripts.map(x => ({ kind: "script" as const, id: x.id, text: null, envs: [] }))]
   // A fix's new units and scripts, which the plan's order does not know, go after it.
-  const order = [...planned, ...units.filter(u => !planned.some(o => o.kind === "unit" && o.id === u.id)).map(asUnit),
+  const order: OrderItem[] = [...planned, ...units.filter(u => !planned.some(o => o.kind === "unit" && o.id === u.id)).map(asUnit),
     ...scripts.filter(x => !planned.some(o => o.kind === "script" && o.id === x.id)).map(x => ({ kind: "script" as const, id: x.id, text: null, envs: [] }))]
   const simulations: Omit<ReleaseStep, "id">[] = []
   const steps: Omit<ReleaseStep, "id">[] = []
   const released = new Set<string>()
+  const notes = notesOf(order)
   for (const item of order) {
     if (item.envs.length && !item.envs.includes(env)) continue
     // What a person did there for an earlier release is done.
-    if (item.kind === "manual" && item.text && !manualDone.has(item.text)) steps.push(blank("manual", item.text))
+    if (item.kind === "manual" && item.text && !manualDone.has(item.text)) steps.push(blank("manual", item.text, { note: notes.get(item) ?? null }))
     const u = item.kind === "unit" ? units.find(x => x.id === item.id) : undefined
     if (u) steps.push(...unitSteps(u, env, config, state, released))
     const x = item.kind === "script" ? scripts.find(s => s.id === item.id) : undefined
@@ -587,6 +603,32 @@ function check(step: ReleaseStep, ctx: Ctx, ops: Ops): Promise<Patch> {
   return checkDeploy(step, ctx, ops)
 }
 
+// ---------- a person's step the board sees done ----------
+
+const semver = (t: string) => t.match(/^v?(\d+)\.(\d+)\.(\d+)$/)?.slice(1).map(Number) ?? null
+const compare = (a: number[], b: number[]) => a[0]! - b[0]! || a[1]! - b[1]! || a[2]! - b[2]!
+// What the board found that says it is done (its tag exists; its PR merged), or null.
+export async function seenDone(check: ManualCheck, sh: Sh): Promise<string | null> {
+  if ("merged" in check) {
+    const pr = await sh(["gh", "pr", "view", check.merged, "--json", "state", "--jq", ".state"], { timeoutMs: 30_000 })
+    return pr.ok && pr.out.trim() === "MERGED" ? `Done: PR #${prNumber(check.merged)} is merged` : null
+  }
+  const { repo, name, above } = check.tag
+  const tags = await sh(["gh", "api", "--paginate", `repos/${repo}/tags`, "--jq", ".[].name"], { timeoutMs: 30_000 })
+  if (!tags.ok) return null
+  const all = lines(tags.out)
+  const floor = above ? semver(above) : null
+  const found = name ? all.find(t => t === name) : floor ? all.filter(t => semver(t) && compare(semver(t)!, floor) > 0).sort((a, b) => compare(semver(a)!, semver(b)!))[0] : undefined
+  return found ? `Done: ${found} is on ${repo}` : null
+}
+const SEE_MS = 60_000
+// A person's step the board can check, and has not looked at in a while.
+const isToSee = (step: ReleaseStep, now: number) => step.kind === "manual" && !!step.note?.check && (step.status === "pending" || step.status === "waiting") && now - (step.seenAt ?? 0) >= SEE_MS
+async function see(step: ReleaseStep, ops: Ops): Promise<Patch> {
+  const found = await seenDone(step.note!.check!, ops.sh).catch(() => null)
+  return found ? { status: "done", detail: found, seenAt: ops.now() } : { seenAt: ops.now() }
+}
+
 const isOver = (s: ReleaseStep) => s.status === "done" || s.status === "skipped"
 const withStep = (release: Release, id: string, patch: Patch): Release => ({ ...release, steps: release.steps.map(s => (s.id === id ? { ...s, ...patch } : s)) })
 const MOVES_A_TICK = 8
@@ -597,6 +639,11 @@ export async function advanceRelease(release: Release, ctx: Ctx, ops: Ops): Prom
   for (let i = 0; i < MOVES_A_TICK; i++) {
     const step = release.steps.find(s => !isOver(s))
     if (!step) return { release, isDone: true, failed: null }
+    // A person's step already done (its tag exists, its PR merged) goes by itself.
+    if (isToSee(step, ops.now())) {
+      release = withStep(release, step.id, await see(step, ops))
+      if (isOver(release.steps.find(s => s.id === step.id)!)) continue
+    }
     if (step.status === "waiting" || step.status === "failed") return { release, isDone: false, failed: step.status === "failed" ? step.id : null }
     let patch: Patch
     try {

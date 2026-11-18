@@ -5,14 +5,17 @@
 // simulation and its report, what to test. The steps of a release not
 // started yet show what it will do. Each step's icon tells its kind: a merge,
 // a tag, a release PR, a script on the data, something only a person does
-// (it stands out until done), the check at the end.
+// (it stands out until done, with the plan's why and how, and a box to ask
+// the plan's agent about it), the check at the end.
 import { AlertTriangle, Bot, Check, History, SquareTerminal, Undo2, ChevronRight, ClipboardCheck, Database, Download, GitMerge, GitPullRequestArrow, Hand, Tag, type LucideIcon } from "lucide-react"
 import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Shimmer } from "@/components/ai-elements/shimmer"
 import { get } from "@/lib/api"
 import { cn } from "@/lib/utils"
-import type { Release, ReleaseStep, StepKind } from "@server/release"
+import type { Release, ReleaseStep, StepKind, StepNote } from "@server/release"
+import type { Turn } from "@server/pipeline"
+import { Ask } from "./Ask"
 import { Section } from "./kinds"
 import { useStageData } from "./stage-data"
 import { ConflictFix } from "./ConflictFix"
@@ -60,6 +63,26 @@ function Items({ items, isOpen: startsOpen }: { items: string[]; isOpen: boolean
         <ChevronRight size={12} className={cn("transition-transform duration-150", isOpen && "rotate-90")} />{items.length} item{items.length === 1 ? "" : "s"}
       </button>
       {isOpen && <ul className="m-0 flex list-disc flex-col gap-0.5 pl-6 text-[12px] leading-[1.45] text-text-muted">{items.map((t, i) => <li key={i}>{t}</li>)}</ul>}
+    </div>
+  )
+}
+
+// What the plan says of a person's step: why, how, and how you know it is done. Open while it waits for you.
+function NoteView({ note, isOpen: startsOpen }: { note: StepNote; isOpen: boolean }) {
+  const [isOpen, setOpen] = useState(startsOpen)
+  if (!note.why && !note.how.length && !note.done) return null
+  return (
+    <div className="flex flex-col gap-1">
+      <button className="inline-flex items-center gap-1 self-start text-[11.5px] font-semibold text-faint hover:text-text" onClick={() => setOpen(o => !o)}>
+        <ChevronRight size={12} className={cn("transition-transform duration-150", isOpen && "rotate-90")} />Why and how
+      </button>
+      {isOpen && (
+        <div className="flex flex-col gap-1.5 text-[12.5px] leading-[1.5] text-text-muted">
+          {note.why && <p className="m-0">{note.why}</p>}
+          {note.how.length > 0 && <ol className="m-0 flex list-decimal flex-col gap-0.5 pl-5">{note.how.map((h, i) => <li key={i}>{h}</li>)}</ol>}
+          {note.done && <p className="m-0"><span className="font-semibold text-text">Done when</span> {note.done}</p>}
+        </div>
+      )}
     </div>
   )
 }
@@ -168,7 +191,7 @@ function StepDetail({ step, ticketKey }: { step: ReleaseStep; ticketKey: string 
 
 // A step a person does (a store release, a merge only its owner approves) stands out until it is done.
 const isYours = (step: ReleaseStep) => step.kind === "manual" && (step.status === "pending" || step.status === "waiting")
-function StepRow({ step, ticketKey, isAtHand, onAct }: { step: ReleaseStep; ticketKey: string; isAtHand: boolean; onAct: (action: "approve" | "skip", value?: string) => void }) {
+function StepRow({ step, ticketKey, isAtHand, threads, onAct }: { step: ReleaseStep; ticketKey: string; isAtHand: boolean; threads?: Record<string, Turn[]>; onAct: (action: "approve" | "skip", value?: string) => void }) {
   const isFaint = step.status === "pending" || step.status === "skipped"
   const { icon: Icon, name } = kindOf(step)
   return (
@@ -180,6 +203,12 @@ function StepRow({ step, ticketKey, isAtHand, onAct }: { step: ReleaseStep; tick
       </span>
       <StepDetail step={step} ticketKey={ticketKey} />
       <PrBlock step={step} />
+      {step.note && isYours(step) && (
+        <div className="col-start-2 flex min-w-0 flex-col gap-2 pl-[21px]">
+          <NoteView note={step.note} isOpen={step.status === "waiting"} />
+          {threads && <Ask ticketKey={ticketKey} about={`step:${step.note.id}`} turns={threads[`step:${step.note.id}`]} />}
+        </div>
+      )}
       {(step.items.length > 0 || step.report) && (
         <div className="col-start-2 flex min-w-0 flex-col gap-2 pl-[21px]">
           <Items items={step.items} isOpen={step.status === "waiting" && step.kind === "check"} />
@@ -195,12 +224,13 @@ function StepRow({ step, ticketKey, isAtHand, onAct }: { step: ReleaseStep; tick
 
 // The steps of a release, the one at hand with its button; a release not
 // started yet (a preview) shows only what it will do.
-export function ReleaseSteps({ ticketKey, release, after, isPreview = false, onAct }: { ticketKey: string; release: Release; after?: After; isPreview?: boolean; onAct?: (step: string, action: "approve" | "skip", value?: string) => void }) {
+// threads: what was asked about a person's step (none in a job's dialog: no asking there).
+export function ReleaseSteps({ ticketKey, release, after, isPreview = false, threads, onAct }: { ticketKey: string; release: Release; after?: After; isPreview?: boolean; threads?: Record<string, Turn[]>; onAct?: (step: string, action: "approve" | "skip", value?: string) => void }) {
   const atHand = isPreview ? undefined : release.steps.find(s => s.status !== "done" && s.status !== "skipped")
   return (
     <Section title="Deploy" extra={isPreview ? release.steps.length : `${release.steps.filter(s => s.status === "done" || s.status === "skipped").length} of ${release.steps.length}`}>
       <ol className="m-0 list-none p-0">
-        {release.steps.map(s => <StepRow key={s.id} step={s} ticketKey={ticketKey} isAtHand={s.id === atHand?.id} onAct={(action, value) => onAct?.(s.id, action, value)} />)}
+        {release.steps.map(s => <StepRow key={s.id} step={s} ticketKey={ticketKey} isAtHand={s.id === atHand?.id} threads={threads} onAct={(action, value) => onAct?.(s.id, action, value)} />)}
         {after && <AfterRow after={after} />}
       </ol>
     </Section>

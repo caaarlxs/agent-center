@@ -59,7 +59,7 @@ import { forgetPr, prStates, scenarioOf } from "./stage-extras"
 import { conflictsPrompt, parseResolved } from "./conflicts"
 import { canJudge, gatePrompt, parseAdvice } from "./gate"
 import { readdir } from "node:fs/promises"
-import { DEFAULT_CONFIG, tookUnit, advanceRelease, approveStep, releaseSteps, retryStep, rollbackSteps, skipStep, stopRelease, type DeployConfig, type OrderItem, type Ops, type Release, type ReleaseStep } from "./release"
+import { DEFAULT_CONFIG, tookUnit, advanceRelease, approveStep, releaseSteps, retryStep, rollbackSteps, skipStep, stopRelease, type DeployConfig, type OrderItem, type ManualCheck, manualStep, seenDone, type Ops, type Release, type ReleaseStep } from "./release"
 
 export type Stage = "refine" | "plan" | "build" | "review" | "staging" | "test" | "prod" | "smoke"
 const STAGE_NAMES: Stage[] = ["refine", "plan", "build", "review", "staging", "test", "prod", "smoke"]
@@ -193,7 +193,7 @@ const STAGE: Record<AgentStage, StageDef> = {
 1. Lee ${join(STAGES_DIR, "plan.md")} y ${join(STAGES_DIR, "environment.md")}, y síguelos. Si el ticket cambia datos que ya existen, lee también ${join(STAGES_DIR, "scripts.md")}.
 2. El refinamiento aprobado está en ${join(dir, "refine.md")}. El ticket, al día, en ${join(dir, "ticket.md")}: sus comentarios mandan.
 3. Escribe el plan en ${join(dir, "plan.md")} y el resumen en ${join(dir, "plan.summary.md")}.
-4. Escribe al final ${join(dir, "plan.json")}: {"verdict": "ready" | "needs-info", "questions": [...], "units": [{"id": "U1", "repo": "...", "subtasks": ["PP-...", "PP-..."], "branch": "...", "title": "...", "dependsOn": []}], "checklist": [{"id": "C1", "text": "...", "unit": "U1"}], "scripts": [{"id": "S1", "unit": "U1", "title": "...", "command": "...", "when": "...", "envs": ["staging", "prod"]}], "release": [{"step": "manual", "text": "...", "envs": ["staging"]}, {"step": "unit", "id": "U1"}, {"step": "script", "id": "S1"}]}.`,
+4. Escribe al final ${join(dir, "plan.json")}: {"verdict": "ready" | "needs-info", "questions": [...], "units": [{"id": "U1", "repo": "...", "subtasks": ["PP-...", "PP-..."], "branch": "...", "title": "...", "dependsOn": []}], "checklist": [{"id": "C1", "text": "...", "unit": "U1"}], "scripts": [{"id": "S1", "unit": "U1", "title": "...", "command": "...", "when": "...", "envs": ["staging", "prod"]}], "release": [{"step": "manual", "text": "...", "why": "...", "how": ["...", "..."], "done": "...", "check": null, "envs": ["staging"]}, {"step": "unit", "id": "U1"}, {"step": "script", "id": "S1"}]}.`,
   },
   build: {
     verb: "construir", title: "Construcción", done: "construido: PRs abiertas", label: LABELS.built, unlabel: [LABELS.ready, LABELS.planned, LABELS.reviewed], model: "claude-opus-5-5", effort: "high", writes: true,
@@ -307,7 +307,17 @@ const scriptsIn = (v: unknown): PlanScript[] =>
 const orderIn = (v: unknown): OrderItem[] =>
   listOf(v)
     .filter(x => ["unit", "script", "manual"].includes(x?.step) && (x.step === "manual" ? textOf(x.text) : textOf(x.id)))
-    .map(x => ({ kind: x.step, id: textOf(x.id) || null, text: textOf(x.text) || null, envs: ENVS.filter(e => listOf(x.envs).includes(e)) }))
+    .map(x => ({ kind: x.step, id: textOf(x.id) || null, text: textOf(x.text) || null, envs: ENVS.filter(e => listOf(x.envs).includes(e)),
+      ...(x.step === "manual" ? { note: { why: textOf(x.why) || null, how: listOf(x.how).map(textOf).filter(Boolean), done: textOf(x.done) || null, check: checkIn(x.check) } } : {}) }))
+// A check the board can run itself: a tag in a GitHub repo (by name, or any above a version), or a PR merged.
+const REPO = /^[\w.-]+\/[\w.-]+$/
+const VERSION = /^v?\d+\.\d+\.\d+$/
+const PR_URL = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+$/
+export function checkIn(v: any): ManualCheck | null {
+  if (PR_URL.test(textOf(v?.merged))) return { merged: textOf(v.merged) }
+  const repo = textOf(v?.tag?.repo), name = textOf(v?.tag?.name), above = textOf(v?.tag?.above)
+  return REPO.test(repo) && (VERSION.test(name) || VERSION.test(above)) ? { tag: { repo, name: VERSION.test(name) ? name : null, above: VERSION.test(above) ? above : null } } : null
+}
 const resultsIn = (v: unknown): TestResult[] =>
   listOf(v)
     .filter(r => textOf(r?.criterion))
@@ -1323,13 +1333,14 @@ export const noteText = (note: string) => note.split(/\n*Attached (?:image|image
 // ---------- asking the agent about what it left ----------
 
 // About one thing the run left: a question it asked, a test's result, a review's finding.
-const ABOUT_WORDS = { question: "la pregunta", result: "el resultado", finding: "el hallazgo" } as const
-export const isAbout = (about: string) => /^(question|result|finding):[\w.-]{1,40}$/.test(about)
-export const askPrompt = (key: string, about: string, text: string) => {
+// A step: one a person does in the release, as the plan wrote it (its text, for it has no id of its own there).
+const ABOUT_WORDS = { question: "la pregunta", result: "el resultado", finding: "el hallazgo", step: "el paso manual del despliegue" } as const
+export const isAbout = (about: string) => /^(question|result|finding|step):[\w.-]{1,40}$/.test(about)
+export const askPrompt = (key: string, about: string, text: string, step?: string) => {
   const [kind, id] = about.split(":") as [keyof typeof ABOUT_WORDS, string]
   return `${TAG} ${key} · pregunta
 
-Una persona del equipo te pregunta sobre ${ABOUT_WORDS[kind]} ${id} de lo que dejaste: «${text}».
+Una persona del equipo te pregunta sobre ${ABOUT_WORDS[kind]} ${step ? `«${step}»` : id} de lo que dejaste: «${text}».
 
 Contéstale en español, en lenguaje claro y en 150 palabras como máximo. Sin jerga: si usas un término técnico, explícalo en la misma frase. Si no lo sabes, dilo. No cambies nada: solo lee.`
 }
@@ -1345,12 +1356,13 @@ const ASK_MS = 5 * 60_000
 // test's (or check in prod); a question, the run that asked it (the one at hand).
 export function sessionOf(state: Pick<PipelineState, "sessionId" | "history">, about: string): string | null {
   const kind = about.split(":")[0]
-  const by = kind === "finding" ? ["review"] : kind === "result" ? ["test", "smoke"] : null
+  const by = kind === "finding" ? ["review"] : kind === "result" ? ["test", "smoke"] : kind === "step" ? ["plan"] : null
   return by ? ([...(state.history ?? [])].reverse().find(r => by.includes(r.stage) && r.sessionId)?.sessionId ?? null) : state.sessionId
 }
 export function askRefusal(state: Pick<PipelineState, "sessionId" | "status" | "threads" | "history"> | null, about: string, q: string, now = Date.now()): string | null {
   if (!state || !sessionOf(state, about)) return "No run to ask about"
-  if (state.status === "running") return "The agent is still at work: ask once it ends"
+  // A release runs no agent: a step of it can be asked about while it goes.
+  if (state.status === "running" && !about.startsWith("step:")) return "The agent is still at work: ask once it ends"
   if (!isAbout(about) || !q || q.length > 2000) return "Nothing to ask"
   const last = state.threads?.[about]?.at(-1)
   return last && last.a === null && !last.error && now - last.at < ASK_MS ? "It is still answering the last question" : null
@@ -1362,10 +1374,12 @@ export async function askPipeline(key: string, about: string, text: string) {
   const refusal = askRefusal(state, about, q)
   const session = state && sessionOf(state, about)
   if (refusal || !state || !session) throw new Error(refusal ?? "No run to ask about")
+  const step = about.startsWith("step:") ? manualStep((await withOrder(state)).order ?? [], about.slice(5))?.text : undefined
+  if (about.startsWith("step:") && !step) throw new Error("The plan has no such step")
   const turns = state.threads?.[about] ?? []
   const from = turns.at(-1)?.session ?? null
   await save({ ...state, threads: { ...state.threads, [about]: [...turns, { q, a: null, at: Date.now() }] } })
-  const args = ["-p", "--resume", from ?? session, ...(from ? [] : ["--fork-session"]), "--output-format", "json", "--permission-mode", "auto", ...askArgs(state.stage), "--", askPrompt(key, about, q)]
+  const args = ["-p", "--resume", from ?? session, ...(from ? [] : ["--fork-session"]), "--output-format", "json", "--permission-mode", "auto", ...askArgs(state.stage), "--", askPrompt(key, about, q, step ?? undefined)]
   const proc = spawn(await claudeBinary(), args, { cwd: dirOf(key), env: claudeEnv({ AGENT_CENTER_LAUNCH: "1" }), stdio: ["ignore", "pipe", "pipe"] })
   let out = ""
   proc.stdout?.on("data", d => (out += d))
@@ -1605,7 +1619,20 @@ async function previewOf(state: PipelineState | null) {
   const config = await deployConfig()
   // What a person must have done first, for the repos this release takes there.
   const reminders = [...new Set((state.units ?? []).map(u => config.remind?.[u.repo]?.[env]).filter((r): r is string => !!r))]
-  return { env, steps: releaseSteps(await withOrder(state), env, config), reminders }
+  return { env, steps: await Promise.all(releaseSteps(await withOrder(state), env, config).map(seenBefore)), reminders }
+}
+// A person's step the board sees done already shows done before the release starts.
+// What it found stays a minute: the board asks for the preview often.
+const seen = new Map<string, { at: number; found: string | null }>()
+async function seenBefore(step: ReleaseStep): Promise<ReleaseStep> {
+  const check = step.note?.check
+  if (!check) return step
+  const id = JSON.stringify(check)
+  const last = seen.get(id)
+  const isFresh = !!last && Date.now() - last.at < 60_000
+  const found = isFresh ? last!.found : await seenDone(check, releaseOps.sh).catch(() => null)
+  if (!isFresh) seen.set(id, { at: Date.now(), found })
+  return found ? { ...step, status: "done", detail: found } : step
 }
 
 // Your answers, written here: to Jira, and the stage again.

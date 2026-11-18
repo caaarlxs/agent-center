@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import { conflictsPrompt } from "../lib/conflicts"
-import { DEFAULT_CONFIG, setupFor, rollbackSteps, approveStep, deployState, isGated, nextTag, releaseSteps, reportOf, skipStep, retryStep, stopRelease, advanceRelease, type Ops, type Release, rollupOf } from "../lib/release"
+import { DEFAULT_CONFIG, setupFor, rollbackSteps, approveStep, deployState, isGated, nextTag, releaseSteps, reportOf, seenDone, manualStep, skipStep, retryStep, stopRelease, advanceRelease, type Ops, type Release, rollupOf } from "../lib/release"
 
 const unit = (id: string, repo: string, n: number) => ({ id, repo, subtask: null, branch: `feat/${id}`, title: id, dependsOn: [], status: "done" as const, pr: `https://github.com/acme/${repo}/pull/${n}` })
 const units = [unit("U1", "api-service", 7), unit("U2", "web-app", 8), unit("U3", "mobile-app", 9)]
@@ -41,6 +41,38 @@ describe("releaseSteps", () => {
     const steps = releaseSteps(state({ units: twice, scripts: [{ ...script, envs: ["staging"] }] }), "prod", config)
     expect(steps.map(s => [s.kind, s.repo])).toEqual([["tag", "api-service"], ["promote", "web-app"], ["manual", "mobile-app"]])
     expect(steps[1]!.value).toBe("prod")
+  })
+})
+
+describe("a person's step", () => {
+  const why = { why: "Meta approves every template", how: ["Open WhatsApp Manager", "Send the three"], done: "Meta lists them", check: null }
+  const order = [{ kind: "manual", id: null, text: "Ask Meta", envs: ["staging"], note: why }, { kind: "unit", id: "U1", text: null, envs: [] }, { kind: "manual", id: null, text: "Tell sales", envs: ["prod"] }] as never
+  it("carries the plan's note, with an id by its place among the person's steps, the same in each environment", () => {
+    expect(releaseSteps(state({ order, scripts: [] }), "staging", config)[0]!.note).toEqual({ id: "M1", ...why })
+    expect(releaseSteps(state({ order, scripts: [] }), "prod", config).find(s => s.kind === "manual")!.note).toEqual({ id: "M2", why: null, how: [], done: null, check: null })
+    expect(manualStep(order, "M2")?.text).toBe("Tell sales")
+  })
+  it("is seen done by its tag (that one, or the lowest above a version) or by its PR merged", async () => {
+    const { ops } = fake({ "repos/acme/lib/tags": "v1.42.0\nv1.41.0\nv1.40.1", "pr view https://github.com/acme/api/pull/3": "MERGED", "pr view https://github.com/acme/api/pull/4": "OPEN" })
+    expect(await seenDone({ tag: { repo: "acme/lib", name: null, above: "v1.40.1" } }, ops.sh)).toBe("Done: v1.41.0 is on acme/lib")
+    expect(await seenDone({ tag: { repo: "acme/lib", name: "v1.43.0", above: null } }, ops.sh)).toBeNull()
+    expect(await seenDone({ tag: { repo: "acme/lib", name: null, above: "v1.42.0" } }, ops.sh)).toBeNull()
+    expect(await seenDone({ merged: "https://github.com/acme/api/pull/3" }, ops.sh)).toBe("Done: PR #3 is merged")
+    expect(await seenDone({ merged: "https://github.com/acme/api/pull/4" }, ops.sh)).toBeNull()
+  })
+  it("goes by itself once the board sees it done; until then it waits, looked at again a minute later", async () => {
+    const check = { ...why, check: { merged: "https://github.com/acme/api/pull/3" } }
+    const one = [{ kind: "manual", id: null, text: "Merge the lib", envs: [], note: check }] as never
+    const steps = releaseSteps(state({ order: one, units: [], scripts: [] }), "staging", config)
+    const open = fake({ "pull/3": "OPEN" })
+    let r = await advanceRelease({ env: "staging", steps }, ctx, open.ops)
+    expect(r.release.steps[0]).toMatchObject({ status: "waiting", seenAt: 2_000_000 })
+    r = await advanceRelease(r.release, ctx, open.ops)
+    expect(open.calls.filter(c => c.includes("pull/3"))).toHaveLength(1)
+    const merged = fake({ "pull/3": "MERGED" })
+    r = await advanceRelease(r.release, ctx, { ...merged.ops, now: () => 2_060_000 })
+    expect(r.release.steps[0]).toMatchObject({ status: "done", detail: "Done: PR #3 is merged" })
+    expect(r.isDone).toBe(true)
   })
 })
 

@@ -370,8 +370,8 @@ export const afterOf = (env: Stage, state: PipelineState): After => {
 }
 
 // A release: its steps in order, the one at hand with its button (live: onStep acts on it).
-export function ReleasePanel({ ticketKey, release, after, isPreview, onStep }: { ticketKey: string; release: Release; after: After; isPreview: boolean; onStep?: (step: string, action: "approve" | "skip", value?: string) => void }) {
-  return <ReleaseSteps ticketKey={ticketKey} release={release} after={after} isPreview={isPreview} onAct={onStep} />
+export function ReleasePanel({ ticketKey, release, after, isPreview, threads, onStep }: { ticketKey: string; release: Release; after: After; isPreview: boolean; threads?: Record<string, Turn[]>; onStep?: (step: string, action: "approve" | "skip", value?: string) => void }) {
+  return <ReleaseSteps ticketKey={ticketKey} release={release} after={after} isPreview={isPreview} threads={threads} onAct={onStep} />
 }
 
 // What a test (in staging) or a check (in prod) found: a cell a criterion, then
@@ -421,7 +421,7 @@ export function TestPanel({ state, release }: { state: PipelineState; release: R
   const canCheck = state.status === "ready" && !isJob(state)
   return (
     <div className="flex flex-col gap-3">
-      {release && <Details label={`Deploy · ${release.steps.filter(s => s.status === "done" || s.status === "skipped").length} of ${release.steps.length}`}><ReleaseSteps ticketKey={state.key} release={release} after={afterOf(release.env, state)} /></Details>}
+      {release && <Details label={`Deploy · ${release.steps.filter(s => s.status === "done" || s.status === "skipped").length} of ${release.steps.length}`}><ReleaseSteps ticketKey={state.key} release={release} after={afterOf(release.env, state)} threads={isJob(state) ? undefined : (state.threads ?? {})} /></Details>}
       {all.length > 3 && (
         <div className="flex flex-wrap gap-[3px]">
           {all.map(r => <button key={r.id} title={`${r.id}: ${r.criterion}`} aria-label={`${r.id}, ${r.status}`} className={cn("size-[18px] rounded-[4px] transition-[filter] duration-100 hover:brightness-150", CELL[r.status])}

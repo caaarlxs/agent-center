@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { isStuck, releasedUnits, retestOf, sessionOf, shippedWith, unitsNow, withUnits, testedIn, askPrompt, askRefusal, fixesNow, isAbout, testFix, unshipped, blocking, checkedByHand, checkedIn, isAdopted, toFixNow, MARK, answeredAfter, answersComment, argsFor, parseResult, pipelineKeyOf, stageToRun, unbuilt, withRun, withAnswers, earlierResults, closingOf, pipelineFile, questionsComment, snapshotOf, prodWarning, autoNext, linksFigma, impactRepos } from "../lib/pipeline"
+import { isStuck, releasedUnits, retestOf, sessionOf, shippedWith, unitsNow, withUnits, testedIn, askPrompt, askRefusal, fixesNow, isAbout, testFix, unshipped, blocking, checkedByHand, checkedIn, isAdopted, toFixNow, MARK, answeredAfter, answersComment, argsFor, parseResult, pipelineKeyOf, stageToRun, unbuilt, withRun, withAnswers, earlierResults, closingOf, pipelineFile, questionsComment, snapshotOf, prodWarning, autoNext, linksFigma, impactRepos, checkIn } from "../lib/pipeline"
 
 const questions = [
   { id: "Q1", question: "¿Cuál es el copy?", proposal: "El del ticket" },
@@ -405,7 +405,27 @@ describe("asking the agent about what it left", () => {
     expect(isAbout("question:Q2")).toBe(true)
     expect(isAbout("finding:F1")).toBe(true)
     expect(isAbout("result:CA3")).toBe(true)
+    expect(isAbout("step:M2")).toBe(true)
     expect(isAbout("plan")).toBe(false)
+  })
+})
+
+describe("asking about a person's step", () => {
+  it("names the step by its text, asks the plan's run, and goes while the release runs", () => {
+    expect(askPrompt("PP-1", "step:M1", "¿Dónde?", "Pedir a Meta las plantillas")).toContain("sobre el paso manual del despliegue «Pedir a Meta las plantillas»")
+    const history = [{ stage: "plan", sessionId: "p" }, { stage: "review", sessionId: "r" }]
+    expect(sessionOf({ sessionId: "s", history } as never, "step:M1")).toBe("p")
+    expect(askRefusal({ sessionId: "s", status: "running", stage: "staging", history } as never, "step:M1", "¿Dónde?")).toBeNull()
+  })
+})
+
+describe("checkIn", () => {
+  it("keeps a tag in a GitHub repo (by name, or above a version) or a PR to see merged; else nothing", () => {
+    expect(checkIn({ tag: { repo: "deale-org/deale-core-lib", above: "v1.40.1" } })).toEqual({ tag: { repo: "deale-org/deale-core-lib", name: null, above: "v1.40.1" } })
+    expect(checkIn({ merged: "https://github.com/deale-org/user-service/pull/326" })).toEqual({ merged: "https://github.com/deale-org/user-service/pull/326" })
+    expect(checkIn({ tag: { repo: "deale-core-lib", name: "v1.41.0" } })).toBeNull()
+    expect(checkIn({ tag: { repo: "a/b", name: "latest" } })).toBeNull()
+    expect(checkIn(null)).toBeNull()
   })
 })
 

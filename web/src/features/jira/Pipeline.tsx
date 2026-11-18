@@ -382,7 +382,7 @@ function StagePanel({ stage, state, preview, all, onRun, onStep }: { stage: Stag
   const release = releaseShown(state, preview, stage)
   // The column's agent stage at work, or done: its findings, the deploy folded.
   if (nodeOf(state.stage) === stage && state.stage !== stage) return state.status === "running" ? <AtWork state={state} /> : <TestPanel state={state} release={release} />
-  if (isRelease(stage) && release) return <ReleasePanel ticketKey={state.key} release={release} after={afterOf(stage, state)} isPreview={release === preview} onStep={release === state.release && state.status === "running" ? onStep : undefined} />
+  if (isRelease(stage) && release) return <ReleasePanel ticketKey={state.key} release={release} after={afterOf(stage, state)} isPreview={release === preview} threads={isJob(state) ? undefined : (state.threads ?? {})} onStep={release === state.release && state.status === "running" ? onStep : undefined} />
   if (i > at) return <p className="m-0 text-[13px] text-faint">Starts after {STAGES[i - 1]}.</p>
   if (i === at && state.status === "running") return <AtWork state={state} />
   if (stage === "refine") return <RefinePanel state={state} />
