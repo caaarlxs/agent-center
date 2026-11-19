@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { isStuck, releasedUnits, retestOf, sessionOf, shippedWith, unitsNow, withUnits, testedIn, askPrompt, askRefusal, fixesNow, isAbout, testFix, unshipped, blocking, checkedByHand, checkedIn, isAdopted, toFixNow, MARK, answeredAfter, answersComment, argsFor, parseResult, pipelineKeyOf, stageToRun, unbuilt, withRun, withAnswers, earlierResults, closingOf, pipelineFile, questionsComment, snapshotOf, prodWarning, autoNext, linksFigma, impactRepos, checkIn } from "../lib/pipeline"
+import { isStuck, releasedUnits, retestOf, sessionOf, shippedWith, unitsNow, withUnits, testedIn, askPrompt, askRefusal, fixesNow, isAbout, testFix, unshipped, blocking, checkedByHand, checkedIn, isAdopted, toFixNow, MARK, answeredAfter, answersComment, argsFor, parseResult, pipelineKeyOf, stageToRun, unbuilt, withRun, withAnswers, earlierResults, closingOf, pipelineFile, questionsComment, snapshotOf, prodWarning, autoNext, linksFigma, impactRepos, checkIn, groupedResults, groupPrompt } from "../lib/pipeline"
 
 const questions = [
   { id: "Q1", question: "¿Cuál es el copy?", proposal: "El del ticket" },
@@ -591,5 +591,27 @@ describe("pipelineFile", () => {
   it("reads only a document of the ticket's own folder, never its state nor anything deeper", async () => {
     for (const name of ["../PP-2/plan.md", "runs/1-plan.md", "state.json", "plan.sh", ""]) await expect(pipelineFile("PP-1", name)).rejects.toThrow()
     await expect(pipelineFile("not a key", "plan.md")).rejects.toThrow()
+  })
+})
+
+describe("what a test could not try, by why", () => {
+  it("keeps why a criterion went untried and what lets it be tried, only on one that went untried", () => {
+    const results = parseResult(JSON.stringify({ verdict: "ready", questions: [], results: [
+      { id: "T1", criterion: "a", status: "untested", evidence: "e", blocker: " La web no está en staging ", unblock: "Desplegar la web" },
+      { id: "T2", criterion: "b", status: "pass", evidence: "e", blocker: "nada" },
+      { id: "T3", criterion: "c", status: "untested", evidence: "e" },
+    ] }), "test").results
+    expect(results.map(r => [r.id, r.blocker, r.unblock])).toEqual([["T1", "La web no está en staging", "Desplegar la web"], ["T2", undefined, undefined], ["T3", undefined, undefined]])
+  })
+  it("gives each untried criterion without a reason its group's, never one that has its own or passed", () => {
+    const r = (id: string, status: "pass" | "untested", blocker?: string) => ({ id, criterion: id, status, evidence: "", ...(blocker ? { blocker } : {}) })
+    const groups = [{ blocker: "Sin logs", unblock: "Dar lectura de logs", ids: ["T1", "T2", "T3"] }]
+    expect(groupedResults([r("T1", "untested"), r("T2", "untested", "Propio"), r("T3", "pass")], groups).map(x => [x.id, x.blocker ?? null, x.unblock ?? null]))
+      .toEqual([["T1", "Sin logs", "Dar lectura de logs"], ["T2", "Propio", null], ["T3", null, null]])
+  })
+  it("asks for few groups, each with its reason and what unblocks it", () => {
+    const text = groupPrompt("PP-1", "/d/PP-1", "test", ["T1", "T3"], "/d/PP-1/test.groups.json")
+    expect(text).toContain("dejó sin probar estos criterios: T1, T3")
+    expect(text).toContain('{"groups": [{"blocker": "…", "unblock": "…", "ids": ["…"]}]}')
   })
 })

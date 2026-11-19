@@ -2,7 +2,7 @@
 // the refinement's decisions; the plan's PRs, its scripts and its to-dos; the
 // build's PRs; the review's findings; a release's steps; the test's criteria,
 // each with its evidence. One line a thing, a hairline between them.
-import { AlertTriangle, Check, CircleHelp, Database, FileText, GitPullRequestArrow, Hand, Play, Send, UserRound } from "lucide-react"
+import { AlertTriangle, Check, ChevronRight, CircleHelp, Database, FileText, GitPullRequestArrow, Hand, Play, Send, UserRound } from "lucide-react"
 import { type ReactNode, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -383,13 +383,11 @@ const RESULT_MARK = {
   fail: <AlertTriangle size={13} className="text-bad" />,
   untested: <CircleHelp size={13} className="text-ask" />,
 }
-const CELL = { pass: "bg-work-soft shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--work)_35%,transparent)]", fail: "bg-bad-soft shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--bad)_50%,transparent)]", untested: "bg-ask-soft shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--ask)_45%,transparent)]" }
-const rowId = (key: string, id: string) => `result-${key}-${id}`
 
 function ResultRow({ result: r, ticketKey, canCheck, isCarried, turns }: { result: TestResult; ticketKey: string; canCheck: boolean; isCarried: boolean; turns?: Turn[] }) {
   const [isOpen, setOpen] = useState(r.status !== "pass" && !isCarried)
   return (
-    <li id={rowId(ticketKey, r.id)} className={cn("scroll-mt-4 border-t border-line first:border-t-0", isCarried && "opacity-45")}>
+    <li className={cn("border-t border-line first:border-t-0", isCarried && "opacity-45")}>
       <div className="grid grid-cols-[14px_minmax(0,1fr)_auto] items-baseline gap-x-2.5 py-2">
         <span className="translate-y-[2px]">{RESULT_MARK[r.status]}</span>
         <button className="text-left text-[13px] leading-[1.45]" onClick={() => setOpen(o => !o)} aria-expanded={isOpen}>{r.criterion}</button>
@@ -413,28 +411,78 @@ function ResultRow({ result: r, ticketKey, canCheck, isCarried, turns }: { resul
   )
 }
 
-const RESULT_ORDER: TestResult["status"][] = ["fail", "untested", "pass"]
+// What a test left, for a person to read at once: what fails first; then what it could not
+// try, in groups by why (each with what lets it be tried, and its criteria folded); then what
+// passes, folded; and what earlier tests left, folded.
+const UNKNOWN = "No reason given"
+const byBlocker = (results: TestResult[]) => {
+  const groups = new Map<string, TestResult[]>()
+  for (const r of results) groups.set(r.blocker ?? UNKNOWN, [...(groups.get(r.blocker ?? UNKNOWN) ?? []), r])
+  return [...groups].sort((a, b) => b[1].length - a[1].length)
+}
 export function TestPanel({ state, release }: { state: PipelineState; release: Release | null }) {
-  const own = [...(state.results ?? [])].sort((a, b) => RESULT_ORDER.indexOf(a.status) - RESULT_ORDER.indexOf(b.status))
+  const own = state.results ?? []
   const carried = carriedResults(state)
-  const all = [...own, ...carried]
   const canCheck = state.status === "ready" && !isJob(state)
+  const of = (status: TestResult["status"]) => own.filter(r => r.status === status)
+  const row = (r: TestResult) => <ResultRow key={r.id} result={r} ticketKey={state.key} canCheck={canCheck} isCarried={false} turns={state.threads?.[`result:${r.id}`]} />
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-4">
       {release && <Details label={`Deploy · ${release.steps.filter(s => s.status === "done" || s.status === "skipped").length} of ${release.steps.length}`}><ReleaseSteps ticketKey={state.key} release={release} after={afterOf(release.env, state)} threads={isJob(state) ? undefined : (state.threads ?? {})} /></Details>}
-      {all.length > 3 && (
-        <div className="flex flex-wrap gap-[3px]">
-          {all.map(r => <button key={r.id} title={`${r.id}: ${r.criterion}`} aria-label={`${r.id}, ${r.status}`} className={cn("size-[18px] rounded-[4px] transition-[filter] duration-100 hover:brightness-150", CELL[r.status])}
-            onClick={() => document.getElementById(rowId(state.key, r.id))?.scrollIntoView({ block: "nearest", behavior: "smooth" })} />)}
-        </div>
+      {own.length > 0 && <ResultCount results={own} />}
+      {of("fail").length > 0 && (
+        <section className="flex flex-col gap-1">
+          <h4 className="m-0 text-[13px] font-semibold text-bad">Fails · {of("fail").length}</h4>
+          <ol className="m-0 list-none p-0">{of("fail").map(row)}</ol>
+        </section>
       )}
-      {all.length > 0 && (
-        <ol className="m-0 list-none p-0">
-          {own.map(r => <ResultRow key={r.id} result={r} ticketKey={state.key} canCheck={canCheck} isCarried={false} turns={state.threads?.[`result:${r.id}`]} />)}
-          {carried.map(r => <ResultRow key={r.id} result={r} ticketKey={state.key} canCheck={false} isCarried />)}
-        </ol>
+      {of("untested").length > 0 && (
+        <section className="flex flex-col gap-2">
+          <h4 className="m-0 text-[13px] font-semibold text-ask">Not tried · {of("untested").length}</h4>
+          {byBlocker(of("untested")).map(([blocker, results]) => <UntriedGroup key={blocker} ticketKey={state.key} blocker={blocker} results={results} canCheck={canCheck} row={row} />)}
+        </section>
       )}
+      {of("pass").length > 0 && <Details label={`Passes · ${of("pass").length}`}><ol className="m-0 list-none p-0">{of("pass").map(row)}</ol></Details>}
+      {carried.length > 0 && <Details label={`From earlier tests · ${carried.length}`}><ol className="m-0 list-none p-0">{carried.map(r => <ResultRow key={r.id} result={r} ticketKey={state.key} canCheck={false} isCarried />)}</ol></Details>}
       <TestData />
+    </div>
+  )
+}
+
+// The count in a line: how many pass, fail and went untried.
+function ResultCount({ results }: { results: TestResult[] }) {
+  const n = (status: TestResult["status"]) => results.filter(r => r.status === status).length
+  return (
+    <p className="m-0 text-[13px] text-text-muted">
+      <span className="font-semibold text-text">{results.length} criteria</span> · {n("pass")} pass · <span className={cn(n("fail") > 0 && "font-semibold text-bad")}>{n("fail")} fail</span> · {n("untested")} not tried
+    </p>
+  )
+}
+
+// Criteria that went untried for one reason: the reason, what lets them be tried, and them, folded.
+// "Checked by hand" takes them all at once (it asks twice).
+function UntriedGroup({ ticketKey, blocker, results, canCheck, row }: { ticketKey: string; blocker: string; results: TestResult[]; canCheck: boolean; row: (r: TestResult) => ReactNode }) {
+  const [isOpen, setOpen] = useState(false)
+  const [isAsking, confirm] = useConfirm()
+  const unblock = results.find(r => r.unblock)?.unblock
+  return (
+    <div className="flex flex-col rounded-[8px] border border-line px-3 py-2">
+      <div className="flex items-baseline gap-3">
+        <button className="flex min-w-0 flex-1 items-baseline gap-1.5 text-left" onClick={() => setOpen(o => !o)} aria-expanded={isOpen}>
+          <ChevronRight size={12} className={cn("shrink-0 translate-y-[1px] text-faint transition-transform duration-150", isOpen && "rotate-90")} />
+          <span className="flex min-w-0 flex-col gap-0.5">
+            <span className="text-[13px] font-semibold text-text">{blocker} <span className="font-normal text-text-muted">· {results.length}</span></span>
+            {unblock && <span className="text-xs text-text-muted">{unblock}</span>}
+          </span>
+        </button>
+        {canCheck && (
+          <button className={cn("shrink-0 text-xs font-semibold", isAsking ? "text-bad" : "text-faint hover:text-text")}
+            onClick={() => confirm(() => void act("/api/pipeline/checked", { key: ticketKey, ids: results.map(r => r.id) }, "Checked by hand").then(ok => ok && changed()))}>
+            {isAsking ? `Sure? ${results.length} checked by hand` : "All checked by hand"}
+          </button>
+        )}
+      </div>
+      {isOpen && <ol className="m-0 mt-1 list-none p-0">{results.map(row)}</ol>}
     </div>
   )
 }

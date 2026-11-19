@@ -87,7 +87,8 @@ export type Finding = { id: string; unit: string | null; severity: Severity; fil
 // What a test (in staging) or a smoke check (in prod) found of each criterion.
 // untested: the test could not try it (no data, no device), which is no failure: a person checks it by hand.
 // summary: what it tried, expected and found, in plain words; evidence: the technical detail.
-export type TestResult = { id: string; criterion: string; status: "pass" | "fail" | "untested"; evidence: string; summary?: string; files?: EvidenceFile[]; ticket?: string | null /* the ticket of the scope its criterion is of */ }
+// blocker: why a criterion went untried, in words shared by every criterion it stops; unblock: what lets it be tried.
+export type TestResult = { id: string; criterion: string; status: "pass" | "fail" | "untested"; evidence: string; summary?: string; files?: EvidenceFile[]; ticket?: string | null /* the ticket of the scope its criterion is of */; blocker?: string; unblock?: string }
 // A rule of the team's context (its repo) that the ticket makes untrue: the file and the words.
 // quote: the words of today it makes untrue; null for a new code rule, which says what it proposes instead.
 export type ContextImpact = { file: string; quote: string | null; why: string; proposal: string | null }
@@ -324,7 +325,9 @@ export function checkIn(v: any): ManualCheck | null {
 const resultsIn = (v: unknown): TestResult[] =>
   listOf(v)
     .filter(r => textOf(r?.criterion))
-    .map((r, i) => ({ id: String(r.id ?? `T${i + 1}`), criterion: textOf(r.criterion), status: r.status === "pass" || r.status === "untested" ? (r.status as TestResult["status"]) : ("fail" as const), evidence: textOf(r.evidence), ...(textOf(r.summary) ? { summary: textOf(r.summary) } : {}), ...(/^[A-Z][A-Z0-9]+-\d+$/.test(textOf(r.ticket)) ? { ticket: textOf(r.ticket) } : {}), files: filesIn(r.files) }))
+    .map((r, i) => ({ id: String(r.id ?? `T${i + 1}`), criterion: textOf(r.criterion), status: r.status === "pass" || r.status === "untested" ? (r.status as TestResult["status"]) : ("fail" as const), evidence: textOf(r.evidence), ...(textOf(r.summary) ? { summary: textOf(r.summary) } : {}), ...(/^[A-Z][A-Z0-9]+-\d+$/.test(textOf(r.ticket)) ? { ticket: textOf(r.ticket) } : {}), files: filesIn(r.files), ...blockerOf(r) }))
+// Why an untried criterion went untried, and what lets it be tried: only on one that went untried.
+const blockerOf = (r: any) => (r?.status === "untested" && textOf(r.blocker) ? { blocker: textOf(r.blocker), ...(textOf(r.unblock) ? { unblock: textOf(r.unblock) } : {}) } : {})
 // Only with the words it makes untrue: else it is no impact at all.
 const impactIn = (v: unknown): ContextImpact[] =>
   listOf(v).filter(x => textOf(x?.file) && (textOf(x?.quote) || textOf(x?.proposal)))
@@ -858,6 +861,8 @@ async function finish(key: string) {
   if (state.stage === "smoke" && !failing(done.results).length && !untried(done.results).length) void closePipeline(key).catch(err => console.error(`close ${key}:`, err))
   // Saved first: it explains the findings this review left.
   if (state.stage === "review") void explainFindings(key).catch(err => console.error(`explain ${key}:`, err))
+  // A test or a check that left criteria untried without saying why: grouped by why.
+  if (state.stage === "test" || state.stage === "smoke") void groupUntried(key).catch(err => console.error(`group ${key}:`, err))
   // A plan done: the guide to what a person does by hand, from it.
   if (state.stage === "plan") void writeYourPart(key).catch(err => console.error(`your part ${key}:`, err))
 }
@@ -1026,6 +1031,50 @@ export async function chatOnPart(key: string, step: string | null, section: numb
   const dir = dirOf(key)
   return { dir, prompt: chatPrompt(key, dir, chosen ?? { step: id, title: plan!.text.length > 80 ? `${plan!.text.slice(0, 79)}…` : plan!.text }, plan?.text ?? null) }
 }
+
+// ---------- what a test could not try, by why ----------
+
+// A test (or a check in prod) from before its criteria said why they went untried: an agent puts
+// them in groups, each with the reason they share and what lets them be tried.
+const grouping = new Set<string>()
+export const groupPrompt = (key: string, dir: string, stage: "test" | "smoke", ids: string[], out: string) => `${TAG} ${key} · agrupar lo no probado
+
+La ${stage === "test" ? "prueba en staging" : "comprobación en prod"} de ${key} dejó sin probar estos criterios: ${ids.join(", ")}. Su evidencia está en ${join(dir, `${stage}.md`)} y en ${join(dir, "state.json")} ("results").
+
+Agrúpalos por el motivo por el que no se pudieron probar. Los que comparten motivo van juntos. Pocos grupos: los que de verdad son distintos.
+
+Escribe ${out}: {"groups": [{"blocker": "…", "unblock": "…", "ids": ["…"]}]}
+- blocker: el motivo, en una frase corta para una persona del equipo ("La pantalla nueva de la web no está en staging").
+- unblock: lo que lo desbloquea, en una frase, como una acción ("Desplegar la web en staging", "Dar al agente de test lectura de los logs de staging").
+- Cada id va en un solo grupo.
+
+Español claro, sin jerga ni nombres de ficheros. Solo lee: no cambies nada más que ${out}.`
+export async function groupUntried(key: string) {
+  const state = await stateOf(key)
+  const stage = state?.stage === "test" || state?.stage === "smoke" ? state.stage : null
+  const ids = (state?.results ?? []).filter(r => r.status === "untested" && !r.blocker).map(r => r.id)
+  if (!state || !stage || !ids.length || grouping.has(key)) return
+  grouping.add(key)
+  const dir = dirOf(key)
+  const out = join(dir, `${stage}.groups.json`)
+  await rm(out, { force: true })
+  const args = ["-p", "--permission-mode", "auto", "--setting-sources", "project,local", "--strict-mcp-config", "--model", "claude-sonnet-5-5", "--effort", "low",
+    "--disallowedTools", ...NEVER, "Bash", "Edit(/" + join(ROOT, "repos") + "/**)", "--", groupPrompt(key, dir, stage, ids, out)]
+  const proc = spawn(await claudeBinary(), args, { cwd: dir, env: claudeEnv({ AGENT_CENTER_LAUNCH: "1" }), stdio: "ignore" })
+  proc.on("exit", () => void withGroups(key, out).finally(() => grouping.delete(key)))
+}
+const withGroups = (key: string, path: string) => locked(key, async () => {
+  const groups = listOf(jsonOf(await readText(path))?.groups)
+  const state = await stateOf(key)
+  if (!groups.length || !state?.results) return
+  await save({ ...state, results: groupedResults(state.results, groups) })
+})
+// Each untried criterion without a reason takes its group's (a test run since keeps its own).
+export const groupedResults = (results: TestResult[], groups: { blocker?: unknown; unblock?: unknown; ids?: unknown }[]) =>
+  results.map(r => {
+    const g = groups.find(g => listOf(g.ids).includes(r.id) && textOf(g.blocker))
+    return r.status !== "untested" || r.blocker || !g ? r : { ...r, blocker: textOf(g.blocker), ...(textOf(g.unblock) ? { unblock: textOf(g.unblock) } : {}) }
+  })
 
 // ---------- the team's code debt (debt.ts) ----------
 
