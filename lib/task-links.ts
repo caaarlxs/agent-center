@@ -1,6 +1,8 @@
 // Which session created each organizer task. Tasks added since the session tag
 // exists carry it; older ones are found by the `organizer.py add "…"` command
-// Claude ran in a conversation. Scans only what each transcript added since
+// Claude ran in a conversation. A session that Start fresh continued hands its
+// tasks to the new one (its first message names the old transcript,
+// lib/handoff.ts freshPrompt), so they follow the work. Scans only what each transcript added since
 // the last pass, and only the conversations of the last weeks: reading every
 // transcript on the Mac (gigabytes, sessions archived long ago) cost the
 // server its memory.
@@ -16,9 +18,22 @@ const ADD_RE = /organizer\.py\s+add\s+(?:--[\w-]+(?:\s+[^\s"']+)?\s+)*(["'])((?:
 const RECENT_MS = 30 * 86_400_000
 const scans = new Map<string, { offset: number }>()
 const links = new Map<string, { session: string; at: number }>() // clean text → newest session to add it
+const continued = new Map<string, string>() // old session → the one Start fresh started from it
+
+const FRESH = "This picks up the work of the session"
+
+/** The session a Start fresh message continues: the transcript it names. Null for any other line. */
+export function continuedFrom(row: any): string | null {
+  if (row?.type !== "user" || row.isSidechain) return null
+  const content = row.message?.content
+  const text = typeof content === "string" ? content : Array.isArray(content) ? content.map((b: any) => (b?.type === "text" ? b.text : "")).join("") : ""
+  if (!text.startsWith(FRESH)) return null
+  return text.match(/The full conversation is in \S*?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl/)?.[1] ?? null
+}
 
 function ingest(sessionId: string, chunk: string, mtimeMs: number) {
   for (const line of chunk.split("\n")) {
+    if (line.includes(FRESH)) noteContinued(sessionId, line)
     if (!line.includes("organizer.py add")) continue
     let row: any
     try {
@@ -63,7 +78,23 @@ export function refreshLinks() {
   return refreshing
 }
 
-// The session a task belongs to: its own tag, else the conversation that added it.
+function noteContinued(sessionId: string, line: string) {
+  try {
+    const old = continuedFrom(JSON.parse(line))
+    if (old && old !== sessionId) continued.set(old, sessionId)
+  } catch {}
+}
+
+/** The session that carries `id`'s work now: the newest Start fresh from it, if any. */
+export function latestOf(id: string, next: ReadonlyMap<string, string> = continued) {
+  const seen = new Set([id])
+  while (next.has(id) && !seen.has(next.get(id)!)) seen.add((id = next.get(id)!))
+  return id
+}
+
+// The session a task belongs to: its own tag, else the conversation that added
+// it; carried on to the session Start fresh continued it in.
 export function sessionOf(task: { text: string; session: string | null }) {
-  return task.session ?? links.get(task.text)?.session ?? null
+  const id = task.session ?? links.get(task.text)?.session ?? null
+  return id && latestOf(id)
 }

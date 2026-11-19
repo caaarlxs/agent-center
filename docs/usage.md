@@ -84,7 +84,7 @@ All costs are at API prices. They show how fast you use your plan; they are not 
     `/compact`. The same model writes a summary, for a few cents.
   - When it has been idle for more than an hour and holds 200K tokens or more, its cache has
     expired: the next message writes all of it again. **Start fresh** starts a new session from a
-    handoff note instead, without waking the old one.
+    handoff note instead, without waking the old one. The old session's tasks go with it.
 
 ## Keyboard
 
