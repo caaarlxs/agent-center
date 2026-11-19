@@ -60,7 +60,7 @@ import { conflictsPrompt, parseResolved } from "./conflicts"
 import { canJudge, gatePrompt, parseAdvice } from "./gate"
 import { chatPrompt, partIn, partPrompt, stepsForYou, stepsHash, type YourPart } from "./your-part"
 import { readdir } from "node:fs/promises"
-import { DEFAULT_CONFIG, tookUnit, advanceRelease, approveStep, releaseSteps, retryStep, rollbackSteps, skipStep, stopRelease, type DeployConfig, type OrderItem, type ManualCheck, manualStep, seenDone, type Ops, type Release, type ReleaseStep } from "./release"
+import { DEFAULT_CONFIG, tookUnit, advanceRelease, approveStep, releaseSteps, retryStep, rollbackSteps, skipStep, unskipStep, laterIn, itemOf, itemsOf, stopRelease, type DeployConfig, type OrderItem, type ManualCheck, manualStep, seenDone, type Ops, type Release, type ReleaseStep } from "./release"
 
 export type Stage = "refine" | "plan" | "build" | "review" | "staging" | "test" | "prod" | "smoke"
 const STAGE_NAMES: Stage[] = ["refine", "plan", "build", "review", "staging", "test", "prod", "smoke"]
@@ -104,6 +104,7 @@ export type Run = { n: number; stage: Stage; sessionId: string | null; startedAt
 export type News = { comments: { author: string; at: number; body: string }[] }
 export type PipelineState = {
   key: string
+  leftOut?: Partial<Record<Env, string[]>> // what you left out of an environment for good, by item (lib/release.ts itemOf)
   summary?: string // the ticket's title, when the run started
   stage: Stage
   status: PipelineStatus
@@ -226,6 +227,7 @@ const STAGE: Record<AgentStage, StageDef> = {
 2. Los criterios de aceptación y el plan de verificación están en ${join(dir, "refine.md")}; el plan, en ${join(dir, "plan.md")}; lo desplegado, en ${join(dir, "build.json")}.
 3. Solo staging. Nunca prod: ni con STAGE=prod, ni con sus tablas, ni con sus URLs.
    Si existe ${join(dir, "retest.json")}, este test sigue a un arreglo o a un cambio: sigue la sección "Después de un arreglo o un cambio" de test.md.
+   Si existe ${join(dir, "not-deployed.md")}, lo que lista no está en staging: sus criterios van como untested, nunca como fail.
 4. Escribe el informe en ${join(dir, "test.md")} y el resumen en ${join(dir, "test.summary.md")}.
 5. Escribe al final ${join(dir, "test.json")}: {"verdict": "ready" | "needs-info", "questions": [...], "results": [{"id": "T1", "criterion": "...", "status": "pass" | "fail" | "untested", "summary": "...", "evidence": "...", "files": [{"path": "evidence/T1-desktop.png", "caption": "..."}]}]}. Guarda la evidencia de cada criterio en ${join(dir, "evidence")}.`,
   },
@@ -234,7 +236,7 @@ const STAGE: Record<AgentStage, StageDef> = {
     brief: (key, dir) => `Eres la última etapa del pipeline: comprobar el ticket ${key} en prod, ya desplegado.
 
 1. Lee ${join(STAGES_DIR, "smoke.md")} y ${join(STAGES_DIR, "environment.md")}, y síguelos.
-2. Los criterios de aceptación están en ${join(dir, "refine.md")}; la prueba de staging, en ${join(dir, "test.md")}.
+2. Los criterios de aceptación están en ${join(dir, "refine.md")}; la prueba de staging, en ${join(dir, "test.md")}. Si existe ${join(dir, "not-deployed.md")}, lo que lista no está en prod: sus criterios van como untested, nunca como fail.
 3. Solo lectura: en prod no creas, cambias ni borras nada.
 4. Escribe el informe en ${join(dir, "smoke.md")} y el resumen en ${join(dir, "smoke.summary.md")}.
 5. Escribe al final ${join(dir, "smoke.json")}: {"verdict": "ready" | "needs-info", "questions": [...], "results": [{"id": "P1", "criterion": "...", "status": "pass" | "fail" | "untested", "summary": "...", "evidence": "...", "files": [{"path": "evidence/P1-desktop.png", "caption": "..."}]}]}. Guarda la evidencia de cada criterio en ${join(dir, "evidence")}.`,
@@ -587,7 +589,7 @@ export async function pipelineOf(key: string) {
   const prs = await prStates(urls, releaseOps.sh)
   const scenario = state ? scenarioOf(jsonOf(await readText(join(dirOf(key), "scenario.json")))) : null
   const stageDocs = Object.assign({}, ...(await Promise.all(SUMMED.map(docOf))))
-  return { putAside, docs: await runDocs(key), files: await ticketFiles(key), state: state && (await withSpend(state)), ...stageDocs, summaries, prs, fixes, scenario, preview: await previewOf(state), yourPart: await yourPartOf(state) }
+  return { putAside, docs: await runDocs(key), files: await ticketFiles(key), state: state && (await withSpend(state)), ...stageDocs, summaries, prs, fixes, scenario, preview: await previewOf(state), yourPart: await yourPartOf(state), later: await laterOf(state) }
 }
 
 // What the running stage does now: its session's steps and subagents, and,
@@ -664,7 +666,7 @@ const fresh = async (key: string, runs: number, stage: Stage): Promise<PipelineS
   // The plan's units and to-do list, and the review's findings, stay with the ticket for the stages after it.
   return { ...EMPTY(key, runs, stage), summary: prev?.summary, history: prev?.history ?? [], sessions: prev?.sessions, readAt: prev?.readAt, backNote: prev?.backNote, news: prev?.news, order: prev?.order,
     autoFixes: stage === "refine" || stage === "plan" ? 0 : prev?.autoFixes, units: prev?.units, checklist: prev?.checklist, checked: prev?.checked, scripts: prev?.scripts, contextImpact: prev?.contextImpact,
-    release: prev?.release, deployed: prev?.deployed, fixes: prev?.fixes, fixOf: prev?.fixOf, threads: prev?.threads, fixing: ["refine", "plan", "test", "smoke"].includes(stage) ? null : prev?.fixing, results: stage === "test" || stage === "smoke" ? undefined : prev?.results, scope: prev?.scope, auto: prev?.auto, local: prev?.local, proposals: prev?.proposals,
+    release: prev?.release, deployed: prev?.deployed, fixes: prev?.fixes, fixOf: prev?.fixOf, threads: prev?.threads, leftOut: prev?.leftOut, fixing: ["refine", "plan", "test", "smoke"].includes(stage) ? null : prev?.fixing, results: stage === "test" || stage === "smoke" ? undefined : prev?.results, scope: prev?.scope, auto: prev?.auto, local: prev?.local, proposals: prev?.proposals,
     ...(stage === "review" ? {} : { findings: prev?.findings, fixed: stage === "build" ? [] : prev?.fixed }) }
 }
 // A stage's session is the pipeline's, not yours: once it ends it leaves the
@@ -893,6 +895,8 @@ export async function resolvePr(key: string, url: string) {
   if (!isKey(key) || !unit) throw new Error("That PR is not this ticket's")
   const files = fixFiles(key, url)
   if ((await prFixOf(files)).status === "running") throw new Error("An agent is on it already")
+  // The release's own agent on the same PR (its merge met the conflicts).
+  if ((await stateOf(key))?.release?.steps.some(s => s.phase === "conflicts" && s.status === "running" && s.links.some(l => l.url === url))) throw new Error("The release's agent is on it already")
   const pr = jsonOf((await releaseOps.sh(["gh", "pr", "view", url, "--json", "state,mergeable,headRefName,baseRefName"])).out)
   if (pr?.state !== "OPEN" || pr.mergeable !== "CONFLICTING") throw new Error("GitHub sees no conflicts in it")
   await rm(files.answer, { force: true })
@@ -1201,7 +1205,7 @@ async function startNow(key: string, take: boolean, asked?: Stage, chosen?: stri
   const local = await takeOn(key, state, take, mine)
   if (isRelease(stage)) return startRelease(state!, stage)
   const fixing = await writeFixes(key, state, stage, chosen)
-  if (stage === "test" || stage === "smoke") await writeRetest(key, state, stage)
+  if (stage === "test" || stage === "smoke") await Promise.all([writeRetest(key, state, stage), writeNotDeployed(key, state, stage)])
   // At work at once, so the board shows it; the run then reads the ticket (it takes a while) and starts the agent.
   await save({ ...(await fresh(key, (state?.runs ?? 0) + 1, stage)), summary: state?.summary, ...(fixing === undefined ? {} : { fixing }), ...(local ? { local } : {}) })
   void run(key, (state?.runs ?? 0) + 1, stage, auto, whyStart(state, stage))
@@ -1469,11 +1473,12 @@ const withOrder = async (state: PipelineState): Promise<PipelineState> =>
 
 // A release to an environment: its steps, from the plan; or, when it failed (or you stopped it),
 // the same one again from that step. A rollback that went is no release to go on with: a new one starts.
-async function startRelease(state: PipelineState, env: Env) {
-  const failedStep = state.stage === env && state.release && !state.release.rollback ? state.release.steps.find(s => s.status === "failed") : undefined
+// only: the items you chose of what was left for later there.
+async function startRelease(state: PipelineState, env: Env, only?: string[]) {
+  const failedStep = !only && state.stage === env && state.release && !state.release.rollback ? state.release.steps.find(s => s.status === "failed") : undefined
   const resumed = failedStep ? retryStep(state.release!, failedStep.id) : null
   const ordered = await withOrder(state)
-  const release = resumed ?? { env, steps: releaseSteps(ordered, env, await deployConfig()) }
+  const release = resumed ?? { env, steps: releaseSteps(ordered, env, await deployConfig(), only) }
   const next = resumed ? state : { ...(await fresh(state.key, state.runs + 1, env)), summary: state.summary }
   await save({ ...next, order: ordered.order, stage: env, status: "running", error: null, endedAt: null, release })
   void tickRelease(state.key)
@@ -1513,6 +1518,7 @@ const releaseOps: Ops = {
   // The agent that resolves a PR's conflicts (lib/conflicts.ts): a build's
   // limits (it may push to the PR's branch, never merge), on its own process;
   // its session, the pipeline's.
+  isFixing: async (key, url) => (await prFixOf(fixFiles(key, url))).status === "running",
   agent: async (dir, prompt, logPath) => {
     await mkdir(join(logPath, ".."), { recursive: true })
     const log = openSync(logPath, "a")
@@ -1543,8 +1549,8 @@ async function tickRelease(key: string) {
 }
 // Each release to an environment adds to what it runs (a fix's release takes only the new units).
 export const shippedWith = (before: Release | undefined, release: Release): Release =>
-  // What went, and the scripts you skipped there (your call, kept so they are not offered again).
-  ({ ...release, steps: [...(before?.steps ?? []).filter(s => s.status === "done" || !!s.sha || (s.kind === "execute" && s.status === "skipped")), ...release.steps] })
+  // What went, and what you skipped there (left for later: laterIn).
+  ({ ...release, steps: [...(before?.steps ?? []).filter(s => s.status === "done" || s.status === "skipped" || !!s.sha), ...release.steps] })
 async function tickNow(key: string) {
   {
     const state = await stateOf(key)
@@ -1629,11 +1635,11 @@ export async function rollBackPipeline(key: string, env: Env) {
 }
 
 // You, on the step at hand: go on (a tag of your own, if you write one), past it.
-export async function stepPipeline(key: string, id: string, action: "approve" | "skip", value?: string) {
+export async function stepPipeline(key: string, id: string, action: "approve" | "skip" | "unskip", value?: string) {
   await locked(key, async () => {
     const state = await stateOf(key)
     if (!state?.release || !isRelease(state.stage)) throw new Error("No release on this ticket")
-    const release = action === "approve" ? approveStep(state.release, id, value) : skipStep(state.release, id)
+    const release = action === "approve" ? approveStep(state.release, id, value) : action === "unskip" ? unskipStep(state.release, id) : skipStep(state.release, id)
     await save({ ...state, release, status: "running", error: null, endedAt: null })
   })
   void tickRelease(key)
@@ -1663,9 +1669,45 @@ export const isPipelineOn = () => existsSync(join(STAGES_DIR, "refine.md"))
 // The steps a release would take, before you start it.
 // The environments with something of the ticket they do not run yet: after a test, staging (a script a fix added).
 // What only a person does there (a plan's note for staging, once it was tested) brings no release back.
+// What you left for later there brings no release back either: it waits for your choice (laterPipeline).
 async function pendingEnvs(state: PipelineState | null): Promise<Env[]> {
   if (state?.stage !== "test" || state.status !== "ready") return []
-  return releaseSteps(await withOrder(state), "staging", await deployConfig()).some(s => s.kind !== "manual") ? ["staging"] : []
+  const [ordered, config] = [await withOrder(state), await deployConfig()]
+  const later = new Set(laterIn(ordered, "staging", config).map(itemOf))
+  return releaseSteps(ordered, "staging", config).some(s => s.kind !== "manual" && !later.has(itemOf(s))) ? ["staging"] : []
+}
+
+// ---------- what you left for later ----------
+
+const ENVS_BOTH: Env[] = ["staging", "prod"]
+// What each environment lacks that you skipped there, as items; none while something runs.
+async function laterOf(state: PipelineState | null) {
+  if (!state || state.status === "running") return null
+  const [ordered, config] = [await withOrder(state), await deployConfig()]
+  return Object.fromEntries(ENVS_BOTH.map(env => [env, itemsOf(laterIn(ordered, env, config))])) as Record<Env, ReturnType<typeof itemsOf>>
+}
+// What you chose of it: sent there now (a release with only that), or left out of it for good.
+export async function laterPipeline(key: string, env: Env, keys: string[], action: "deploy" | "leave") {
+  const state = await stateOf(key)
+  if (!state || state.status === "running") throw new Error("Wait for what runs now to end")
+  const later = new Set(laterIn(await withOrder(state), env, await deployConfig()).map(itemOf))
+  if (!keys.length || keys.some(k => !later.has(k))) throw new Error("That is not left for later")
+  if (action === "deploy") return startRelease(state, env, keys)
+  await locked(key, async () => {
+    const now = (await stateOf(key))!
+    await save({ ...now, leftOut: { ...now.leftOut, [env]: [...new Set([...(now.leftOut?.[env] ?? []), ...keys])] } })
+  })
+}
+// What the environment a test or a check looks at does not run (left for later, or out): its criteria are not to be tried.
+async function writeNotDeployed(key: string, state: PipelineState | null, stage: "test" | "smoke") {
+  const env: Env = stage === "test" ? "staging" : "prod"
+  const file = join(dirOf(key), "not-deployed.md")
+  if (!state) return
+  const [ordered, config] = [await withOrder({ ...state, leftOut: {} }), await deployConfig()]
+  const away = new Set([...laterIn(ordered, env, config).map(itemOf), ...(state.leftOut?.[env] ?? [])])
+  const steps = releaseSteps(ordered, env, config).filter(s => away.has(itemOf(s)))
+  if (!steps.length) return void (await rm(file, { force: true }))
+  await Bun.write(file, `# Lo que ${env} no tiene de ${key}\n\nUna persona lo dejó fuera de ${env}. Sus criterios no se pueden probar ahí: van como untested, nunca como fail.\n\n${steps.map(s => `- ${s.title}`).join("\n")}\n`)
 }
 async function previewOf(state: PipelineState | null) {
   if (!state || state.status !== "ready") return null

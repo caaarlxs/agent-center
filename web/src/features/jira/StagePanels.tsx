@@ -13,7 +13,7 @@ import type { DebtEntry } from "@server/debt"
 import { Ask } from "./Ask"
 import { Evidence } from "./Evidence"
 import { Details } from "./Fold"
-import { ReleaseSteps, type After } from "./Release"
+import { ReleaseSteps, type After, type StepAction } from "./Release"
 import { changed, useConfirm } from "./confirm"
 import { act } from "./feedback"
 import { Markdown } from "@/features/conversation/Markdown"
@@ -370,7 +370,7 @@ export const afterOf = (env: Stage, state: PipelineState): After => {
 }
 
 // A release: its steps in order, the one at hand with its button (live: onStep acts on it).
-export function ReleasePanel({ ticketKey, release, after, isPreview, threads, onStep }: { ticketKey: string; release: Release; after: After; isPreview: boolean; threads?: Record<string, Turn[]>; onStep?: (step: string, action: "approve" | "skip", value?: string) => void }) {
+export function ReleasePanel({ ticketKey, release, after, isPreview, threads, onStep }: { ticketKey: string; release: Release; after: After; isPreview: boolean; threads?: Record<string, Turn[]>; onStep?: (step: string, action: StepAction, value?: string) => void }) {
   return <ReleaseSteps ticketKey={ticketKey} release={release} after={after} isPreview={isPreview} threads={threads} onAct={onStep} />
 }
 

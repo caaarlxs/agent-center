@@ -145,8 +145,8 @@ function notYetIn(state: PipelineState, env: Env) {
   const before = (state.deployed?.[env]?.steps ?? []).filter(s => s.status === "done")
   // A unit is there once a step of its own went (a merge in staging, a tag or a command in prod).
   const took = before.filter(s => s.unit && s.kind !== "simulate")
-  // A script that ran there, or that you skipped there (your call: it is not offered again).
-  const ran = new Set((state.deployed?.[env]?.steps ?? []).filter(s => s.kind === "execute" && s.script && (s.status === "done" || s.status === "skipped")).map(s => s.script))
+  // A script that ran there (one you skipped is left for later: lib/release.ts laterIn).
+  const ran = new Set((state.deployed?.[env]?.steps ?? []).filter(s => s.kind === "execute" && s.script && s.status === "done").map(s => s.script))
   const done = new Set(before.filter(s => s.kind === "manual" && !s.unit).map(s => s.title))
   return { units: (state.units ?? []).filter(u => !tookUnit(took, u)), scripts: (state.scripts ?? []).filter(x => !ran.has(x.id)), manualDone: done }
 }
@@ -158,7 +158,25 @@ export const notesOf = (order: OrderItem[]) =>
 // The plan's step for a person with that id: its text and note.
 export const manualStep = (order: OrderItem[], id: string) => [...notesOf(order)].find(([, n]) => n.id === id)?.[0]
 
-export function releaseSteps(state: PipelineState, env: Env, config: DeployConfig): ReleaseStep[] {
+// What a step is part of: a script, a unit (its merge, its command), or a step a person does.
+// What you leave for later, or out, goes by it.
+export const itemOf = (s: Pick<ReleaseStep, "script" | "unit" | "title"> & { note?: StepNote | null }) =>
+  s.script ? `script:${s.script}` : s.unit ? `unit:${s.unit}` : `manual:${s.note?.id ?? s.title}`
+// What an environment still lacks that you skipped in a release there: left for later, yours to send or leave out.
+export function laterIn(state: PipelineState, env: Env, config: DeployConfig): ReleaseStep[] {
+  const skipped = new Set((state.deployed?.[env]?.steps ?? []).filter(s => s.status === "skipped").map(itemOf))
+  return skipped.size ? releaseSteps(state, env, config).filter(s => skipped.has(itemOf(s))) : []
+}
+// A release's steps, as items: what each is, and its steps' titles.
+export function itemsOf(steps: ReleaseStep[]) {
+  const by = new Map<string, ReleaseStep[]>()
+  for (const s of steps) by.set(itemOf(s), [...(by.get(itemOf(s)) ?? []), s])
+  return [...by].map(([key, of]) => ({ key, title: of[0]!.unit ? `${of[0]!.repo}: ${of.length} step${of.length === 1 ? "" : "s"}` : of[0]!.title, steps: of.map(s => s.title) }))
+}
+
+// only: the items to send (what you chose of what was left for later); what you left out of an
+// environment never goes there; in prod, a unit or script staging still lacks starts left out.
+export function releaseSteps(state: PipelineState, env: Env, config: DeployConfig, only?: string[]): ReleaseStep[] {
   // What this environment runs already (a release before a fix): only the rest goes.
   const { units, scripts, manualDone } = notYetIn(state, env)
   const asUnit = (u: { id: string }) => ({ kind: "unit" as const, id: u.id, text: null, envs: [] })
@@ -185,7 +203,10 @@ export function releaseSteps(state: PipelineState, env: Env, config: DeployConfi
       steps.push(blank("execute", `${x.title}: run for real`, { unit: x.unit, repo, script: x.id }))
     }
   }
-  return [...simulations, ...steps].map((s, i) => ({ ...s, id: `R${i + 1}` }))
+  const out = new Set(state.leftOut?.[env] ?? [])
+  const notInStaging = env === "prod" ? new Set(laterIn(state, "staging", config).map(itemOf).filter(k => !k.startsWith("manual:"))) : new Set<string>()
+  return [...simulations, ...steps].filter(s => !out.has(itemOf(s)) && (!only || only.includes(itemOf(s))))
+    .map((s, i) => ({ ...s, id: `R${i + 1}`, ...(!only && notInStaging.has(itemOf(s)) ? { status: "skipped" as const, detail: "Not in staging: left out of prod" } : {}) }))
 }
 
 // ---------- rolling back ----------
@@ -305,6 +326,7 @@ export type Ops = {
   exists: (path: string) => boolean
   secret: (name: string) => Promise<string | null> // from the keychain
   agent: (dir: string, prompt: string, log: string) => Promise<number> // an agent on its own process, that may push to a PR's branch
+  isFixing?: (key: string, url: string) => Promise<boolean> // an agent a person sent to the PR's conflicts (Resolve conflicts) is at work
 }
 // tested: the commit staging ran of each repo (its merge), which is what goes to prod.
 export type Ctx = { key: string; summary: string; dir: string; repos: string; stages: string; tested?: Record<string, string>; config: DeployConfig; units: Unit[]; scripts: PlanScript[]; checklist: ChecklistItem[] }
@@ -474,7 +496,11 @@ async function merge(step: ReleaseStep, release: Release, ctx: Ctx, ops: Ops): P
   const url = prOf(step, ctx)
   if (!url) throw new Error("The unit has no PR")
   const view = async () => jsonOf(await must(ops, ["gh", "pr", "view", url, "--json", "state,isDraft,mergeable,headRefName,baseRefName,mergeCommit,mergedAt,statusCheckRollup"])) ?? {}
+  // The agent you sent to its conflicts is at work: it waits for it, never a second one on the branch.
+  if (await ops.isFixing?.(ctx.key, url)) return { detail: "An agent resolves its conflicts (Resolve conflicts): waiting for it" }
   let pr = await view()
+  // Closed on GitHub (someone saw it is not needed): nothing to merge, and an agent's push would not reach it.
+  if (pr.state === "CLOSED") throw new Error(`PR #${prNumber(url)} was closed on GitHub: Skip this step if it is not needed, or reopen the PR and Retry`)
   if (pr.state !== "MERGED" && pr.mergeable === "CONFLICTING") return resolveConflicts(step, release, ctx, ops, { url, repo: step.repo ?? "", head: pr.headRefName, base: pr.baseRefName })
   if (pr.state !== "MERGED" && pr.mergeable === "UNKNOWN") return { detail: "GitHub is working out whether it merges" }
   // An agent pushed to the PR (its conflicts): its commit merges only once the PR's checks pass.
@@ -683,7 +709,16 @@ export function stopRelease(release: Release): { release: Release; pid: number |
   if (!step) throw new Error("The release is over")
   return { release: withStep(release, step.id, { status: "failed", error: "Stopped by you", pid: null, phase: null }), pid: step.pid ?? null }
 }
+// A step you left out, back in: only while the release has not got past it.
+export function unskipStep(release: Release, id: string): Release {
+  const at = release.steps.findIndex(s => !isOver(s))
+  const i = release.steps.findIndex(s => s.id === id)
+  if (i < 0 || release.steps[i]!.status !== "skipped" || at < 0 || i < at) throw new Error("The release got past that step")
+  return withStep(release, id, { status: "pending" })
+}
+// Past a step: the one at hand (it failed, or waits for you), or one still to come, left out of this release.
 export function skipStep(release: Release, id: string): Release {
-  if (!current(release, id)) throw new Error("Only the step at hand can be skipped")
+  const step = release.steps.find(s => s.id === id)
+  if (!step || !(current(release, id) || step.status === "pending")) throw new Error("Only the step at hand, or one still to come, can be skipped")
   return withStep(release, id, { status: "skipped" })
 }

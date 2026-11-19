@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import { conflictsPrompt } from "../lib/conflicts"
-import { DEFAULT_CONFIG, setupFor, rollbackSteps, approveStep, deployState, isGated, nextTag, releaseSteps, reportOf, seenDone, manualStep, skipStep, retryStep, stopRelease, advanceRelease, type Ops, type Release, rollupOf } from "../lib/release"
+import { DEFAULT_CONFIG, setupFor, rollbackSteps, approveStep, deployState, isGated, nextTag, releaseSteps, reportOf, seenDone, manualStep, skipStep, unskipStep, laterIn, itemOf, itemsOf, retryStep, stopRelease, advanceRelease, type Ops, type Release, rollupOf } from "../lib/release"
 
 const unit = (id: string, repo: string, n: number) => ({ id, repo, subtask: null, branch: `feat/${id}`, title: id, dependsOn: [], status: "done" as const, pr: `https://github.com/acme/${repo}/pull/${n}` })
 const units = [unit("U1", "api-service", 7), unit("U2", "web-app", 8), unit("U3", "mobile-app", 9)]
@@ -255,6 +255,37 @@ describe("advanceRelease", () => {
     expect(r.failed).toBe("R1")
     expect(skipStep(r.release, "R1").steps[0]!.status).toBe("skipped")
   })
+  it("leaves a step still to come out of the release, while an earlier one goes on; never one that ran", async () => {
+    const { ops } = fake({ "pr view": JSON.stringify({ state: "OPEN", isDraft: false }) })
+    const release: Release = { env: "staging", steps: releaseSteps(state({ units: [units[0], units[1]], scripts: [] }), "staging", config) }
+    const r = await advanceRelease(release, ctx, ops)
+    expect(r.release.steps.map(s => s.status)).toEqual(["running", "pending"])
+    expect(skipStep(r.release, "R2").steps.map(s => s.status)).toEqual(["running", "skipped"])
+    const ran = { ...r.release, steps: r.release.steps.map(s => ({ ...s, status: "done" as const })) }
+    expect(() => skipStep(ran, "R1")).toThrow("Only the step at hand, or one still to come, can be skipped")
+  })
+  it("puts a step you left out back in while the release has not got past it", async () => {
+    const { ops } = fake({ "pr view": JSON.stringify({ state: "OPEN", isDraft: false }) })
+    const r = await advanceRelease({ env: "staging", steps: releaseSteps(state({ units: [units[0], units[1]], scripts: [] }), "staging", config) }, ctx, ops)
+    const left = skipStep(r.release, "R2")
+    expect(unskipStep(left, "R2").steps[1]!.status).toBe("pending")
+    const passed = { ...left, steps: left.steps.map(s => (s.id === "R1" ? { ...s, status: "done" as const } : s)) }
+    expect(() => unskipStep(passed, "R2")).toThrow("The release got past that step")
+    expect(() => unskipStep(r.release, "R1")).toThrow("The release got past that step")
+  })
+  it("says a PR closed on GitHub is closed: no agent on its conflicts, no merge", async () => {
+    const { calls, ops } = fake({ "pr view": JSON.stringify({ state: "CLOSED", isDraft: true, mergeable: "CONFLICTING" }) })
+    const r = await advanceRelease({ env: "staging", steps: releaseSteps(state({ units: [units[0]], scripts: [] }), "staging", config) }, ctx, { ...ops, agent: async () => { throw new Error("no agent") } })
+    expect(r.release.steps[0]).toMatchObject({ status: "failed", error: "PR #7 was closed on GitHub: Skip this step if it is not needed, or reopen the PR and Retry" })
+    expect(calls.some(c => c.includes("pr merge"))).toBe(false)
+  })
+  it("waits for the agent you sent to a PR's conflicts: never a second one on its branch", async () => {
+    const { calls, ops } = fake({ "pr view": JSON.stringify({ state: "OPEN", isDraft: false, mergeable: "CONFLICTING", headRefName: "feat/U1", baseRefName: "main" }) })
+    const steps = releaseSteps(state({ units: [units[0]], scripts: [] }), "staging", config)
+    const r = await advanceRelease({ env: "staging", steps }, ctx, { ...ops, isFixing: async () => true, agent: async () => { throw new Error("no second agent") } })
+    expect(r.release.steps[0]).toMatchObject({ status: "pending", detail: "An agent resolves its conflicts (Resolve conflicts): waiting for it" })
+    expect(calls.some(c => c.includes("pr merge"))).toBe(false)
+  })
 })
 
 describe("rollbackSteps", () => {
@@ -462,11 +493,28 @@ describe("a script for real whose simulation was skipped", () => {
   })
 })
 
-describe("a script you skipped in an environment", () => {
-  it("is not offered again in the next release there", () => {
-    const script = { id: "S1", unit: null, title: "Backfill", command: "python b.py", when: "", envs: ["staging" as const] }
-    const skipped = releaseSteps(state({ units: [], scripts: [script] }), "staging", config).map(s => ({ ...s, status: "skipped" as const }))
-    expect(releaseSteps(state({ units: [], scripts: [script], deployed: { staging: { env: "staging", steps: skipped } } }), "staging", config)).toEqual([])
+describe("what you skipped in an environment", () => {
+  const script = { id: "S1", unit: null, title: "Backfill", command: "python b.py", when: "", envs: ["staging" as const] }
+  const skippedIn = (steps: ReturnType<typeof releaseSteps>) => ({ env: "staging" as const, steps: steps.map(s => ({ ...s, status: "skipped" as const })) })
+  it("is left for later, as items (a unit's steps together), while what you never skipped is not", () => {
+    const all = releaseSteps(state({ units: [units[2]], scripts: [script] }), "staging", config)
+    const s = state({ units: [units[2]], scripts: [script], deployed: { staging: skippedIn(all.filter(x => x.unit === "U3")) } })
+    expect(laterIn(s, "staging", config).map(itemOf)).toEqual(["unit:U3"])
+    expect(itemsOf(laterIn(s, "staging", config))).toEqual([{ key: "unit:U3", title: "mobile-app: 1 step", steps: ["mobile-app: Publish the app"] }])
+    expect(releaseSteps(s, "staging", config).map(itemOf)).toEqual(["script:S1", "unit:U3", "script:S1"])
+  })
+  it("goes there with only what you chose, or never once you leave it out", () => {
+    const all = releaseSteps(state({ units: [units[2]], scripts: [script] }), "staging", config)
+    const s = state({ units: [units[2]], scripts: [script], deployed: { staging: skippedIn(all) } })
+    expect(releaseSteps(s, "staging", config, ["script:S1"]).map(x => [x.id, x.kind])).toEqual([["R1", "simulate"], ["R2", "execute"]])
+    const out = state({ units: [units[2]], scripts: [script], deployed: { staging: skippedIn(all) }, leftOut: { staging: ["script:S1"] } })
+    expect(laterIn(out, "staging", config).map(itemOf)).toEqual(["unit:U3"])
+  })
+  it("in prod, a unit staging still lacks starts left out, unless you chose it", () => {
+    const merge = releaseSteps(state({ units: [units[0]], scripts: [] }), "staging", config)
+    const s = state({ units: [units[0]], scripts: [], deployed: { staging: skippedIn(merge) } })
+    expect(releaseSteps(s, "prod", config)[0]).toMatchObject({ kind: "tag", status: "skipped", detail: "Not in staging: left out of prod" })
+    expect(releaseSteps(s, "prod", config, ["unit:U1"])[0]).toMatchObject({ kind: "tag", status: "pending" })
   })
 })
 

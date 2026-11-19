@@ -2,7 +2,7 @@
 // notes, PR actions, tasks, files sent and dictation.
 
 import { commentOn, connect, disconnect, moveTicket } from "../lib/jira"
-import { actOnDebt, answerPipeline, askPipeline, explainFindings, sendBack, checkByHand, cleanUp, createProposed, dismissProposed, editProposed, isStage, stopPipeline, closePipeline, readyPr, resetPipeline, resolvePr, rollBackPipeline, startPipeline, stopAuto, stepPipeline, writeYourPart, chatOnPart } from "../lib/pipeline"
+import { actOnDebt, answerPipeline, askPipeline, explainFindings, sendBack, checkByHand, cleanUp, createProposed, dismissProposed, editProposed, isStage, stopPipeline, closePipeline, readyPr, resetPipeline, resolvePr, rollBackPipeline, startPipeline, stopAuto, stepPipeline, writeYourPart, chatOnPart, laterPipeline } from "../lib/pipeline"
 import { clearJob, continueJob, isLoose, publishReview, startJob, stopJob } from "../lib/jobs"
 import { chooseIcon, isIcon } from "../lib/app-icon"
 import { choosePet, gainXp, openPack } from "../lib/pets"
@@ -193,7 +193,7 @@ export async function handleWrite(path: string, body: Record<string, unknown>): 
       return await answerPipeline(String(body.key ?? ""), (body.answers ?? {}) as Record<string, string>).then(() => json({ ok: true }), (err: Error) => json({ error: err.message }, 400))
     // A release's step at hand: go on (with a tag of your own), or past it.
     case "/api/pipeline/step":
-      return await stepPipeline(String(body.key ?? ""), String(body.step ?? ""), body.action === "skip" ? "skip" : "approve", typeof body.value === "string" ? body.value : undefined).then(() => (refreshSoon(), json({ ok: true })), (err: Error) => json({ error: err.message }, 400))
+      return await stepPipeline(String(body.key ?? ""), String(body.step ?? ""), body.action === "skip" || body.action === "unskip" ? body.action : "approve", typeof body.value === "string" ? body.value : undefined).then(() => (refreshSoon(), json({ ok: true })), (err: Error) => json({ error: err.message }, 400))
     // A PR of the ticket with conflicts: an agent resolves them and pushes, or says why not.
     case "/api/pipeline/conflicts":
       return await resolvePr(String(body.key ?? ""), String(body.url ?? "")).then(() => json({ ok: true }), (err: Error) => json({ error: err.message }, 400))
@@ -208,6 +208,10 @@ export async function handleWrite(path: string, body: Record<string, unknown>): 
       return await chatOnPart(String(body.key ?? ""), typeof body.step === "string" ? body.step : null, Number.isInteger(body.section) ? Number(body.section) : null)
         .then(({ dir, prompt }) => launch(dir, prompt, done => void adopt(done)))
         .then(id => (refreshSoon(), json({ ok: true, id })), (err: Error) => json({ error: err.message }, 400))
+    // What you left for later in an environment, as you chose: sent there now, or left out for good.
+    case "/api/pipeline/later":
+      return await laterPipeline(String(body.key ?? ""), body.env === "prod" ? "prod" : "staging", Array.isArray(body.keys) ? body.keys.map(String) : [], body.action === "leave" ? "leave" : "deploy")
+        .then(() => (refreshSoon(), json({ ok: true })), (err: Error) => json({ error: err.message }, 400))
     // Undo what a release did to an environment (staging or prod).
     case "/api/pipeline/rollback":
       return await rollBackPipeline(String(body.key ?? ""), body.env === "prod" ? "prod" : "staging").then(() => (refreshSoon(), json({ ok: true })), (err: Error) => json({ error: err.message }, 400))

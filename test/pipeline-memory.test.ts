@@ -154,9 +154,9 @@ describe("what a fix leaves for staging", () => {
 })
 
 describe("what an environment ran, release after release", () => {
-  it("keeps a script you skipped, so it is not offered again", () => {
+  it("keeps what went and what you skipped (left for later), not what never started", () => {
     const step = (id: string, kind: string, status: string) => ({ id, kind, status, script: kind === "execute" ? "S1" : null, unit: "U1", sha: null }) as never
-    const kept = shippedWith({ env: "staging", steps: [step("R1", "merge", "done"), step("R2", "execute", "skipped"), step("R3", "simulate", "skipped")] }, { env: "staging", steps: [] })
-    expect(kept.steps.map((s: { id: string }) => s.id)).toEqual(["R1", "R2"])
+    const kept = shippedWith({ env: "staging", steps: [step("R1", "merge", "done"), step("R2", "execute", "skipped"), step("R3", "simulate", "skipped"), step("R4", "merge", "pending")] }, { env: "staging", steps: [] })
+    expect(kept.steps.map((s: { id: string }) => s.id)).toEqual(["R1", "R2", "R3"])
   })
 })

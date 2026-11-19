@@ -155,7 +155,7 @@ function PrBlock({ step }: { step: ReleaseStep }) {
   const stuck = step.links.map(l => [l, prs[l.url]] as const).filter(([, pr]) => pr?.state === "OPEN" && (pr.isDraft || pr.isConflicting))
   if (!stuck.length) return null
   return (
-    <span className="col-start-2 flex flex-col gap-1 pl-[21px]">
+    <span className="col-start-2 flex flex-col gap-1 pl-[55px]">
       {stuck.map(([l, pr]) => (
         <span key={l.url} className="flex flex-col gap-0.5">
           <span className="flex flex-wrap items-baseline gap-x-3 text-[11.5px]">
@@ -181,7 +181,7 @@ function ReadyButton({ url }: { url: string }) {
 function StepDetail({ step, ticketKey }: { step: ReleaseStep; ticketKey: string }) {
   if (!step.detail && !step.error && !step.links.length) return null
   return (
-    <span className="col-start-2 flex flex-wrap items-baseline gap-x-3 pl-[21px] gap-y-0.5 text-[11.5px] text-faint">
+    <span className="col-start-2 flex flex-wrap items-baseline gap-x-3 pl-[55px] gap-y-0.5 text-[11.5px] text-faint">
       {step.status === "running" && step.detail ? <Shimmer as="span" duration={2.2} className="[--color-background:var(--text)] [--color-muted-foreground:var(--text-muted)]">{step.detail}</Shimmer> : step.detail && <span>{step.detail}</span>}
       {step.error && <span className="text-bad">{step.error}</span>}
       {step.links.map(l => <a key={l.url} href={l.url} target="_blank" rel="noreferrer" className="font-semibold text-brand no-underline hover:underline">{l.label}</a>)}
@@ -192,33 +192,57 @@ function StepDetail({ step, ticketKey }: { step: ReleaseStep; ticketKey: string 
 
 // A step a person does (a store release, a merge only its owner approves) stands out until it is done.
 const isYours = (step: ReleaseStep) => step.kind === "manual" && (step.status === "pending" || step.status === "waiting")
-function StepRow({ step, ticketKey, isAtHand, threads, onAct }: { step: ReleaseStep; ticketKey: string; isAtHand: boolean; threads?: Record<string, Turn[]>; onAct: (action: "approve" | "skip", value?: string) => void }) {
+// A step still to come of a live release, left out of it (a PR that must not merge yet); it asks twice.
+// The step that failed shows it always; one still to come, on hover.
+function SkipAhead({ onSkip, isShown = false }: { onSkip: () => void; isShown?: boolean }) {
+  const [isAsking, confirm] = useConfirm()
+  return (
+    <button className={cn("ml-auto shrink-0 text-xs font-semibold transition-opacity duration-120", isAsking ? "text-bad" : cn("text-faint hover:text-text focus-visible:opacity-100", !isShown && "opacity-0 group-hover:opacity-100"))}
+      onClick={() => confirm(onSkip)}>{isAsking ? "Sure? Leave it out" : "Skip"}</button>
+  )
+}
+
+// A step you left out says so, struck through, and comes back while the release has not got past it.
+function Skipped({ canUndo, onUndo }: { canUndo: boolean; onUndo: () => void }) {
+  return (
+    <span className="ml-auto flex shrink-0 items-baseline gap-2 text-xs">
+      <span className="rounded-[4px] bg-hover px-1.5 py-px font-semibold text-text-muted">Skipped</span>
+      {canUndo && <button className="font-semibold text-faint hover:text-text" onClick={onUndo}>Undo</button>}
+    </span>
+  )
+}
+
+export type StepAction = "approve" | "skip" | "unskip"
+function StepRow({ step, ticketKey, isAtHand, isAhead, isLive, threads, onAct }: { step: ReleaseStep; ticketKey: string; isAtHand: boolean; isAhead: boolean; isLive: boolean; threads?: Record<string, Turn[]>; onAct: (action: StepAction, value?: string) => void }) {
   const isFaint = step.status === "pending" || step.status === "skipped"
   const { icon: Icon, name } = kindOf(step)
   return (
-    <li className={cn("grid grid-cols-[15px_minmax(0,1fr)] gap-x-2.5 gap-y-1.5 border-t border-line py-2.5 first:border-t-0", isYours(step) && "-mx-2.5 my-2.5 rounded-[8px] border-transparent bg-ask-soft px-2.5 [&+li]:border-transparent")}>
+    <li className={cn("group grid grid-cols-[15px_minmax(0,1fr)] gap-x-2.5 gap-y-1.5 border-t border-line py-2.5 first:border-t-0", isYours(step) && "-mx-2.5 my-2.5 rounded-[8px] border-transparent bg-ask-soft px-2.5 [&+li]:border-transparent")}>
       <span className="mt-[2px]"><Mark step={step} /></span>
       <span className={cn("flex items-baseline gap-2 text-[13px] leading-[1.45]", isFaint && !isYours(step) ? "text-text-muted" : "text-text", step.status === "waiting" && "font-semibold")}>
+        <span className="w-[26px] shrink-0 font-mono text-[11px] text-faint tabular-nums">{step.id}</span>
         <Icon size={13} className={cn("shrink-0 translate-y-[2px]", isYours(step) ? "text-ask" : "text-faint")} aria-label={name} />
-        <span className="min-w-0">{step.title}{step.kind === "tag" && step.value && step.status !== "waiting" ? <span className="font-mono text-xs text-faint"> {step.value}</span> : null}</span>
+        <span className={cn("min-w-0", step.status === "skipped" && "line-through decoration-faint")}>{step.title}{step.kind === "tag" && step.value && step.status !== "waiting" ? <span className="font-mono text-xs text-faint"> {step.value}</span> : null}</span>
+        {isLive && ((!isAtHand && step.status === "pending") || (isAtHand && step.status === "failed")) && <SkipAhead onSkip={() => onAct("skip")} isShown={step.status === "failed"} />}
+        {step.status === "skipped" && <Skipped canUndo={isLive && isAhead} onUndo={() => onAct("unskip")} />}
       </span>
       <StepDetail step={step} ticketKey={ticketKey} />
       <PrBlock step={step} />
       {step.note && isYours(step) && (
-        <div className="col-start-2 flex min-w-0 flex-col gap-2 pl-[21px]">
+        <div className="col-start-2 flex min-w-0 flex-col gap-2 pl-[55px]">
           <NoteView note={step.note} isOpen={step.status === "waiting"} />
           {threads && <Ask ticketKey={ticketKey} about={`step:${step.note.id}`} turns={threads[`step:${step.note.id}`]} />}
           {threads && <ChatButton ticketKey={ticketKey} step={step.note.id} />}
         </div>
       )}
       {(step.items.length > 0 || step.report) && (
-        <div className="col-start-2 flex min-w-0 flex-col gap-2 pl-[21px]">
+        <div className="col-start-2 flex min-w-0 flex-col gap-2 pl-[55px]">
           <Items items={step.items} isOpen={step.status === "waiting" && step.kind === "check"} />
           {step.report && (step.status !== "pending") && <ReportView ticketKey={ticketKey} file={step.report} />}
         </div>
       )}
       {isAtHand && (step.status === "waiting" || step.status === "failed") && (
-        <div className="col-start-2 pl-[21px]">{step.status === "waiting" ? <Waiting key={step.id} step={step} onAct={onAct} /> : null}</div>
+        <div className="col-start-2 pl-[55px]">{step.status === "waiting" ? <Waiting key={step.id} step={step} onAct={onAct} /> : null}</div>
       )}
     </li>
   )
@@ -227,12 +251,13 @@ function StepRow({ step, ticketKey, isAtHand, threads, onAct }: { step: ReleaseS
 // The steps of a release, the one at hand with its button; a release not
 // started yet (a preview) shows only what it will do.
 // threads: what was asked about a person's step (none in a job's dialog: no asking there).
-export function ReleaseSteps({ ticketKey, release, after, isPreview = false, threads, onAct }: { ticketKey: string; release: Release; after?: After; isPreview?: boolean; threads?: Record<string, Turn[]>; onAct?: (step: string, action: "approve" | "skip", value?: string) => void }) {
+export function ReleaseSteps({ ticketKey, release, after, isPreview = false, threads, onAct }: { ticketKey: string; release: Release; after?: After; isPreview?: boolean; threads?: Record<string, Turn[]>; onAct?: (step: string, action: StepAction, value?: string) => void }) {
   const atHand = isPreview ? undefined : release.steps.find(s => s.status !== "done" && s.status !== "skipped")
+  const at = atHand ? release.steps.indexOf(atHand) : release.steps.length
   return (
     <Section title="Deploy" extra={isPreview ? release.steps.length : `${release.steps.filter(s => s.status === "done" || s.status === "skipped").length} of ${release.steps.length}`}>
       <ol className="m-0 list-none p-0">
-        {release.steps.map(s => <StepRow key={s.id} step={s} ticketKey={ticketKey} isAtHand={s.id === atHand?.id} threads={threads} onAct={(action, value) => onAct?.(s.id, action, value)} />)}
+        {release.steps.map((s, i) => <StepRow key={s.id} step={s} ticketKey={ticketKey} isAtHand={s.id === atHand?.id} isAhead={i > at} isLive={!!onAct} threads={threads} onAct={(action, value) => onAct?.(s.id, action, value)} />)}
         {after && <AfterRow after={after} />}
       </ol>
     </Section>
