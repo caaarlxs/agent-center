@@ -542,6 +542,10 @@ describe("Jira after a fix", () => {
   })
   it("a build listing only its new units keeps the ones before", () => {
     expect(withUnits([u("U1"), u("U2")], [{ ...u("U2"), title: "new" }, u("X1")]).map(x => `${x.id}:${x.title}`)).toEqual(["U1:U1", "U2:new", "X1:X1"])
+    const planned = { ...u("U2"), subtasks: ["PP-10", "PP-11"], dependsOn: ["U1"] }
+    const built = { ...u("U2"), subtasks: [], dependsOn: [], pr: "https://github.com/a/b/pull/1" }
+    expect(withUnits([planned], [built])[0]).toMatchObject({ subtasks: ["PP-10", "PP-11"], dependsOn: ["U1"], pr: "https://github.com/a/b/pull/1" })
+    expect(withUnits([planned], [{ ...built, subtasks: ["PP-12"] }])[0]!.subtasks).toEqual(["PP-12"])
   })
 })
 

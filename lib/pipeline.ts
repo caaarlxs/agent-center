@@ -500,7 +500,12 @@ export async function stateIn<S extends PipelineState>(dir: string): Promise<S |
 const stateOf = (key: string) => stateIn(dirOf(key))
 // The state with its run in the history: added the first time, then kept up to date.
 export const withScripts = (before: PlanScript[] = [], now: PlanScript[]) => [...before.filter(x => !now.some(n => n.id === x.id)), ...now]
-export const withUnits = (before: Unit[] = [], now: Unit[]) => [...before.filter(u => !now.some(n => n.id === u.id)), ...now]
+// A build's unit keeps what the plan said of it that the build does not say: its sub-tasks (Jira follows
+// them) and what it depends on.
+export const withUnits = (before: Unit[] = [], now: Unit[]) => [...before.filter(u => !now.some(n => n.id === u.id)), ...now.map(n => {
+  const was = before.find(b => b.id === n.id)
+  return was ? { ...n, subtask: n.subtask ?? was.subtask, subtasks: n.subtasks?.length ? n.subtasks : was.subtasks, dependsOn: n.dependsOn?.length ? n.dependsOn : was.dependsOn } : n
+})]
 
 // What a build did in its own pass: after a review, the units its fixed findings
 // were in; after a failed test, its new units (staging runs the rest); else all.
