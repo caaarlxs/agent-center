@@ -627,11 +627,12 @@ export async function labelTicket(key: string, add: string[], remove: string[]) 
 // ---------- the pipeline's status moves (lib/jira-flow.ts) ----------
 
 // A ticket's status and whether it is yours: what a move needs to know first.
-export async function issueState(key: string): Promise<{ status: string; mine: boolean } | null> {
+export async function issueState(key: string): Promise<{ status: string; mine: boolean; free: boolean; subtask: boolean; summary: string } | null> {
   const setup = setupOrThrow()
-  const raw = await call(setup, `/rest/api/3/issue/${keyOrThrow(key)}?fields=status,assignee`).catch(() => null)
+  const raw = await call(setup, `/rest/api/3/issue/${keyOrThrow(key)}?fields=status,assignee,issuetype,summary`).catch(() => null)
   if (!raw?.fields) return null
-  return { status: String(raw.fields.status?.id ?? ""), mine: raw.fields.assignee?.accountId === (await myId(setup)) }
+  const f = raw.fields
+  return { status: String(f.status?.id ?? ""), mine: f.assignee?.accountId === (await myId(setup)), free: !f.assignee, subtask: !!f.issuetype?.subtask, summary: String(f.summary ?? "") }
 }
 
 // The statuses a ticket's workflow lets it move to now.

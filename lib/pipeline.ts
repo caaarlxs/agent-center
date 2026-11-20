@@ -1163,7 +1163,7 @@ export const prodWarning = (stage: Stage, result: Pick<Result, "results">) => {
 
 // ---------- the ticket's status in Jira (lib/jira-flow.ts) ----------
 
-const JIRA = { issue: issueState, open: openStatuses, move: moveToStatus, comment: commentOn, createSubtask }
+const JIRA = { issue: issueState, assign: assignToMe, open: openStatuses, move: moveToStatus, comment: commentOn, createSubtask }
 // The Jira warnings of before, kept under the new checks unless a new one replaces them.
 const withJira = (checks: Check[], before: Check[] = [], jira: Check[] = before.filter(c => c.id.startsWith("jira-"))) => {
   const ids = new Set(checks.map(c => c.id))

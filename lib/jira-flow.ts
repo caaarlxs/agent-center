@@ -1,10 +1,10 @@
-// The ticket's Jira status, following the pipeline as a person would: a build
-// that starts puts the plan's sub-tasks in progress; a PR opened puts its
-// sub-task in review, with the PR's link; staging puts them done (Jira's own
-// automation then moves the story to Testing). A story with no sub-tasks
-// moves by itself through the same statuses. A test that passes makes the
-// story ready for prod, and one that fails reopens it, with a [Fix] sub-task
-// for each criterion that failed; prod makes it done.
+// The ticket's Jira status, following the pipeline as the team's way says (Confluence: "Cómo usamos
+// Jira"): a build that starts puts the plan's sub-tasks in progress; a PR opened puts its sub-task
+// in review, with the PR's link; staging puts them done (Jira's own automation then moves the story
+// to Testing, the QA queue). A story with no sub-tasks moves by itself through the same statuses;
+// a backend-only story ([BE]) skips Testing: staging makes it ready for prod. A test that fails
+// reopens the story, with a [Fix] sub-task for each criterion that failed; one that passes leaves
+// it in Testing: the team's testers make it ready for prod. Prod makes it done.
 //
 // A ticket that takes in more (scope.ts: an epic's stories of yours) moves each
 // of its stories so: one whose sub-tasks the plan follows through them, any
@@ -12,9 +12,9 @@
 // [Fix] of a criterion goes under its story.
 //
 // The team's statuses and names live in <data>/pipeline/stages/jira.json
-// (none there, nothing moves). Only what is assigned to you moves: the rest is
-// a warning that says what to move yourself. Jira never stops the pipeline:
-// what it refuses is a warning too.
+// (none there, nothing moves). Only what is assigned to you moves, and a sub-task with no one on
+// it, which becomes yours (no work in progress without an owner): the rest is a warning that says
+// what to move yourself. Jira never stops the pipeline: what it refuses is a warning too.
 import type { Check } from "./checks"
 import { fixParent, type Story } from "./scope"
 
@@ -34,7 +34,9 @@ type Result = { id: string; criterion?: string; status: "pass" | "fail" | "untes
 export type FlowState = { key: string; units?: Unit[]; fixes?: string[]; fixOf?: Record<string, string>; results?: Result[]; stories?: Story[] }
 
 export type Jira = {
-  issue: (key: string) => Promise<{ status: string; mine: boolean } | null>
+  // free: no one is on it; subtask: it is a sub-task; summary: its title.
+  issue: (key: string) => Promise<{ status: string; mine: boolean; free?: boolean; subtask?: boolean; summary?: string } | null>
+  assign: (key: string) => Promise<void> // to you
   open: (key: string) => Promise<string[]> // the statuses its workflow lets it move to now
   move: (key: string, statusId: string) => Promise<void>
   comment: (key: string, text: string) => Promise<void>
@@ -44,8 +46,6 @@ export type Jira = {
 const ofUnit = (u: Unit) => [...new Set([...(u.subtasks ?? []), u.subtask].filter(Boolean))] as string[]
 const subtasksOf = (state: FlowState) => [...new Set([...(state.units ?? []).flatMap(ofUnit), ...(state.fixes ?? [])])]
 const failing = (results: Result[] = []) => results.filter(r => r.status === "fail")
-// A criterion the test could not try (no data, no device) is no failure: the story waits where it is until a person checks it.
-const untried = (results: Result[] = []) => results.filter(r => r.status === "untested")
 
 // The stories that move; with none given, the ticket, with every sub-task the plan follows.
 const storiesIn = (state: FlowState): Story[] => (state.stories?.length ? state.stories : [{ key: state.key, subtasks: subtasksOf(state) }])
@@ -61,11 +61,9 @@ function aloneMoves(event: Event, keys: string[], state: FlowState, s: Flow["sta
   return keys.map(key => ({ key, to, ...(event === "built" ? comment : {}) }))
 }
 
+// A story whose criteria failed is reopened; one that passed stays in Testing, for the team's testers.
 function testedMoves(state: FlowState, stories: Story[], s: Flow["statuses"]): Move[] {
-  return stories.flatMap(story => {
-    const own = resultsOf(story, state, stories)
-    return failing(own).length ? [{ key: story.key, to: s.reopened }] : untried(own).length ? [] : [{ key: story.key, to: s.readyForProd }]
-  })
+  return stories.flatMap(story => (failing(resultsOf(story, state, stories)).length ? [{ key: story.key, to: s.reopened }] : []))
 }
 
 export function movesFor(event: Event, state: FlowState, flow: Flow): Move[] {
@@ -110,7 +108,9 @@ async function apply(move: Move, flow: Flow, jira: Jira): Promise<Check | null> 
   try {
     const issue = await jira.issue(move.key)
     if (!issue) return warn(move.key, `${move.key}: not found in Jira`)
-    if (!issue.mine) return warn(move.key, `${move.key} is not yours: move it to ${move.to.name}`)
+    // A sub-task no one is on becomes yours: the pipeline is the one working it.
+    if (!issue.mine && issue.free && issue.subtask) await jira.assign(move.key)
+    else if (!issue.mine) return warn(move.key, `${move.key} is not yours: move it to ${move.to.name}`)
     if (issue.status === move.to.id) return null
     await walk(move.key, move.to, issue.status, flow, jira)
     if (move.comment) await jira.comment(move.key, move.comment)
@@ -142,12 +142,25 @@ async function openFixes(state: FlowState, flow: Flow, jira: Jira) {
   return { fixes, fixOf, checks }
 }
 
+// A backend-only story ([BE]) has nothing for QA to try: in staging, it is ready for prod.
+async function backendOnly(state: FlowState, flow: Flow, jira: Jira): Promise<Check[]> {
+  const checks: Check[] = []
+  for (const story of storiesIn(state)) {
+    const issue = await jira.issue(story.key).catch(() => null)
+    if (!issue?.summary?.trim().startsWith("[BE]")) continue
+    const check = await apply({ key: story.key, to: flow.statuses.readyForProd }, flow, jira)
+    if (check) checks.push(check)
+  }
+  return checks
+}
+
 export async function followInJira(event: Event, state: FlowState, flow: Flow, jira: Jira): Promise<{ checks: Check[]; fixes?: string[]; fixOf?: Record<string, string> }> {
   const checks: Check[] = []
   for (const move of movesFor(event, state, flow)) {
     const check = await apply(move, flow, jira)
     if (check) checks.push(check)
   }
+  if (event === "in-staging") checks.push(...(await backendOnly(state, flow, jira)))
   if (event !== "tested" || !failing(state.results).length) return { checks }
   const opened = await openFixes(state, flow, jira)
   return { checks: [...checks, ...opened.checks], fixes: [...(state.fixes ?? []), ...opened.fixes], fixOf: opened.fixOf }

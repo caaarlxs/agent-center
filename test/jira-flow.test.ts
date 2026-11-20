@@ -35,7 +35,7 @@ describe("movesFor", () => {
     expect(movesFor("in-staging", state(), flow).map(m => [m.key, m.to.id])).toEqual([["PP-11", "10020"], ["PP-12", "10020"], ["PP-20", "10020"]])
   })
   it("a test that passes makes the story ready for prod; one that fails reopens it", () => {
-    expect(movesFor("tested", state({ results: [{ id: "T1", status: "pass" }] }), flow)).toEqual([{ key: "PP-10", to: flow.statuses.readyForProd }])
+    expect(movesFor("tested", state({ results: [{ id: "T1", status: "pass" }] }), flow)).toEqual([])
     expect(movesFor("tested", state({ results: [{ id: "T1", status: "fail" }] }), flow)).toEqual([{ key: "PP-10", to: flow.statuses.reopened }])
   })
   it("a story with no sub-tasks moves by itself: in progress, in review with its PRs, Testing once in staging", () => {
@@ -51,13 +51,14 @@ describe("movesFor", () => {
 
 // A Jira to follow the moves in: who has what, in which status, and what was done.
 // The moves its workflow opens from each status (any, where it says nothing).
-function fakeJira(issues: Record<string, { status: string; mine: boolean }>, workflow: Record<string, string[]> = {}) {
+function fakeJira(issues: Record<string, { status: string; mine: boolean; free?: boolean; subtask?: boolean; summary?: string }>, workflow: Record<string, string[]> = {}) {
   const done: string[] = []
   const all = ["3", "10053", "10067", "10351", "10219", "10020"]
   return {
     done,
     jira: {
       issue: async (key: string) => (issues[key] ? { ...issues[key] } : null),
+      assign: async (key: string) => void (done.push(`assign ${key}`), Object.assign(issues[key]!, { mine: true, free: false })),
       open: async (key: string) => workflow[issues[key]!.status] ?? all,
       move: async (key: string, statusId: string) => void (done.push(`move ${key} ${statusId}`), (issues[key]!.status = statusId)),
       comment: async (key: string, text: string) => void done.push(`comment ${key} ${text}`),
@@ -67,6 +68,22 @@ function fakeJira(issues: Record<string, { status: string; mine: boolean }>, wor
 }
 
 describe("followInJira", () => {
+  it("takes a sub-task no one is on before it moves it; never one that is someone else's, nor a story", async () => {
+    const { jira, done } = fakeJira({ "PP-11": { status: "10017", mine: false, free: true, subtask: true }, "PP-12": { status: "10017", mine: false, subtask: true }, "PP-20": { status: "10017", mine: true } })
+    const out = await followInJira("build-started", state(), flow, jira)
+    expect(done).toEqual(["assign PP-11", "move PP-11 3", "move PP-20 3"])
+    expect(out.checks.map(c => c.id)).toEqual(["jira-PP-12"])
+  })
+  it("a backend-only story ([BE]) skips Testing: in staging it is ready for prod", async () => {
+    const { jira, done } = fakeJira({ "PP-10": { status: "10017", mine: true, summary: "[BE] Registro de eventos" } })
+    await followInJira("in-staging", { key: "PP-10", units: [] }, flow, jira)
+    expect(done).toEqual(["move PP-10 10067", "move PP-10 10219"])
+  })
+  it("a test that passes leaves the story in Testing, for the team's testers", async () => {
+    const { jira, done } = fakeJira({ "PP-10": { status: "10067", mine: true } })
+    await followInJira("tested", state({ results: [{ id: "T1", status: "pass" }] }), flow, jira)
+    expect(done).toEqual([])
+  })
   it("moves only what is yours, leaves what is already there, and says what you must move yourself", async () => {
     const { jira, done } = fakeJira({ "PP-11": { status: "3", mine: true }, "PP-12": { status: "10017", mine: false }, "PP-20": { status: "10017", mine: true } })
     const out = await followInJira("build-started", state(), flow, jira)
@@ -80,10 +97,10 @@ describe("followInJira", () => {
     expect(out.fixes).toEqual(["PP-32"])
   })
   it("where Jira opens no move straight there, it goes the team's way round, as far as it can at each step", async () => {
-    const workflow = { "10017": ["3", "10053", "10067"], "10067": ["10219", "10351", "3"] }
+    const workflow = { "10017": ["3", "10053", "10067"], "10067": ["10219", "10351", "3"], "10219": ["10020"] }
     const { jira, done } = fakeJira({ "PP-10": { status: "10017", mine: true } }, workflow)
-    await followInJira("tested", state({ results: [{ id: "T1", status: "pass" }] }), flow, jira)
-    expect(done).toEqual(["move PP-10 10067", "move PP-10 10219"])
+    await followInJira("in-prod", state(), flow, jira)
+    expect(done).toEqual(["move PP-10 10067", "move PP-10 10219", "move PP-10 10020"])
   })
   it("never stops the pipeline: what Jira refuses is a warning", async () => {
     const { jira } = fakeJira({ "PP-10": { status: "10067", mine: true } }, { "10067": ["3"] })
@@ -142,12 +159,12 @@ describe("a ticket that takes in several stories (scope.ts)", () => {
   })
   it("each story by the results of its own criteria; prod makes them all done", () => {
     const results = [{ id: "C1", status: "fail", ticket: "PP-30" }, { id: "C2", status: "pass", ticket: "PP-40" }]
-    expect(movesFor("tested", epic({ results }), flow)).toEqual([{ key: "PP-30", to: flow.statuses.reopened }, { key: "PP-40", to: flow.statuses.readyForProd }])
+    expect(movesFor("tested", epic({ results }), flow)).toEqual([{ key: "PP-30", to: flow.statuses.reopened }])
     expect(movesFor("in-prod", epic(), flow).map(m => m.key)).toEqual(["PP-30", "PP-40"])
   })
   it("the [Fix] of a criterion goes under its story", async () => {
     const parents: string[] = []
-    const jira = { issue: async () => ({ status: "x", mine: true }), open: async () => [], move: async () => {}, comment: async () => {}, createSubtask: async (parent: string) => (parents.push(parent), `PP-9${parents.length}`) }
+    const jira = { issue: async () => ({ status: "x", mine: true }), assign: async () => {}, open: async () => [], move: async () => {}, comment: async () => {}, createSubtask: async (parent: string) => (parents.push(parent), `PP-9${parents.length}`) }
     await followInJira("tested", epic({ results: [{ id: "C1", status: "fail", ticket: "PP-40" }, { id: "C2", status: "fail" }] }), flow, jira)
     expect(parents).toEqual(["PP-40", "PP-30"])
   })
