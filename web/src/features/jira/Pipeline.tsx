@@ -383,8 +383,8 @@ function StagePanel({ stage, state, preview, all, onRun, onStep }: { stage: Stag
   const i = STAGE_KEYS.indexOf(stage)
   const release = releaseShown(state, preview, stage)
   // The column's agent stage at work, or done: its findings, the deploy folded.
-  if (nodeOf(state.stage) === stage && state.stage !== stage) return state.status === "running" ? <AtWork state={state} /> : <div className="flex flex-col gap-3">{isRelease(stage) && <LeftForLater env={stage} />}<TestPanel state={state} release={release} /></div>
-  if (isRelease(stage) && release) return <div className="flex flex-col gap-3"><YourPartRow ticketKey={state.key} release={release} /><LeftForLater env={stage} /><ReleasePanel ticketKey={state.key} release={release} after={afterOf(stage, state)} isPreview={release === preview} threads={isJob(state) ? undefined : (state.threads ?? {})} onStep={release === state.release && (state.status === "running" || state.status === "failed") ? onStep : undefined} /></div>
+  if (nodeOf(state.stage) === stage && state.stage !== stage) return state.status === "running" ? <AtWork state={state} /> : <TestPanel state={state} release={release} />
+  if (isRelease(stage) && release) return <div className="flex flex-col gap-3"><YourPartRow ticketKey={state.key} release={release} /><ReleasePanel ticketKey={state.key} release={release} after={afterOf(stage, state)} isPreview={release === preview} threads={isJob(state) ? undefined : (state.threads ?? {})} onStep={release === state.release && (state.status === "running" || state.status === "failed") ? onStep : undefined} /></div>
   if (i > at) return <p className="m-0 text-[13px] text-faint">Starts after {STAGES[i - 1]}.</p>
   if (i === at && state.status === "running") return <AtWork state={state} />
   if (stage === "refine") return <RefinePanel state={state} />
@@ -539,6 +539,8 @@ function ReleasePasses({ stage, doc, summary, ...props }: PassProps) {
   return (
     <div className="flex flex-col gap-3">
       {shown && <Passes passes={all} picked={shown.key} onPick={setPicked} />}
+      {/* What you skipped there and it still lacks: first, to deploy it now or leave it out. */}
+      {!shown?.past && isRelease(stage) && <LeftForLater env={stage} />}
       {!shown?.past && summary && <Summary text={summary} />}
       {shown?.past ? <StagePanel stage={stage} {...props} state={shown.past} onRun={() => {}} /> : <StagePanel stage={stage} {...props} />}
       {!shown?.past && doc && <Doc text={doc} />}

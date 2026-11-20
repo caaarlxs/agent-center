@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { isStuck, releasedUnits, retestOf, sessionOf, shippedWith, unitsNow, withUnits, testedIn, askPrompt, askRefusal, fixesNow, isAbout, testFix, unshipped, blocking, checkedByHand, checkedIn, isAdopted, toFixNow, MARK, answeredAfter, answersComment, argsFor, parseResult, pipelineKeyOf, stageToRun, unbuilt, withRun, withAnswers, earlierResults, closingOf, pipelineFile, questionsComment, snapshotOf, prodWarning, autoNext, linksFigma, impactRepos, checkIn, groupedResults, groupPrompt } from "../lib/pipeline"
+import { isStuck, releasedUnits, retestOf, sessionOf, shippedWith, unitsNow, withUnits, testedIn, askPrompt, askRefusal, fixesNow, isAbout, testFix, unshipped, blocking, checkedByHand, checkedIn, isAdopted, toFixNow, MARK, answeredAfter, answersComment, argsFor, parseResult, pipelineKeyOf, stageToRun, unbuilt, withRun, withAnswers, earlierResults, closingOf, pipelineFile, questionsComment, snapshotOf, prodWarning, autoNext, linksFigma, impactRepos, checkIn, groupedResults, groupPrompt, laterItems } from "../lib/pipeline"
 
 const questions = [
   { id: "Q1", question: "¿Cuál es el copy?", proposal: "El del ticket" },
@@ -617,5 +617,18 @@ describe("what a test could not try, by why", () => {
     const text = groupPrompt("PP-1", "/d/PP-1", "test", ["T1", "T3"], "/d/PP-1/test.groups.json")
     expect(text).toContain("dejó sin probar estos criterios: T1, T3")
     expect(text).toContain('{"groups": [{"blocker": "…", "unblock": "…", "ids": ["…"]}]}')
+  })
+})
+
+describe("what is left for later, as a person reads it", () => {
+  it("says what code delivers (repo, PR, what the release would do), and a step of yours by its title in Your part, and when", () => {
+    const step = (title: string, extra: object) => ({ id: "R1", kind: "merge", title, unit: null, repo: null, script: null, status: "pending", ...extra }) as never
+    const steps = [step("deale-frontend: merge PR #1185 and deploy", { unit: "U23", repo: "deale-frontend" }), step("En el Finder, crear la fila NDA_SIGNED / INVESTOR / email con categoría ACCOUNT y otras cosas largas que no caben", { kind: "manual", note: { id: "M3" } })]
+    const units = [{ id: "U23", repo: "deale-frontend", title: "Pantalla nueva de preferencias en la web", pr: "https://github.com/o/deale-frontend/pull/1185" }] as never
+    const part = { from: "", at: 0, intro: "", sections: [{ step: "M3", title: "Crea en el Finder la entrada del NDA firmado", when: "Tras el deploy de backoffice-service", context: "", where: [], steps: ["x"], done: "", unlocks: "" }] }
+    expect(laterItems({ units }, steps, part)).toEqual([
+      { key: "unit:U23", kind: "code", title: "Pantalla nueva de preferencias en la web", repo: "deale-frontend", pr: "https://github.com/o/deale-frontend/pull/1185", when: null, does: ["Merge PR #1185 and deploy"] },
+      { key: "manual:M3", kind: "yours", title: "Crea en el Finder la entrada del NDA firmado", repo: null, pr: null, when: "Tras el deploy de backoffice-service", does: ["En el Finder, crear la fila NDA_SIGNED / INVESTOR / email con categoría ACCOUNT y otras cosas largas que no caben"] },
+    ])
   })
 })

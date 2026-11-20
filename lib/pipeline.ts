@@ -1737,11 +1737,37 @@ async function pendingEnvs(state: PipelineState | null): Promise<Env[]> {
 // ---------- what you left for later ----------
 
 const ENVS_BOTH: Env[] = ["staging", "prod"]
-// What each environment lacks that you skipped there, as items; none while something runs.
+// What each environment lacks that you skipped there, as items a person reads at once: code (what
+// it delivers, its repo and PR), a script, or a step of yours (its title in Your part, and when);
+// each with what the release would do. None while something runs.
+export type LaterItem = { key: string; kind: "code" | "script" | "yours"; title: string; repo: string | null; pr: string | null; when: string | null; does: string[] }
+const shortened = (text: string) => (text.length > 90 ? `${text.slice(0, text.lastIndexOf(" ", 88))}…` : text)
+const withoutRepo = (title: string, repo: string | null) => {
+  const plain = repo && title.startsWith(`${repo}: `) ? title.slice(repo.length + 2) : title
+  // An action reads as one ("Merge PR #85…"); a command stays as it is typed ("pnpm update:preview").
+  return /^(merge|release|tag|deploy|revert|run)\b/.test(plain) ? plain.charAt(0).toUpperCase() + plain.slice(1) : plain
+}
+export function laterItems(state: Pick<PipelineState, "units" | "scripts">, steps: ReleaseStep[], part: YourPart | null): LaterItem[] {
+  return itemsOf(steps).map(({ key }) => {
+    const own = steps.filter(s => itemOf(s) === key)
+    const [kind, id] = key.split(":") as ["unit" | "script" | "manual", string]
+    if (kind === "unit") {
+      const u = (state.units ?? []).find(x => x.id === id)
+      return { key, kind: "code" as const, title: u?.title ?? own[0]!.title, repo: u?.repo ?? own[0]!.repo, pr: u?.pr ?? null, when: null, does: own.map(s => withoutRepo(s.title, s.repo)) }
+    }
+    if (kind === "script") {
+      const x = (state.scripts ?? []).find(v => v.id === id)
+      return { key, kind: "script" as const, title: x?.title ?? own[0]!.title, repo: own[0]!.repo, pr: null, when: x?.when || null, does: own.map(s => withoutRepo(s.title, s.repo)) }
+    }
+    const section = part?.sections.find(sec => sec.step === id)
+    return { key, kind: "yours" as const, title: section?.title ?? shortened(own[0]!.title), repo: null, pr: null, when: section?.when ?? null, does: [own[0]!.title] }
+  })
+}
 async function laterOf(state: PipelineState | null) {
   if (!state || state.status === "running") return null
   const [ordered, config] = [await withOrder(state), await deployConfig()]
-  return Object.fromEntries(ENVS_BOTH.map(env => [env, itemsOf(laterIn(ordered, env, config))])) as Record<Env, ReturnType<typeof itemsOf>>
+  const part = jsonOf(await readText(partFile(state.key))) as YourPart | null
+  return Object.fromEntries(ENVS_BOTH.map(env => [env, laterItems(state, laterIn(ordered, env, config), part)])) as Record<Env, LaterItem[]>
 }
 // What you chose of it: sent there now (a release with only that), or left out of it for good.
 export async function laterPipeline(key: string, env: Env, keys: string[], action: "deploy" | "leave") {
