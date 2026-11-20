@@ -34,7 +34,7 @@ import type { PipelineState, PrFix, Run, Stage, Unit } from "@server/pipeline"
 import type { Check as BoardCheck } from "@server/checks"
 import { deliverablesOf } from "@server/scope"
 import { MODELS } from "@/features/prompt/Settings"
-import { PipelineMark, liveLine, startText, startingText, statusText } from "./PipelineMark"
+import { PipelineMark, headline, liveLine, startText, startingText } from "./PipelineMark"
 import { STAGES, STAGE_KEYS, releasePasses, releaseShown, costOf, dollars, failed, isJob, isRelease, nextStage, nodeOf, passesOf, stageAt, toFix, tokens, tonesOf } from "./pipeline-board"
 import { SkipFailed, type StepAction } from "./Release"
 import { StageTabs, type Tab } from "./StageTabs"
@@ -406,15 +406,18 @@ function Now({ state, preview, now, putAside, onRun, onStep, onChanged }: { stat
   const activity = useActivity(state.key, isRunning && !release, isJob(state))
   const step = isRunning && !release ? (activity?.steps.findLast(s => s.isOpen) ?? activity?.steps.at(-1)) : undefined
   // Done with its stage, it says what comes next (its tab already says what it did).
-  const line = step?.text ?? (state.status === "ready" && !toFix(state).length ? statusText(state) : liveLine(state, card))
+  // The stage and its moment; while an agent works, what it does now after it.
+  const line = headline(state)
+  const doing = isRunning && !release ? (step?.text ?? liveLine(state, card)) : null
   const isFailed = state.status === "failed"
   const isAsking = state.status === "needs-info" || toFix(state).length > 0
   return (
     <div className="flex min-h-8 items-center gap-2.5">
       <PipelineMark state={state} card={card} size={20} />
       <div className="flex min-w-0 flex-1 items-baseline gap-2">
-        {isRunning ? <Shimmer as="span" duration={2.2} className="truncate text-[13.5px] font-semibold [--color-background:var(--text)] [--color-muted-foreground:var(--text-muted)]">{line}</Shimmer>
+        {isRunning ? <Shimmer as="span" duration={2.2} className="shrink-0 text-[13.5px] font-semibold [--color-background:var(--text)] [--color-muted-foreground:var(--text-muted)]">{line}</Shimmer>
           : <span className={cn("truncate text-[13.5px] font-semibold", isFailed ? "text-bad" : isAsking ? "text-ask" : "text-text")}>{line}</span>}
+        {doing && doing !== line && <span className="min-w-0 truncate text-[12.5px] text-text-muted">{doing}</span>}
         <span className="shrink-0 text-xs text-faint tabular-nums">{ago(isRunning ? state.startedAt : (state.endedAt ?? state.startedAt), now)}{isAuto(state) ? " · on its own" : ""}
           {state.news?.comments.length ? <span className="font-semibold text-ask"> · {state.news.comments.length} new in Jira</span> : null}</span>
       </div>
@@ -517,7 +520,7 @@ function Doc({ text }: { text: string }) {
 
 type PassProps = { stage: Stage; doc: string | null; summary: string | null; state: PipelineState; preview: Release | null; onRun: (stage?: Stage, fix?: string[]) => void; onStep: OnStep }
 const Passes = (props: { passes: Pass[]; picked: number; onPick: (key: number) => void }) =>
-  props.passes.length > 1 ? <div className="-mb-1 flex justify-end"><PassPicker {...props} /></div> : null
+  props.passes.length > 1 ? <PassPicker {...props} /> : null
 
 // A stage run more than once (a fix, a test again) shows each pass apart: the
 // latest at first; an earlier one as it left it (its units, findings or results,
@@ -529,7 +532,7 @@ function ReleasePasses({ stage, doc, summary, ...props }: PassProps) {
   const isLive = passes.some(p => p.isLive)
   const hasNext = props.preview?.env === stage && props.preview.steps.length > 0 && (!isLive || props.state.stage === (stage === "staging" ? "test" : "smoke"))
   const next = isLive && hasNext ? { ...props.state, stage, release: props.preview } : null
-  const all = [...passes.map(p => ({ key: p.n, at: p.startedAt, past: p.past })), ...(hasNext ? [{ key: -1, at: null, past: next }] : [])]
+  const all = [...passes.map((p, i) => ({ key: p.n, at: p.startedAt, past: p.past, label: `Deploy ${i + 1}` })), ...(hasNext ? [{ key: -1, at: null, past: next, label: "Next deploy" }] : [])]
   const [picked, setPicked] = useState<number | null>(null)
   // At first, the pass at hand (the latest), not one still to come.
   const shown = all.find(t => t.key === picked) ?? (isLive && hasNext ? all.at(-2) : all.at(-1))

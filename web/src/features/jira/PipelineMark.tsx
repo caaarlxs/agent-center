@@ -8,13 +8,11 @@ import { useIsDots } from "@/lib/board-style"
 import { cn } from "@/lib/utils"
 import { doingText, orbOf } from "@/features/conversation/session-events"
 import type { PipelineState, PipelineStatus, Stage } from "@server/pipeline"
-import { STAGES, failed, stageAt, toFix, untested, waitingStep } from "./pipeline-board"
+import { DOING, STAGES, failed, headline, stageAt, statusText, toFix, untested, waitingStep } from "./pipeline-board"
 
-export { STAGES, stageAt } from "./pipeline-board"
+export { STAGES, headline, momentOf, stageAt, statusText } from "./pipeline-board"
 
 // The state in two words: what the stage does, or what comes next.
-const DOING: Record<Stage, string> = { refine: "Refining", plan: "Planning", build: "Building", review: "Reviewing", staging: "Deploying to staging", test: "Testing in staging", prod: "Deploying to prod", smoke: "Checking prod" }
-const NEXT: Record<Stage, string> = { refine: "Ready to plan", plan: "Ready to build", build: "Ready to review", review: "Ready for staging", staging: "Ready to test", test: "Ready for prod", prod: "Ready to check", smoke: "Live in prod" }
 const START: Record<Stage, string> = { refine: "Run refine", plan: "Run plan", build: "Run build", review: "Run review", staging: "Deploy to staging", test: "Test in staging", prod: "Deploy to prod", smoke: "Check prod" }
 // Building after a review fixes what it found.
 const isFix = (stage: Stage, from?: Stage) => stage === "build" && from === "review"
@@ -22,8 +20,6 @@ export const startText = (stage: Stage, from?: Stage) => (isFix(stage, from) ? "
 export const startingText = (stage: Stage, from?: Stage) => `${isFix(stage, from) ? "Fixing" : DOING[stage]}: a session starts`
 // A review with something to fix, or a release step, waits for you like a question does.
 const lookOf = (state: PipelineState): PipelineStatus => (toFix(state).length || failed(state).length || untested(state).length || waitingStep(state) ? "needs-info" : state.status)
-export const statusText = (state: PipelineState) =>
-  state.status === "running" && state.release?.rollback ? `Rolling back ${state.release.env}` : toFix(state).length || failed(state).length ? "To fix" : untested(state).length ? "To check by hand" : waitingStep(state) ? "Waiting for you" : state.status === "running" ? DOING[state.stage] : state.status === "ready" ? NEXT[state.stage] : state.status === "needs-info" ? "Waiting for you" : "Failed"
 const TONE: Record<PipelineStatus, { text: string; bar: string }> = {
   running: { text: "text-work", bar: "bg-[linear-gradient(90deg,var(--work),color-mix(in_srgb,var(--work)_35%,transparent),var(--work))] bg-[length:200%_100%] animate-shimmer" },
   "needs-info": { text: "text-ask", bar: "bg-ask" },
@@ -84,7 +80,7 @@ const ORB_OF = { ready: { state: "idle", variant: "default" }, failed: { state: 
 export function PipelineMark({ state, card, size = 24 }: { state: PipelineState; card?: Card; size?: number }) {
   const isDots = useIsDots()
   const look = lookOf(state)
-  const title = statusText(state)
+  const title = headline(state)
   const orb = look === "running" ? orbOf(card?.doing) : ORB_OF[look]
   return (
     <span className={cn("inline-flex flex-none items-center justify-center", TONE[look].text)} style={{ width: size, height: size }} role="img" aria-label={title} title={title}>

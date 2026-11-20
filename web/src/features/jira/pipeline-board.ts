@@ -114,3 +114,36 @@ export function summaryParts(text: string): { done: string; pending: string | nu
   const cut = body.search(PENDING)
   return cut < 0 ? { done: body.trim(), pending: null } : { done: body.slice(0, cut).trim(), pending: body.slice(cut).trim() }
 }
+
+// ---------- the stage and its moment ----------
+
+// The state in two words: what the stage does, or what comes next.
+export const DOING: Record<Stage, string> = { refine: "Refining", plan: "Planning", build: "Building", review: "Reviewing", staging: "Deploying to staging", test: "Testing in staging", prod: "Deploying to prod", smoke: "Checking prod" }
+export const NEXT: Record<Stage, string> = { refine: "Ready to plan", plan: "Ready to build", build: "Ready to review", review: "Ready for staging", staging: "Ready to test", test: "Ready for prod", prod: "Ready to check", smoke: "Live in prod" }
+export const statusText = (state: PipelineState) =>
+  state.status === "running" && state.release?.rollback ? `Rolling back ${state.release.env}` : toFix(state).length || failed(state).length ? "To fix" : untested(state).length ? "To check by hand" : waitingStep(state) ? "Waiting for you" : state.status === "running" ? DOING[state.stage] : state.status === "ready" ? NEXT[state.stage] : state.status === "needs-info" ? "Waiting for you" : "Failed"
+
+// The stage and its moment in a line ("Staging · Deploying 3 of 10", "Review · Waiting for your
+// answers", "Build · Fixing (2nd pass)"): a stage holds more than one moment (a release, then its
+// test; a review, then your choice), and a stage run again says which pass it is.
+const AT_WORK: Record<Stage, string> = { refine: "Refining", plan: "Planning", build: "Building", review: "Reviewing", staging: "Deploying", test: "Testing", prod: "Deploying", smoke: "Checking" }
+const nth = (n: number) => `${n}${n === 1 ? "st" : n === 2 ? "nd" : n === 3 ? "rd" : "th"}`
+const passOf = (state: PipelineState) => (state.history ?? []).filter(r => r.stage === state.stage).length || 1
+function releaseMoment(state: PipelineState, release: NonNullable<PipelineState["release"]>) {
+  const atHand = release.steps.find(s => s.status !== "done" && s.status !== "skipped")
+  if (state.status === "failed") return atHand ? `Stopped at ${atHand.id}${state.error === "Stopped by you" ? ", by you" : ""}` : (state.error ?? "Failed")
+  if (release.rollback) return "Rolling back"
+  if (atHand?.status === "waiting") return `Waiting for you at ${atHand.id}`
+  const over = release.steps.filter(s => s.status === "done" || s.status === "skipped").length
+  return `Deploying ${Math.min(over + 1, release.steps.length)} of ${release.steps.length}`
+}
+export function momentOf(state: PipelineState) {
+  const again = passOf(state) > 1 ? ` (${nth(passOf(state))} pass)` : ""
+  if ((state.stage === "staging" || state.stage === "prod") && state.release && state.status !== "ready") return releaseMoment(state, state.release)
+  if (state.status === "running") return `${state.stage === "build" && state.fixing ? "Fixing" : AT_WORK[state.stage]}${again}`
+  if (state.status === "needs-info") return "Waiting for your answers"
+  if (state.status === "failed") return state.error ? `Failed: ${state.error}` : "Failed"
+  return statusText(state)
+}
+export const headline = (state: PipelineState) => `${STAGES[stageAt(state)]} · ${momentOf(state)}`
+

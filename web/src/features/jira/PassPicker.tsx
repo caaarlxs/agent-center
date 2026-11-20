@@ -1,38 +1,31 @@
-// The passes of a stage, in one control: "Pass 2 of 3", and every pass a
-// click away, each with its day and why it ran (or why it failed).
-import { AlertTriangle, ChevronDown, CircleCheck, CircleDashed } from "lucide-react"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+// The passes of a stage, in a row you see at once: each with its name (Pass 2,
+// Deploy 1, Next), its day, whether it failed, and why it ran (on hover); the
+// one shown stands out. A click shows it.
+import { AlertTriangle, CircleCheck, CircleDashed } from "lucide-react"
 import { cn } from "@/lib/utils"
 
-// at: when it started (none: one still to come, as the release at the door).
-export type Pass = { key: number; at: number | null; isFailed?: boolean; why?: string | null }
+// at: when it started (none: one still to come, as the release at the door); label: its name, else "Pass n".
+export type Pass = { key: number; at: number | null; isFailed?: boolean; why?: string | null; label?: string }
 
 const day = (at: number) => new Date(at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })
-const nameOf = (pass: Pass, i: number) => (pass.at === null ? "Next" : `Pass ${i + 1}`)
+const nameOf = (pass: Pass, i: number) => pass.label ?? (pass.at === null ? "Next" : `Pass ${i + 1}`)
 
 export function PassPicker({ passes, picked, onPick }: { passes: Pass[]; picked: number; onPick: (key: number) => void }) {
-  const i = Math.max(0, passes.findIndex(p => p.key === picked))
-  const counted = passes.filter(p => p.at !== null).length
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button className="inline-flex h-6 shrink-0 items-center gap-1 rounded-md px-1.5 text-xs font-semibold text-text-muted transition-colors duration-120 hover:bg-hover hover:text-text">
-          {passes[i]!.at === null ? "Next" : `Pass ${i + 1} of ${counted}`}<ChevronDown size={12} />
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-[300px]">
-        {passes.map((p, j) => {
-          const Icon = p.at === null ? CircleDashed : p.isFailed ? AlertTriangle : CircleCheck
-          return (
-            <DropdownMenuItem key={p.key} onSelect={() => onPick(p.key)} className={cn("grid grid-cols-[14px_minmax(0,1fr)_auto] items-baseline gap-x-2", j === i && "bg-hover")}>
-              <Icon size={12} className={cn("translate-y-[2px]", p.isFailed ? "text-bad" : p.at === null ? "text-faint" : "text-work")} />
-              <span className="text-[12.5px]">{nameOf(p, j)}</span>
-              <span className="text-[11.5px] text-faint tabular-nums">{p.at === null ? "" : day(p.at)}</span>
-              {p.why && <span className="col-start-2 col-end-4 truncate text-[11.5px] text-faint">{p.why}</span>}
-            </DropdownMenuItem>
-          )
-        })}
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <div className="flex flex-wrap items-center gap-1.5" role="tablist" aria-label="Passes">
+      {passes.map((p, i) => {
+        const Icon = p.at === null ? CircleDashed : p.isFailed ? AlertTriangle : CircleCheck
+        const isPicked = p.key === picked
+        return (
+          <button key={p.key} role="tab" aria-selected={isPicked} title={p.why ?? undefined} onClick={() => onPick(p.key)}
+            className={cn("inline-flex h-7 items-center gap-1.5 rounded-md border px-2 text-xs transition-colors duration-120",
+              isPicked ? "border-line-strong bg-hover font-semibold text-text" : "border-line text-text-muted hover:bg-hover hover:text-text")}>
+            <Icon size={12} className={cn(p.isFailed ? "text-bad" : p.at === null ? "text-faint" : "text-work")} />
+            {nameOf(p, i)}
+            {p.at !== null && <span className="font-normal text-faint tabular-nums">{day(p.at)}</span>}
+          </button>
+        )
+      })}
+    </div>
   )
 }

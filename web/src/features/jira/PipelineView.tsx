@@ -27,7 +27,7 @@ import { StageEffect } from "./StageEffect"
 import { DebtButton } from "./Debt"
 import { ClosedButton } from "./Closed"
 import { effectOf, sceneOf } from "./stage-effects"
-import { PipelineMark, liveLine } from "./PipelineMark"
+import { PipelineMark, liveLine, momentOf } from "./PipelineMark"
 import { BUILT, STAGES, STAGE_KEYS, columnOf, costOf, dollars, inColumns, isJob, isQueued, toFix, waitingStep } from "./pipeline-board"
 import { StageHelp } from "./StageHelp"
 
@@ -47,7 +47,8 @@ export function TicketCard({ state, card, now }: { state: PipelineState; card: C
   const activity = useActivity(state.key, isRunning && !state.release, isLoose)
   const effect = effectOf(state)
   const step = isRunning && !state.release ? (activity?.steps.findLast(s => s.isOpen) ?? activity?.steps.at(-1)) : undefined
-  const line = step?.text ?? liveLine(state, card)
+  // A release says its moment (deploying 3 of 10, stopped at R1): its column already says the stage.
+  const line = step?.text ?? (state.release && state.status !== "ready" && (state.stage === "staging" || state.stage === "prod") ? momentOf(state) : liveLine(state, card))
   const time = ago(isRunning ? state.startedAt : (state.endedAt ?? state.startedAt), now)
   return (
     <article tabIndex={0} data-card={state.key} data-col={isLoose ? undefined : columnOf(state)} onClick={() => open(state)} onKeyDown={onOpenKey(state)} data-edge={isAsking ? "waiting" : undefined}

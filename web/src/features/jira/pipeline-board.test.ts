@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { carriedFindings, carriedResults, columnOf, summaryParts, isQueued, nextStage, passesOf, toFix, tonesOf, untested, waitingStep } from "./pipeline-board"
+import type { PipelineState } from "@server/pipeline"
+import { headline, momentOf, carriedFindings, carriedResults, columnOf, summaryParts, isQueued, nextStage, passesOf, toFix, tonesOf, untested, waitingStep } from "./pipeline-board"
 
 type At = "refine" | "plan" | "build" | "review" | "staging" | "test" | "prod" | "smoke"
 const at = (stage: At, status: "running" | "needs-info" | "ready" | "failed", findings?: { id: string; severity: string }[], release?: unknown) => ({ stage, status, findings, release }) as never
@@ -150,5 +151,23 @@ describe("summaryParts", () => {
     const text = "# PP-1 · Prueba\n\nYa funciona.\n\n**Pendiente**\n- La del asesor."
     expect(summaryParts(text)).toEqual({ done: "Ya funciona.", pending: "**Pendiente**\n- La del asesor." })
     expect(summaryParts("Todo listo.")).toEqual({ done: "Todo listo.", pending: null })
+  })
+})
+
+describe("the stage and its moment", () => {
+  const step = (id: string, status: string) => ({ id, status }) as never
+  const base = { key: "PP-1", questions: [], history: [], status: "running" } as never as PipelineState
+  const at = (extra: object) => ({ ...base, ...extra }) as PipelineState
+  it("says where a release is: deploying which step, waiting for you, stopped where and by whom", () => {
+    const release = { env: "staging", steps: [step("R1", "done"), step("R2", "running"), step("R3", "pending")] }
+    expect(headline(at({ stage: "staging", release }))).toBe("Staging · Deploying 2 of 3")
+    expect(momentOf(at({ stage: "staging", release: { ...release, steps: [step("R1", "waiting")] } }))).toBe("Waiting for you at R1")
+    expect(momentOf(at({ stage: "staging", status: "failed", error: "Stopped by you", release: { ...release, steps: [step("R1", "failed")] } }))).toBe("Stopped at R1, by you")
+  })
+  it("says a stage run again is its nth pass, a fixing build fixes, and what waits for you", () => {
+    const history = [{ stage: "build" }, { stage: "review" }, { stage: "build" }]
+    expect(headline(at({ stage: "build", history, fixing: { ids: ["F1"] } }))).toBe("Build · Fixing (2nd pass)")
+    expect(headline(at({ stage: "test", history: [{ stage: "test" }] }))).toBe("Staging · Testing")
+    expect(headline(at({ stage: "review", status: "needs-info" }))).toBe("Review · Waiting for your answers")
   })
 })
