@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import { conflictsPrompt } from "../lib/conflicts"
-import { DEFAULT_CONFIG, setupFor, rollbackSteps, approveStep, deployState, isGated, nextTag, releaseSteps, reportOf, seenDone, manualStep, skipStep, unskipStep, addressStep, laterIn, itemOf, itemsOf, retryStep, stopRelease, advanceRelease, type Ops, type Release, rollupOf } from "../lib/release"
+import { DEFAULT_CONFIG, setupFor, rollbackSteps, approveStep, deployState, isGated, nextTag, releaseSteps, reportOf, seenDone, manualStep, skipStep, unskipStep, addressStep, relookStep, outcomesIn, laterIn, itemOf, itemsOf, retryStep, stopRelease, advanceRelease, type Ops, type Release, rollupOf } from "../lib/release"
 
 const unit = (id: string, repo: string, n: number) => ({ id, repo, subtask: null, branch: `feat/${id}`, title: id, dependsOn: [], status: "done" as const, pr: `https://github.com/acme/${repo}/pull/${n}` })
 const units = [unit("U1", "api-service", 7), unit("U2", "web-app", 8), unit("U3", "mobile-app", 9)]
@@ -345,10 +345,10 @@ describe("a PR with conflicts", () => {
     expect(r.release.steps[0]).toMatchObject({ status: "running", phase: "conflicts", pid: 77, attempts: 1 })
     expect(calls.some(c => c.includes("pr merge"))).toBe(false)
     expect(prompt).toContain("feat/U1")
-    expect(prompt).toContain("/d/PP-1/conflicts/R1-1.json")
+    expect(prompt).toContain("/d/PP-1/conflicts/0-R1-1.json")
     r = await advanceRelease(r.release, ctx, ops)
     expect(r.release.steps[0]).toMatchObject({ status: "running", phase: "conflicts" })
-    ops.readText = async path => (path === "/d/PP-1/conflicts/R1-1.json" ? `{"resolved": true, "reason": "Kept both"}` : null)
+    ops.readText = async path => (path === "/d/PP-1/conflicts/0-R1-1.json" ? `{"resolved": true, "reason": "Kept both"}` : null)
     answers["pr view"] = JSON.stringify({ ...JSON.parse(view("MERGEABLE")), statusCheckRollup: [{ conclusion: "SUCCESS" }] })
     r = await advanceRelease(r.release, ctx, ops)
     r = await advanceRelease(r.release, ctx, ops)
@@ -540,6 +540,13 @@ describe("what people said on a PR, before its merge", () => {
     const { calls, ops } = fake({ "pr view": open })
     return { calls, ops: { ...ops, prComments: async () => comments, judge: async () => 77, agent: async () => 78, isAlive: () => false, readText: async (p: string) => answers[Object.keys(answers).find(k => p.endsWith(k)) ?? ""] ?? null } }
   }
+  it("never reads what an agent of an earlier release left: each release has files of its own", async () => {
+    const { calls, ops } = withAnswers({ "3-R1-judge.json": '{"act": []}' })
+    let r = await advanceRelease({ env: "staging", steps: steps() }, { ...ctx, run: 4 }, { ...ops, isAlive: () => true })
+    r = await advanceRelease(r.release, { ...ctx, run: 4 }, { ...ops, isAlive: () => true })
+    expect(r.release.steps[0]).toMatchObject({ status: "running", phase: "feedback" })
+    expect(calls.some(c => c.includes("pr merge"))).toBe(false)
+  })
   it("merges at once when no one said anything", async () => {
     const { calls, ops } = fake({ "pr view": open })
     let r = await advanceRelease({ env: "staging", steps: steps() }, ctx, { ...ops, prComments: async () => [], judge: async () => 1 })
@@ -548,7 +555,7 @@ describe("what people said on a PR, before its merge", () => {
     expect(calls).toContain("gh pr merge https://github.com/acme/api-service/pull/7 --merge")
   })
   it("merges when an agent sees that no comment asks for a change (a LGTM)", async () => {
-    const { calls, ops } = withAnswers({ "R1-judge.json": '{"act": []}' })
+    const { calls, ops } = withAnswers({ "0-R1-judge.json": '{"act": []}' })
     let r = await advanceRelease({ env: "staging", steps: steps() }, ctx, ops)
     expect(r.release.steps[0]).toMatchObject({ status: "running", phase: "feedback", detail: "2 comments on its PR: an agent looks at them" })
     r = await advanceRelease(r.release, ctx, ops)
@@ -557,7 +564,7 @@ describe("what people said on a PR, before its merge", () => {
     expect(calls).toContain("gh pr merge https://github.com/acme/api-service/pull/7 --merge")
   })
   it("waits for you on a comment that asks for a change: merge it anyway, or have an agent make the change and look at it first", async () => {
-    const { calls, ops } = withAnswers({ "R1-judge.json": '{"act": [{"i": 1, "why": "Cambiar el glosario"}]}', "R1-fix.json": '{"resolved": true, "reason": "Glosario cambiado"}' })
+    const { calls, ops } = withAnswers({ "0-R1-judge.json": '{"act": [{"i": 1, "why": "Cambiar el glosario"}]}', "0-R1-fix.json": '{"resolved": true, "reason": "Glosario cambiado"}' })
     let r = await advanceRelease({ env: "staging", steps: steps() }, ctx, ops)
     r = await advanceRelease(r.release, ctx, ops)
     expect(r.release.steps[0]).toMatchObject({ status: "waiting", items: ["luis: Cambiar el glosario"], detail: "1 comment asks for a change on its PR" })
@@ -568,7 +575,19 @@ describe("what people said on a PR, before its merge", () => {
     expect(r.release.steps[0]).toMatchObject({ status: "running", phase: "addressing" })
     r = await advanceRelease(r.release, ctx, ops)
     expect(r.release.steps[0]).toMatchObject({ status: "waiting", detail: "Changes pushed: Glosario cambiado", feedback: { state: "addressed" } })
+    const again = relookStep(r.release, "R1")
+    expect(again.steps[0]).toMatchObject({ status: "pending", feedback: null, isApproved: false, items: [] })
     r = await advanceRelease(approveStep(r.release, "R1"), ctx, ops)
     expect(r.release.steps[0]).toMatchObject({ status: "running", phase: "deploy" })
+    expect(() => relookStep(r.release, "R1")).toThrow()
+  })
+})
+
+describe("outcomesIn", () => {
+  it("reads what the agent did with each comment, from its list or else from the lines of its reason", () => {
+    expect([...outcomesIn('{"resolved": true, "reason": "x", "items": [{"i": 0, "status": "already", "why": "Commit 5469"}, {"i": 2, "status": "skipped", "why": "Producto"}]}')])
+      .toEqual([[0, { status: "already", why: "Commit 5469" }], [2, { status: "skipped", why: "Producto" }]])
+    expect([...outcomesIn('{"resolved": true, "reason": "Commit 0f8f.\\n0: ya estaba. El commit 5469…\\n1: aplicado. La query espera…\\n7: no aplicado: pide producto"}')])
+      .toEqual([[0, { status: "already", why: "El commit 5469…" }], [1, { status: "applied", why: "La query espera…" }], [7, { status: "skipped", why: "pide producto" }]])
   })
 })

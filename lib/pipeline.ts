@@ -61,7 +61,7 @@ import { canJudge, gatePrompt, parseAdvice } from "./gate"
 import { pendingComments } from "./github"
 import { chatPrompt, partIn, partPrompt, stepsForYou, stepsHash, type YourPart } from "./your-part"
 import { readdir } from "node:fs/promises"
-import { DEFAULT_CONFIG, tookUnit, advanceRelease, approveStep, releaseSteps, retryStep, rollbackSteps, skipStep, unskipStep, addressStep, laterIn, itemOf, itemsOf, stopRelease, type DeployConfig, type OrderItem, type ManualCheck, manualStep, seenDone, type Ops, type Release, type ReleaseStep } from "./release"
+import { DEFAULT_CONFIG, tookUnit, advanceRelease, approveStep, releaseSteps, retryStep, rollbackSteps, skipStep, unskipStep, addressStep, relookStep, laterIn, itemOf, itemsOf, stopRelease, type DeployConfig, type OrderItem, type ManualCheck, manualStep, seenDone, type Ops, type Release, type ReleaseStep } from "./release"
 
 export type Stage = "refine" | "plan" | "build" | "review" | "staging" | "test" | "prod" | "smoke"
 const STAGE_NAMES: Stage[] = ["refine", "plan", "build", "review", "staging", "test", "prod", "smoke"]
@@ -1612,7 +1612,7 @@ async function tickNow(key: string) {
   {
     const state = await stateOf(key)
     if (!state?.release || state.status !== "running" || !isRelease(state.stage)) return
-    const ctx = { key, summary: state.summary ?? key, dir: dirOf(key), repos: join(ROOT, "repos"), stages: STAGES_DIR, tested: testedIn(state), config: await deployConfig(), units: state.units ?? [], scripts: state.scripts ?? [], checklist: state.checklist ?? [] }
+    const ctx = { key, run: state.runs, summary: state.summary ?? key, dir: dirOf(key), repos: join(ROOT, "repos"), stages: STAGES_DIR, tested: testedIn(state), config: await deployConfig(), units: state.units ?? [], scripts: state.scripts ?? [], checklist: state.checklist ?? [] }
     const advanced = await advanceRelease(state.release, ctx, releaseOps)
     const { isDone, failed } = advanced
     const release = await judged(state, advanced.release, ctx.config)
@@ -1692,11 +1692,30 @@ export async function rollBackPipeline(key: string, env: Env) {
 }
 
 // You, on the step at hand: go on (a tag of your own, if you write one), past it.
-export async function stepPipeline(key: string, id: string, action: "approve" | "skip" | "unskip" | "address", value?: string) {
+// The people who commented on a merge's PR, asked to look at it again (a re-review on GitHub: they are told).
+export async function rereviewPipeline(key: string, id: string) {
+  const state = await stateOf(key)
+  const step = state?.release?.steps.find(s => s.id === id)
+  const url = step?.links.find(l => l.label.startsWith("PR #"))?.url
+  const me = (await releaseOps.sh(["gh", "api", "user", "--jq", ".login"])).out
+  const who = [...new Set((step?.feedback?.items ?? []).map(c => c.author).filter((a): a is string => !!a && a !== me && !a.endsWith("[bot]")))]
+  const [, owner, repo, n] = url?.match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/) ?? []
+  if (!step || !n || !who.length) throw new Error("No one to ask on that step's PR")
+  const r = await releaseOps.sh(["gh", "api", "-X", "POST", `repos/${owner}/${repo}/pulls/${n}/requested_reviewers`, ...who.flatMap(w => ["-f", `reviewers[]=${w}`])])
+  if (!r.ok) throw new Error(r.err || "GitHub did not take it")
+  await locked(key, async () => {
+    const now = (await stateOf(key))!
+    await save({ ...now, release: now.release && { ...now.release, steps: now.release.steps.map(s => (s.id === id && s.feedback ? { ...s, feedback: { ...s.feedback, askedAt: Date.now() } } : s)) } })
+  })
+  forgetPr(url!)
+  return who
+}
+
+export async function stepPipeline(key: string, id: string, action: "approve" | "skip" | "unskip" | "address" | "relook", value?: string) {
   await locked(key, async () => {
     const state = await stateOf(key)
     if (!state?.release || !isRelease(state.stage)) throw new Error("No release on this ticket")
-    const release = action === "approve" ? approveStep(state.release, id, value) : action === "unskip" ? unskipStep(state.release, id) : action === "address" ? addressStep(state.release, id) : skipStep(state.release, id)
+    const release = action === "approve" ? approveStep(state.release, id, value) : action === "unskip" ? unskipStep(state.release, id) : action === "address" ? addressStep(state.release, id) : action === "relook" ? relookStep(state.release, id) : skipStep(state.release, id)
     await save({ ...state, release, status: "running", error: null, endedAt: null })
   })
   void tickRelease(key)

@@ -18,6 +18,7 @@ import type { PrState } from "@server/stage-extras"
 import type { Turn } from "@server/pipeline"
 import { Ask } from "./Ask"
 import { ChatButton } from "./YourPart"
+import { FeedbackList } from "./FeedbackList"
 import { Section } from "./kinds"
 import { useStageData } from "./stage-data"
 import { ConflictFix } from "./ConflictFix"
@@ -121,6 +122,7 @@ function Waiting({ step, onAct }: { step: ReleaseStep; onAct: (action: StepActio
           className="h-7 w-28 rounded-[6px] border border-line-strong bg-surface px-2 font-mono text-xs outline-none focus:border-brand" />
       )}
       {step.feedback?.state === "act" && <Button className="h-7 text-xs" onClick={() => onAct("address")}>Address the comments</Button>}
+      {(step.feedback?.state === "act" || step.feedback?.state === "addressed") && <button className="text-xs font-semibold text-faint hover:text-text" onClick={() => onAct("relook")}>Look at the comments again</button>}
       <Button variant={asking === "approve" || step.feedback?.state === "act" ? (asking === "approve" ? "destructive" : "outline") : "default"} className="h-7 text-xs" onClick={() => press("approve")}>{asking === "approve" ? `Sure? ${label}` : label}</Button>
       <button className={cn("text-xs font-semibold transition-colors duration-120", asking === "skip" ? "text-bad" : "text-faint hover:text-text")} onClick={() => press("skip")}>{asking === "skip" ? "Sure? Skip it" : "Skip"}</button>
     </div>
@@ -220,7 +222,9 @@ function Skipped({ canUndo, onUndo }: { canUndo: boolean; onUndo: () => void }) 
   )
 }
 
-export type StepAction = "approve" | "skip" | "unskip" | "address"
+// A merge whose PR's comments ask for changes, or got them: shown a comment a line.
+const hasFeedback = (step: ReleaseStep) => step.feedback?.state === "act" || step.feedback?.state === "addressed"
+export type StepAction = "approve" | "skip" | "unskip" | "address" | "relook"
 function StepRow({ step, ticketKey, isAtHand, isAhead, isLive, threads, onAct }: { step: ReleaseStep; ticketKey: string; isAtHand: boolean; isAhead: boolean; isLive: boolean; threads?: Record<string, Turn[]>; onAct: (action: StepAction, value?: string) => void }) {
   const isFaint = step.status === "pending" || step.status === "skipped"
   const { icon: Icon, name } = kindOf(step)
@@ -243,9 +247,9 @@ function StepRow({ step, ticketKey, isAtHand, isAhead, isLive, threads, onAct }:
           {threads && <ChatButton ticketKey={ticketKey} step={step.note.id} />}
         </div>
       )}
-      {(step.items.length > 0 || step.report) && (
+      {(step.items.length > 0 || step.report || hasFeedback(step)) && (
         <div className="col-start-2 flex min-w-0 flex-col gap-2 pl-[55px]">
-          <Items items={step.items} isOpen={step.status === "waiting" && (step.kind === "check" || step.feedback?.state === "act")} />
+          {hasFeedback(step) ? <FeedbackList ticketKey={ticketKey} step={step} /> : <Items items={step.items} isOpen={step.status === "waiting" && step.kind === "check"} />}
           {step.report && (step.status !== "pending") && <ReportView ticketKey={ticketKey} file={step.report} />}
         </div>
       )}
