@@ -58,9 +58,10 @@ import { overLimits, prChecks, reposClean, type Check } from "./checks"
 import { forgetPr, prStates, scenarioOf } from "./stage-extras"
 import { conflictsPrompt, parseResolved } from "./conflicts"
 import { canJudge, gatePrompt, parseAdvice } from "./gate"
+import { pendingComments } from "./github"
 import { chatPrompt, partIn, partPrompt, stepsForYou, stepsHash, type YourPart } from "./your-part"
 import { readdir } from "node:fs/promises"
-import { DEFAULT_CONFIG, tookUnit, advanceRelease, approveStep, releaseSteps, retryStep, rollbackSteps, skipStep, unskipStep, laterIn, itemOf, itemsOf, stopRelease, type DeployConfig, type OrderItem, type ManualCheck, manualStep, seenDone, type Ops, type Release, type ReleaseStep } from "./release"
+import { DEFAULT_CONFIG, tookUnit, advanceRelease, approveStep, releaseSteps, retryStep, rollbackSteps, skipStep, unskipStep, addressStep, laterIn, itemOf, itemsOf, stopRelease, type DeployConfig, type OrderItem, type ManualCheck, manualStep, seenDone, type Ops, type Release, type ReleaseStep } from "./release"
 
 export type Stage = "refine" | "plan" | "build" | "review" | "staging" | "test" | "prod" | "smoke"
 const STAGE_NAMES: Stage[] = ["refine", "plan", "build", "review", "staging", "test", "prod", "smoke"]
@@ -1572,6 +1573,8 @@ const releaseOps: Ops = {
   // The agent that resolves a PR's conflicts (lib/conflicts.ts): a build's
   // limits (it may push to the PR's branch, never merge), on its own process;
   // its session, the pipeline's.
+  prComments: pendingComments,
+  judge: (dir, prompt, log) => mkdir(join(log, ".."), { recursive: true }).then(() => spawnGate(dir, prompt, log)),
   isFixing: async (key, url) => (await prFixOf(fixFiles(key, url))).status === "running",
   agent: async (dir, prompt, logPath) => {
     await mkdir(join(logPath, ".."), { recursive: true })
@@ -1689,11 +1692,11 @@ export async function rollBackPipeline(key: string, env: Env) {
 }
 
 // You, on the step at hand: go on (a tag of your own, if you write one), past it.
-export async function stepPipeline(key: string, id: string, action: "approve" | "skip" | "unskip", value?: string) {
+export async function stepPipeline(key: string, id: string, action: "approve" | "skip" | "unskip" | "address", value?: string) {
   await locked(key, async () => {
     const state = await stateOf(key)
     if (!state?.release || !isRelease(state.stage)) throw new Error("No release on this ticket")
-    const release = action === "approve" ? approveStep(state.release, id, value) : action === "unskip" ? unskipStep(state.release, id) : skipStep(state.release, id)
+    const release = action === "approve" ? approveStep(state.release, id, value) : action === "unskip" ? unskipStep(state.release, id) : action === "address" ? addressStep(state.release, id) : skipStep(state.release, id)
     await save({ ...state, release, status: "running", error: null, endedAt: null })
   })
   void tickRelease(key)

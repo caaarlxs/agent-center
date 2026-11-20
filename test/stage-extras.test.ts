@@ -2,6 +2,11 @@ import { describe, expect, it } from "bun:test"
 import { prStateOf, prStates, scenarioOf } from "../lib/stage-extras"
 
 describe("prStateOf", () => {
+  it("counts what people said after its last commit, on an open PR", () => {
+    const pr = { state: "OPEN", isDraft: false, mergeable: "MERGEABLE", commits: [{ committedDate: "2026-11-17T10:00:00Z" }],
+      comments: [{ body: "old", createdAt: "2026-11-16T10:00:00Z" }, { body: "Cambia el glosario", createdAt: "2026-11-20T08:52:55Z" }], reviews: [{ body: "", submittedAt: "2026-11-20T09:00:00Z" }, { body: "LGTM", submittedAt: "2026-11-20T09:10:00Z" }] }
+    expect(prStateOf(pr)).toEqual({ state: "OPEN", isDraft: false, isConflicting: false, comments: 2 })
+  })
   it("says merged, open, a draft and with conflicts", () => {
     expect(prStateOf({ state: "MERGED", isDraft: false, mergeStateStatus: "UNKNOWN" })).toEqual({ state: "MERGED", isDraft: false, isConflicting: false })
     expect(prStateOf({ state: "OPEN", isDraft: true, mergeStateStatus: "DIRTY" })).toEqual({ state: "OPEN", isDraft: true, isConflicting: true })

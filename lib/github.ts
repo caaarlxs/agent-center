@@ -241,6 +241,40 @@ export async function openThreads(url: string): Promise<Thread[] | null> {
   return threads
 }
 
+// What people said on a PR that a merge must not pass by: its review threads still open, the
+// reviews that asked for changes, and every comment or review left after its last commit (a
+// "looks good" too: an agent tells which ones ask for a change, lib/release.ts).
+export type PrComment = { author: string | null; body: string; url: string | null; path: string | null }
+const COMMENTS_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      commits(last: 1) { nodes { commit { committedDate } } }
+      reviewThreads(first: 100) { nodes { isResolved path comments(first: 20) { nodes { author { login } body url } } } }
+      reviews(last: 50) { nodes { state body url submittedAt author { login } } }
+      comments(last: 50) { nodes { body url createdAt author { login } } }
+    }
+  }
+}`
+export function commentsOf(pr: any): PrComment[] {
+  const since = Date.parse(pr?.commits?.nodes?.[0]?.commit?.committedDate ?? "") || 0
+  const after = (at: string | undefined) => (Date.parse(at ?? "") || 0) > since
+  const threads = (pr?.reviewThreads?.nodes ?? []).filter((t: any) => !t.isResolved).map((t: any) => {
+    const [first, ...replies] = t.comments?.nodes ?? []
+    return { author: first?.author?.login ?? null, body: [first?.body ?? "", ...replies.map((r: any) => `@${r.author?.login ?? "?"}: ${r.body}`)].join("\n").trim(), url: first?.url ?? null, path: t.path ?? null }
+  })
+  const reviews = (pr?.reviews?.nodes ?? []).filter((r: any) => r.body?.trim() && (r.state === "CHANGES_REQUESTED" || after(r.submittedAt)))
+    .map((r: any) => ({ author: r.author?.login ?? null, body: r.body.trim(), url: r.url ?? null, path: null }))
+  const comments = (pr?.comments?.nodes ?? []).filter((c: any) => c.body?.trim() && after(c.createdAt))
+    .map((c: any) => ({ author: c.author?.login ?? null, body: c.body.trim(), url: c.url ?? null, path: null }))
+  return [...threads, ...reviews, ...comments].filter(c => c.body)
+}
+export async function pendingComments(url: string): Promise<PrComment[] | null> {
+  if (!PR_URL.test(url)) return null
+  const [, , , owner, name, , number] = url.split("/")
+  const res = await gh(["api", "graphql", "-f", `query=${COMMENTS_QUERY}`, "-F", `owner=${owner}`, "-F", `name=${name}`, "-F", `number=${number}`], HOME, 20_000)
+  return res.ok ? commentsOf(JSON.parse(res.out).data?.repository?.pullRequest) : null
+}
+
 // ---------- actions ----------
 
 export type PrAction = "merge" | "close" | "reopen" | "ready" | "draft"

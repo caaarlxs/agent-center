@@ -14,6 +14,7 @@ import { Shimmer } from "@/components/ai-elements/shimmer"
 import { get } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import type { Release, ReleaseStep, StepKind, StepNote } from "@server/release"
+import type { PrState } from "@server/stage-extras"
 import type { Turn } from "@server/pipeline"
 import { Ask } from "./Ask"
 import { ChatButton } from "./YourPart"
@@ -100,7 +101,7 @@ const KIND: Record<StepKind, { icon: LucideIcon; name: string }> = {
 }
 const ASKS_TWICE: StepKind[] = ["merge", "promote", "tag", "execute", "revert", "redeploy"]
 
-function Waiting({ step, onAct }: { step: ReleaseStep; onAct: (action: "approve" | "skip", value?: string) => void }) {
+function Waiting({ step, onAct }: { step: ReleaseStep; onAct: (action: StepAction, value?: string) => void }) {
   const [value, setValue] = useState(step.value ?? "")
   const [asking, setAsking] = useState<"approve" | "skip" | null>(null)
   useEffect(() => {
@@ -109,8 +110,8 @@ function Waiting({ step, onAct }: { step: ReleaseStep; onAct: (action: "approve"
     return () => clearTimeout(timer)
   }, [asking])
   const press = (action: "approve" | "skip") => (action === "skip" || ASKS_TWICE.includes(step.kind)) && asking !== action ? setAsking(action) : (setAsking(null), onAct(action, step.kind === "tag" ? value : undefined))
-  // A deploy that never showed up: you checked it.
-  const label = step.phase === "deploy" ? "Go on" : GO[step.kind]
+  // A deploy that never showed up: you checked it. Comments on its PR: merge as it is, or once you looked at the changes.
+  const label = step.phase === "deploy" ? "Go on" : step.feedback?.state === "act" ? "Merge anyway" : step.feedback?.state === "addressed" ? "Looks right: merge" : GO[step.kind]
   return (
     <div className="flex flex-col gap-2">
     {step.advice && <AdviceLine advice={step.advice} />}
@@ -119,7 +120,8 @@ function Waiting({ step, onAct }: { step: ReleaseStep; onAct: (action: "approve"
         <input value={value} onChange={e => setValue(e.target.value)} spellCheck={false} aria-label="Tag"
           className="h-7 w-28 rounded-[6px] border border-line-strong bg-surface px-2 font-mono text-xs outline-none focus:border-brand" />
       )}
-      <Button variant={asking === "approve" ? "destructive" : "default"} className="h-7 text-xs" onClick={() => press("approve")}>{asking === "approve" ? `Sure? ${label}` : label}</Button>
+      {step.feedback?.state === "act" && <Button className="h-7 text-xs" onClick={() => onAct("address")}>Address the comments</Button>}
+      <Button variant={asking === "approve" || step.feedback?.state === "act" ? (asking === "approve" ? "destructive" : "outline") : "default"} className="h-7 text-xs" onClick={() => press("approve")}>{asking === "approve" ? `Sure? ${label}` : label}</Button>
       <button className={cn("text-xs font-semibold transition-colors duration-120", asking === "skip" ? "text-bad" : "text-faint hover:text-text")} onClick={() => press("skip")}>{asking === "skip" ? "Sure? Skip it" : "Skip"}</button>
     </div>
     </div>
@@ -148,18 +150,24 @@ function Mark({ step }: { step: ReleaseStep }) {
   return <span className={cn(box, "border border-line-strong")} />
 }
 
-// A PR a step still has to merge that cannot go as it is: a draft, or with conflicts.
+// A PR a step still has to merge that cannot go as it is: a draft, with conflicts, or with comments
+// since its last commit (the merge has an agent look at them first).
+const prWarning = (label: string, pr: PrState) => {
+  const is = [pr.isDraft && "a draft", pr.isConflicting && "in conflict with its base"].filter(Boolean).join(" and ")
+  const said = pr.comments ? `${pr.comments} comment${pr.comments === 1 ? "" : "s"} since its last commit` : ""
+  return is ? `${label} is ${is}${said ? `, with ${said}` : ""}` : `${label} has ${said}`
+}
 function PrBlock({ step }: { step: ReleaseStep }) {
   const { prs } = useStageData()
   if (step.status === "done" || step.status === "skipped") return null
-  const stuck = step.links.map(l => [l, prs[l.url]] as const).filter(([, pr]) => pr?.state === "OPEN" && (pr.isDraft || pr.isConflicting))
+  const stuck = step.links.map(l => [l, prs[l.url]] as const).filter(([, pr]) => pr?.state === "OPEN" && (pr.isDraft || pr.isConflicting || !!pr.comments))
   if (!stuck.length) return null
   return (
     <span className="col-start-2 flex flex-col gap-1 pl-[55px]">
       {stuck.map(([l, pr]) => (
         <span key={l.url} className="flex flex-col gap-0.5">
           <span className="flex flex-wrap items-baseline gap-x-3 text-[11.5px]">
-            <span className="font-semibold text-ask">{l.label} is {[pr!.isDraft && "a draft", pr!.isConflicting && "in conflict with its base"].filter(Boolean).join(" and ")}</span>
+            <span className="font-semibold text-ask">{prWarning(l.label, pr!)}</span>
             {pr!.isDraft && step.kind === "manual" && <ReadyButton url={l.url} />}
           </span>
           <ConflictFix url={l.url} />
@@ -212,7 +220,7 @@ function Skipped({ canUndo, onUndo }: { canUndo: boolean; onUndo: () => void }) 
   )
 }
 
-export type StepAction = "approve" | "skip" | "unskip"
+export type StepAction = "approve" | "skip" | "unskip" | "address"
 function StepRow({ step, ticketKey, isAtHand, isAhead, isLive, threads, onAct }: { step: ReleaseStep; ticketKey: string; isAtHand: boolean; isAhead: boolean; isLive: boolean; threads?: Record<string, Turn[]>; onAct: (action: StepAction, value?: string) => void }) {
   const isFaint = step.status === "pending" || step.status === "skipped"
   const { icon: Icon, name } = kindOf(step)
@@ -237,7 +245,7 @@ function StepRow({ step, ticketKey, isAtHand, isAhead, isLive, threads, onAct }:
       )}
       {(step.items.length > 0 || step.report) && (
         <div className="col-start-2 flex min-w-0 flex-col gap-2 pl-[55px]">
-          <Items items={step.items} isOpen={step.status === "waiting" && step.kind === "check"} />
+          <Items items={step.items} isOpen={step.status === "waiting" && (step.kind === "check" || step.feedback?.state === "act")} />
           {step.report && (step.status !== "pending") && <ReportView ticketKey={ticketKey} file={step.report} />}
         </div>
       )}

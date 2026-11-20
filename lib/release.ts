@@ -26,6 +26,7 @@
 
 import { conflictsPrompt, parseResolved, type ConflictPr } from "./conflicts"
 import type { Advice } from "./gate"
+import type { PrComment } from "./github"
 import type { ChecklistItem, Env, PipelineState, PlanScript, Unit } from "./pipeline"
 
 export type StepKind = "merge" | "promote" | "tag" | "simulate" | "execute" | "manual" | "check" | "revert" | "redeploy"
@@ -46,7 +47,7 @@ export type ReleaseStep = {
   value: string | null // the tag (proposed, then pushed), or the branch a promote goes to
   sha: string | null // the commit it deploys
   since: number | null // when it started: the runs and deployments since then are its own
-  phase: "checks" | "deploy" | "script" | "rerun" | "conflicts" | null
+  phase: "checks" | "deploy" | "script" | "rerun" | "conflicts" | "feedback" | "addressing" | null
   pid: number | null
   report: string | null // a script's report, in <ticket>/scripts
   error: string | null
@@ -55,8 +56,12 @@ export type ReleaseStep = {
   runId?: number | null // a redeploy's: the run it ran again
   attempts?: number // a merge's: the times an agent took on its conflicts (lib/conflicts.ts)
   note?: StepNote | null // a person's step: the plan's why, how and done
+  feedback?: Feedback | null // a merge's: what people said on its PR, and what came of it
   seenAt?: number | null // a person's step with a check: when the board last looked
 }
+// What people said on a PR before its merge: being judged by an agent; nothing that asks for a change
+// (clear); some that do (act: it waits for you); an agent making those changes; made, for you to look at.
+export type Feedback = { state: "judging" | "clear" | "act" | "addressing" | "addressed"; items: (PrComment & { why?: string })[] }
 // A release, or a rollback of one (its steps undo the release's, the other way round).
 export type Release = { env: Env; steps: ReleaseStep[]; reminders?: string[]; rollback?: boolean }
 // The plan's order for a release: a unit, a script, or something a person does.
@@ -326,6 +331,8 @@ export type Ops = {
   exists: (path: string) => boolean
   secret: (name: string) => Promise<string | null> // from the keychain
   agent: (dir: string, prompt: string, log: string) => Promise<number> // an agent on its own process, that may push to a PR's branch
+  prComments?: (url: string) => Promise<PrComment[] | null> // what people said on a PR (lib/github.ts pendingComments)
+  judge?: (dir: string, prompt: string, log: string) => Promise<number> // a read-only agent, on its own process
   isFixing?: (key: string, url: string) => Promise<boolean> // an agent a person sent to the PR's conflicts (Resolve conflicts) is at work
 }
 // tested: the commit staging ran of each repo (its merge), which is what goes to prod.
@@ -501,10 +508,13 @@ async function merge(step: ReleaseStep, release: Release, ctx: Ctx, ops: Ops): P
   let pr = await view()
   // Closed on GitHub (someone saw it is not needed): nothing to merge, and an agent's push would not reach it.
   if (pr.state === "CLOSED") throw new Error(`PR #${prNumber(url)} was closed on GitHub: Skip this step if it is not needed, or reopen the PR and Retry`)
+  // What people said on it comes first: what asks for a change waits for you (or an agent makes it).
+  const heard = pr.state === "MERGED" ? null : await feedback(step, ctx, ops, { url, head: pr.headRefName, base: pr.baseRefName })
+  if (heard) return heard
   if (pr.state !== "MERGED" && pr.mergeable === "CONFLICTING") return resolveConflicts(step, release, ctx, ops, { url, repo: step.repo ?? "", head: pr.headRefName, base: pr.baseRefName })
   if (pr.state !== "MERGED" && pr.mergeable === "UNKNOWN") return { detail: "GitHub is working out whether it merges" }
   // An agent pushed to the PR (its conflicts): its commit merges only once the PR's checks pass.
-  if (pr.state !== "MERGED" && (step.attempts ?? 0) > 0) {
+  if (pr.state !== "MERGED" && ((step.attempts ?? 0) > 0 || step.feedback?.state === "addressed")) {
     const rollup = rollupOf(pr.statusCheckRollup ?? [])
     if (rollup === "fail") throw new Error("The checks failed on the commit that resolved the conflicts: look at it, then Retry")
     if (rollup === "pending") return { detail: "Conflicts resolved: waiting for the PR's checks" }
@@ -521,6 +531,83 @@ async function merge(step: ReleaseStep, release: Release, ctx: Ctx, ops: Ops): P
 
 // Once only: conflicts again after an agent resolved them are yours (Retry hands them over again).
 const answerOf = (step: ReleaseStep, ctx: Ctx) => `${ctx.dir}/conflicts/${step.id}-${step.attempts ?? 0}.json`
+// ---------- what people said on a PR ----------
+
+const feedbackFile = (step: ReleaseStep, ctx: Ctx, what: "judge" | "fix") => `${ctx.dir}/feedback/${step.id}-${what}.json`
+const listed = (items: Feedback["items"]) => items.map((c, i) => `${i}. ${c.author ?? "?"}${c.path ? ` (${c.path})` : ""}: ${c.body.replace(/\s+/g, " ").slice(0, 1500)}`).join("\n")
+export const judgePrompt = (key: string, url: string, items: Feedback["items"], answer: string) => `[Pipeline] ${key} · comentarios de la PR
+
+Antes de mergear ${url}, mira lo que dijeron las personas en ella:
+
+${listed(items)}
+
+Para cada comentario, decide si pide un cambio en el código o en la PR antes de mergear. No lo piden: una aprobación ("LGTM", "todo ok"), un agradecimiento, una pregunta ya respondida, una sugerencia marcada como opcional, una nota para más adelante, un comentario del propio pipeline. Si dudas, sí lo pide.
+
+Escribe ${answer}: {"act": [{"i": 0, "why": "…"}]}, solo con los que piden un cambio (i: su número; why: qué piden, en una frase en español). Ninguno: {"act": []}. Solo lee: no cambies nada más.`
+export const addressPrompt = (key: string, pr: { url: string; head: string; base: string }, items: Feedback["items"], clone: string, answer: string) => `[Pipeline] ${key} · aplicar los comentarios de la PR
+
+Las personas que revisaron ${pr.url} piden estos cambios antes de mergearla:
+
+${listed(items)}
+
+1. En ${clone}, trae la rama ${pr.head} y aplica los cambios que piden. Solo esos.
+2. Pasa los tests y los checks del repo que tocan lo que cambias.
+3. Haz un commit y push a ${pr.head}. Nunca a ${pr.base}, nunca force push, nunca merges.
+4. No contestes ni resuelvas nada en GitHub: eso lo decide la persona.
+5. Escribe ${answer}: {"resolved": true | false, "reason": "…"}: qué cambiaste, o por qué no pudiste (lo que pide una decisión de producto, no lo decidas tú).`
+
+async function feedback(step: ReleaseStep, ctx: Ctx, ops: Ops, pr: { url: string; head: string; base: string }): Promise<Patch | null> {
+  const fb = step.feedback
+  // Looked at and clear, or yours to merge as it is (you approved it): on to the merge.
+  if (fb?.state === "clear" || (fb && step.isApproved && fb.state !== "addressing")) return null
+  if (fb?.state === "addressing") {
+    const answer = feedbackFile(step, ctx, "fix")
+    const pid = await ops.agent(ctx.dir, addressPrompt(ctx.key, pr, fb.items, cloneOf(step, ctx), answer), answer.replace(/\.json$/, ".log"))
+    return { status: "running", phase: "addressing", pid, detail: `An agent makes the ${fb.items.length === 1 ? "change" : `${fb.items.length} changes`} the comments ask for` }
+  }
+  if (fb || !ops.prComments || !ops.judge) return null
+  const items = (await ops.prComments(pr.url)) ?? []
+  if (!items.length) return { feedback: { state: "clear", items: [] } }
+  const answer = feedbackFile(step, ctx, "judge")
+  const pid = await ops.judge(ctx.dir, judgePrompt(ctx.key, pr.url, items, answer), answer.replace(/\.json$/, ".log"))
+  return { status: "running", phase: "feedback", pid, feedback: { state: "judging", items }, detail: `${items.length} comment${items.length === 1 ? "" : "s"} on its PR: an agent looks at them` }
+}
+// The agent that judged the comments: none asks for a change, it merges; some do, it waits for you.
+async function checkFeedback(step: ReleaseStep, ctx: Ctx, ops: Ops): Promise<Patch> {
+  const fb = step.feedback!
+  const text = await ops.readText(feedbackFile(step, ctx, "judge"))
+  if (text === null && ops.isAlive(step.pid ?? 0)) return {}
+  const act = text === null ? null : listOfJson(text)
+  // No answer: every comment is yours to look at.
+  const asks = act === null ? fb.items.map(c => ({ ...c, why: "The agent gave no answer: look at it" })) : act.flatMap(a => (fb.items[a.i] ? [{ ...fb.items[a.i]!, why: a.why }] : []))
+  if (!asks.length) return { status: "pending", phase: null, pid: null, feedback: { ...fb, state: "clear" }, detail: "The comments on its PR ask for no change" }
+  return { status: "waiting", phase: null, pid: null, feedback: { state: "act", items: asks }, items: asks.map(c => `${c.author ?? "?"}: ${c.why ?? c.body.slice(0, 200)}`),
+    detail: `${asks.length} comment${asks.length === 1 ? " asks" : "s ask"} for a change on its PR` }
+}
+const listOfJson = (text: string): { i: number; why: string }[] | null => {
+  try {
+    const act = JSON.parse(text)?.act
+    return Array.isArray(act) ? act.filter(a => Number.isInteger(a?.i)).map(a => ({ i: a.i, why: typeof a.why === "string" ? a.why.trim() : "" })) : null
+  } catch {
+    return null
+  }
+}
+// The agent that made the changes: pushed, for you to look at before the merge; or why not.
+async function checkAddressing(step: ReleaseStep, ctx: Ctx, ops: Ops): Promise<Patch> {
+  const text = await ops.readText(feedbackFile(step, ctx, "fix"))
+  if (text === null) return ops.isAlive(step.pid ?? 0) ? {} : { status: "failed", pid: null, phase: null, error: "The agent stopped without an answer: make the changes by hand, then Retry" }
+  const answer = parseResolved(text)
+  return answer.resolved
+    ? { status: "waiting", pid: null, phase: null, isApproved: false, feedback: { ...step.feedback!, state: "addressed" }, detail: `Changes pushed: ${answer.reason}` }
+    : { status: "failed", pid: null, phase: null, error: `The comments were not addressed: ${answer.reason}` }
+}
+// "Address the comments": the agent goes on the PR's branch.
+export function addressStep(release: Release, id: string): Release {
+  const step = release.steps.find(s => s.id === id)
+  if (!current(release, id) || step?.feedback?.state !== "act") throw new Error("No comments wait on that step")
+  return withStep(release, id, { status: "pending", feedback: { ...step.feedback, state: "addressing" } })
+}
+
 async function resolveConflicts(step: ReleaseStep, release: Release, ctx: Ctx, ops: Ops, pr: ConflictPr): Promise<Patch> {
   if ((step.attempts ?? 0) >= 1) throw new Error(`Conflicts with ${pr.base} again after an agent took them on: resolve them by hand, then Retry`)
   const next = { ...step, attempts: (step.attempts ?? 0) + 1 }
@@ -626,6 +713,8 @@ function check(step: ReleaseStep, ctx: Ctx, ops: Ops): Promise<Patch> {
   if (step.phase === "checks") return checkPromote(step, ops)
   if (step.phase === "rerun") return checkRerun(step, ctx, ops)
   if (step.phase === "conflicts") return checkConflicts(step, ctx, ops)
+  if (step.phase === "feedback") return checkFeedback(step, ctx, ops)
+  if (step.phase === "addressing") return checkAddressing(step, ctx, ops)
   return checkDeploy(step, ctx, ops)
 }
 

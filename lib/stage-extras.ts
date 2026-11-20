@@ -2,14 +2,18 @@
 // of each PR now (merged, open, a draft, with conflicts), and the test data a
 // test in staging made (scenario.json), in a few lines.
 
-export type PrState = { state: "OPEN" | "MERGED" | "CLOSED"; isDraft: boolean; isConflicting: boolean }
+// comments: what people said on it after its last commit (comments and reviews with a text): a merge looks at them first.
+export type PrState = { state: "OPEN" | "MERGED" | "CLOSED"; isDraft: boolean; isConflicting: boolean; comments?: number }
 type Sh = (cmd: string[], options?: { timeoutMs?: number }) => Promise<{ ok: boolean; out: string }>
 
 const STATES = ["OPEN", "MERGED", "CLOSED"]
 export function prStateOf(raw: unknown): PrState | null {
-  const pr = raw as { state?: string; isDraft?: boolean; mergeable?: string; mergeStateStatus?: string } | null
+  type Said = { body?: string; createdAt?: string; submittedAt?: string }
+  const pr = raw as { state?: string; isDraft?: boolean; mergeable?: string; mergeStateStatus?: string; comments?: Said[]; reviews?: Said[]; commits?: { committedDate?: string }[] } | null
   if (!pr || !STATES.includes(pr.state ?? "")) return null
-  return { state: pr.state as PrState["state"], isDraft: !!pr.isDraft, isConflicting: pr.mergeable === "CONFLICTING" || pr.mergeStateStatus === "DIRTY" }
+  const since = Date.parse(pr.commits?.at(-1)?.committedDate ?? "") || 0
+  const said = [...(pr.comments ?? []), ...(pr.reviews ?? [])].filter(c => c.body?.trim() && (Date.parse(c.createdAt ?? c.submittedAt ?? "") || 0) > since).length
+  return { state: pr.state as PrState["state"], isDraft: !!pr.isDraft, isConflicting: pr.mergeable === "CONFLICTING" || pr.mergeStateStatus === "DIRTY", ...(pr.state === "OPEN" && said ? { comments: said } : {}) }
 }
 
 // Read at most every two minutes a PR; a merged or closed one, once.
@@ -20,7 +24,7 @@ export async function prStates(urls: string[], sh: Sh, now = Date.now()): Promis
   await Promise.all([...new Set(urls)].map(async url => {
     const was = read.get(url)
     const isFresh = was && (now - was.at < OPEN_MS || (was.value && was.value.state !== "OPEN"))
-    const value = isFresh ? was.value : await sh(["gh", "pr", "view", url, "--json", "state,isDraft,mergeable,mergeStateStatus"], { timeoutMs: 20_000 })
+    const value = isFresh ? was.value : await sh(["gh", "pr", "view", url, "--json", "state,isDraft,mergeable,mergeStateStatus,comments,reviews,commits"], { timeoutMs: 20_000 })
       .then(r => (r.ok ? prStateOf(JSON.parse(r.out)) : null), () => null)
     if (!isFresh) read.set(url, { at: now, value })
     if (value) out[url] = value
