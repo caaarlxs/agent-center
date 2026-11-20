@@ -30,11 +30,12 @@ import { type Level, SessionCard } from "@/features/session/SessionCard"
 import { hueOf } from "@/features/session/state"
 import { quietly, useFlip } from "@/features/board/flip"
 import { DoneBand, isOverDone } from "./DoneBand"
-import { CARD_W, GRID, type Point, belowZone, entryBox, entrySlots, isInZone, membersOf, newZone, notesOf, onCanvas, placeCards, placeIn, snap } from "./geometry"
+import { CARD_W, GRID, type Point, belowZone, entryBox, entrySlots, pipelineBox, isInZone, membersOf, newZone, notesOf, onCanvas, placeCards, placeIn, snap } from "./geometry"
 import { NoteNode, type NoteNodeData } from "./NoteNode"
 import { attachTo, cardKey, newNote, noteAt, placeNote } from "./notes"
 import { useSyncedList } from "./useSyncedList"
 import { BandScaleTracker, ZoomControl, useBandHeight, savedZoom, useCanvasZoom, useSavedZoomOnce } from "./ZoomControl"
+import { PipelineNode } from "./PipelineNode"
 import { FOLD_EASE, IncomingNode, ZoneNode, type ZoneNodeData, cardEl, isCalm, towardFolder } from "./ZoneNode"
 import { ZOOM, minZoomOf } from "./zoom"
 
@@ -53,7 +54,7 @@ function SessionNode({ id, data, selected, dragging }: NodeProps<Node<SessionNod
   return <SessionCard card={data.card} now={data.now} level={levelOf(zoom)} unscale={1 / zoom} isSelected={selected || isPointed} isReading={isOpen} isDragging={dragging} isNoteTarget={data.isNoteTarget} />
 }
 
-const nodeTypes = { session: SessionNode, zone: ZoneNode, note: NoteNode, incoming: IncomingNode }
+const nodeTypes = { session: SessionNode, zone: ZoneNode, note: NoteNode, incoming: IncomingNode, pipeline: PipelineNode }
 
 // The folder under the pointer, if any (a card let go there goes in).
 const folderAt = (e: { clientX: number; clientY: number }) =>
@@ -154,6 +155,7 @@ export function Canvas() {
   }, [all])
   const at = useMemo(() => placeCards(all, moved), [all, moved])
   const entry = useMemo(() => entryBox(entrySlots(all, moved)), [all, moved])
+  const tickets = useLive(l => l.snapshot?.pipelines.length) ?? 0
   // A folded zone hides its cards; the repo filter hides the others.
   const folded = useMemo(() => zones.filter(z => z.collapsed), [zones])
   const hidden = useMemo(() => new Set(folded.flatMap(z => membersOf(z, all, at)).map(c => c.id)), [all, folded, at])
@@ -215,6 +217,9 @@ export function Canvas() {
         return was ? { ...n, measured: was.measured, selected: was.selected, ...(was.dragging ? { position: was.position, dragging: true } : {}) } : n
       }
       const incoming: Node = { id: "incoming", type: "incoming", position: { x: entry.x, y: entry.y }, draggable: false, selectable: false, focusable: false, zIndex: -2, style: { width: entry.w, height: entry.h }, data: {} }
+      // The pipeline's tickets, over "Incoming", when there are some.
+      const box = tickets ? pipelineBox(tickets, entry) : null
+      const pipeline: Node[] = box ? [{ id: "pipeline", type: "pipeline", position: { x: box.x, y: box.y }, draggable: false, selectable: false, focusable: false, zIndex: 2, style: { width: box.w, height: box.h }, data: {} }] : []
       const zoneNodes = zones.map(z => {
         const members = membersOf(z, all, at)
         const keys = new Set(members.map(cardKey))
@@ -237,9 +242,9 @@ export function Canvas() {
         })]
       })
       const cardNodes = shownCards.map(c => keep({ id: c.id, type: "session", position: at[c.id], zIndex: 1, data: { card: c, now, isNoteTarget: noteTarget === c.id } satisfies SessionNodeData }))
-      return [incoming, ...zoneNodes, ...cardNodes, ...noteNodes]
+      return [incoming, ...pipeline, ...zoneNodes, ...cardNodes, ...noteNodes]
     })
-  }, [zones, notes, shownCards, all, at, now, fresh, hiddenNotes, cardAt, byKey, changeZone, removeZone, changeNote, textNote, removeNote, entry, noteTarget, folderOver])
+  }, [zones, notes, shownCards, all, at, now, fresh, hiddenNotes, cardAt, byKey, changeZone, removeZone, changeNote, textNote, removeNote, entry, noteTarget, folderOver, tickets])
   const onNodesChange = useCallback((changes: NodeChange[]) => setNodes(ns => applyNodeChanges(changes, ns)), [])
 
   // A zone carries the cards and free notes inside it when the drag starts.

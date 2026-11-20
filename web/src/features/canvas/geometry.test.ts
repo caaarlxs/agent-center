@@ -1,6 +1,6 @@
-import { describe, expect, test } from "vitest"
+import { describe, expect, it, test } from "vitest"
 import type { Card, Zone } from "@/lib/api-types"
-import { belowZone, CARD_H, CARD_W, ENTRY, GRID, isInZone, membersOf, notesOf, onCanvas, placeCards, snap } from "./geometry"
+import { belowZone, CARD_H, CARD_W, ENTRY, GRID, isInZone, membersOf, notesOf, onCanvas, pipelineBox, placeCards, snap, TICKET } from "./geometry"
 
 const card = (id: string, extra: Partial<Card> = {}) => ({ id, column: "review", pos: null, ...extra }) as Card
 
@@ -71,5 +71,13 @@ describe("notesOf", () => {
   })
   test("a zone folded before it kept them holds the notes inside it", () => {
     expect(notesOf({ ...zone, collapsed: true }, notes).map(n => n.id)).toEqual(["n1", "n2"])
+  })
+})
+
+describe("pipelineBox", () => {
+  it("sits over Incoming, as wide, a row for every three tickets", () => {
+    const entry = { x: 12, y: 36, w: 624 }
+    expect(pipelineBox(2, entry)).toEqual({ x: 12, y: 36 - 96 - 48, w: 624, h: 96 })
+    expect(pipelineBox(4, entry).h).toBe(96 + TICKET.h + TICKET.gap)
   })
 })

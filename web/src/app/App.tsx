@@ -2,6 +2,7 @@
 // board uses, with made-up data); everything else is the board: the sidebar,
 // the top bar with the view's name, the search and "Next up", the view, and
 // a session's panel sliding over them from the right.
+import { waitsForYou } from "@/features/jira/pipeline-board"
 import { Menu, PawPrint } from "lucide-react"
 import { MotionConfig } from "motion/react"
 import { useEffect, useMemo, useRef, useState } from "react"
@@ -275,7 +276,9 @@ function Board() {
   useLinkedOpen()
   useHistoryWalk()
   const notDone = (cards ?? []).filter(c => c.column !== "done")
-  useTabTitle(notDone.filter(c => c.column === "asking").length, notDone.filter(c => c.isUnread).length)
+  // What asks you: the conversations that ask, and the pipeline's tickets that wait for you.
+  const ticketsWaiting = useLive(l => l.snapshot?.pipelines.filter(waitsForYou).length) ?? 0
+  useTabTitle(notDone.filter(c => c.column === "asking").length + ticketsWaiting, notDone.filter(c => c.isUnread).length)
   // "Run" on shell blocks shows only while Setup allows it.
   useEffect(() => void document.documentElement.classList.toggle("can-run", canRun), [canRun])
   // A repo that left the board stops filtering it.

@@ -9,14 +9,18 @@ export type Seen = { epoch: number; read: Record<string, number> }
 const seen = persistedStore<Seen | null>("pipelineSeen", null)
 if (!seen.get()) seen.set({ epoch: Date.now(), read: {} }) // the first look starts the clock
 
+// One that ended after you last opened it.
+export const isToRead = (i: Pick<PipelineState, "key" | "status" | "endedAt">, s: Seen) => (i.status === "ready" || i.status === "failed") && (i.endedAt ?? 0) > (s.read[i.key] ?? s.epoch)
+export const useSeen = () => seen.use() ?? { epoch: Date.now(), read: {} }
+
 export function pipelineCounts(items: Pick<PipelineState, "key" | "status" | "endedAt">[], s: Seen) {
-  const toRead = items.filter(i => (i.status === "ready" || i.status === "failed") && (i.endedAt ?? 0) > (s.read[i.key] ?? s.epoch)).length
+  const toRead = items.filter(i => isToRead(i, s)).length
   return { working: items.filter(i => i.status === "running").length, toRead }
 }
 
 // The counts for the sidebar.
 export function usePipelineCounts(items: Pick<PipelineState, "key" | "status" | "endedAt">[]) {
-  return pipelineCounts(items, seen.use() ?? { epoch: Date.now(), read: {} })
+  return pipelineCounts(items, useSeen())
 }
 
 // Opened in the Pipeline: read until it ends again.

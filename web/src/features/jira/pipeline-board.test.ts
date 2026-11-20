@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import type { PipelineState } from "@server/pipeline"
-import { headline, momentOf, carriedFindings, carriedResults, columnOf, summaryParts, isQueued, nextStage, passesOf, toFix, tonesOf, untested, waitingStep } from "./pipeline-board"
+import { headline, momentOf, waitsForYou, carriedFindings, carriedResults, columnOf, summaryParts, isQueued, nextStage, passesOf, toFix, tonesOf, untested, waitingStep } from "./pipeline-board"
 
 type At = "refine" | "plan" | "build" | "review" | "staging" | "test" | "prod" | "smoke"
 const at = (stage: At, status: "running" | "needs-info" | "ready" | "failed", findings?: { id: string; severity: string }[], release?: unknown) => ({ stage, status, findings, release }) as never
@@ -169,5 +169,17 @@ describe("the stage and its moment", () => {
     expect(headline(at({ stage: "build", history, fixing: { ids: ["F1"] } }))).toBe("Build · Fixing (2nd pass)")
     expect(headline(at({ stage: "test", history: [{ stage: "test" }] }))).toBe("Staging · Testing")
     expect(headline(at({ stage: "review", status: "needs-info" }))).toBe("Review · Waiting for your answers")
+  })
+})
+
+describe("what waits for you", () => {
+  const s = (extra: object) => ({ key: "PP-1", stage: "review", status: "ready", questions: [], ...extra }) as never as PipelineState
+  it("questions, a failed run, findings to fix, a step of a release; not a ticket at work or at rest", () => {
+    expect(waitsForYou(s({ status: "needs-info" }))).toBe(true)
+    expect(waitsForYou(s({ status: "failed" }))).toBe(true)
+    expect(waitsForYou(s({ findings: [{ id: "F1", severity: "major" }] }))).toBe(true)
+    expect(waitsForYou(s({ stage: "staging", status: "running", release: { steps: [{ status: "waiting" }] } }))).toBe(true)
+    expect(waitsForYou(s({ status: "running" }))).toBe(false)
+    expect(waitsForYou(s({ stage: "plan" }))).toBe(false)
   })
 })

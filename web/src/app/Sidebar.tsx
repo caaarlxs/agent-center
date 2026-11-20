@@ -22,6 +22,7 @@ import { repoDot } from "@/features/session/state"
 import { notify, sound, speech, toggleNotify, toggleSound, toggleSpeech } from "@/features/alerts/prefs"
 import { Limits, SlimLimits } from "@/features/limits/Limits"
 import { usePipelineCounts } from "@/features/jira/pipeline-seen"
+import { waitsForYou } from "@/features/jira/pipeline-board"
 import { CustomizeButton } from "./CustomizeButton"
 import { openDialog } from "./open-dialog"
 import { openSession } from "./open-session"
@@ -155,7 +156,7 @@ export function Sidebar() {
   useEffect(() => void loadJira(), [])
   const repos = useLive(l => l.snapshot?.repos) ?? []
   const cards = yours(useLive(l => l.snapshot?.cards) ?? [])
-  const needsYou = useLive(l => l.snapshot?.pipelines.filter(p => p.status === "needs-info").length) ?? 0
+  const needsYou = useLive(l => l.snapshot?.pipelines.filter(waitsForYou).length) ?? 0
   const pipelines = useLive(l => l.snapshot?.pipelines)
   const jobs = useLive(l => l.snapshot?.jobs)
   const agents = usePipelineCounts(useMemo(() => [...(pipelines ?? []), ...(jobs ?? [])], [pipelines, jobs]))
@@ -221,7 +222,7 @@ export function Sidebar() {
                 <span className={cn("flex gap-1", !isSlim && "ml-auto")}>
                   {agents.working > 0 && !isSlim && <Pill tone="work" title="Agents at work" isSlim={isSlim}><Num value={agents.working} /></Pill>}
                   {agents.toRead > 0 && <Pill tone="new" title="Agents that finished since you last opened them: open one in the Pipeline to read it" isSlim={isSlim}><Num value={agents.toRead} suffix={isSlim ? "" : " new"} /></Pill>}
-                  {needsYou > 0 && <Pill tone="ask" title="Tickets waiting for your answers" isSlim={isSlim}><Num value={needsYou} /></Pill>}
+                  {needsYou > 0 && <Pill tone="ask" title="Tickets waiting for you: a question, a step, something to fix or to check by hand" isSlim={isSlim}><Num value={needsYou} /></Pill>}
                 </span>
               )}
             </button>

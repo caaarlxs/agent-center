@@ -69,6 +69,14 @@ export function entryBox(slots: number) {
   return { x: ENTRY.x - 12, y: ENTRY.y - 12, w: ENTRY.cols * (CARD_W + GRID), h: h + 12 }
 }
 
+// "Pipeline", over "Incoming" and as wide: the pipeline's tickets, a small card each, three a row.
+export const TICKET = { w: 196, h: 52, gap: 8, cols: 3 }
+export function pipelineBox(tickets: number, entry: { x: number; y: number; w: number }) {
+  const rows = Math.max(1, Math.ceil(tickets / TICKET.cols))
+  const h = 28 + rows * TICKET.h + (rows - 1) * TICKET.gap + 16
+  return { x: entry.x, y: entry.y - h - GRID * 2, w: entry.w, h }
+}
+
 // The cards that wait in "Incoming": those with no place of their own.
 export const entrySlots = (cards: Card[], moved: Record<string, Point> = {}) => cards.filter(c => !moved[c.id] && !c.pos).length
 

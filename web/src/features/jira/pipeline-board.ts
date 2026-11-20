@@ -147,3 +147,7 @@ export function momentOf(state: PipelineState) {
 }
 export const headline = (state: PipelineState) => `${STAGES[stageAt(state)]} · ${momentOf(state)}`
 
+// A ticket that waits for you to move: questions, a step of a release, findings to fix, a test that
+// failed or left criteria to check by hand, or a run that failed.
+export const waitsForYou = (state: PipelineState) =>
+  state.status === "needs-info" || state.status === "failed" || toFix(state).length > 0 || failed(state).length > 0 || untested(state).length > 0 || !!waitingStep(state)
