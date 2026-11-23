@@ -16,6 +16,7 @@ export const sound = persistedStore<"on" | "off">("sound", "off")
 export const notify = persistedStore<"on" | "off" | "blocked">("notify", "off")
 export const speech = persistedStore<Speech>("speech", { mode: "off", voice: null, rate: null })
 export const watched = persistedStore<string[]>("watched", [])
+export { sessionToasts } from "./session-toasts"
 // Cards that wait for you give a short shake now and then; "off" keeps them still (Setup).
 export { shake } from "@/features/board/state" // the cards read it there
 if (permission() === "denied" && notify.get() === "on") notify.set("blocked")

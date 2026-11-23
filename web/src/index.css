@@ -878,6 +878,8 @@ button:hover > .coll-buddy, .coll-buddy:focus-visible { opacity: 1; }
    the middle; its kind's icon in a tile of its colour (--k), popping in; a
    title and its detail; a pill for its action; a bar that runs out with it
    (--life), paused while you hover the toasts. */
+:root { --toast-left: calc(var(--side-w, 0px) + 24px); } /* the toasts, past the sidebar */
+@media (max-width: 860px) { :root { --toast-left: 24px; } } /* the sidebar a drawer: at the edge */
 [data-sonner-toaster] [data-sonner-toast].cn-toast { --k: var(--brand); align-items: center; gap: 12px;
   padding: 11px 12px 12px 11px; border: 1px solid var(--line); border-radius: 14px; background: var(--raised); color: var(--text); box-shadow: var(--shadow-pop); font-size: 13px; overflow: hidden; }
 [data-sonner-toaster] [data-sonner-toast].cn-toast[data-type=info] { --k: #3d8bfd; }

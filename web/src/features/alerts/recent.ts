@@ -6,6 +6,7 @@ import { openSession } from "@/app/open-session"
 import { focusCard } from "@/app/view-state"
 import { createStore } from "@/lib/store"
 import { WHAT, type AlertEvent } from "./events"
+import { sessionToasts } from "./session-toasts"
 
 export type RecentEnd = { id: string; at: number }
 const KEEP_MS = 30 * 60_000
@@ -46,13 +47,21 @@ export function openLast() {
   focusCard(last.id)
 }
 
+// Writing: the focus in a box you type in. A session that only finished
+// does not interrupt it with a toast (its card still flashes, L opens it).
+type Focused = { tagName: string; type?: string; isContentEditable?: boolean }
+export const isWriting = (el: Focused | null) =>
+  !!el && (el.tagName === "TEXTAREA" || (el.tagName === "INPUT" && !["checkbox", "radio", "button"].includes(el.type ?? "")) || !!el.isContentEditable)
+
 // Which one told you: its name with Open (not the session you are reading
-// now), its card flashing, and first for L.
+// now, nor one that only finished while you write, nor any with them off in
+// Setup), its card flashing, and first for L.
 export function tellWhich(events: AlertEvent[], reading: string | undefined) {
   recentEnds.set(withEnds(recentEnds.get(), events.map(e => e.card.id), Date.now()))
   for (const { card, kind } of events) {
     flashCard(card.id)
-    if (reading === card.id && document.hasFocus()) continue
+    if (sessionToasts.get() === "off" || (reading === card.id && document.hasFocus())) continue
+    if (kind === "done" && document.hasFocus() && isWriting(document.activeElement as HTMLElement | null)) continue
     toast(`“${card.title}” ${WHAT[kind]}`, { duration: 8000, action: { label: "Open", onClick: () => openSession(card.id) } })
   }
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { edgeOf, withEnds } from "./recent"
+import { edgeOf, isWriting, withEnds } from "./recent"
 
 describe("withEnds", () => {
   it("puts the sessions that just told you first, each once, the newest 10 within half an hour", () => {
@@ -20,5 +20,16 @@ describe("edgeOf", () => {
     expect(edgeOf({ x: 500, y: -400 }, view)).toEqual({ x: 500, y: 28, angle: -90 })
     expect(edgeOf({ x: -300, y: 900 }, view)!.x).toBe(28)
     expect(edgeOf({ x: -300, y: 900 }, view)!.y).toBe(600 - 28)
+  })
+})
+
+describe("isWriting", () => {
+  it("is a box you type in, not a button or a checkbox", () => {
+    expect(isWriting({ tagName: "TEXTAREA" })).toBe(true)
+    expect(isWriting({ tagName: "INPUT", type: "text" })).toBe(true)
+    expect(isWriting({ tagName: "DIV", isContentEditable: true })).toBe(true)
+    expect(isWriting({ tagName: "INPUT", type: "checkbox" })).toBe(false)
+    expect(isWriting({ tagName: "BUTTON" })).toBe(false)
+    expect(isWriting(null)).toBe(false)
   })
 })

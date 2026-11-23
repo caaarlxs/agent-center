@@ -2,7 +2,8 @@ import { Toaster as Sonner, type ToasterProps } from "sonner"
 import { theme as pageTheme } from "@/lib/theme"
 import { CircleCheck, CircleX, Info, Loader2, TriangleAlert } from "lucide-react"
 
-// The toasts: at the bottom in the middle, all as wide, a card with its kind's icon in a
+// The toasts: at the bottom on the left, past the sidebar (--toast-left,
+// index.css): clear of the conversation and its box to write in, all as wide, a card with its kind's icon in a
 // tile of its colour, a title and its detail, a pill for its action and a
 // thin bar that runs out with it (index.css, .cn-toast). Kinds: lib/notify.ts.
 const Toaster = ({ ...props }: ToasterProps) => {
@@ -10,10 +11,10 @@ const Toaster = ({ ...props }: ToasterProps) => {
   return (
     <Sonner
       theme={theme}
-      position="bottom-center"
+      position="bottom-left"
       visibleToasts={3}
       duration={4500}
-      offset={24}
+      offset={{ bottom: 24, left: "var(--toast-left, 24px)" }}
       gap={10}
       className="toaster group"
       icons={{

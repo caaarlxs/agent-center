@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils"
 import { type Status, setupStatus } from "./status"
 import { type ThemeChoice, chooseTheme, themeChoice } from "@/lib/theme"
 import { foldSteps } from "@/features/conversation/fold-steps"
-import { notify, shake, sound, speech, toggleNotify, toggleSound, type Speech } from "@/features/alerts/prefs"
+import { notify, sessionToasts, shake, sound, speech, toggleNotify, toggleSound, type Speech } from "@/features/alerts/prefs"
 import { CopyMark, useCopyMoment } from "@/components/icona/marks"
 import { SwapText } from "@/components/watermelon/SwapText"
 import { Checklist } from "./Checklist"
@@ -313,6 +313,7 @@ function Alerts() {
   const isSound = sound.use() === "on"
   const notifyState = notify.use()
   const isShaking = shake.use() === "on"
+  const isToasting = sessionToasts.use() === "on"
   return (
     <>
       <Row title="Notifications" need="Optional" isDone={notifyState === "on"} state={notifyState === "on" ? <Done /> : <Todo />}
@@ -326,6 +327,10 @@ function Alerts() {
       <Row title="Shake waiting cards" need="Preference" isDone={isShaking} state={isShaking ? <Done label="On" /> : <Todo label="Off" />}
         actions={<Button variant={isShaking ? "outline" : "default"} onClick={() => shake.set(isShaking ? "off" : "on")}>{isShaking ? "Turn off" : "Turn on"}</Button>}>
         <p className={text}>A card that asks you something or waits for your approval gives a short shake every few seconds, faster the longer it waits. Turned off, it stays still and only its colour and the time it has waited tell you.</p>
+      </Row>
+      <Row title="Session notes" need="Preference" isDone={isToasting} state={isToasting ? <Done label="On" /> : <Todo label="Off" />}
+        actions={<Button variant={isToasting ? "outline" : "default"} onClick={() => sessionToasts.set(isToasting ? "off" : "on")}>{isToasting ? "Turn off" : "Turn on"}</Button>}>
+        <p className={text}>A note at the bottom left, with Open, when a session finishes its turn or asks you something. It skips a session that only finished while you write. Turned off, its card still flashes and L opens it.</p>
       </Row>
       <ReadAloud />
     </>
