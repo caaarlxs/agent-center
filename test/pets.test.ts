@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test"
 import { rate } from "../lib/community-pets"
+import type { Category, Class, Fame } from "../lib/pet-classes"
 import { arrive, grow, isXpEvent, newlyMerged, pickFrom, pickNew, roll, rollRarities, speedUp, ticketBoost } from "../lib/pets"
 import { XP, levelOf } from "../lib/pet-levels"
 
@@ -50,21 +51,56 @@ test("each PR opened since the pets began counting brings the next pack six hour
   expect(s.nextAt).toBe(7.5 * DAY) // never before now: it arrives at once
 })
 
-test("codex-pets.net's pets: anime girls are common; the rest as rare as they are loved", () => {
-  const pet = (id: string, kind: string, tags: string[], likes: number) => ({ id, name: id, description: "", poster: "", kind, tags, likes, views: 0 })
-  const list = [
-    pet("frieren", "person", ["anime", "cute"], 999),
-    ...Array.from({ length: 100 }, (_, i) => pet(`p${i}`, i % 2 ? "animal" : "creature", [], 100 - i)),
-  ]
-  const rated = new Map(rate(list).map(p => [p.id, p]))
-  expect(rated.get("frieren")).toMatchObject({ rarity: "common", category: "Anime" })
-  expect(rated.get("p0")).toMatchObject({ rarity: "legendary", category: "Creature" })
-  expect(rated.get("p3")!.rarity).toBe("legendary")
-  expect(rated.get("p4")!.rarity).toBe("epic")
-  expect(rated.get("p20")!.rarity).toBe("rare")
-  expect(rated.get("p60")!.rarity).toBe("common")
-  expect(pickFrom([...rated.values()], "legendary", () => 0)!.rarity).toBe("legendary")
-  expect(pickFrom([rated.get("p60")!], "epic", () => 0)!.id).toBe("p60") // the next one down when none
+const pet = (id: string, kind: string, likes: number) => ({ id, name: id, description: "", poster: "", kind, tags: [], likes, views: 0 })
+const cls = (category: Category, fame: Fame, character = ""): Class => ({ category, fame, character })
+
+test("codex-pets.net's pets: a category of their own, each with its share of every rarity", () => {
+  const list = Array.from({ length: 100 }, (_, i) => pet(`p${i}`, "animal", 100 - i))
+  const classes = Object.fromEntries(list.map((p, i) => [p.id, cls(i < 50 ? "Cats" : "Dogs", 2)]))
+  const rated = rate(list, classes)
+  for (const category of ["Cats", "Dogs"]) {
+    const of = rated.filter(p => p.category === category)
+    expect(of.filter(p => p.rarity === "legendary")).toHaveLength(2)
+    expect(of.filter(p => p.rarity === "epic")).toHaveLength(5)
+    expect(of.filter(p => p.rarity === "rare")).toHaveLength(14)
+  }
+  expect(pickFrom(rated, "epic", () => 0)!.rarity).toBe("epic")
+  expect(pickFrom([rated.at(-1)!], "epic", () => 0)!.id).toBe("p99") // the next one down when none
+})
+
+test("a legendary is a famous one, and the most loved of the famous", () => {
+  const list = Array.from({ length: 40 }, (_, i) => pet(`p${i}`, "person", 100 - i))
+  const classes = Object.fromEntries(list.map((p, i) => [p.id, cls("Anime", i === 30 ? 3 : i === 35 ? 2 : 0)]))
+  const rarity = new Map(rate(list, classes).map(p => [p.id, p.rarity]))
+  expect(rarity.get("p30")).toBe("legendary") // famous, though little loved
+  expect(rarity.get("p0")).toBe("epic") // the most loved, but nobody knows it
+  expect(rarity.get("p35")).toBe("epic")
+})
+
+test("only one version of a character can be legendary", () => {
+  const list = Array.from({ length: 40 }, (_, i) => pet(`p${i}`, "person", 100 - i))
+  const classes = Object.fromEntries(list.map((p, i) => [p.id, cls("Anime", i < 2 ? 3 : 0, i < 2 ? "Sasuke Uchiha" : "")]))
+  const rarity = new Map(rate(list, classes).map(p => [p.id, p.rarity]))
+  expect(rarity.get("p0")).toBe("legendary")
+  expect(rarity.get("p1")).not.toBe("legendary")
+})
+
+test("the versions of a character, named a bit differently, share its category and one legend", () => {
+  const list = Array.from({ length: 100 }, (_, i) => pet(`p${i}`, "person", 100 - i))
+  const named: Record<string, Class> = { p0: cls("Anime", 3, "Son Goku"), p1: cls("Objects", 3, "Goku"), p2: cls("Anime", 3, "Itachi Uchiha"), p3: cls("Anime", 3, "Sasuke Uchiha") }
+  const classes = Object.fromEntries(list.map(p => [p.id, named[p.id] ?? cls("Anime", 0)]))
+  const rated = new Map(rate(list, classes).map(p => [p.id, p]))
+  expect(rated.get("p1")).toMatchObject({ category: "Anime" })
+  expect(rated.get("p1")!.rarity).not.toBe("legendary")
+  expect(rated.get("p3")).toMatchObject({ rarity: "legendary" }) // another Uchiha, not the same one
+})
+
+test("a pet not classified yet: a category from its kind, and no legend", () => {
+  const list = Array.from({ length: 40 }, (_, i) => pet(`p${i}`, i % 2 ? "animal" : "creature", 100 - i))
+  const rated = rate(list, {})
+  expect(rated.find(p => p.id === "p1")!.category).toBe("Animals")
+  expect(rated.find(p => p.id === "p0")!.category).toBe("Fantasy")
+  expect(rated.some(p => p.rarity === "legendary")).toBe(false)
 })
 
 test("a pack never holds a pet you have while there is another to find", () => {

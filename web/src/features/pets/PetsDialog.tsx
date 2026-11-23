@@ -29,7 +29,6 @@ import { catalog, choosePet, loadCatalog, openPack, pets, rarityOf, type Catalog
 const tabBtn = (on: boolean) => cn("h-7 rounded-[7px] px-3 text-[12.5px] font-medium", on ? "bg-surface text-text shadow-[0_1px_2px_rgb(0_0_0/0.08)]" : "text-text-muted hover:text-text")
 const RARITIES: Rarity[] = ["common", "rare", "epic", "legendary"]
 const RANK: Record<Rarity, number> = { common: 0, rare: 1, epic: 2, legendary: 3 }
-const CATEGORIES = ["Anime", "Animal", "Person", "Creature", "Object"]
 
 export function PetsDialog({ onClose }: { onClose: () => void }) {
   const state = pets.use()
@@ -800,6 +799,12 @@ function Collection({ state }: { state: Pets }) {
     const of = (all ?? []).filter(p => p.rarity === r)
     return [r, `${of.filter(p => owned[p.id]).length}/${of.length}`]
   })) as Record<Rarity, string>, [all, owned])
+  // the categories the catalogue has, the biggest first
+  const categories = useMemo(() => {
+    const size = new Map<string, number>()
+    for (const p of all ?? []) size.set(p.category, (size.get(p.category) ?? 0) + 1)
+    return [...size.keys()].sort((a, b) => size.get(b)! - size.get(a)! || a.localeCompare(b))
+  }, [all])
   const pages = Math.max(1, Math.ceil(list.length / PAGE))
   const at = Math.min(page, pages)
   const filter = <T,>(set: (v: T) => void) => (v: T) => (set(v), setPage(1))
@@ -818,7 +823,7 @@ function Collection({ state }: { state: Pets }) {
         {state.buddy && <Button variant="outline" className="h-7 text-[12px]" onClick={() => void choosePet(null, "buddy")}>Put {petName(state.buddy)} away</Button>}
       </div>
       <div className="flex flex-wrap items-center gap-1.5">
-        {CATEGORIES.map(c => <button key={c} className={chip(kind === c)} onClick={() => filter(setKind)(kind === c ? null : c)}>{c}</button>)}
+        {categories.map(c => <button key={c} className={chip(kind === c)} onClick={() => filter(setKind)(kind === c ? null : c)}>{c}</button>)}
         <button className={chip(isMine)} onClick={() => filter(setMine)(!isMine)}>Only mine</button>
         <label className="ml-auto flex h-7 w-[200px] items-center gap-1.5 rounded-full border border-line px-2.5 focus-within:border-brand">
           <Search className="size-3 shrink-0 text-faint" />
