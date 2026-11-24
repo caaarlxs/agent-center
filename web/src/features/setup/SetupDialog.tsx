@@ -27,7 +27,8 @@ import { type BoardStyle, boardStyle, chooseStyle } from "@/lib/board-style"
 import { type AppIcon, ICONS, appIcon, chooseAppIcon, iconSrc, loadAppIcon } from "@/lib/app-icon"
 
 type Need = "Required" | "Recommended" | "Optional" | "Preference"
-type Meta = { title: string; need: Need; text: ReactNode; unavailable?: ReactNode; action?: string; outdated?: string; canTurnOff?: boolean }
+// unavailableFor: what only you can do, by the reason the step gives (its detail).
+type Meta = { title: string; need: Need; text: ReactNode; unavailable?: ReactNode; unavailableFor?: Record<string, ReactNode>; action?: string; outdated?: string; canTurnOff?: boolean }
 
 // What each step is, why it matters and what pressing it changes.
 const STEPS: Record<string, Meta> = {
@@ -76,6 +77,15 @@ const STEPS: Record<string, Meta> = {
   bun: {
     title: "Bun 1.4.4 or newer", need: "Recommended",
     text: "Older Bun keeps memory for every command the board runs and never gives it back: the server grows to gigabytes.",
+  },
+  simulator: {
+    title: "iOS simulator", need: "Optional", action: "Install",
+    text: <>Shows the iOS simulator running on this Mac beside a session, to see it and use it with the pointer and keyboard: the same one Claude desktop or Xcode started, so the agent sees what you do. Installs AXe (an open-source tool for simulators) with Homebrew. It costs only while the panel is open.</>,
+    unavailableFor: {
+      "no-xcode": <>Needs Xcode. Install it from the <a className="text-brand underline underline-offset-2" href="macappstore://apps.apple.com/app/xcode/id497799835">App Store</a>, open it once and come back here.</>,
+      license: <>Xcode's license is not accepted yet. Open Xcode once and accept it, or run <code>sudo xcodebuild -license accept</code> in a terminal.</>,
+      "no-runtime": <>Xcode has no iOS simulator yet. In Xcode, Settings → Components, download the iOS platform and come back here.</>,
+    },
   },
   github: {
     title: "GitHub PRs", need: "Optional",
@@ -272,7 +282,7 @@ function SetupStep({ step, status, busy, language, setLanguage, run }: StepProps
   )
   return (
     <Row title={meta.title} need={meta.need} state={state} isDone={step.state === "done"} actions={actions}>
-      <p className={text}>{step.state === "unavailable" && meta.unavailable ? meta.unavailable : meta.text}</p>
+      <p className={text}>{step.state === "unavailable" ? (meta.unavailableFor?.[step.detail ?? ""] ?? meta.unavailable ?? meta.text) : meta.text}</p>
       {step.id === "whisper" && (
         <Field label="Dictation language">
           <select className={select} value={language} onChange={e => setLanguage(e.target.value)}>{LANGUAGES.map(([v, name]) => <option key={v} value={v}>{name}</option>)}</select>
@@ -281,7 +291,7 @@ function SetupStep({ step, status, busy, language, setLanguage, run }: StepProps
       {step.id === "whisper" && step.state === "working" && step.progress != null && (
         <div className="mt-2 h-1.5 overflow-hidden rounded-[3px] bg-hover"><i className="block h-full bg-brand transition-[width] duration-300" style={{ width: `${Math.round(step.progress * 100)}%` }} /></div>
       )}
-      {step.id === "whisper" && step.detail && step.state === "missing" && <p className="mt-1.5 text-xs text-bad">{step.detail}</p>}
+      {(step.id === "whisper" || step.id === "simulator") && step.detail && step.state === "missing" && <p className="mt-1.5 text-xs text-bad">{step.detail}</p>}
       {step.id === "organizer" && step.state !== "done" && (
         <details className="mt-2 text-xs">
           <summary className="cursor-pointer text-text-muted">The note for CLAUDE.md</summary>

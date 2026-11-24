@@ -9,6 +9,10 @@ describe("docWidth", () => {
     expect(docWidth(1000, 700)).toBe(700)
     expect(docWidth(200, 1200)).toBe(360)
   })
+  it("takes a smaller least width when asked (a page, a simulator)", () => {
+    expect(docWidth(200, 1200, 280)).toBe(280)
+    expect(docWidth(300, 1200, 280)).toBe(300)
+  })
 })
 
 describe("boxParts", () => {

@@ -6,6 +6,7 @@ import { actOnDebt, answerPipeline, askPipeline, explainFindings, sendBack, chec
 import { clearJob, continueJob, isLoose, publishReview, startJob, stopJob } from "../lib/jobs"
 import { chooseIcon, isIcon } from "../lib/app-icon"
 import { choosePet, gainXp, openPack } from "../lib/pets"
+import { act, isUdid } from "../lib/simulator"
 import { stat } from "node:fs/promises"
 import { applyAction, isTaskId, setNotes, setSuggestion, setTiers, setZones } from "../lib/board"
 import { requestSettings } from "../lib/bridge"
@@ -256,6 +257,12 @@ export async function handleWrite(path: string, body: Record<string, unknown>): 
     case "/api/app-icon": {
       if (!isIcon(body.icon)) return json({ error: "No such icon" }, 400)
       return json(await chooseIcon(body.icon))
+    }
+    // A tap, a swipe, a key or text on a running simulator (lib/simulator.ts).
+    case "/api/simulators/input": {
+      if (!isUdid(body.udid)) return json({ error: "No such simulator" }, 400)
+      const failed = await act(body.udid, body.action)
+      return failed ? json({ error: failed }, 400) : json({ ok: true })
     }
     // Pets: a pack opened, the pet that walks the board (null: none).
     case "/api/pets/open": {

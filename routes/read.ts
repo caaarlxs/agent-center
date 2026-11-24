@@ -11,6 +11,7 @@ import { ICONS, chosenIcon } from "../lib/app-icon"
 import { petsCatalog, petsState } from "../lib/pets"
 import { sessionTurnCosts, spanOf, spendSince } from "../lib/spend"
 import { sheetOf } from "../lib/community-pets"
+import { isUdid, screenOf, simulators, stream as simulatorStream } from "../lib/simulator"
 import { basename } from "node:path"
 import { status as bridgeStatus } from "../lib/bridge"
 import { changesOf, commitDiff } from "../lib/changes"
@@ -365,6 +366,10 @@ export async function handleRead(url: URL): Promise<Response | null> {
   if (path === "/api/jira/components") return await projectComponents(url.searchParams.get("project") ?? "").then(c => json({ components: c }), (err: Error) => json({ error: err.message }, 400))
   if (path === "/api/jira/transitions") return await transitionsOf(url.searchParams.get("key") ?? "").then(t => json({ transitions: t }), (err: Error) => json({ error: err.message }, 400))
   if (path === "/api/app-icon") return json({ icon: chosenIcon(), icons: ICONS })
+  // The iOS simulators running (lib/simulator.ts): which, one's size in points, and its screen as it changes.
+  if (path === "/api/simulators") return json(await simulators())
+  const sim = path.match(/^\/api\/simulators\/([0-9A-F-]+)\/(screen|stream)$/)
+  if (sim && isUdid(sim[1])) return sim[2] === "stream" ? simulatorStream(sim[1]) : json({ screen: await screenOf(sim[1]) })
   // Pets (lib/pets.ts): the packs to open, the pets you have, the one out.
   if (path === "/api/pets") return json(await petsState())
   // Every pet a pack can hold (codex-pets.net's, rated), and the sheet of one brought home.

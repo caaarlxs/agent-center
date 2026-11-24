@@ -4,7 +4,7 @@
 // Files are workspaces: the panel takes the whole width. Code stays alive once
 // opened, so its open files and unsaved text survive a look at another tab.
 import { boardAct as actOn } from "@/features/board/act"
-import { Activity, Check, Clock, Code2, FileDiff, FileText, GitBranch, GitCommitHorizontal, GitPullRequest, ListChecks, Lock, MessageSquare, Minimize2, Palette, Pencil, Square, Star, Ticket } from "lucide-react"
+import { Activity, Check, Clock, Code2, FileDiff, FileText, GitBranch, GitCommitHorizontal, GitPullRequest, Globe, ListChecks, Lock, MessageSquare, Minimize2, Palette, Pencil, Smartphone, Square, Star, Ticket } from "lucide-react"
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Kbd } from "@/components/ui/kbd"
@@ -14,7 +14,7 @@ import { createStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
 import { Guard } from "@/components/common/Guard"
 import { SessionBot } from "./bot"
-import { type Tab, WORKSPACES, beside, openSession, showTab } from "@/app/open-session"
+import { type Tab, WORKSPACES, beside, openPreview, openSession, previews, showTab, toggleSimulator } from "@/app/open-session"
 import { openDialog } from "@/app/open-dialog"
 import { toggleWatch, watched } from "@/features/alerts/prefs"
 import { lazyView } from "@/lib/lazy-view"
@@ -265,6 +265,16 @@ export function SessionPanel({ id, tab: asked, file }: { id: string; tab: Tab; f
               onClick={() => launch(id)} title={`Open in ${where} (O)`}>
               <span className="@max-[640px]/panel:hidden">Open in {where}</span><Anim.ArrowUpRight size={12} />
             </button>
+            {!isWorkspace && (
+              <button className={cn(iconBtn(), "size-7 [&_svg]:size-[15px] max-[1100px]:hidden")} onClick={() => openPreview(previews.get()[id] ?? "")} title="Preview a page this machine serves (localhost)">
+                <Globe />
+              </button>
+            )}
+            {!isWorkspace && (
+              <button className={cn(iconBtn(), "size-7 [&_svg]:size-[15px] max-[1100px]:hidden")} onClick={toggleSimulator} title="The iOS simulator running on this Mac">
+                <Smartphone />
+              </button>
+            )}
             {!isWorkspace && (
               <button className={cn(iconBtn(), "size-7 [&_svg]:size-[15px] max-[1100px]:hidden")} onClick={toggleWide} title={wide ? "Normal width" : "Widen the panel"}>
                 {wide ? <Minimize2 /> : <Anim.Maximize2 />}

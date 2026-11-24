@@ -5,7 +5,8 @@ export const MIN_W = 360
 const DEFAULT_W = 760
 
 // Your width (dragged) or the default, never wider than the board's room.
-export const docWidth = (saved: number | null, room: number) => Math.round(Math.min(room, Math.max(MIN_W, saved ?? DEFAULT_W)))
+export const PANE_MIN_W = 280 // a page or a simulator: a phone's screen fits narrower than a document
+export const docWidth = (saved: number | null, room: number, min = MIN_W) => Math.round(Math.min(room, Math.max(min, saved ?? DEFAULT_W)))
 
 // A line's text cut at its boxes: "[ ]" empty, "[x]" ticked.
 export type BoxPart = string | { isTicked: boolean }

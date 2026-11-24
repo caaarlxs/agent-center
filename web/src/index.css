@@ -293,6 +293,7 @@ html[data-theme-switch]::view-transition-new(root) { animation: theme-curtain 60
 
 /* While the panel's edge is dragged: no text selection, the resize cursor everywhere. */
 .resizing, .resizing * { user-select: none; cursor: col-resize !important; }
+.resizing iframe { pointer-events: none; } /* a page beside the panel keeps no drag to itself */
 
 /* Claude's Markdown in the conversation (styles.css:534-576): its own type
    scale and blocks, as the generated tags carry no classes. */

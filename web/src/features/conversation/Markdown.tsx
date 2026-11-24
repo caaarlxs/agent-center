@@ -11,7 +11,8 @@ import { cjk } from "@streamdown/cjk"
 import { post } from "@/lib/api"
 import { useShikiTheme, useTokens } from "@/lib/code-theme"
 import { cn } from "@/lib/utils"
-import { openFile, showInCode } from "@/app/open-session"
+import { openFile, openPreview, showInCode } from "@/app/open-session"
+import { localUrlOf } from "@/features/preview/local"
 import { type CodePlace, mayBePath, placeOf, useCodeIndex } from "@/features/code/links"
 import { boxParts } from "@/features/files/beside"
 import { endOf, isShellLike, localHref, pathInCode, pathInLink, riskOf, SHELL_LANG, nameOf } from "./text"
@@ -176,7 +177,7 @@ function usePlace(name: string | null) {
   return name && index ? placeOf(name, index) : null
 }
 
-// Inline code: a file or folder of the repository opens in Code; another path, beside.
+// Inline code: a file or folder of the repository opens in Code; another path, beside; a local page, its preview.
 function InlineCode({ children, className }: ComponentProps<"code">) {
   const text = typeof children === "string" ? children : null
   const docs = useContext(TicketDocsOf)
@@ -185,13 +186,22 @@ function InlineCode({ children, className }: ComponentProps<"code">) {
   const path = text && !doc ? pathInCode(text) : null
   if (doc) return <button type="button" onClick={() => docs!.open(doc)} title={`Open ${doc}`} className="cursor-pointer underline decoration-line-strong underline-offset-2 hover:decoration-current"><code className={className}>{children}</code></button>
   if (place) return <CodeLink place={place} isCode>{children}</CodeLink>
+  const page = localUrlOf(text)
+  if (page) return <PageLink url={page}><code className={className}>{children}</code></PageLink>
   return path ? <FileLink path={path} isCode>{children}</FileLink> : <code className={className}>{children}</code>
 }
 
-// A link: to a file or folder of the repository, in Code; to another file, beside; else a new window.
+// A page this machine serves: beside the conversation (a modified click: a new window, as any link).
+function PageLink({ url, children }: { url: string; children: ReactNode }) {
+  return <a href={url} target="_blank" rel="noreferrer" title="Open the preview here" onClick={e => e.metaKey || e.ctrlKey || e.shiftKey || (e.preventDefault(), openPreview(url))}>{children}</a>
+}
+
+// A link: to a file or folder of the repository, in Code; to another file, beside; to a local page, its preview; else a new window.
 function LocalLink({ href, children }: { href?: string; children: ReactNode }) {
   const path = pathInLink(href)
   const place = usePlace(path)
+  const page = localUrlOf(href)
+  if (page) return <PageLink url={page}>{children}</PageLink>
   if (place) return <CodeLink place={place}>{children}</CodeLink>
   return path ? <FileLink path={path}>{children}</FileLink> : <a href={href} target="_blank" rel="noreferrer">{children}</a>
 }

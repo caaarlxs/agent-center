@@ -13,6 +13,8 @@
 //   uploads    Claude may read the files sent from the board  (recommended)
 //   whisper    dictation on this Mac: whisper-cpp, ffmpeg and the model
 //   organizer  tasks: ~/organizer/organizer.py and a note in ~/.claude/CLAUDE.md
+//   simulator  the iOS simulator beside a session: Xcode with an iOS runtime
+//              (checked only), and AXe, installed with Homebrew (lib/simulator.ts)
 //   github     the gh CLI, signed in, for PRs                 (checked only)
 //   account    the terminal's Claude account is Claude desktop's (checked
 //              only; shown only when they differ)
@@ -27,6 +29,7 @@ import { desktopAccount } from "./desktop"
 import { readJson, writeJsonAtomic } from "./files"
 import { claudeBinary } from "./launch"
 import { exec } from "./proc"
+import { installAxe, simulatorSetup } from "./simulator"
 import { hasITerm, terminalApp, tmuxPath } from "./terminal"
 
 export type StepState = "done" | "missing" | "outdated" | "working" | "unavailable"
@@ -283,6 +286,7 @@ export async function setupStatus(): Promise<{ steps: Step[]; isReady: boolean; 
       : { id: "whisper", state: whisperReady ? "done" : "missing" },
     { id: "organizer", state: (await isOrganizerOn()) ? "done" : "missing", detail: (await exists(ORGANIZER)) ? "found" : undefined },
     { id: "commands", state: settings.runCommands === true ? "done" : "missing" },
+    await simulatorSetup(),
     { id: "github", state: ghAuth ? "done" : which("gh") ? "missing" : "unavailable", detail: ghAuth ? undefined : which("gh") ? "signed-out" : "not-installed" },
     accountStep(await cliAccount(), await desktopAccount()),
   ].filter((x): x is Step => !!x)
@@ -307,6 +311,8 @@ export async function runStep(id: string, options: Record<string, unknown> = {})
       return options.off ? saveSettings({ organizer: false }) : installOrganizer()
     case "commands":
       return saveSettings({ runCommands: !options.off })
+    case "simulator":
+      return installAxe()
     case "terminal":
       // { app }: only which app shows the sessions the board opens.
       if (options.app === "Terminal" || options.app === "iTerm") return saveSettings({ terminalApp: options.app })
