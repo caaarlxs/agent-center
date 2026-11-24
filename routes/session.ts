@@ -22,6 +22,7 @@ import { saveSessionFile, sessionFile } from "../lib/session-files"
 import { speakTurn, type Kind } from "../lib/speech"
 import { groupOf, knownSessionIds } from "../lib/snapshot"
 import { wokeNow } from "../lib/wake"
+import * as terminal from "../lib/terminal"
 
 async function send(id: string, body: Record<string, unknown>) {
   if (await isArchivedInApp(groupOf(id)?.ids ?? [id]))
@@ -115,7 +116,10 @@ async function settings(id: string, body: Record<string, unknown>) {
     changes.effort = undefined
   }
   const requestId = changes.mode || changes.model ? await requestSettings(id, changes) : null
-  return json({ ok: true, requestId, messageId, isOpen: bridge.isOpen })
+  // In a terminal session, Claude Code asks before it switches model mid-conversation: the board answers yes.
+  const isConfirming = !!changes.model && !!requestId && (await terminal.isLive(id))
+  if (isConfirming) void terminal.confirmModelSwitch(id, async () => (await bridgeStatus(id)).settings?.id === requestId)
+  return json({ ok: true, requestId, messageId, isOpen: bridge.isOpen, rereads: isConfirming })
 }
 
 export async function handleSession(id: string, action: string, body: Record<string, unknown>): Promise<Response> {

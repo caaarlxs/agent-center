@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { isTrusted, lastLink, trust } from "../lib/terminal"
+import { isModelQuestion, isTrusted, lastLink, trust } from "../lib/terminal"
 
 describe("isTrusted", () => {
   test("counts only the folder's own answer, not a trusted parent's", async () => {
@@ -52,4 +52,18 @@ describe("trust", () => {
     expect(config.projects["/a"].hasTrustDialogAccepted).toBe(true)
     expect((await stat(file)).mode & 0o777).toBe(0o600)
   })
+})
+
+test("Claude Code's question before it switches model mid-conversation, and nothing else", () => {
+  const asking = `⏺ ok
+  Switch model?
+  Your next response will be slower and use more tokens
+  This conversation is cached for the current model. Switching to Opus 5.5 means the full history gets re-read.
+  ❯ 1. Yes, switch to Opus 5.5
+    2. No, go back
+  Enter to confirm · Esc to cancel`
+  expect(isModelQuestion(asking)).toBe(true)
+  expect(isModelQuestion(asking.replace("❯ 1. Yes", "  1. Yes").replace("    2. No", "  ❯ 2. No"))).toBe(false) // Enter would go back
+  expect(isModelQuestion("❯ /model haiku\n  ⎿  Set model to Haiku 5.5")).toBe(false)
+  expect(isModelQuestion("❯ Switch model? asked in a message, as text")).toBe(false)
 })

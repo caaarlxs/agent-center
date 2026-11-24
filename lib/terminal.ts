@@ -173,6 +173,37 @@ export async function typeInSession(id: string, folder: string, line: string, mo
   return { ok: true }
 }
 
+// ---------- A model switched mid-conversation ----------
+//
+// The mod runs /model as if typed (bridge/hooks/register.ts applySettings),
+// and it answers "ok" at once; but mid-conversation Claude Code first asks
+// "Switch model?" (the history is cached for the model it has and will be
+// read again), and holds the session there: the next message waits in the
+// input box and never goes. The person asked for the switch on the board, so
+// the board answers yes, once the question shows with Yes chosen.
+
+/** True when the screen holds Claude Code's question before a model switch, with Yes chosen. */
+export const isModelQuestion = (screen: string) =>
+  /^\s*Switch model\?\s*$/m.test(screen) && /^\s*❯ 1\. Yes, switch to /m.test(screen) && /Enter to confirm/.test(screen)
+
+const ASKED_MS = 5 * 60_000 // a turn that runs keeps the mod from switching until it ends
+const AFTER_MS = 5000 // the mod switched: the question shows within this, or it never will
+
+/** Answers yes to the switch question in a session of the board's own; `isApplied`: the mod ran /model. True when it answered. */
+export async function confirmModelSwitch(id: string, isApplied: () => Promise<boolean>) {
+  if (!isId(id) || !(await isLive(id))) return false
+  let appliedAt = 0
+  for (const end = Date.now() + ASKED_MS; Date.now() < end; await Bun.sleep(700)) {
+    if (isModelQuestion(await screenOf(id))) {
+      await keys(id, "Enter")
+      return true
+    }
+    if (!appliedAt && (await isApplied())) appliedAt = Date.now()
+    if (appliedAt && Date.now() - appliedAt > AFTER_MS) return false
+  }
+  return false
+}
+
 // A window of terminalApp() running `command`: the one place the board brings
 // something to the front, and only when asked to open a session.
 async function openWindow(name: string, command: string) {

@@ -71,11 +71,13 @@ function Settings({ card, bridge }: { card: Card; bridge: Bridge | null }) {
     setAsked(null)
   }, [bridge?.settings?.id])
   const change = (key: "mode" | "model", value: string) =>
-    post<{ requestId: string; isOpen: boolean; messageId?: string }>(`/api/sessions/${encodeURIComponent(card.id)}/settings`, { [key]: value }).then(
+    post<{ requestId: string; isOpen: boolean; messageId?: string; rereads?: boolean }>(`/api/sessions/${encodeURIComponent(card.id)}/settings`, { [key]: value }).then(
       res => {
         // A session in Auto changes its mode when the conversation asks: sent as a message.
         if (res.messageId) return void toast("Sent as a message: in Auto, Claude changes the mode when the conversation asks")
         setAsked({ requestId: res.requestId, key, value })
+        // Mid-conversation, a new model reads the whole history again (Claude Code's own warning, answered for you).
+        if (res.rereads) return void toast("Model change sent: its next reply reads the whole conversation again, slower and with more tokens")
         toast(res.isOpen ? "Change sent: it applies as soon as the session is free" : "Change saved: it applies when the session opens")
       },
       (err: Error) => toast(err.message || "Could not request the change"),
