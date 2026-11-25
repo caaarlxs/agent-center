@@ -255,7 +255,7 @@ async function communityPack(level: number, owned: Record<string, number>): Prom
 }
 
 // What the page sees: never when the next pack comes.
-const shown = (s: State) => ({ packs: s.packs, owned: s.owned, active: s.active, buddy: s.buddy, xp: s.xp, opened: s.opened, prBoosts: s.prBoosts, ticketBoosts: s.ticketBoosts, ticketPacks: s.ticketPacks })
+const shown = (s: State) => ({ merges: s.mergedSeen.length, packs: s.packs, owned: s.owned, active: s.active, buddy: s.buddy, xp: s.xp, opened: s.opened, prBoosts: s.prBoosts, ticketBoosts: s.ticketBoosts, ticketPacks: s.ticketPacks })
 
 const COMMUNITY = "community:"
 

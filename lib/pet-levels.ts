@@ -6,11 +6,10 @@
 
 export const MAX_LEVEL = 60
 
-// What each thing is worth. turn: a session finished a turn while the pet
-// was out; focusTurn: one more for the pet working with that session.
-export const XP = {
-  turn: 8, focusTurn: 20, prOpened: 60, prMerged: 120, focusDone: 40, fed: 4, petted: 2, fetched: 3, delivered: 6,
-} as const
+// What each thing is worth: only work, never chores. turn: a session
+// finished a turn while the pet was out; focusTurn: one more for the pet
+// that kept that session company.
+export const XP = { turn: 8, focusTurn: 20, prOpened: 60, prMerged: 120 } as const
 export type XpKind = keyof typeof XP
 export const isXpKind = (v: unknown): v is XpKind => typeof v === "string" && Object.hasOwn(XP, v)
 

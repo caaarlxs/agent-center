@@ -130,7 +130,7 @@ test("the pets out grow; the one a page names, alone; each 20th level brings a p
   expect(s.xp).toEqual({ a: XP.turn, b: XP.turn })
   grow(s, "focusTurn", "well", "b")
   expect(s.xp.b).toBe(XP.turn + 30)
-  expect(grow(s, "fed", "ok", "away")).toBe(false) // not out: nothing
+  expect(grow(s, "turn", "ok", "away")).toBe(false) // not out: nothing
   s.xp.a = 0
   for (let i = 0; i < 100; i++) grow(s, "prMerged", "ok", "a")
   expect(s.packs).toBe(Math.floor(levelOf(s.xp.a!).level / 20))
@@ -138,10 +138,10 @@ test("the pets out grow; the one a page names, alone; each 20th level brings a p
 
 test("a page's events: known kinds only, never the PRs the server counts itself", () => {
   expect(isXpEvent({ key: "turn:x:1", kind: "turn" })).toBe(true)
-  expect(isXpEvent({ key: "k", kind: "fed", pet: "a", condition: "well" })).toBe(true)
+  expect(isXpEvent({ key: "k", kind: "turn", pet: "a", condition: "well" })).toBe(true)
   expect(isXpEvent({ key: "k", kind: "prMerged" })).toBe(false)
   expect(isXpEvent({ key: "k", kind: "magic" })).toBe(false)
-  expect(isXpEvent({ key: "k", kind: "fed", condition: "great" })).toBe(false)
+  expect(isXpEvent({ key: "k", kind: "turn", condition: "great" })).toBe(false)
 })
 
 test("a Jira ticket brings the next pack nearer, or now and then a pack at once, once each", () => {

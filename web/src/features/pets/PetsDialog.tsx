@@ -12,7 +12,7 @@
 // a pack can hold, codex-pets.net's, the ones you lack as a shadow; a click
 // on one you have sends it out on the board, its paw sends it out as the
 // buddy of the one already there; each shows its level.
-import { ChevronLeft, ChevronRight, PawPrint, Search } from "lucide-react"
+import { ChevronLeft, ChevronRight, PawPrint, Search, X } from "lucide-react"
 import { memo, useDeferredValue, useEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { toast } from "@/lib/notify"
@@ -25,6 +25,7 @@ import { betterChance, levelOf } from "@server/pet-levels"
 import { area, peel, polygon, type Pt } from "./peel"
 import { PetArt, RARITY_COLOR, RARITY_NAME, isCommunity, nicknames, petName, type Rarity } from "./art"
 import { catalog, choosePet, loadCatalog, openPack, pets, rarityOf, type CatalogPet, type Pets, type Pull } from "./pets"
+import { SIZES, resize, sizes } from "./size"
 
 const tabBtn = (on: boolean) => cn("h-7 rounded-[7px] px-3 text-[12.5px] font-medium", on ? "bg-surface text-text shadow-[0_1px_2px_rgb(0_0_0/0.08)]" : "text-text-muted hover:text-text")
 const RARITIES: Rarity[] = ["common", "rare", "epic", "legendary"]
@@ -777,6 +778,22 @@ function Luck({ state }: { state: Pets }) {
 
 const PAGE = 60
 
+// A pet out on the board: its size there (− and +), and a cross to put it away.
+function OutPet({ id, slot, className }: { id: string; slot: "active" | "buddy"; className?: string }) {
+  const size = sizes.use()[id] ?? 1
+  const step = "grid size-6 place-items-center rounded-md text-[14px] text-text-muted hover:bg-hover hover:text-text disabled:opacity-35"
+  return (
+    <span className={cn("inline-flex h-7 items-center gap-0.5 rounded-full border border-line pr-0.5 pl-1.5 text-[12px]", className)}>
+      <PetArt id={id} size={18} />
+      <span className="max-w-[110px] truncate px-1 font-medium">{petName(id)}</span>
+      <button className={step} onClick={() => resize(id, -1)} disabled={size <= SIZES[0]!} aria-label={`${petName(id)} smaller`} title="Smaller">−</button>
+      <span className="w-8 text-center text-[11px] text-text-muted tabular-nums">{Math.round(size * 100)}%</span>
+      <button className={step} onClick={() => resize(id, 1)} disabled={size >= SIZES.at(-1)!} aria-label={`${petName(id)} bigger`} title="Bigger">+</button>
+      <button className={step} onClick={() => void choosePet(null, slot)} aria-label={`Put ${petName(id)} away`} title="Put it away"><X className="size-3.5" /></button>
+    </span>
+  )
+}
+
 function Collection({ state }: { state: Pets }) {
   const all = catalog.use()
   const [only, setOnly] = useState<Rarity | null>(null)
@@ -819,8 +836,8 @@ function Collection({ state }: { state: Pets }) {
             <i className="size-2 rounded-full" style={{ background: RARITY_COLOR[r] }} />{RARITY_NAME[r]}<span className="text-faint tabular-nums">{counts[r]}</span>
           </button>
         ))}
-        {state.active && <Button variant="outline" className="ml-auto h-7 text-[12px]" onClick={() => void choosePet(null)}>Put {petName(state.active)} away</Button>}
-        {state.buddy && <Button variant="outline" className="h-7 text-[12px]" onClick={() => void choosePet(null, "buddy")}>Put {petName(state.buddy)} away</Button>}
+        {state.active && <OutPet id={state.active} slot="active" className="ml-auto" />}
+        {state.buddy && <OutPet id={state.buddy} slot="buddy" className={state.active ? undefined : "ml-auto"} />}
       </div>
       <div className="flex flex-wrap items-center gap-1.5">
         {categories.map(c => <button key={c} className={chip(kind === c)} onClick={() => filter(setKind)(kind === c ? null : c)}>{c}</button>)}

@@ -1,75 +1,58 @@
-// The pet out on the board. It wanders the window, rests, says things; it
-// gets hungry and tired (care.ts), naps when it runs out of energy and wakes
-// when it is full of it again. A click opens its menu: feed it, pet it, put
-// it to bed, set it to work with a session, let it notify you. Working, it
-// walks to that session's card and sits on it at its laptop; when the
-// session asks you something or finishes, it tells you (a toast here, a macOS
-// notification when you are in another window). Dragged, it dangles and stays
-// where it is dropped. Play ball with it: drag the ball and let go, it runs
-// after it and brings it back. Thrown itself (dragged and let go with
-// speed), it flies like the ball, tumbling, bouncing off the floor and the
-// edges, and gets up again (fling.ts). With reduced motion it does not wander.
-// Two can be out at once (the buddy greets the other now and then); when
-// wandering they climb onto the cards. Each grows with your work
-// (lib/pet-levels.ts): a turn its session finishes, a PR, being fed and
-// played with; a level up is cheered, and a new stage changes how it looks
-// (bigger, a glow, sparkles, a crown). "Bring me what waits" runs to the
-// session that waits for you and opens it; "Focus 25 min" keeps you company
-// for a block of work and tells you when to rest.
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
+// The pets out on the board. They ask nothing of you: what they do shows how
+// your work goes (mood.ts). Their energy is what is left of your 5-hour
+// limit: full, they run; nearly spent, they drag their feet; out of tokens,
+// they sleep until the limit resets. They sleep at night too, and stay home
+// at the weekend. A session that works has a pet at its laptop on its card;
+// one that asks you something has a pet standing in front of it, looking.
+// With nothing going on, the two play together: tag, a nap side by side,
+// one on the other's head; a merged PR is a high five.
+//
+// The ball (ball.ts) is for both: thrown, the two race for it and the winner
+// brings it back; handed to one of them (let go on it), the two throw it to
+// each other. A pet can be dragged, and flung (fling.ts). A click opens its
+// menu: pet it, play ball, your pets. Each grows with your work only
+// (lib/pet-levels.ts): a turn its session finishes, a PR.
+import { useCallback, useEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { toast } from "@/lib/notify"
-import type { Card } from "@/lib/api-types"
 import { useLive } from "@/lib/live"
-import { load, keep } from "@/lib/store"
+import { useNow } from "@/lib/now"
+import { createStore, load, keep } from "@/lib/store"
 import { cn } from "@/lib/utils"
 import { openDialog } from "@/app/open-dialog"
-import { openSession } from "@/app/open-session"
-import { canNotify, showNotice } from "@/features/alerts/prefs"
 import { PACK_EVERY, STAGES, levelOf, stageOf } from "@server/pet-levels"
 import { PetArt, RARITY_COLOR, nicknames, petName, realName, setNickname } from "./art"
-import { nextWaiting, turnsEnded } from "./board-sense"
-import { FOODS, careOf, cares, energyOf, fullnessOf, setCare } from "./care"
+import { turnsEnded } from "./board-sense"
+import { BALL, type Ball, ball, floorOf, roll, throwTo } from "./ball"
+import { type Post, type Rest, energyOf, isQuiet, postsOf, restOf } from "./mood"
 import { Parade, useArrowCode } from "./Parade"
-import { SIZES, resize, sizes } from "./size"
+import { sizes } from "./size"
 import { type Flight, flingOf, flyStep } from "./fling"
-import { conditionOf, earn, pets, rarityOf, watchPets } from "./pets"
+import { earn, pets, rarityOf, watchPets } from "./pets"
 
-type Mode = "idle" | "walk" | "sleep" | "drag" | "cheer" | "alert" | "eat" | "work" | "wait" | "fetch" | "carry" | "deliver" | "shoved" | "fly"
-const FOCUS_MS = 25 * 60_000
-// Where each pet out is, so the other can come and say hello.
+type Mode = "idle" | "walk" | "sleep" | "drag" | "cheer" | "alert" | "work" | "watch" | "fetch" | "carry" | "shoved" | "fly"
+// What the two play at when nothing goes on; `it` chases, or climbs.
+type Game = { game: "chase" | "nap" | "stack" | "five"; it: string; until: number; frozenUntil?: number }
+const together = createStore<Game | null>(null)
+
+// Where each pet out is, so the other can find it.
 const where = new Map<string, { x: number; y: number }>()
 const GROW: Record<string, number> = { baby: 0.84, young: 1, grown: 1.1, elite: 1.18, legend: 1.26, mythic: 1.32 }
 const SIZE = 60
 const SPEED = 52 // px a second
 const RUSH = 150 // to its session's card
 const CHASE = 270 // after the ball
-// The ball: its size, how it falls, how much of a bounce it keeps, and how
-// long the pet waits for a throw before it puts the ball away.
-const BALL = 18
-const GRAVITY = 2100
-const BOUNCE = 0.58
-const BORED_AFTER = 30_000
-type Ball = { x: number; y: number; vx: number; vy: number; spin: number; state: "loose" | "held" | "carried"; isThrown: boolean; from: { x: number; y: number }; at: number }
-const floorOf = () => innerHeight - 4 - BALL / 2
+const BORED_AFTER = 30_000 // the ball left lying: put away
+const GAME_THROWS = 12 // a game of catch: this many throws, then it ends
 const IDLE_NAP = 90_000 // nobody moves the mouse: a nap
-const LINES = ["Hi!", "♪ ♫", "Ship it!", "More pets, please", "Coffee?", "Any PRs to review?", "I'm helping!", "Bugs? Where?", "*happy noises*", "You got this"]
-const WORK_LINES = ["Reading the logs…", "Hmm, interesting", "Compiling…", "Tests are running", "Typing very fast", "Almost there…", "LGTM so far", "Refactoring my tail"]
+const LINES = ["Hi!", "♪ ♫", "Ship it!", "Any PRs to review?", "I'm helping!", "Bugs? Where?", "*happy noises*", "You got this"]
+const TIRED_LINES = ["*yawn*", "Easy on the tokens…", "So sleepy…", "Running low…"]
+const WORK_LINES = ["Reading the logs…", "Hmm, interesting", "Compiling…", "Tests are running", "Typing very fast", "Almost there…", "LGTM so far"]
+const WAKE_LINES: Record<Exclude<Rest, null>, string[]> = { night: ["Good morning!", "*stretches*"], spent: ["Tokens are back!", "Full of energy!"], weekend: ["Back to work!"] }
+const SLEEP_LINES: Record<Exclude<Rest, null>, string> = { night: "Good night 💤", spent: "Out of tokens… zzz", weekend: "See you Monday!" }
 
-const pick = <T,>(list: T[]) => list[Math.floor(Math.random() * list.length)]!
-const clock = (ms: number) => {
-  const s = Math.max(0, Math.ceil(ms / 1000))
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`
-}
-// The time left, second by second.
-function Countdown({ until }: { until: number }) {
-  const [now, setNow] = useState(Date.now())
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(timer)
-  }, [])
-  return <>{clock(until - now)}</>
-}
+const pick = <T,>(list: readonly T[]) => list[Math.floor(Math.random() * list.length)]!
+const hhmm = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
 // A session's panel open at the right is a wall: the pets stay out of it, and
 // one in its way as it slides in is shoved aside, like by a drawer. Where its
 // left edge is now (the window's, with no panel, or one that fills the window).
@@ -82,15 +65,16 @@ const clamp = (p: { x: number; y: number }) => {
   const b = bounds()
   return { x: Math.min(b.maxX, Math.max(b.minX, p.x)), y: Math.min(b.maxY, Math.max(b.minY, p.y)) }
 }
-// Where it sits to work: on the top right of the session's card, or in the
-// corner when the card is not on screen.
-function seatOf(cardId: string) {
-  for (const el of document.querySelectorAll<HTMLElement>(`[data-id="${CSS.escape(cardId)}"]`)) {
+// Where it keeps a session company: at its laptop on the card's top right
+// (working), or standing in front of it, looking (asking). Null when the
+// card is not on screen: it wanders, with the session's name on its tag.
+function seatOf(post: NonNullable<Post>) {
+  for (const el of document.querySelectorAll<HTMLElement>(`[data-id="${CSS.escape(post.cardId)}"]`)) {
     const r = el.getBoundingClientRect()
-    if (r.width && r.bottom > 70 && r.top < innerHeight - 20 && r.right > 0 && r.left < innerWidth) return { at: clamp({ x: r.right - 50, y: r.top + 16 }), isOnCard: true }
+    if (!r.width || r.bottom < 70 || r.top > innerHeight - 20 || r.right < 0 || r.left > wallX()) continue
+    return post.kind === "asking" ? clamp({ x: r.left + r.width / 2, y: r.bottom + SIZE * 0.9 }) : clamp({ x: r.right - 50, y: r.top + 16 })
   }
-  const b = bounds()
-  return { at: { x: b.maxX - 30, y: b.maxY }, isOnCard: false }
+  return null
 }
 
 export function PetLayer() {
@@ -113,33 +97,78 @@ export function PetLayer() {
     }
     tickets.current = nearer
   }, [state])
-  // A turn a session finished: XP for the pets out, more for the one working with it.
-  const cards = useLive(l => l.snapshot?.cards)
+
+  const cards = useLive(l => l.snapshot?.cards) ?? []
+  const limits = useLive(l => l.snapshot?.limits)
+  const now = useNow()
+  const energy = energyOf(limits, now)
+  const rest = restOf(energy, new Date(now))
+  const five = limits?.windows.find(w => w.kind === "five_hour")?.resetsAt
+  const wakeAt = rest === "spent" && five ? `until ${hhmm(Date.parse(five))}` : rest === "night" ? "until 7:00" : null
+  const active = state?.active ?? null
+  const buddy = state?.buddy ?? null
+  const out = [active, buddy].filter((p): p is string => !!p)
+  const posts = postsOf(cards, rest ? [] : out)
+
+  // A turn a session finished: XP for the pets out, more for the one that kept it company.
   const columns = useRef<Map<string, string> | null>(null)
+  const postsRef = useRef(posts)
+  postsRef.current = posts
   useEffect(() => {
-    if (!cards) return
     const before = columns.current
     columns.current = new Map(cards.map(c => [c.id, c.column]))
-    if (!before || !state) return
+    if (!before || !out.length) return
     const minute = Math.floor(Date.now() / 60_000)
     for (const cardId of turnsEnded(before, cards))
-      for (const pet of [state.active, state.buddy].filter((p): p is string => !!p)) {
+      for (const pet of out) {
         earn("turn", `turn:${cardId}:${minute}:${pet}`, pet)
-        if (careOf(pet).focus === cardId) earn("focusTurn", `focusTurn:${cardId}:${minute}:${pet}`, pet)
+        if (postsRef.current.get(pet)?.cardId === cardId) earn("focusTurn", `focusTurn:${cardId}:${minute}:${pet}`, pet)
       }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cards])
+
+  // The two play when nothing goes on, now and then; they stop once a session works or asks, or the ball comes out.
+  const quiet = isQuiet(cards)
+  const hasBall = !!ball.use()
+  const isTwo = !!active && !!buddy
+  useEffect(() => {
+    if (!isTwo || !quiet || rest || hasBall) return void (together.get()?.game !== "five" && together.set(null))
+    const timer = setInterval(() => {
+      const g = together.get()
+      if (g && Date.now() < g.until) return
+      if (g) return void together.set(null)
+      if (document.hidden || Math.random() > 0.3) return
+      const game = pick(["chase", "chase", "nap", "stack"] as const)
+      together.set({ game, it: pick([active!, buddy!]), until: Date.now() + (game === "nap" ? 45_000 : 16_000 + Math.random() * 8000) })
+    }, 5000)
+    return () => clearInterval(timer)
+  }, [isTwo, quiet, rest, hasBall, active, buddy])
+  // A PR merged: a high five, when two are out and awake.
+  const merges = state?.merges
+  const lastMerges = useRef(merges)
+  useEffect(() => {
+    if (merges === undefined) return
+    if (lastMerges.current !== undefined && merges > lastMerges.current && isTwo && !rest) together.set({ game: "five", it: active!, until: Date.now() + 9000 })
+    lastMerges.current = merges
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [merges])
+
   const [isParading, setParading] = useState(false)
   const startParade = useCallback(() => setParading(true), [])
   const endParade = useCallback(() => setParading(false), [])
   useArrowCode(startParade)
-  const active = state?.active
-  const buddy = state?.buddy
+  if (!state) return null
+  const isHome = rest !== "weekend"
+  const walker = (id: string, slot: "active" | "buddy", other: string | null) => (
+    <Walker key={id} id={id} slot={slot} other={other} color={RARITY_COLOR[rarityOf(state, id)]} energy={energy} rest={rest} wakeAt={wakeAt}
+      post={posts.get(id) ?? null} postTitle={cards.find(c => c.id === posts.get(id)?.cardId)?.title ?? null} />
+  )
   return (
     <>
-      {active && state && <Walker key={active} id={active} slot="active" other={buddy ?? null} color={RARITY_COLOR[rarityOf(state, active)]} />}
-      {buddy && state && <Walker key={buddy} id={buddy} slot="buddy" other={active ?? null} color={RARITY_COLOR[rarityOf(state, buddy)]} />}
-      {isParading && state && <Parade state={state} onDone={endParade} />}
+      {isHome && active && walker(active, "active", buddy)}
+      {isHome && buddy && walker(buddy, "buddy", active)}
+      {isHome && hasBall && <BallLayer pets={out} />}
+      {isParading && <Parade state={state} onDone={endParade} />}
     </>
   )
 }
@@ -153,7 +182,9 @@ function perchOnCard() {
   return clamp({ x: r.left + 30 + Math.random() * (r.width - 60), y: r.top + 2 })
 }
 
-function Walker({ id, slot, other, color }: { id: string; slot: "active" | "buddy"; other: string | null; color: string }) {
+type WalkerProps = { id: string; slot: "active" | "buddy"; other: string | null; color: string; energy: number; rest: Rest; wakeAt: string | null; post: Post; postTitle: string | null }
+
+function Walker({ id, slot, other, color, energy, rest, wakeAt, post, postTitle }: WalkerProps) {
   nicknames.use()
   const name = petName(id)
   const el = useRef<HTMLDivElement>(null)
@@ -163,45 +194,30 @@ function Walker({ id, slot, other, color }: { id: string; slot: "active" | "budd
   const facing = useRef(1)
   const [face, setFace] = useState(1) // for a community pet, whose sheet runs left or right
   const lastActive = useRef(Date.now())
-  const [mode, setModeState] = useState<Mode>(careOf(id).isAsleep ? "sleep" : "idle")
+  const [mode, setModeState] = useState<Mode>(rest ? "sleep" : "idle")
   const modeRef = useRef<Mode>(mode)
   const [bubble, setBubble] = useState<string | null>(null)
-  const [food, setFood] = useState<string | null>(null)
   const [isMenuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef(false)
-  const care = cares.use()[id] ?? careOf(id)
-  const focus = care.focus
-  const focusRef = useRef(focus)
-  focusRef.current = focus
-  const cards = useLive(l => l.snapshot?.cards) ?? []
-  const focusCard = focus ? cards.find(c => c.id === focus) : undefined
-  const [now, setNow] = useState(Date.now())
-  const fullness = fullnessOf(care, now)
-  const energy = energyOf(care, now)
-  const isSad = fullness < 15 || energy < 12
   const timers = useRef<number[]>([])
   const flight = useRef<Flight | null>(null) // thrown: in the air, or rolling to a stop
-  const otherRef = useRef(other)
-  otherRef.current = other
+  // What it reads from the board, kept current for the walk.
+  const live = useRef({ other, energy, rest, post })
+  live.current = { other, energy, rest, post }
   const greeting = useRef(false)
-  const ball = useRef<Ball | null>(null)
+  const onTop = useRef(false) // sitting on the other's head
   // Shoved by the panel: its speed sideways, its hop, how it leans, and what it did before.
   const shove = useRef<{ vx: number; hop: number; vh: number; tilt: number; was: Mode } | null>(null)
-  const ballEl = useRef<HTMLDivElement>(null)
-  const [hasBall, setHasBall] = useState(false)
   const isStill = matchMedia("(prefers-reduced-motion: reduce)").matches
+  const hasBall = !!ball.use()
+  const game = together.use()
   // Its level and stage; a level up is cheered, a new stage more.
   const xp = pets.use()?.xp[id] ?? 0
-  const size = sizes.use()[id] ?? 1 // as you set it in its menu
+  const size = sizes.use()[id] ?? 1 // as you set it in Your pets
   const lv = levelOf(xp)
   const lastLevel = useRef(lv.level)
   const [grew, setGrew] = useState(0) // a burst when it levels up
   const [isTransforming, setTransforming] = useState(false) // a new stage from elite on: its aura flares
-  // A session to bring you (Bring me what waits), and a focus block running.
-  const deliverTo = useRef<string | null>(null)
-  const focusUntil = care.focusUntil && care.focusUntil > now ? care.focusUntil : null
-  const focusRef2 = useRef(focusUntil)
-  focusRef2.current = focusUntil
 
   const setMode = (m: Mode) => ((modeRef.current = m), setModeState(m))
   const later = (ms: number, fn: () => void) => timers.current.push(window.setTimeout(fn, ms))
@@ -213,15 +229,8 @@ function Walker({ id, slot, other, color }: { id: string; slot: "active" | "budd
   const moment = (m: Mode, text: string, ms = 1800) => {
     target.current = null
     setMode(m)
-    say(text, ms + 800)
-    later(ms, () => modeRef.current === m && setMode(focusRef.current ? "wait" : "idle"))
-  }
-  // Something to tell you: said, and shown where you will see it.
-  const notice = (text: string, cardId: string | null = null) => {
-    say(text, 4000)
-    if (!careOf(id).canNotify) return
-    if (document.hidden && canNotify()) void showNotice(name, text, cardId)
-    else if (!document.hidden) toast(`${name}: ${text}`, { icon: <PetArt id={id} size={26} />, action: cardId ? { label: "Open", onClick: () => openSession(cardId) } : undefined })
+    if (text) say(text, ms + 800)
+    later(ms, () => modeRef.current === m && setMode("idle"))
   }
 
   const place = () => {
@@ -229,92 +238,171 @@ function Walker({ id, slot, other, color }: { id: string; slot: "active" | "budd
     if (!node) return
     const s = shove.current
     node.style.transform = `translate3d(${pos.current.x - SIZE / 2}px, ${pos.current.y - SIZE - (s?.hop ?? 0)}px, 0) rotate(${s?.tilt ?? flight.current?.angle ?? 0}deg)`
+    node.style.zIndex = onTop.current ? "43" : ""
     where.set(id, pos.current)
     node.style.setProperty("--face", String(facing.current))
   }
-  const placeBall = () => {
-    const b = ball.current
-    if (b && ballEl.current) ballEl.current.style.transform = `translate3d(${b.x - BALL / 2}px, ${b.y - BALL / 2}px, 0) rotate(${b.spin}rad)`
-  }
-  const dropBall = () => {
-    ball.current = null
-    setHasBall(false)
+  const look = (x: number) => {
+    const dir = x > pos.current.x ? 1 : -1
+    if (dir === facing.current) return
+    facing.current = dir
+    setFace(dir)
+    place()
   }
 
-  // The walk: one frame at a time toward its target; at rest, now and then a
-  // new one; working, its seat on the card, followed when the card moves.
+  // The walk: one frame at a time. First what it cannot help (flung, shoved,
+  // asleep), then the ball, then a game with the other, then its session,
+  // then wandering.
   useEffect(() => {
     place()
     let frame = 0
     let last = performance.now()
     let restUntil = performance.now() + 1500
     let seatAt = 0
+    let seat: { x: number; y: number } | null = null // its session's card, read again now and then
     let wall = wallX()
     // One step toward a point; answers whether it got there.
     const go = (to: { x: number; y: number }, speed: number, dt: number) => {
       const dx = to.x - pos.current.x
       const dy = to.y - pos.current.y
       const dist = Math.hypot(dx, dy)
-      if (dist < 3) return true
+      if (dist < 3 || isStill) {
+        if (isStill) pos.current = to
+        place()
+        return true
+      }
       const move = Math.min(dist, speed * dt)
       pos.current = { x: pos.current.x + (dx / dist) * move, y: pos.current.y + (dy / dist) * move }
-      if (Math.abs(dx) > 1 && (dx > 0 ? 1 : -1) !== facing.current) {
-        facing.current = dx > 0 ? 1 : -1
-        setFace(facing.current)
-      }
+      if (Math.abs(dx) > 1) look(to.x)
       place()
       return false
     }
-    // The ball on its own: it falls, bounces off the floor and the edges, rolls and stops.
-    const roll = (b: Ball, dt: number) => {
-      const floor = floorOf()
-      if (b.y >= floor && Math.abs(b.vy) < 1) {
-        b.vx *= Math.max(0, 1 - 2.6 * dt) // rolling
-        if (Math.abs(b.vx) < 6) b.vx = 0
-      } else b.vy += GRAVITY * dt
-      b.x += b.vx * dt
-      b.y += b.vy * dt
-      if (b.y > floor) {
-        b.y = floor
-        b.vy = Math.abs(b.vy) > 140 ? -b.vy * BOUNCE : 0
-        b.vx *= 0.86
+    // Its pace: as much as your limit has left.
+    const pace = () => (live.current.energy < 25 ? 0.55 : live.current.energy > 75 ? 1.25 : 1)
+    const mouth = () => ({ x: pos.current.x + facing.current * 15, y: pos.current.y - SIZE * 0.42 })
+    const idle = () => modeRef.current !== "idle" && setMode("idle")
+
+    // The ball: watched in your hand, raced for once thrown, brought back, or thrown between the two.
+    const playBall = (b: Ball, dt: number) => {
+      const m = modeRef.current
+      const other = live.current.other
+      const now = Date.now()
+      if (b.state === "held") return look(b.x), idle(), true
+      if (b.state === "carried") {
+        if (b.holder !== id) {
+          if (m === "fetch") moment("alert", pick(["Aww!", "No fair!", "Next time!"]), 900)
+          else idle()
+          look(b.x)
+          return true
+        }
+        Object.assign(b, mouth(), { spin: 0 })
+        if (m !== "carry") setMode("carry")
+        if (go(clamp(b.from), CHASE * 0.75 * pace(), dt)) {
+          Object.assign(b, { state: "loose", isThrown: false, holder: null, at: now, vx: facing.current * 60, vy: -260 })
+          moment("cheer", pick(["Again! Again!", "Throw it again!", "Here you go!", "One more?", "♥"]), 900)
+        }
+        return true
       }
-      if (b.y < BALL / 2) {
-        b.y = BALL / 2
-        b.vy = Math.abs(b.vy) * BOUNCE
+      if (b.state === "game") {
+        if (b.holder !== id) return look(b.x), idle(), true
+        Object.assign(b, mouth(), { spin: 0 })
+        idle()
+        const partner = other ? where.get(other) : undefined
+        if (partner) look(partner.x)
+        if (now - b.at < 650) return true
+        if (!partner || b.throws >= GAME_THROWS) {
+          Object.assign(b, { state: "loose", isThrown: false, holder: null, at: now, vx: facing.current * 60, vy: -200 })
+          moment("cheer", partner ? pick(["Good game!", "That was fun!", "Again later?"]) : pick(["Thanks!", "For me? ♥"]), 1200)
+          return true
+        }
+        const aim = throwTo(mouth(), { x: partner.x - facing.current * 6, y: partner.y - SIZE * 0.45 })
+        Object.assign(b, { state: "loose", isThrown: true, holder: other, vx: aim.vx, vy: aim.vy, at: now, throws: b.throws + 1 })
+        if (Math.random() < 0.3) say(pick(["Catch!", "Yours!", "Hup!"]), 900)
+        return true
       }
-      if (b.x < BALL / 2) {
-        b.x = BALL / 2
-        b.vx = Math.abs(b.vx) * BOUNCE
+      // Loose: lying there, or thrown to the other.
+      if (!b.isThrown || (b.holder && b.holder !== id)) return look(b.x), idle(), true
+      const isMine = b.holder === id // thrown to me in a game: wait for it while it flies
+      if (isMine && b.y < floorOf() - 2) look(b.x), idle()
+      else {
+        if (m !== "fetch") setMode("fetch")
+        go(clamp({ x: b.x, y: b.y + BALL / 2 }), CHASE * pace(), dt)
       }
-      if (b.x > wall - BALL / 2) {
-        b.x = wall - BALL / 2
-        b.vx = -Math.abs(b.vx) * BOUNCE
+      const at = mouth()
+      if (Math.hypot(b.x - at.x, b.y - at.y) < SIZE * 0.6 || Math.hypot(b.x - pos.current.x, b.y - (pos.current.y - BALL / 2)) < SIZE * 0.55) {
+        if (isMine) Object.assign(b, { state: "game", holder: id, at: now, vx: 0, vy: 0 })
+        else {
+          Object.assign(b, { state: "carried", holder: id, at: now, vx: 0, vy: 0 })
+          if (Math.random() < 0.5) say(pick(["Got it!", "Mine!", "Hehe"]), 1200)
+        }
       }
-      b.spin += (b.vx * dt) / (BALL / 2)
+      return true
     }
+
+    // A game with the other: tag, a nap side by side, one on the other's head, a high five.
+    const playTogether = (g: Game, dt: number) => {
+      const other = live.current.other
+      const o = other ? where.get(other) : undefined
+      if (!other || !o) return false
+      const m = modeRef.current
+      const floor = bounds().maxY
+      if (g.game === "chase") {
+        if (m !== "walk") setMode("walk")
+        if (g.it !== id) {
+          const box = bounds()
+          let away = pos.current.x + (pos.current.x >= o.x ? 170 : -170)
+          if (away < box.minX + 20 || away > box.maxX - 20) away = o.x + (pos.current.x >= o.x ? -220 : 220) // cornered: past it
+          go(clamp({ x: away, y: floor }), SPEED * 2 * pace(), dt)
+          return true
+        }
+        if ((g.frozenUntil ?? 0) > Date.now()) return true
+        go({ x: o.x, y: o.y }, SPEED * 2.1 * pace(), dt)
+        if (Math.hypot(o.x - pos.current.x, o.y - pos.current.y) < 34) {
+          together.set({ ...g, it: other, frozenUntil: Date.now() + 1300 })
+          moment("cheer", pick(["Tag!", "You're it!", "Gotcha!"]), 700)
+        }
+        return true
+      }
+      if (g.game === "nap" || g.game === "five") {
+        if (m === "sleep" || m === "cheer") return true
+        if (m !== "walk") setMode("walk")
+        const spot = clamp({ x: (pos.current.x + o.x) / 2 + (pos.current.x <= o.x ? -24 : 24), y: floor })
+        if (go(spot, SPEED * 1.5 * pace(), dt) && Math.abs(o.x - pos.current.x) < 70) {
+          look(o.x)
+          if (g.game === "nap") setMode("sleep")
+          else {
+            moment("cheer", "High five! ✋", 1500)
+            later(1700, () => together.get() === g && together.set(null))
+          }
+        }
+        return true
+      }
+      // stack: the one who climbs, and the one who holds still under it.
+      if (g.it !== id) return idle(), true
+      if (onTop.current) {
+        pos.current = { x: o.x, y: o.y - SIZE * 0.62 }
+        place()
+        return true
+      }
+      if (m !== "walk") setMode("walk")
+      if (go({ x: o.x, y: o.y }, SPEED * 1.6, dt) || Math.hypot(o.x - pos.current.x, o.y - pos.current.y) < 16) {
+        onTop.current = true
+        moment("cheer", pick(["Look how tall!", "Up here!", "Hehe, comfy"]), 1300)
+      }
+      return true
+    }
+
     const step = (t: number) => {
+      frame = requestAnimationFrame(step)
       const rawDt = (t - last) / 1000
       const dt = Math.min(0.05, rawDt)
       last = t
       const m = modeRef.current
-      const cardId = focusRef.current
-      const b = ball.current
       // The panel's edge, and how fast it comes (px a second; below zero, it opens).
       const nowWall = wallX()
       const wallV = (nowWall - wall) / Math.max(0.001, rawDt)
       wall = nowWall
-      if (b?.state === "loose" && b.x > wall - BALL / 2) {
-        b.x = wall - BALL / 2
-        b.vx = Math.min(-Math.abs(b.vx) * BOUNCE, wallV * 1.3)
-      }
-      if (b) {
-        // in small steps, as much time as really went by (a slow frame does not slow the ball)
-        if (b.state === "loose") for (let left = Math.min(0.25, rawDt); left > 0; left -= 0.016) roll(b, Math.min(0.016, left))
-        else if (b.state === "carried") Object.assign(b, { x: pos.current.x + facing.current * 15, y: pos.current.y - SIZE * 0.42, spin: 0 })
-        placeBall()
-      }
-      // Thrown: it flies, in small steps as the ball does, and gets up where it stops.
+      // Thrown: it flies, in small steps, and gets up where it stops.
       const fl = flight.current
       if (fl) {
         const box = bounds()
@@ -326,10 +414,8 @@ function Walker({ id, slot, other, color }: { id: string; slot: "active" | "budd
         place()
         if (landed) {
           keep(posKey, pos.current)
-          setCare(id, { energy: Math.max(0, energyOf(careOf(id)) - 2) })
           moment(Math.random() < 0.5 ? "cheer" : "alert", pick(["Again! Again!", "Whoa…", "*dizzy*", "I can fly!", "That was fun!", "Ouch… again?"]), 1300)
         }
-        frame = requestAnimationFrame(step)
         return
       }
       // The panel against it: pushed out, and while the panel slides in, sent flying.
@@ -341,12 +427,10 @@ function Walker({ id, slot, other, color }: { id: string; slot: "active" | "budd
           if (!shove.current) {
             shove.current = { vx: push, hop: 0, vh: 560, tilt: 0, was: m }
             target.current = null
+            onTop.current = false
             if (menuRef.current) closeMenu()
             setMode("shoved")
-            if (facing.current !== 1) {
-              facing.current = 1
-              setFace(1)
-            }
+            if (facing.current !== 1) (facing.current = 1), setFace(1)
           } else shove.current.vx = Math.min(shove.current.vx, push)
         }
         place()
@@ -358,148 +442,77 @@ function Walker({ id, slot, other, color }: { id: string; slot: "active" | "budd
         s.vx *= Math.exp(-2.6 * dt)
         const minX = SIZE / 2 + 8
         pos.current = { ...pos.current, x: Math.min(edge, pos.current.x + s.vx * dt) }
-        if (pos.current.x < minX) {
-          pos.current.x = minX
-          s.vx = Math.abs(s.vx) * 0.35
-        }
+        if (pos.current.x < minX) (pos.current.x = minX), (s.vx = Math.abs(s.vx) * 0.35)
         s.vh -= 2200 * dt
         s.hop += s.vh * dt
-        if (s.hop <= 0) {
-          s.hop = 0
-          s.vh = s.vh < -260 ? -s.vh * 0.42 : 0
-        }
+        if (s.hop <= 0) (s.hop = 0), (s.vh = s.vh < -260 ? -s.vh * 0.42 : 0)
         s.tilt = Math.max(-38, Math.min(38, -s.vx / 32))
         place()
         if (Math.abs(s.vx) < 18 && s.hop === 0 && s.vh === 0) {
           shove.current = null
           place()
-          if (s.was === "sleep") {
-            setMode("sleep")
-            say("Zzz…?", 1600)
-          } else moment("alert", pick(["Hey!", "Whoa!", "Rude!", "I was here first!", "Ouch!", "Watch it!"]), 1000)
+          if (s.was === "sleep") (setMode("sleep"), say("Zzz…?", 1600))
+          else moment("alert", pick(["Hey!", "Whoa!", "Rude!", "I was here first!", "Ouch!", "Watch it!"]), 1000)
         }
-        frame = requestAnimationFrame(step)
         return
       }
-      if (menuRef.current || m === "drag" || m === "sleep" || m === "eat" || m === "cheer" || m === "alert") {
-        frame = requestAnimationFrame(step)
+      if (menuRef.current || m === "drag" || m === "cheer" || m === "alert") return
+      // Night, out of tokens: asleep, whatever else goes on.
+      if (live.current.rest) {
+        if (m !== "sleep") (target.current = null), (onTop.current = false), setMode("sleep")
         return
       }
-      // Bringing you a session: to its card, then it opens.
-      if (deliverTo.current) {
-        const to = deliverTo.current
-        if (m !== "deliver") setMode("deliver")
-        if (isStill || go(seatOf(to).at, RUSH * 1.4, dt)) {
-          deliverTo.current = null
-          openSession(to)
-          earn("delivered", `delivered:${id}:${to}:${Math.floor(Date.now() / 60_000)}`, id)
-          moment("cheer", pick(["Here it is!", "This one waits for you", "Found it!"]), 1200)
-        }
-        frame = requestAnimationFrame(step)
+      const b = ball.get()
+      if (b && playBall(b, dt)) return
+      const g = together.get()
+      if (g && !b && playTogether(g, dt)) return
+      if (onTop.current) (onTop.current = false), place()
+      if (m === "sleep" && Date.now() - lastActive.current < IDLE_NAP) setMode("idle") // the nap of a game, over
+      // Its session: at its laptop on the card, or in front of it, looking.
+      const post = live.current.post
+      if (post && t > seatAt) (seatAt = t + 400), (seat = seatOf(post))
+      if (post && seat) {
+        if (go(seat, RUSH * pace(), dt)) {
+          const want: Mode = post.kind === "working" ? "work" : "watch"
+          if (m !== want) setMode(want)
+        } else if (m !== "walk") setMode("walk")
         return
       }
-      // Playing: after the thrown ball, back with it, then waiting for the next throw.
-      if (b && b.state !== "held") {
-        if (b.state === "carried") {
-          if (m !== "carry") setMode("carry")
-          if (go(clamp(b.from), CHASE * 0.75, dt)) {
-            b.state = "loose"
-            b.isThrown = false
-            b.at = Date.now()
-            b.vx = facing.current * 60
-            b.vy = -260
-            setCare(id, { energy: Math.max(0, energyOf(careOf(id)) - 3) })
-            earn("fetched", `fetched:${id}:${Math.floor(Date.now() / 60_000)}`, id)
-            moment("cheer", pick(["Again! Again!", "Throw it again!", "Here you go!", "One more?", "♥"]), 900)
-          }
-        } else if (b.isThrown) {
-          if (m !== "fetch") setMode("fetch")
-          const ground = clamp({ x: b.x, y: b.y + BALL / 2 })
-          go(ground, CHASE, dt)
-          if (Math.hypot(b.x - pos.current.x, b.y - (pos.current.y - BALL / 2)) < SIZE * 0.55) {
-            b.state = "carried"
-            if (Math.random() < 0.35) say(pick(["Got it!", "Mine!", "Hehe"]), 1200)
-          }
-        } else {
-          if (m !== "idle") setMode("idle")
-          const looking = b.x > pos.current.x ? 1 : -1
-          if (looking !== facing.current) {
-            facing.current = looking
-            setFace(looking)
-            place()
-          }
-          if (Date.now() - b.at > BORED_AFTER) {
-            dropBall()
-            say(pick(["That was fun!", "Good game!", "Play again later?"]))
-          }
-        }
-        frame = requestAnimationFrame(step)
-        return
-      }
-      if (cardId && t > seatAt) {
-        seatAt = t + 400
-        const seat = seatOf(cardId).at
-        if (Math.hypot(seat.x - pos.current.x, seat.y - pos.current.y) > 6) {
-          target.current = seat
-          if (m !== "walk") setMode("walk")
-        }
-      }
-      if (m === "walk" && target.current && !isStill) {
-        const dx = target.current.x - pos.current.x
-        const dy = target.current.y - pos.current.y
-        const dist = Math.hypot(dx, dy)
-        if (dist < 2) {
+      if (m === "work" || m === "watch") (target.current = null), setMode("idle")
+      if (modeRef.current === "walk" && target.current) {
+        if (go(target.current, SPEED * pace(), dt)) {
           target.current = null
-          setMode(cardId ? "wait" : "idle")
+          setMode("idle")
           restUntil = t + 2000 + Math.random() * 6000
           if (greeting.current) {
             greeting.current = false
-            const o = otherRef.current ? where.get(otherRef.current) : undefined
-            if (o && Math.hypot(o.x - pos.current.x, o.y - pos.current.y) < 90) {
-              facing.current = o.x > pos.current.x ? 1 : -1
-              setFace(facing.current)
-              place()
-              moment("cheer", pick(["Hi buddy!", "♥", "Wanna play?", "Hey you!", "*boop*"]), 1400)
-            }
+            const o = live.current.other ? where.get(live.current.other) : undefined
+            if (o && Math.hypot(o.x - pos.current.x, o.y - pos.current.y) < 90) (look(o.x), moment("cheer", pick(["Hi buddy!", "♥", "Wanna play?", "Hey you!", "*boop*"]), 1400))
           }
-        } else {
-          const speed = cardId ? RUSH : SPEED * (energyOf(careOf(id)) < 25 ? 0.55 : 1)
-          const move = Math.min(dist, speed * dt)
-          pos.current = { x: pos.current.x + (dx / dist) * move, y: pos.current.y + (dy / dist) * move }
-          if (Math.abs(dx) > 1 && (dx > 0 ? 1 : -1) !== facing.current) {
-            facing.current = dx > 0 ? 1 : -1
-            setFace(facing.current)
-          }
-          place()
         }
-      } else if (m === "walk" && isStill && target.current) {
-        pos.current = target.current
-        target.current = null
-        place()
-        setMode(cardId ? "wait" : "idle")
-      } else if (m === "idle" && !cardId && !isStill && !focusRef2.current) {
+      } else if (modeRef.current === "walk") setMode("idle")
+      else if (modeRef.current === "idle" && !isStill) {
         if (Date.now() - lastActive.current > IDLE_NAP) setMode("sleep")
         else if (t > restUntil) {
-          const b = bounds()
+          const box = bounds()
           const reach = 380
-          const roll = Math.random()
-          const friend = otherRef.current ? where.get(otherRef.current) : undefined
+          const dice = Math.random()
+          const friend = live.current.other ? where.get(live.current.other) : undefined
           // Now and then to its buddy, to say hello; or onto a card, for the view.
-          if (friend && roll < 0.18) {
+          if (friend && dice < 0.18) {
             target.current = clamp({ x: friend.x + (friend.x > pos.current.x ? -46 : 46), y: friend.y })
             greeting.current = true
-          } else target.current = (roll < 0.45 && perchOnCard()) || clamp({ x: pos.current.x + (Math.random() - 0.5) * 2 * reach, y: Math.random() < 0.6 ? b.maxY - Math.random() * 30 : pos.current.y + (Math.random() - 0.5) * reach })
+          } else target.current = (dice < 0.45 && perchOnCard()) || clamp({ x: pos.current.x + (Math.random() - 0.5) * 2 * reach, y: Math.random() < 0.6 ? box.maxY - Math.random() * 30 : pos.current.y + (Math.random() - 0.5) * reach })
           setMode("walk")
-          if (!greeting.current && Math.random() < 0.12) say(pick(LINES))
+          if (!greeting.current && Math.random() < 0.12) say(pick(live.current.energy < 25 ? TIRED_LINES : LINES))
         }
       }
-      frame = requestAnimationFrame(step)
     }
     frame = requestAnimationFrame(step)
     const wake = () => {
       lastActive.current = Date.now()
-      // A nap for want of company ends with you; one for want of energy does not.
-      if (modeRef.current === "sleep" && !careOf(id).isAsleep) moment("alert", pick(["!", "Oh, hi!", "*yawn*"]), 900)
+      // A nap for want of company ends with you; one at night, out of tokens or with the other does not.
+      if (modeRef.current === "sleep" && !live.current.rest && together.get()?.game !== "nap") moment("alert", pick(["!", "Oh, hi!", "*yawn*"]), 900)
     }
     const onResize = () => ((pos.current = clamp(pos.current)), place())
     window.addEventListener("pointermove", wake, { passive: true })
@@ -517,41 +530,28 @@ function Walker({ id, slot, other, color }: { id: string; slot: "active" | "budd
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Its body, once a few seconds: hungry, tired (a nap), rested (awake).
+  // To sleep, and up again: said once each time.
+  const lastRest = useRef(rest)
   useEffect(() => {
-    const timer = setInterval(() => {
-      const t = Date.now()
-      setNow(t)
-      const c = careOf(id, t)
-      const isHungry = fullnessOf(c, t) < 25
-      // Told once each time it gets hungry, reloads or not.
-      if (isHungry && !c.toldHungry) {
-        setCare(id, { toldHungry: true }, t)
-        notice(pick(["I'm hungry!", "Feed me, please 🥺", "My tummy is rumbling"]))
-      }
-      const e = energyOf(c, t)
-      if (c.isAsleep && e >= 100) {
-        setCare(id, { isAsleep: false }, t)
-        setMode(focusRef.current ? "wait" : "idle")
-        say(pick(["Good morning!", "I'm full of energy!", "What did I miss?"]))
-      } else if (!c.isAsleep && e < 8 && ["idle", "wait"].includes(modeRef.current)) {
-        setCare(id, { isAsleep: true }, t)
-        setMode("sleep")
-        say("So sleepy…")
-      }
-      // A focus block over: time for a break.
-      if (c.focusUntil && c.focusUntil <= t) {
-        setCare(id, { focusUntil: null }, t)
-        earn("focusDone", `focusDone:${id}:${c.focusUntil}`, id)
-        moment("cheer", "", 1600)
-        notice(pick(["25 minutes done. Time for a break! ☕", "Great focus! Stretch a little", "Block done. Water, then back to it?"]))
-      }
-      if (modeRef.current === "work" && Math.random() < 0.06) say(pick(WORK_LINES), 2200)
-      else if (isHungry && modeRef.current === "idle" && Math.random() < 0.03) say("I'm hungry…")
-    }, 3000)
+    const was = lastRest.current
+    lastRest.current = rest
+    if (rest && rest !== was) say(SLEEP_LINES[rest], 3200)
+    else if (!rest && was) moment("cheer", pick(WAKE_LINES[was]), 1400)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rest])
+  // Now and then, at work.
+  useEffect(() => {
+    const timer = setInterval(() => modeRef.current === "work" && Math.random() < 0.06 && say(pick(WORK_LINES), 2200), 3000)
     return () => clearInterval(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id])
+  }, [])
+  // A session that asks you: it hurries there, and wonders.
+  const lastPost = useRef(post?.cardId)
+  useEffect(() => {
+    if (post?.cardId !== lastPost.current && post?.kind === "asking") say("?", 1800)
+    lastPost.current = post?.cardId
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [post?.cardId])
 
   // A level up: cheered; a new stage, more so (and you are told).
   useEffect(() => {
@@ -570,147 +570,16 @@ function Walker({ id, slot, other, color }: { id: string; slot: "active" | "budd
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lv.level])
 
-  // Working: at the laptop while its session works, waiting with a coffee otherwise.
-  useEffect(() => {
-    if (!focus || !["work", "wait"].includes(modeRef.current)) return
-    setMode(focusCard?.column === "working" ? "work" : "wait")
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focus, focusCard?.column, mode])
-
-  // What the sessions do. Its own session: it tells you. Any other: a hop or a cheer.
-  const seen = useRef<Map<string, Card["column"]> | null>(null)
-  useEffect(() => {
-    const before = seen.current
-    seen.current = new Map(cards.map(c => [c.id, c.column]))
-    if (!before || modeRef.current === "drag") return
-    const mine = focus ? cards.find(c => c.id === focus) : undefined
-    if (focus && !mine && before.has(focus)) return void (setCare(id, { focus: null }), moment("cheer", "That session is gone. Back to wandering!"))
-    if (mine && before.get(mine.id) !== mine.column) {
-      if (careOf(id).isAsleep) setCare(id, { isAsleep: false })
-      if (mine.column === "asking") return void (moment("alert", "", 2400), notice(`“${mine.title}” needs you!`, mine.id))
-      if (before.get(mine.id) === "working" && mine.column !== "working") return void (moment("cheer", "", 1600), notice(`“${mine.title}” finished!`, mine.id))
-      if (mine.column === "done") return void (setCare(id, { focus: null }), moment("cheer", "All done here!"))
-    }
-    if (modeRef.current === "sleep") return
-    const asked = cards.some(c => c.column === "asking" && before.get(c.id) !== "asking")
-    const finished = cards.some(c => before.get(c.id) === "working" && c.column !== "working")
-    if (asked) moment(focus ? modeRef.current : "alert", "A session needs you!", 2000)
-    else if (finished && !focus) moment("cheer", pick(["Done!", "Nice work!", "Another one!"]), 1600)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cards])
-
   // ---------- what you do to it ----------
 
   const closeMenu = () => ((menuRef.current = false), setMenuOpen(false))
-  const feed = () => {
+  const playBallOut = () => {
     closeMenu()
-    if (fullnessOf(careOf(id)) > 90) return say("I'm full! Maybe later")
-    const dish = pick(FOODS)
-    setCare(id, { fedAt: Date.now(), isAsleep: false, toldHungry: false })
-    earn("fed", `fed:${id}:${Date.now()}`, id)
-    setFood(dish)
+    if (live.current.rest) return say("Zzz… later")
     target.current = null
-    setMode("eat")
-    say("Nom nom nom", 2400)
-    later(2600, () => (setFood(null), moment("cheer", pick(["Yum!", "Delicious!", "Thank you! ♥"]), 1200)))
-  }
-  const sleepOrWake = () => {
-    closeMenu()
-    if (careOf(id).isAsleep || modeRef.current === "sleep") {
-      setCare(id, { isAsleep: false })
-      moment("alert", pick(["I'm up!", "Five more minutes…", "*stretches*"]), 900)
-    } else {
-      setCare(id, { isAsleep: true })
-      target.current = null
-      setMode("sleep")
-      say("Good night 💤")
-    }
-  }
-  const work = (card: Card | null) => {
-    closeMenu()
-    setCare(id, { focus: card?.id ?? null, isAsleep: false })
-    if (card) {
-      setMode("walk")
-      say(`On my way to “${card.title}”!`, 2600)
-    } else moment("cheer", "Break time!", 1200)
-  }
-
-  // To the session that waits for you, and it opens.
-  const bring = () => {
-    closeMenu()
-    const card = nextWaiting(cards)
-    if (!card) return say(pick(["Nobody waits for you. Nice!", "All clear!"]))
-    if (careOf(id).isAsleep) setCare(id, { isAsleep: false })
-    if (focusRef.current) setCare(id, { focus: null })
-    target.current = null
-    deliverTo.current = card.id
-    say(`To “${card.title}”!`, 1600)
-  }
-  // A focus block: it sits by you for 25 minutes, then tells you to rest.
-  const toggleFocus = () => {
-    closeMenu()
-    if (focusUntil) return void (setCare(id, { focusUntil: null }), say("Focus stopped"))
-    setCare(id, { focusUntil: Date.now() + FOCUS_MS, isAsleep: false })
-    target.current = null
+    ball.set({ x: pos.current.x + facing.current * 46, y: pos.current.y - BALL, vx: 0, vy: 0, spin: 0, state: "loose", isThrown: false, holder: null, from: { ...pos.current }, at: Date.now(), throws: 0 })
     setMode("idle")
-    say("25 minutes. You got this!", 2400)
-  }
-
-  // Play ball: a ball by its feet, waiting for you to throw it.
-  const playBall = () => {
-    closeMenu()
-    if (careOf(id).isAsleep || modeRef.current === "sleep") return say("Zzz… later")
-    if (energyOf(careOf(id)) < 10) return say("Too tired to play…")
-    target.current = null
-    ball.current = { x: pos.current.x + facing.current * 46, y: pos.current.y - BALL, vx: 0, vy: 0, spin: 0, state: "loose", isThrown: false, from: { ...pos.current }, at: Date.now() }
-    setHasBall(true)
-    setMode("idle")
-    say("Throw it! Drag the ball and let go", 3200)
-  }
-  // The ball in your hand: it follows the pointer, and flies off as fast as
-  // you let go of it (a click alone tosses it up).
-  const onBallDown = (e: React.PointerEvent) => {
-    const b = ball.current
-    if (!b || e.button !== 0) return
-    e.preventDefault()
-    e.stopPropagation()
-    if (b.state === "carried") say(pick(["Hey!", "That's mine!"]), 1000)
-    b.state = "held"
-    b.vx = b.vy = 0
-    const node = e.currentTarget as HTMLElement
-    node.setPointerCapture(e.pointerId)
-    const trail: { x: number; y: number; t: number }[] = [{ x: e.clientX, y: e.clientY, t: performance.now() }]
-    const move = (ev: PointerEvent) => {
-      b.x = Math.min(innerWidth - BALL / 2, Math.max(BALL / 2, ev.clientX))
-      b.y = Math.min(floorOf(), Math.max(BALL / 2, ev.clientY))
-      trail.push({ x: ev.clientX, y: ev.clientY, t: performance.now() })
-      while (trail.length > 2 && trail[0]!.t < performance.now() - 90) trail.shift()
-      placeBall()
-    }
-    const up = (ev: PointerEvent) => {
-      node.removeEventListener("pointermove", move)
-      node.removeEventListener("pointerup", up)
-      node.removeEventListener("pointercancel", up)
-      const first = trail[0]!
-      const span = Math.max(0.016, (performance.now() - first.t) / 1000)
-      let vx = (ev.clientX - first.x) / span
-      let vy = (ev.clientY - first.y) / span
-      const speed = Math.hypot(vx, vy)
-      if (speed < 120) {
-        // a click: up it goes
-        vx = (Math.random() - 0.5) * 500
-        vy = -750
-      } else if (speed > 2600) {
-        vx = (vx / speed) * 2600
-        vy = (vy / speed) * 2600
-      }
-      Object.assign(b, { vx, vy, state: "loose", isThrown: true, from: { x: ev.clientX, y: ev.clientY }, at: Date.now() })
-      lastActive.current = Date.now()
-      if (Math.random() < 0.4) say(pick(["!", "Ooh!", "I'll get it!", "Wheee!"]), 1000)
-    }
-    node.addEventListener("pointermove", move)
-    node.addEventListener("pointerup", up)
-    node.addEventListener("pointercancel", up)
+    say(live.current.other ? "Throw it, or hand it to one of us!" : "Throw it! Drag the ball and let go", 3200)
   }
 
   // A press: dragged once it moves, else its menu.
@@ -718,6 +587,7 @@ function Walker({ id, slot, other, color }: { id: string; slot: "active" | "budd
     if (e.button !== 0) return
     e.preventDefault()
     if (flight.current) (flight.current = null), place() // caught in the air
+    onTop.current = false
     const start = { x: e.clientX, y: e.clientY }
     const from = { ...pos.current }
     const trail = [{ x: e.clientX, y: e.clientY, t: performance.now() }] // the last moments of the drag, for a throw
@@ -731,7 +601,8 @@ function Walker({ id, slot, other, color }: { id: string; slot: "active" | "budd
       if (!isDragging) {
         isDragging = true
         target.current = null
-        if (ball.current?.state === "carried") Object.assign(ball.current, { state: "loose", isThrown: false, at: Date.now() }) // it lets go
+        const b = ball.get()
+        if (b && b.holder === id && (b.state === "carried" || b.state === "game")) Object.assign(b, { state: "loose", isThrown: false, holder: null, at: Date.now() }) // it lets go
         closeMenu()
         setMode("drag")
         setBubble(null)
@@ -748,15 +619,12 @@ function Walker({ id, slot, other, color }: { id: string; slot: "active" | "budd
       lastActive.current = Date.now()
       const throw_ = isDragging && !isStill ? flingOf(trail, performance.now()) : null
       if (throw_) {
-        if (focusRef.current) setCare(id, { focus: null })
-        if (careOf(id).isAsleep) setCare(id, { isAsleep: false })
         flight.current = { ...pos.current, ...throw_, angle: 0 }
         setMode("fly")
         say(pick(["Wheee!", "Aaaah!", "Weee!"]), 900)
       } else if (isDragging) {
         keep(posKey, pos.current)
-        if (focusRef.current) setCare(id, { focus: null }) // carried off its work
-        setMode(careOf(id).isAsleep ? "sleep" : "idle")
+        setMode(live.current.rest ? "sleep" : "idle")
         say(pick(["Wheee!", "Here?", "Nice view"]), 1600)
       } else {
         menuRef.current = !menuRef.current
@@ -780,8 +648,13 @@ function Walker({ id, slot, other, color }: { id: string; slot: "active" | "budd
 
   const isUp = pos.current.y < 330 // near the top: the menu opens below
   const shift = Math.min(innerWidth - 126, Math.max(126, pos.current.x)) - pos.current.x // and stays in the window
+  const isTired = energy < 20 && !rest
+  // What it does, in a few words, for its menu.
+  const status = rest === "night" ? "Asleep: it is night" : rest === "spent" ? "Asleep: out of tokens" : post?.kind === "working" ? `With “${postTitle ?? "a session"}”` : post?.kind === "asking" ? `Waiting with you for “${postTitle ?? "a session"}”`
+    : hasBall ? "Playing ball" : game ? (game.game === "nap" ? "Napping together" : "Playing") : isTired ? "Tired" : "Happy"
+  const tag = rest && wakeAt ? `💤 ${wakeAt}` : post && postTitle ? postTitle : null
   return (
-    <div ref={el} data-mode={mode === "deliver" ? "walk" : mode} data-mood={isSad ? "sad" : undefined} data-stage={lv.stage} className={cn("pet-walker fixed top-0 left-0 z-[42] select-none", isTransforming && "is-transforming")}
+    <div ref={el} data-mode={mode === "watch" ? "idle" : mode} data-mood={isTired ? "sad" : undefined} data-stage={lv.stage} className={cn("pet-walker fixed top-0 left-0 z-[42] select-none", isTransforming && "is-transforming")}
       style={{ width: SIZE, height: SIZE, "--rarity": color, "--grow": GROW[lv.stage], "--size": size } as React.CSSProperties}>
       <Evolution stage={lv.stage} />
       {isTransforming && <i className="pet-transform-flash" aria-hidden />}
@@ -789,33 +662,103 @@ function Walker({ id, slot, other, color }: { id: string; slot: "active" | "budd
       {bubble && !isMenuOpen && <div className="pet-bubble">{bubble}</div>}
       {mode === "sleep" && <div className="pet-zzz" aria-hidden><i>z</i><i>z</i><i>z</i></div>}
       {mode === "cheer" && <div className="pet-hearts" aria-hidden><i>♥</i><i>♥</i><i>♥</i></div>}
-      {focus && !isMenuOpen && focusCard && <div className="pet-tag" title={focusCard.title}>{focusCard.title}</div>}
-      {focusUntil && !focus && !isMenuOpen && <div className="pet-tag tabular-nums" title="Focus block">⏱ <Countdown until={focusUntil} /></div>}
+      {tag && !isMenuOpen && <div className="pet-tag" title={tag}>{tag}</div>}
       <div className="pet-body-wrap cursor-pointer active:cursor-grabbing" title={`${name} · click for its menu, drag to move it, fling it to throw it`} onPointerDown={onPointerDown}>
-        <div className="pet-grow">{(lv.stage === "legend" || lv.stage === "mythic") && <Crown />}<PetArt id={id} size={SIZE} doing={mode === "fetch" || mode === "carry" || mode === "deliver" ? "walk" : mode === "shoved" ? "alert" : mode === "fly" ? "cheer" : isSad && mode === "idle" ? "sad" : mode} facing={face} /></div>
+        <div className="pet-grow">{(lv.stage === "legend" || lv.stage === "mythic") && <Crown />}<PetArt id={id} size={SIZE} doing={mode === "fetch" || mode === "carry" ? "walk" : mode === "shoved" || mode === "watch" ? "alert" : mode === "fly" ? "cheer" : isTired && mode === "idle" ? "sad" : mode} facing={face} /></div>
       </div>
-      {(mode === "work" || mode === "wait" || (focusUntil && mode === "idle")) && <Desk isTyping={mode === "work" || !!focusUntil} />}
-      {food && <div className="pet-food" aria-hidden>{food}</div>}
+      {mode === "work" && <Desk isTyping />}
       {isMenuOpen && (
-        <PetMenu name={name} ownName={realName(id)} color={color} size={size}
-          onResize={dir => (resize(id, dir), say(dir > 0 ? pick(["Bigger!", "Look at me!", "Whoa, tall"]) : pick(["Tiny!", "Smaller…", "Cozy"]), 1200))}
-          onRename={n => (setNickname(id, n), say(n.trim() && n.trim() !== realName(id) ? `I'm ${n.trim()} now!` : "Back to my own name", 1800))} fullness={fullness} energy={energy} isAsleep={mode === "sleep"} canNotify={care.canNotify} isUp={isUp} shift={shift}
-          cards={cards} focus={focus} onFeed={feed} onSleep={sleepOrWake} onWork={work}
-          onPet={() => (closeMenu(), earn("petted", `petted:${id}:${Math.floor(Date.now() / 600_000)}`, id), moment("cheer", pick(["♥", "Hehe", "Purr…", "Again!", ...LINES]), 1200))}
-          level={lv} condition={conditionOf(id)} waiting={nextWaiting(cards)} focusUntil={focusUntil} onBring={bring} onFocus={toggleFocus}
-          onNotify={() => (setCare(id, { canNotify: !care.canNotify }), say(care.canNotify ? "I'll keep quiet" : "I'll let you know!"))}
-          onPets={() => (closeMenu(), openDialog({ kind: "pets" }))} onBall={hasBall ? () => (closeMenu(), dropBall(), say("Ball away")) : playBall} hasBall={hasBall} />
-      )}
-      {hasBall && createPortal(
-        <div ref={el => {
-          ballEl.current = el
-          placeBall()
-        }} className="pet-ball" onPointerDown={onBallDown} title="Drag it and let go to throw it">
-          <TennisBall />
-        </div>,
-        document.body,
+        <PetMenu name={name} ownName={realName(id)} color={color} energy={energy} status={status} level={lv} isUp={isUp} shift={shift}
+          onRename={n => (setNickname(id, n), say(n.trim() && n.trim() !== realName(id) ? `I'm ${n.trim()} now!` : "Back to my own name", 1800))}
+          onPet={() => (closeMenu(), moment("cheer", pick(["♥", "Hehe", "Purr…", "Again!", ...LINES]), 1200))}
+          onPets={() => (closeMenu(), openDialog({ kind: "pets" }))} hasBall={hasBall}
+          onBall={hasBall ? () => (closeMenu(), ball.set(null), say("Ball away")) : playBallOut} />
       )}
     </div>
+  )
+}
+
+// The ball, for both pets: it moves on its own when loose (a pet carries it
+// otherwise), and you throw it: drag it and let go. Let go on a pet, slowly,
+// and it is that pet's: with two out, they throw it to each other.
+function BallLayer({ pets: out }: { pets: string[] }) {
+  const node = useRef<HTMLDivElement>(null)
+  const outRef = useRef(out)
+  outRef.current = out
+  useEffect(() => {
+    let frame = 0
+    let last = performance.now()
+    const step = (t: number) => {
+      frame = requestAnimationFrame(step)
+      const rawDt = (t - last) / 1000
+      last = t
+      const b = ball.get()
+      if (!b) return
+      // in small steps, as much time as really went by (a slow frame does not slow the ball)
+      if (b.state === "loose") for (let left = Math.min(0.25, rawDt); left > 0; left -= 0.016) roll(b, Math.min(0.016, left), wallX())
+      // left lying: put away after a while
+      if (b.state === "loose" && !b.isThrown && Date.now() - b.at > BORED_AFTER) return void ball.set(null)
+      if (node.current) node.current.style.transform = `translate3d(${b.x - BALL / 2}px, ${b.y - BALL / 2}px, 0) rotate(${b.spin}rad)`
+    }
+    frame = requestAnimationFrame(step)
+    return () => cancelAnimationFrame(frame)
+  }, [])
+
+  // The pet the ball was let go on, if any: within its body's box.
+  const petAt = (x: number, y: number) => outRef.current.find(p => {
+    const at = where.get(p)
+    return at && Math.abs(x - at.x) < SIZE * 0.55 && y < at.y + 4 && y > at.y - SIZE * 1.05
+  })
+
+  // The ball in your hand: it follows the pointer, and flies off as fast as
+  // you let go of it (a click alone tosses it up; on a pet, slowly, it is theirs).
+  const onDown = (e: React.PointerEvent) => {
+    const b = ball.get()
+    if (!b || e.button !== 0) return
+    e.preventDefault()
+    e.stopPropagation()
+    Object.assign(b, { state: "held", holder: null, vx: 0, vy: 0 })
+    const el = e.currentTarget as HTMLElement
+    el.setPointerCapture(e.pointerId)
+    const trail: { x: number; y: number; t: number }[] = [{ x: e.clientX, y: e.clientY, t: performance.now() }]
+    let moved = false
+    const move = (ev: PointerEvent) => {
+      b.x = Math.min(innerWidth - BALL / 2, Math.max(BALL / 2, ev.clientX))
+      b.y = Math.min(floorOf(), Math.max(BALL / 2, ev.clientY))
+      moved ||= Math.hypot(ev.clientX - e.clientX, ev.clientY - e.clientY) > 6
+      trail.push({ x: ev.clientX, y: ev.clientY, t: performance.now() })
+      while (trail.length > 2 && trail[0]!.t < performance.now() - 90) trail.shift()
+    }
+    const up = (ev: PointerEvent) => {
+      el.removeEventListener("pointermove", move)
+      el.removeEventListener("pointerup", up)
+      el.removeEventListener("pointercancel", up)
+      const first = trail[0]!
+      const span = Math.max(0.016, (performance.now() - first.t) / 1000)
+      let vx = (ev.clientX - first.x) / span
+      let vy = (ev.clientY - first.y) / span
+      const speed = Math.hypot(vx, vy)
+      const pet = moved && speed < 260 ? petAt(ev.clientX, ev.clientY) : undefined
+      if (pet) return void Object.assign(b, { state: "game", holder: pet, at: Date.now(), throws: 0, isThrown: false })
+      if (speed < 120) {
+        // a click: up it goes
+        vx = (Math.random() - 0.5) * 500
+        vy = -750
+      } else if (speed > 2600) {
+        vx = (vx / speed) * 2600
+        vy = (vy / speed) * 2600
+      }
+      Object.assign(b, { vx, vy, state: "loose", isThrown: true, holder: null, from: { x: ev.clientX, y: innerHeight - 6 }, at: Date.now() })
+    }
+    el.addEventListener("pointermove", move)
+    el.addEventListener("pointerup", up)
+    el.addEventListener("pointercancel", up)
+  }
+  return createPortal(
+    <div ref={node} className="pet-ball" onPointerDown={onDown} title="Drag it and let go to throw it, or let go on a pet to hand it over">
+      <TennisBall />
+    </div>,
+    document.body,
   )
 }
 
@@ -896,54 +839,33 @@ function Desk({ isTyping }: { isTyping: boolean }) {
   )
 }
 
-function Bar({ label, value, tone }: { label: string; value: number; tone: string }) {
-  return (
-    <div className="flex items-center gap-2 text-[11.5px]">
-      <span className="w-12 text-text-muted">{label}</span>
-      <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-side"><i className="block h-full rounded-full transition-[width] duration-500" style={{ width: `${value}%`, background: value < 25 ? "var(--bad)" : tone }} /></span>
-      <span className="w-8 text-right text-faint tabular-nums">{Math.round(value)}%</span>
-    </div>
-  )
-}
-
 const menuBtn = "flex h-8 items-center gap-2 rounded-[7px] px-2 text-left text-[12.5px] text-text hover:bg-hover disabled:opacity-40"
 
-const BY = { well: "×1.5 XP", ok: "", poorly: "×0.5 XP" } as const
-
+// Its menu: who it is, how it is, and the three things to do with it.
 function PetMenu(props: {
-  name: string; ownName: string; onRename: (name: string) => void; color: string; fullness: number; energy: number; isAsleep: boolean; canNotify: boolean; isUp: boolean; shift: number
-  cards: Card[]; focus: string | null
-  onFeed: () => void; onPet: () => void; onSleep: () => void; onWork: (card: Card | null) => void; onNotify: () => void; onPets: () => void
-  onBall: () => void; hasBall: boolean
-  level: ReturnType<typeof levelOf>; condition: "well" | "ok" | "poorly"; waiting: Card | null; focusUntil: number | null
-  onBring: () => void; onFocus: () => void
-  size: number; onResize: (dir: 1 | -1) => void
+  name: string; ownName: string; onRename: (name: string) => void; color: string; energy: number; status: string; isUp: boolean; shift: number
+  level: ReturnType<typeof levelOf>; onPet: () => void; onBall: () => void; hasBall: boolean; onPets: () => void
 }) {
-  const [isPicking, setPicking] = useState(false)
   const [draft, setDraft] = useState<string | null>(null) // its new name, being typed
   const rename = () => {
     if (draft !== null && draft.trim() !== props.name) props.onRename(draft)
     setDraft(null)
   }
-  const open = props.cards.filter(c => c.column !== "done").sort((a, b) => Number(b.column === "working") - Number(a.column === "working")).slice(0, 10)
-  const row = (icon: string, label: ReactNode, onClick: () => void, hint?: ReactNode) => (
+  const row = (icon: string, label: string, onClick: () => void) => (
     <button className={menuBtn} onClick={onClick} onPointerDown={e => e.stopPropagation()}>
-      <span className="w-5 text-center text-[14px]">{icon}</span>{label}{hint && <span className="ml-auto text-[11px] text-faint">{hint}</span>}
+      <span className="w-5 text-center text-[14px]">{icon}</span>{label}
     </button>
   )
   return (
     <div className={cn("pet-menu", props.isUp ? "top-[calc(100%+8px)]" : "bottom-[calc(100%+8px+var(--lift))]")} style={{ marginLeft: props.shift }} onPointerDown={e => e.stopPropagation()}>
-      <div className="flex items-center gap-2 px-1 pb-1.5">
-        <i className="size-2 rounded-full" style={{ background: props.color }} />
+      <div className="flex items-center gap-2 px-1 pb-0.5">
+        <i className="size-2 shrink-0 rounded-full" style={{ background: props.color }} />
         {draft !== null ? (
           <input autoFocus onFocus={e => e.target.select()} value={draft} maxLength={40} placeholder={props.ownName} onChange={e => setDraft(e.target.value)} onBlur={rename}
             onKeyDown={e => {
               e.stopPropagation()
               if (e.key === "Enter") rename()
-              if (e.key === "Escape") {
-                e.nativeEvent.stopImmediatePropagation()
-                setDraft(null)
-              }
+              if (e.key === "Escape") (e.nativeEvent.stopImmediatePropagation(), setDraft(null))
             }}
             className="h-6 min-w-0 flex-1 rounded-[6px] border border-brand bg-surface px-1.5 text-[13px] font-[650] outline-none" />
         ) : (
@@ -953,57 +875,24 @@ function PetMenu(props: {
             <span className="text-[11px] opacity-0 transition-opacity group-hover:opacity-70" aria-hidden>✏️</span>
           </button>
         )}
-        <span className="ml-auto shrink-0 text-[11px] text-faint">{props.isAsleep ? "asleep" : props.focus ? "working" : props.fullness < 25 ? "hungry" : props.energy < 25 ? "tired" : "happy"}</span>
       </div>
+      <p className="m-0 truncate px-1 pb-1.5 pl-5 text-[11.5px] text-text-muted" title={props.status}>{props.status}</p>
       <div className="flex flex-col gap-1 px-1 pb-2">
         <div className="flex items-center gap-2 text-[11.5px]">
           <span className="w-12 font-semibold text-text">Lv {props.level.level}</span>
           <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-side"><i className="block h-full rounded-full transition-[width] duration-500" style={{ width: props.level.need ? `${(props.level.into / props.level.need) * 100}%` : "100%", background: props.color }} /></span>
-          <span className="w-8 text-right text-faint">{stageOf(props.level.level).name}</span>
+          <span className="w-12 text-right text-faint">{stageOf(props.level.level).name}</span>
         </div>
-        {props.condition !== "ok" && <span className={cn("self-end text-[10.5px]", props.condition === "well" ? "text-work" : "text-bad")}>{BY[props.condition]}</span>}
-        <Bar label="Food" value={props.fullness} tone="var(--work)" />
-        <Bar label="Energy" value={props.energy} tone="var(--brand)" />
+        <div className="flex items-center gap-2 text-[11.5px]" title="What is left of your 5-hour limit">
+          <span className="w-12 text-text-muted">Energy</span>
+          <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-side"><i className="block h-full rounded-full transition-[width] duration-500" style={{ width: `${props.energy}%`, background: props.energy < 25 ? "var(--bad)" : "var(--brand)" }} /></span>
+          <span className="w-12 text-right text-faint tabular-nums">{props.energy}%</span>
+        </div>
       </div>
       <div className="flex flex-col border-t border-line pt-1">
-        {isPicking ? (
-          <>
-            {row("←", "Back", () => setPicking(false))}
-            <div className="max-h-[220px] overflow-y-auto">
-              {open.length === 0 && <p className="m-0 px-2 py-1.5 text-[12px] text-faint">No session open right now.</p>}
-              {open.map(c => (
-                <button key={c.id} className={cn(menuBtn, "w-full", props.focus === c.id && "bg-brand-soft")} onClick={() => props.onWork(c)} onPointerDown={e => e.stopPropagation()}>
-                  <i className={cn("size-2 shrink-0 rounded-full", c.column === "working" ? "bg-work" : c.column === "asking" ? "bg-ask" : "bg-faint")} />
-                  <span className="min-w-0 truncate">{c.title}</span>
-                </button>
-              ))}
-            </div>
-            {props.focus && row("☕", "Stop working", () => props.onWork(null))}
-          </>
-        ) : (
-          <>
-            {row("🍖", "Feed", props.onFeed, props.fullness > 90 ? "full" : undefined)}
-            {row("♥", "Pet", props.onPet)}
-            {row("🎾", props.hasBall ? "Put the ball away" : "Play ball", props.onBall)}
-            {row(props.isAsleep ? "☀️" : "💤", props.isAsleep ? "Wake up" : "Go to sleep", props.onSleep)}
-            {row("💻", props.focus ? "Working with…" : "Work with a session", () => setPicking(true), props.focus ? "change" : undefined)}
-            {row("📬", "Bring me what waits", props.onBring, props.waiting ? (props.waiting.column === "asking" ? "asking" : "to review") : "none")}
-            {row("⏱", props.focusUntil ? "Stop the focus" : "Focus 25 min", props.onFocus, props.focusUntil ? <Countdown until={props.focusUntil} /> : undefined)}
-            {row(props.canNotify ? "🔔" : "🔕", props.canNotify ? "Notifications on" : "Notifications off", props.onNotify)}
-            {row("✏️", "Rename", () => setDraft(props.name))}
-            <div className={cn(menuBtn, "hover:bg-transparent")}>
-              <span className="w-5 text-center text-[14px]">↕</span>Size
-              <span className="ml-auto flex items-center gap-1">
-                <button className="grid size-6 place-items-center rounded-md text-[15px] hover:bg-hover disabled:opacity-35" onClick={() => props.onResize(-1)} onPointerDown={e => e.stopPropagation()}
-                  disabled={props.size <= SIZES[0]!} aria-label="Smaller">−</button>
-                <span className="w-9 text-center text-[11.5px] text-text-muted tabular-nums">{Math.round(props.size * 100)}%</span>
-                <button className="grid size-6 place-items-center rounded-md text-[15px] hover:bg-hover disabled:opacity-35" onClick={() => props.onResize(1)} onPointerDown={e => e.stopPropagation()}
-                  disabled={props.size >= SIZES.at(-1)!} aria-label="Bigger">+</button>
-              </span>
-            </div>
-            {row("🐾", "Your pets", props.onPets)}
-          </>
-        )}
+        {row("♥", "Pet", props.onPet)}
+        {row("🎾", props.hasBall ? "Put the ball away" : "Play ball", props.onBall)}
+        {row("🐾", "Your pets", props.onPets)}
       </div>
     </div>
   )

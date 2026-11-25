@@ -644,8 +644,6 @@ button:hover > .coll-buddy, .coll-buddy:focus-visible { opacity: 1; }
 /* Pets: its mood, its menu, the session it works with, its desk and its food. */
 .pet-walker[data-mood=sad] .pet-eyes { transform: scaleY(0.7) translateY(0.6px); animation: none; }
 .pet-walker[data-mood=sad] .pet-tail { animation-duration: 3s; }
-.pet-walker[data-mode=eat] .pet-bob { transform-origin: 50% 100%; animation: pet-chomp 0.3s ease-in-out infinite; }
-@keyframes pet-chomp { 50% { transform: scale(1.04, 0.94) translateY(1px); } }
 .pet-walker[data-mode=work] .pet-bob { animation: pet-type 0.24s ease-in-out infinite; }
 @keyframes pet-type { 50% { transform: translateY(0.8px); } }
 .pet-menu {
@@ -664,8 +662,6 @@ button:hover > .coll-buddy, .coll-buddy:focus-visible { opacity: 1; }
 .pet-desk.is-typing { clip-path: inset(0 0 0 0); }
 .pet-steam { animation: pet-steam 2s ease-in-out infinite; }
 @keyframes pet-steam { 0% { transform: translateY(2px); opacity: 0; } 50% { opacity: 0.6; } 100% { transform: translateY(-3px); opacity: 0; } }
-.pet-food { position: absolute; bottom: 0; left: calc(50% + 14px * var(--face, 1)); font-size: 20px; pointer-events: none; animation: pet-bites 2.6s steps(1) forwards; }
-@keyframes pet-bites { 0% { clip-path: inset(0 0 0 0); } 30% { clip-path: inset(0 0 0 22%); } 55% { clip-path: inset(0 0 0 45%); } 80% { clip-path: inset(0 0 0 70%); } 100% { clip-path: inset(0 0 0 100%); } }
 /* A community pet (codex-pets.net): its sheet's row played frame by frame, standing on the bottom of its box. */
 .pet-sprite-box { position: relative; display: inline-block; flex: none; pointer-events: none; }
 .pet-sprite { position: absolute; bottom: 0; left: 50%; translate: -50% 0; background-repeat: no-repeat; image-rendering: auto; animation-name: pet-sprite; animation-iteration-count: infinite; }

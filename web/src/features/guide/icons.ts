@@ -4,7 +4,7 @@ import type { LucideIcon } from "lucide-react"
 import {
   Activity, BellRing, BookText, Bot, CircleArrowRight, CircleCheck, Clock, Code, Columns3, Command, CopyX,
   Download, Eye, FastForward, FileDiff, FileText, FlaskConical, Folder, Frame, Gauge, GitCommitHorizontal, GitFork,
-  GitPullRequest, Hammer, HeartPulse, Inbox, Kanban, Keyboard, LayoutGrid, Lightbulb, Link, ListChecks,
+  GitPullRequest, Globe, Hammer, HeartPulse, Inbox, Kanban, Keyboard, LayoutGrid, Lightbulb, Link, ListChecks,
   ListTodo, ListTree, Lock, LogOut, Map as MapIcon, MessageCircleQuestion, MessageSquare, MessagesSquare, MousePointerClick, Move,
   Orbit, Palette, PanelLeft, PanelRight, PawPrint, Pencil, Play, Plus, RefreshCw, Reply, Rocket, Rows3, Scale, Search, Server,
   Settings, Shapes, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles, SquareCheck, SquareTerminal, StickyNote,
@@ -35,6 +35,7 @@ export const ICONS: Record<string, LucideIcon | undefined> = {
   "git-commit-horizontal": GitCommitHorizontal,
   "git-fork": GitFork,
   "git-pull-request": GitPullRequest,
+  "globe": Globe,
   "hammer": Hammer,
   "heart-pulse": HeartPulse,
   "inbox": Inbox,
