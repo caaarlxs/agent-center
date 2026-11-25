@@ -30,6 +30,7 @@ import { ago } from "@/features/session/state"
 import { repoDot } from "@/features/session/state"
 import type { Helper, Step } from "@server/activity"
 import { sentBackSince } from "@server/sent-back"
+import { questionAbout } from "@server/ask-about"
 import type { PipelineState, PrFix, Run, Stage, Unit } from "@server/pipeline"
 import type { Check as BoardCheck } from "@server/checks"
 import { deliverablesOf } from "@server/scope"
@@ -116,7 +117,7 @@ function Decisions({ ticketKey, state, onSent }: { ticketKey: string; state: Pip
       <h3 className="m-0 mb-2 text-[15px] font-semibold tracking-[-0.01em]">{count} decision{count === 1 ? "" : "s"} for you</h3>
       <ol className="m-0 list-none p-0">
         {state.questions.map((q, i) => <Decision key={q.id} ticketKey={ticketKey} n={i + 1} question={q.question} context={q.context} proposal={q.proposal} tickets={(state.proposals ?? []).filter(p => p.question === q.id && p.status === "proposed")} text={changed[q.id]} onChange={t => change(q.id, t)}
-          ask={<Ask ticketKey={ticketKey} about={`question:${q.id}`} turns={state.threads?.[`question:${q.id}`]} />} />)}
+          ask={<Ask ticketKey={ticketKey} about={questionAbout(state.runs, q.id)} turns={state.threads?.[questionAbout(state.runs, q.id)]} />} />)}
       </ol>
       <div className="mt-2 flex items-center justify-end gap-2.5">
         <Kbd>⌘↵</Kbd>

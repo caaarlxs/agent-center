@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test"
-import { isStuck, releasedUnits, retestOf, sessionOf, shippedWith, unitsNow, withUnits, testedIn, askPrompt, askRefusal, fixesNow, isAbout, testFix, unshipped, blocking, checkedByHand, checkedIn, isAdopted, toFixNow, MARK, answeredAfter, answersComment, argsFor, parseResult, pipelineKeyOf, stageToRun, unbuilt, withRun, withAnswers, earlierResults, closingOf, pipelineFile, questionsComment, snapshotOf, prodWarning, autoNext, linksFigma, impactRepos, checkIn, groupedResults, groupPrompt, laterItems } from "../lib/pipeline"
+import { isStuck, releasedUnits, retestOf, sessionOf, shippedWith, unitsNow, withUnits, testedIn, askPrompt, askRefusal, fixesNow, isAbout, testFix, unshipped, blocking, checkedByHand, checkedIn, isAdopted, toFixNow, MARK, answeredAfter, answersComment, argsFor, parseResult, pipelineKeyOf, stageToRun, unbuilt, withRun, withAnswers, earlierResults, closingOf, pipelineFile, questionsComment, snapshotOf, prodWarning, autoNext, linksFigma, impactRepos, checkIn, groupedResults, groupPrompt, laterItems, answersWhy } from "../lib/pipeline"
+import { questionAbout } from "../lib/ask-about"
 
 const questions = [
   { id: "Q1", question: "¿Cuál es el copy?", proposal: "El del ticket" },
@@ -422,6 +423,22 @@ describe("asking the agent about what it left", () => {
     expect(isAbout("result:CA3")).toBe(true)
     expect(isAbout("step:M2")).toBe(true)
     expect(isAbout("plan")).toBe(false)
+  })
+})
+
+describe("what you talked over about a question", () => {
+  const talk = (q: string) => [{ q, a: "Respuesta", at: 1 }]
+  const q1 = { id: "Q1", question: "¿Nueva?", proposal: "Sí" }
+  it("is the run's own: another run's Q1 is another question", () => {
+    const state = { runs: 37, questions: [q1], threads: { "question:Q1": talk("Del 10 de noviembre"), "question:17.Q1": talk("Del run 17"), [questionAbout(37, "Q1")]: talk("De este run") } }
+    const text = answersWhy(state, {})
+    expect(text).toContain("De este run")
+    expect(text).not.toContain("Del 10 de noviembre")
+    expect(text).not.toContain("Del run 17")
+  })
+  it("names the question by its id, not its run", () => {
+    expect(isAbout(questionAbout(37, "Q1"))).toBe(true)
+    expect(askPrompt("PP-1", questionAbout(37, "Q1"), "¿Por qué?")).toContain("la pregunta Q1 de lo que dejaste")
   })
 })
 

@@ -50,6 +50,7 @@ import { applyAction } from "./board"
 import { sessionSpend, type Spend } from "./usage"
 import { transcriptPath } from "./transcript"
 import { sentBackSince } from "./sent-back"
+import { questionAbout } from "./ask-about"
 export { sentBackSince }
 import { activityOf } from "./activity"
 import { existsSync, readdirSync, readFileSync } from "node:fs"
@@ -455,8 +456,8 @@ export const questionsComment = (key: string, questions: Question[], stage: Agen
   questions.map(q => `---\n\n### ${q.id}. ${q.question}${q.context ? `\n\n${q.context}` : ""}\n\n**Propuesta**\n\n${q.proposal || "—"}`).join("\n\n")
 
 // Your answers, for the agent: each with what you talked over with it about the question first.
-export function answersWhy(state: Pick<PipelineState, "questions" | "threads">, answers: Record<string, string>) {
-  const talk = (id: string) => (state.threads?.[`question:${id}`] ?? []).filter(t => t.a).map(t => `  - La persona preguntó: ${t.q}\n    Respondiste: ${t.a}`).join("\n")
+export function answersWhy(state: Pick<PipelineState, "runs" | "questions" | "threads">, answers: Record<string, string>) {
+  const talk = (id: string) => (state.threads?.[questionAbout(state.runs, id)] ?? []).filter(t => t.a).map(t => `  - La persona preguntó: ${t.q}\n    Respondiste: ${t.a}`).join("\n")
   return `Te han contestado las preguntas (también están en ticket.md):\n\n` + state.questions.map(q => {
     const said = talk(q.id)
     return `${q.id}. ${q.question}\n→ ${answers[q.id]?.trim() || `${q.proposal || "—"} (tu propuesta, aceptada)`}${said ? `\n  Lo que hablasteis antes en una copia de tu sesión:\n${said}` : ""}`
@@ -1544,7 +1545,9 @@ export const noteText = (note: string) => note.split(/\n*Attached (?:image|image
 const ABOUT_WORDS = { question: "la pregunta", result: "el resultado", finding: "el hallazgo", step: "el paso manual del despliegue" } as const
 export const isAbout = (about: string) => /^(question|result|finding|step):[\w.-]{1,40}$/.test(about)
 export const askPrompt = (key: string, about: string, text: string, step?: string) => {
-  const [kind, id] = about.split(":") as [keyof typeof ABOUT_WORDS, string]
+  const [kind, of] = about.split(":") as [keyof typeof ABOUT_WORDS, string]
+  // A question's key carries its run (ask-about.ts): the agent knows it by its id.
+  const id = kind === "question" ? of.split(".").at(-1)! : of
   return `${TAG} ${key} · pregunta
 
 Una persona del equipo te pregunta sobre ${ABOUT_WORDS[kind]} ${step ? `«${step}»` : id} de lo que dejaste: «${text}».
