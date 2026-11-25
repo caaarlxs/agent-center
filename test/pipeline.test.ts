@@ -218,10 +218,25 @@ describe("stageToRun", () => {
     expect(() => stageToRun(tested("fail"), "prod")).toThrow()
     expect(stageToRun(at("prod" as never, "ready"), "smoke")).toBe("smoke")
   })
+  it("builds from staging or prod, once done, to fix what fails there (a person's findings)", () => {
+    const after = (stage: string, status: string, result: string) => ({ stage, status, results: [{ id: "PP-1-H1", criterion: "c", status: result, evidence: "", by: "person" }] }) as never
+    for (const stage of ["staging", "prod", "smoke"]) expect(stageToRun(after(stage, "ready", "fail"), "build")).toBe("build")
+    expect(() => stageToRun(after("staging", "ready", "pass"), "build")).toThrow()
+    expect(() => stageToRun(after("staging", "needs-info", "fail"), "build")).toThrow()
+  })
   it("plans only once the refinement is done", () => {
     expect(stageToRun(at("refine", "ready"), "plan")).toBe("plan")
     expect(() => stageToRun(at("refine", "needs-info"), "plan")).toThrow()
     expect(() => stageToRun(null, "plan")).toThrow()
+  })
+})
+
+describe("testFix with a person's findings", () => {
+  const found = { id: "PP-3406-H1", at: 1, story: "PP-3406", env: "staging" as const, what: "Píldoras", expected: "Subrayado", platforms: ["ios" as const], images: ["found-1.png"], links: ["https://www.figma.com/design/x"] }
+  it("gives the build what the person said, the full path of each image and the links", () => {
+    const state = { results: [{ id: "PP-3406-H1", criterion: "Hallazgo. Subrayado", status: "fail" as const, evidence: "", by: "person" as const }], fixOf: { "PP-3406-H1": "PP-3500" } }
+    const [fix] = testFix(state, ["PP-3406-H1"], [found], "/d")
+    expect(fix).toMatchObject({ id: "PP-3406-H1", subtask: "PP-3500", found: { images: ["/d/evidence/found-1.png"], links: ["https://www.figma.com/design/x"], what: "Píldoras", expected: "Subrayado" } })
   })
 })
 

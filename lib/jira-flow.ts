@@ -28,7 +28,7 @@ export type Event = "build-started" | "built" | "in-staging" | "tested" | "in-pr
 export type Move = { key: string; to: Status; comment?: string }
 
 type Unit = { subtask?: string | null; subtasks?: string[]; pr?: string | null }
-type Result = { id: string; criterion?: string; status: "pass" | "fail" | "untested"; ticket?: string | null }
+type Result = { id: string; criterion?: string; status: "pass" | "fail" | "untested"; ticket?: string | null; summary?: string; evidence?: string }
 // fixOf: the [Fix] sub-task open for each criterion (its id), so that none gets two.
 // stories: the ones that move as a story (scope.ts); none, the ticket itself.
 export type FlowState = { key: string; units?: Unit[]; fixes?: string[]; fixOf?: Record<string, string>; results?: Result[]; stories?: Story[] }
@@ -40,7 +40,7 @@ export type Jira = {
   open: (key: string) => Promise<string[]> // the statuses its workflow lets it move to now
   move: (key: string, statusId: string) => Promise<void>
   comment: (key: string, text: string) => Promise<void>
-  createSubtask: (parent: string, summary: string, type: string) => Promise<string>
+  createSubtask: (parent: string, summary: string, type: string, description?: string) => Promise<string>
 }
 
 const ofUnit = (u: Unit) => [...new Set([...(u.subtasks ?? []), u.subtask].filter(Boolean))] as string[]
@@ -120,6 +120,8 @@ async function apply(move: Move, flow: Flow, jira: Jira): Promise<Check | null> 
   }
 }
 
+// What a [Fix] says: what was found, and its proof (a person's finding: where, and its links).
+export const descriptionOf = (r: Result) => [r.summary, r.evidence].filter(Boolean).join("\n\n") || undefined
 // The [Fix] sub-tasks of a test that failed: one a criterion, never a second one.
 async function openFixes(state: FlowState, flow: Flow, jira: Jira) {
   const fixes: string[] = []
@@ -132,7 +134,7 @@ async function openFixes(state: FlowState, flow: Flow, jira: Jira) {
     const old = fixOf[r.id] ? await jira.issue(fixOf[r.id]!).then(i => i ?? "gone", () => "unknown" as const) : "gone"
     if (old === "unknown" || (old !== "gone" && old.status !== flow.statuses.done.id)) continue
     try {
-      const key = await jira.createSubtask(fixParent(r.ticket, stories) ?? state.key, `${flow.fixPrefix} ${r.criterion ?? r.id}`, flow.subtaskType)
+      const key = await jira.createSubtask(fixParent(r.ticket, stories) ?? state.key, `${flow.fixPrefix} ${r.criterion ?? r.id}`, flow.subtaskType, descriptionOf(r))
       fixes.push(key)
       fixOf[r.id] = key
     } catch (err) {

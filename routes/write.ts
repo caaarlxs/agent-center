@@ -2,7 +2,7 @@
 // notes, PR actions, tasks, files sent and dictation.
 
 import { commentOn, connect, disconnect, moveTicket } from "../lib/jira"
-import { actOnDebt, answerPipeline, askPipeline, explainFindings, sendBack, checkByHand, cleanUp, createProposed, dismissProposed, editProposed, isStage, stopPipeline, closePipeline, readyPr, resetPipeline, resolvePr, rollBackPipeline, startPipeline, stopAuto, stepPipeline, writeYourPart, chatOnPart, laterPipeline, rereviewPipeline } from "../lib/pipeline"
+import { actOnDebt, answerPipeline, askPipeline, explainFindings, sendBack, checkByHand, cleanUp, createProposed, dismissProposed, editProposed, isStage, stopPipeline, closePipeline, readyPr, resetPipeline, resolvePr, rollBackPipeline, startPipeline, stopAuto, stepPipeline, writeYourPart, chatOnPart, laterPipeline, rereviewPipeline, saveFinding, deleteFinding, fixFindings, findingImage } from "../lib/pipeline"
 import { clearJob, continueJob, isLoose, publishReview, startJob, stopJob } from "../lib/jobs"
 import { chooseIcon, isIcon } from "../lib/app-icon"
 import { choosePet, gainXp, openPack } from "../lib/pets"
@@ -131,6 +131,9 @@ export async function handleUpload(req: Request, path: string): Promise<Response
       return json({ error: errorMessage(err) }, 400)
     }
   }
+  // A finding's screenshot, pasted or dropped: into the ticket's evidence.
+  const image = path.match(/^\/api\/pipeline\/([A-Z][A-Z0-9]+-\d+)\/finding-image$/)
+  if (image) return await findingImage(image[1]!, req.headers.get("content-type") ?? "", await req.arrayBuffer()).then(name => json({ ok: true, name }), (err: Error) => json({ error: err.message }, 400))
   // Dictation with Whisper: the audio of a recording in, its text out.
   if (path === "/api/transcribe") {
     try {
@@ -187,6 +190,13 @@ export async function handleWrite(path: string, body: Record<string, unknown>): 
     // Back to an earlier stage, with what you say: it goes on in its own session.
     case "/api/pipeline/back":
       return await sendBack(String(body.key ?? ""), String(body.stage ?? "") as never, typeof body.note === "string" ? body.note.slice(0, 4000) : "").then(() => (refreshSoon(), json({ ok: true })), (err: Error) => json({ error: err.message }, 400))
+    // What a person found in staging or prod (lib/findings.ts): added or changed, deleted, or fixed with a build.
+    case "/api/pipeline/finding":
+      return await saveFinding(String(body.key ?? ""), typeof body.id === "string" && body.id ? body.id : null, body.finding).then(() => (refreshSoon(), json({ ok: true })), (err: Error) => json({ error: err.message }, 400))
+    case "/api/pipeline/finding/delete":
+      return await deleteFinding(String(body.key ?? ""), String(body.id ?? "")).then(() => (refreshSoon(), json({ ok: true })), (err: Error) => json({ error: err.message }, 400))
+    case "/api/pipeline/finding/fix":
+      return await fixFindings(String(body.key ?? ""), Array.isArray(body.ids) ? body.ids.map(String) : []).then(() => (refreshSoon(), json({ ok: true })), (err: Error) => json({ error: err.message }, 400))
     // A review's findings explained for a person, where they are not yet.
     case "/api/pipeline/explain":
       return await explainFindings(String(body.key ?? "")).then(() => json({ ok: true }), (err: Error) => json({ error: err.message }, 400))

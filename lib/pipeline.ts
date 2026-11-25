@@ -56,6 +56,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs"
 import { exec } from "./proc"
 import { overLimits, prChecks, reposClean, type Check } from "./checks"
 import { forgetPr, prStates, scenarioOf } from "./stage-extras"
+import { asResult, byPerson, canFix, drafts, findingIn, forAgent, keepFound, nextId, readFound, saveImage, writeFound, type PersonFinding } from "./findings"
 import { conflictsPrompt, parseResolved } from "./conflicts"
 import { canJudge, gatePrompt, parseAdvice } from "./gate"
 import { pendingComments } from "./github"
@@ -89,7 +90,7 @@ export type Finding = { id: string; unit: string | null; severity: Severity; fil
 // untested: the test could not try it (no data, no device), which is no failure: a person checks it by hand.
 // summary: what it tried, expected and found, in plain words; evidence: the technical detail.
 // blocker: why a criterion went untried, in words shared by every criterion it stops; unblock: what lets it be tried.
-export type TestResult = { id: string; criterion: string; status: "pass" | "fail" | "untested"; evidence: string; summary?: string; files?: EvidenceFile[]; ticket?: string | null /* the ticket of the scope its criterion is of */; blocker?: string; unblock?: string }
+export type TestResult = { id: string; criterion: string; status: "pass" | "fail" | "untested"; evidence: string; summary?: string; files?: EvidenceFile[]; ticket?: string | null /* the ticket of the scope its criterion is of */; blocker?: string; unblock?: string; by?: "person" /* a finding a person added (findings.ts) */ }
 // A rule of the team's context (its repo) that the ticket makes untrue: the file and the words.
 // quote: the words of today it makes untrue; null for a new code rule, which says what it proposes instead.
 export type ContextImpact = { file: string; quote: string | null; why: string; proposal: string | null }
@@ -147,6 +148,7 @@ export type PipelineState = {
   news?: News | null // what people wrote in Jira since then, for you to send it back with
   autoFixes?: number // the fixes a pipeline on its own started since the plan (a few, then it waits for you)
   backNote?: string | null // what you wrote when you sent it back: what the stages after it work on, not the plan's list
+  found?: PersonFinding[] // what people found in staging or prod (findings.ts): read from found.json for the board, never saved here
 }
 export type Fixing = { from: "review" | "test"; ids: string[] }
 // One question to the agent about what it left, and its answer (null while it thinks).
@@ -207,7 +209,7 @@ const STAGE: Record<AgentStage, StageDef> = {
 2. El plan está en ${join(dir, "plan.md")} y ${join(dir, "plan.json")}; el refinamiento, en ${join(dir, "refine.md")}; el ticket, en ${join(dir, "ticket.md")}.
 3. Trabaja en ${join(dir, "work")}. Lo que ya hizo un run anterior está en ${join(dir, "build.progress.json")}: no lo repitas. Marca las tareas de la checklist del plan en ${join(dir, "build.checklist.json")} en cuanto estén hechas.
 4. Si existe ${join(dir, "review.fix.json")}, la revisión ya pasó: este run arregla solo los hallazgos que lista (\`{"fix": ["F1"]}\`; detalle en ${join(dir, "review.md")}), en las mismas ramas y PRs. Sigue la sección "Arreglar la revisión" de build.md.
-   Si existe ${join(dir, "test.fix.json")}, el test en staging falló y las PRs de antes ya están mergeadas y desplegadas: este run arregla solo los criterios que lista (cada uno con lo que encontró el test, su [Fix] en Jira y lo que una persona preguntó sobre él; el informe, en ${join(dir, "test.md")}). Abre PRs nuevas desde la rama por defecto, una por repo que cambias, con rama \`fix/${key}-<criterio>\`; cada unidad nueva con id X1, X2… y en \`subtasks\` las [Fix] de los criterios que arregla. Escribe un test que reproduzca cada fallo antes de arreglarlo. En build.json lista también las unidades de antes, tal cual.
+   Si existe ${join(dir, "test.fix.json")}, el test en staging falló y las PRs de antes ya están mergeadas y desplegadas: este run arregla solo los criterios que lista (cada uno con lo que encontró el test, su [Fix] en Jira y lo que una persona preguntó sobre él; el informe, en ${join(dir, "test.md")}). Abre PRs nuevas desde la rama por defecto, una por repo que cambias, con rama \`fix/${key}-<criterio>\`; cada unidad nueva con id X1, X2… y en \`subtasks\` las [Fix] de los criterios que arregla. Escribe un test que reproduzca cada fallo antes de arreglarlo. Un criterio con \`found\` lo encontró una persona: mira sus capturas (\`images\`, con Read) y sus enlaces (\`links\`; los de Figma, con el MCP de Figma), y deja la pantalla como dicen. En build.json lista también las unidades de antes, tal cual.
 5. Escribe el resumen en ${join(dir, "build.summary.md")} y al final ${join(dir, "build.json")}: {"verdict": "ready" | "needs-info", "questions": [...], "units": [{"id": "U1", "repo": "...", "title": "...", "branch": "...", "status": "done" | "failed", "pr": "https://github.com/..." | null}], "fixed": ["F1"]}. Todas las unidades, también las que no tocas.`,
   },
   review: {
@@ -353,11 +355,20 @@ export const toFixNow = (findings: Finding[] | undefined, chosen?: string[]) =>
   (chosen ? (findings ?? []).filter(f => chosen.includes(f.id)) : blocking(findings)).map(f => f.id)
 // What a build after a failed test fixes (test.fix.json): the criteria you chose, else
 // every one that failed; each with what the test found, its [Fix] and what a person asked about it.
-export const testFix = (state: Pick<PipelineState, "results" | "fixOf" | "threads">, chosen?: string[]) =>
-  failing(state.results).filter(r => !chosen || chosen.includes(r.id)).map(r => ({
-    id: r.id, criterion: r.criterion, summary: r.summary ?? null, evidence: r.evidence, subtask: state.fixOf?.[r.id] ?? null,
-    asked: (state.threads?.[`result:${r.id}`] ?? []).filter(t => t.a).map(t => ({ q: t.q, a: t.a })),
-  }))
+// A finding of a person (findings.ts) comes with what it says, its images and its links.
+export const testFix = (state: Pick<PipelineState, "results" | "fixOf" | "threads">, chosen?: string[], found: PersonFinding[] = [], dir = "") =>
+  failing(state.results).filter(r => !chosen || chosen.includes(r.id)).map(r => {
+    const f = found.find(x => x.id === r.id)
+    return {
+      id: r.id, criterion: r.criterion, summary: r.summary ?? null, evidence: r.evidence, subtask: state.fixOf?.[r.id] ?? null,
+      asked: (state.threads?.[`result:${r.id}`] ?? []).filter(t => t.a).map(t => ({ q: t.q, a: t.a })),
+      ...(f ? { found: forAgent(f, dir) } : {}),
+    }
+  })
+// A build fixes what failed in the test, or (staging, prod or its check done) what a person found there.
+const FIXES_FAILS: Stage[] = ["staging", "prod", "smoke"]
+export const fixesTest = (state: Pick<PipelineState, "stage" | "status" | "results"> | null) =>
+  !!state && (state.stage === "test" || (FIXES_FAILS.includes(state.stage) && state.status === "ready" && failing(state.results).length > 0))
 // A test (or a check in prod) of only what is new (retest.json): after a fix of a failed test, what
 // was fixed and what failed or was not tried before; after a Send back, the change you asked for.
 // Either way, the repos the last release took there; the criteria it does not test keep their result.
@@ -598,8 +609,11 @@ export async function pipelineOf(key: string) {
   const prs = await prStates(urls, releaseOps.sh)
   const scenario = state ? scenarioOf(jsonOf(await readText(join(dirOf(key), "scenario.json")))) : null
   const stageDocs = Object.assign({}, ...(await Promise.all(SUMMED.map(docOf))))
-  return { putAside, docs: await runDocs(key), files: await ticketFiles(key), state: state && (await withSpend(state)), ...stageDocs, summaries, prs, fixes, scenario, preview: await previewOf(state), yourPart: await yourPartOf(state), later: await laterOf(state) }
+  return { putAside, docs: await runDocs(key), files: await ticketFiles(key), state: state && (await forBoard(state)), ...stageDocs, summaries, prs, fixes, scenario, preview: await previewOf(state), yourPart: await yourPartOf(state), later: await laterOf(state) }
 }
+
+// A state as the board shows it: with what each run spent and what people found (found.json).
+const forBoard = async (s: PipelineState): Promise<PipelineState> => ({ ...(await withSpend(s)), found: await readFound(dirOf(s.key)) })
 
 // What the running stage does now: its session's steps and subagents, and,
 // while it builds, how far each unit got (build.progress.json).
@@ -675,7 +689,7 @@ const fresh = async (key: string, runs: number, stage: Stage): Promise<PipelineS
   // The plan's units and to-do list, and the review's findings, stay with the ticket for the stages after it.
   return { ...EMPTY(key, runs, stage), summary: prev?.summary, history: prev?.history ?? [], sessions: prev?.sessions, readAt: prev?.readAt, backNote: prev?.backNote, news: prev?.news, order: prev?.order,
     autoFixes: stage === "refine" || stage === "plan" ? 0 : prev?.autoFixes, units: prev?.units, checklist: prev?.checklist, checked: prev?.checked, scripts: prev?.scripts, contextImpact: prev?.contextImpact,
-    release: prev?.release, deployed: prev?.deployed, fixes: prev?.fixes, fixOf: prev?.fixOf, threads: prev?.threads, leftOut: prev?.leftOut, fixing: ["refine", "plan", "test", "smoke"].includes(stage) ? null : prev?.fixing, results: stage === "test" || stage === "smoke" ? undefined : prev?.results, scope: prev?.scope, auto: prev?.auto, local: prev?.local, proposals: prev?.proposals,
+    release: prev?.release, deployed: prev?.deployed, fixes: prev?.fixes, fixOf: prev?.fixOf, threads: prev?.threads, leftOut: prev?.leftOut, fixing: ["refine", "plan", "test", "smoke"].includes(stage) ? null : prev?.fixing, results: stage === "test" || stage === "smoke" ? byPerson(prev?.results) : prev?.results, scope: prev?.scope, auto: prev?.auto, local: prev?.local, proposals: prev?.proposals,
     ...(stage === "review" ? {} : { findings: prev?.findings, fixed: stage === "build" ? [] : prev?.fixed }) }
 }
 // A stage's session is the pipeline's, not yours: once it ends it leaves the
@@ -751,7 +765,7 @@ async function runStage(key: string, runs: number, stage: AgentStage, auto?: boo
   const id = resumed ?? randomUUID()
   const base = resumed ? await sessionSpend(resumed) : null
   // Figma, when what the stage reads links a design and the team set Figma up.
-  const figma = linksFigma(await readText(join(dir, "ticket.md")) ?? "") && existsSync(join(STAGES_DIR, "figma-mcp.json"))
+  const figma = linksFigma(`${await readText(join(dir, "ticket.md")) ?? ""}${await readText(join(dir, "found.json")) ?? ""}`) && existsSync(join(STAGES_DIR, "figma-mcp.json"))
   const prompt = resumed ? continuePrompt(key, dir, stage, scope, why?.text ?? null) : promptFor(key, dir, stage, scope, why?.text ?? null)
   const pid = await spawnStage(dir, id, prompt, stage, () => void watch(), figma, !!resumed)
   await locked(key, async () => {
@@ -858,7 +872,7 @@ async function finish(key: string) {
   const units = state.stage === "plan" ? result.units : state.stage === "build" ? withUnits(state.units, result.units) : state.units
   const found = state.stage === "review" ? { findings: result.findings, fixed: [] } : state.stage === "build" ? { fixed: result.fixed } : {}
   // What it did not try again (only what is new, or not all of it) keeps its result of before.
-  const tested = state.stage === "test" || state.stage === "smoke" ? { results: withEarlier(earlierResults(state), shown.results) } : {}
+  const tested = state.stage === "test" || state.stage === "smoke" ? { results: keepFound(earlierResults(state), byPerson(state.results), shown.results) } : {}
   const context = state.stage === "refine" ? { contextImpact: result.contextImpact } : {}
   const proposals = withProposals(state.proposals, proposalsIn(result.tickets, state.runs, state.stage), state.stage)
   const done: PipelineState = { ...state, publishedRun: state.runs, status: "ready", questions: [], proposals, units, checklist, checked, scripts, order, ...(state.stage === "smoke" ? { backNote: null } : {}), ...found, ...tested, ...context, checks: withJira([...checks, ...attached.checks], state.checks), endedAt: Date.now() }
@@ -1235,7 +1249,8 @@ export function stageToRun(state: PipelineState | null, asked?: Stage, pendingIn
   const isAfter = (prev: Stage) => state?.stage === prev && state.status === "ready" && !isBlocked(state)
   // After a rollback, the ticket can be built again (staging or prod runs the code from before it).
   const isRolledBack = stage === "build" && !!state?.release?.rollback && isRelease(state.stage) && state.status === "failed"
-  if (need && state?.stage !== stage && !need[0].some(isAfter) && !isRolledBack) throw new Error(need[1])
+  const isFixingFails = stage === "build" && state?.stage !== "test" && fixesTest(state)
+  if (need && state?.stage !== stage && !need[0].some(isAfter) && !isRolledBack && !isFixingFails) throw new Error(need[1])
   return stage
 }
 
@@ -1258,6 +1273,8 @@ async function startNow(key: string, take: boolean, asked?: Stage, chosen?: stri
   if (state?.status === "running") throw new Error("A stage already runs on this ticket")
   const stage = stageToRun(state, asked, await pendingEnvs(state))
   const local = await takeOn(key, state, take, mine)
+  const waiting = stage === "prod" ? drafts(await readFound(dirOf(key)), state?.results).length : 0
+  if (waiting) throw new Error(`${waiting} finding${waiting > 1 ? "s wait" : " waits"}: fix ${waiting > 1 ? "them" : "it"} or delete ${waiting > 1 ? "them" : "it"} first`)
   if (isRelease(stage)) return startRelease(state!, stage)
   const fixing = await writeFixes(key, state, stage, chosen)
   if (stage === "test" || stage === "smoke") await Promise.all([writeRetest(key, state, stage), writeNotDeployed(key, state, stage)])
@@ -1274,7 +1291,7 @@ export function whyStart(state: PipelineState | null, stage: AgentStage): Why | 
   if ((stage === "plan" || stage === "build") && state && !state.fixing && sentBackSince(state, stage) && state.stage !== "review" && state.stage !== "test")
     return { cause: "After the change", text: (backWhy(state!, stage, state!.backNote ?? "").text ?? "").replace("Te devuelven a esta etapa.", "Una etapa de antes ha vuelto a pasar por un cambio que pidió una persona (sent-back.md): rehaz solo lo que ese cambio toca.") }
   if (stage === "build" && state?.stage === "review") return { cause: "Fix the review", text: "La revisión encontró hallazgos: arregla los de review.fix.json." }
-  if (stage === "build" && state?.stage === "test") return { cause: "Fix the test", text: "El test en staging falló: arregla los criterios de test.fix.json." }
+  if (stage === "build" && fixesTest(state)) return { cause: "Fix the test", text: "Lo que falló en staging o en prod (en el test o lo que encontró una persona): arregla los criterios de test.fix.json." }
   if (stage === "review" && state?.stage === "build" && state.fixing?.from === "review") return { cause: "Review the fix", text: newWorkText(state, `ha arreglado los hallazgos ${state.fixing.ids.join(", ")} de tu revisión anterior (review.fix.json)`) }
   if (stage === "review" && state?.stage === "build" && sentBackSince(state, "review")) return { cause: "Review the change", text: newWorkText(state, `ha hecho el cambio que pidió una persona al devolver el ticket (${join(dirOf(state.key), "sent-back.md")})`) }
   if ((stage === "test" || stage === "smoke") && state && retestOf(state, stage)) return { cause: stage === "test" ? "Test what changed" : "Check what changed", text: `Esta vez pruebas solo lo nuevo: lee ${join(dirOf(state.key), "retest.json")} y sigue la sección "Después de un arreglo o un cambio" de ${join(STAGES_DIR, "test.md")}. Los criterios que no pruebas conservan su resultado de antes: el board los junta.` }
@@ -1308,7 +1325,9 @@ async function takeOn(key: string, state: PipelineState | null, take: boolean, m
 // A test after a fix tests deep what the fix is about, and the rest quickly (retest.json); any other, all of it.
 async function writeRetest(key: string, state: PipelineState | null, stage: "test" | "smoke") {
   const retest = state ? retestOf(state, stage) : null
-  if (retest) await writeJsonAtomic(join(dirOf(key), "retest.json"), retest, { pretty: true })
+  const ids = retest && "fixed" in retest ? [...(retest.fixed ?? []), ...(retest.before ?? [])] : []
+  const findings = (await readFound(dirOf(key))).filter(f => ids.includes(f.id)).map(f => forAgent(f, dirOf(key)))
+  if (retest) await writeJsonAtomic(join(dirOf(key), "retest.json"), { ...retest, ...(findings.length ? { findings } : {}) }, { pretty: true })
   else await rename(join(dirOf(key), "retest.json"), join(dirOf(key), "retest.json.prev")).catch(() => {})
 }
 
@@ -1355,8 +1374,10 @@ async function checkNow(key: string, ids: string[]) {
 // A build fixes what the review found (review.fix.json) or what the test found
 // (test.fix.json); any other stage, neither (the ones of before are put aside).
 async function writeFixes(key: string, state: PipelineState | null, stage: Stage, chosen?: string[]) {
-  const from = stage === "build" && (state?.stage === "review" || state?.stage === "test") ? state.stage : null
-  if (from === "test" && !testFix(state!, chosen).length) throw new Error("Nothing failed to fix")
+  const from = stage === "build" && state?.stage === "review" ? "review" : stage === "build" && fixesTest(state) ? "test" : null
+  const found = await readFound(dirOf(key))
+  const fix = from === "test" ? testFix(state!, chosen, found, dirOf(key)) : []
+  if (from === "test" && !fix.length) throw new Error("Nothing failed to fix")
   const aside = (f: string) => rename(join(dirOf(key), f), join(dirOf(key), `${f}.prev`)).catch(() => {})
   // The review of a fix, and a build run again, keep what the fix is about.
   const keeps = stage === "review" || (stage === "build" && state?.stage === "build")
@@ -1364,11 +1385,11 @@ async function writeFixes(key: string, state: PipelineState | null, stage: Stage
   // A build that starts anew leaves the last one's progress (it would skip "done" units).
   if (stage === "build" && state?.stage !== "build") for (const f of ["build.progress.json", "build.checklist.json"]) await aside(f)
   if (from === "review") await writeJsonAtomic(join(dirOf(key), "review.fix.json"), { fix: toFixNow(state!.findings, chosen) }, { pretty: true })
-  if (from === "test") await writeJsonAtomic(join(dirOf(key), "test.fix.json"), { fix: testFix(state!, chosen) }, { pretty: true })
+  if (from === "test") await writeJsonAtomic(join(dirOf(key), "test.fix.json"), { fix }, { pretty: true })
   // What this build fixes (none for a build that starts anew; the same for a build run again).
   if (stage !== "build") return undefined
   if (from === "review") return { from, ids: toFixNow(state!.findings, chosen) } as Fixing
-  if (from === "test") return { from, ids: testFix(state!, chosen).map(f => f.id) } as Fixing
+  if (from === "test") return { from, ids: fix.map(f => f.id) } as Fixing
   return state?.stage === "build" ? state.fixing ?? null : null
 }
 
@@ -1395,6 +1416,77 @@ export const stopPipeline = (key: string) => locked(key, async () => {
   endGroup(state.pid)
   await save({ ...state, status: "failed", error: "Stopped by you", endedAt: Date.now() })
 })
+
+// ---------- findings of a person (findings.ts) ----------
+
+// The stories a finding can be of: yours under the ticket (Jira, as it is now), else the ticket.
+async function storiesNow(key: string, state: PipelineState) {
+  const scope = scopeOf(await descendantsOf(key))
+  const stories = storiesOf({ key, isMine: !state.local }, scope).map(s => s.key)
+  const ofTicket = stories.filter(k => k !== key)
+  return { scope, stories: ofTicket.length ? ofTicket : stories }
+}
+export async function findingStories(key: string) {
+  const state = await stateOf(key)
+  if (!state) throw new Error("Not a ticket of the pipeline")
+  const { scope, stories } = await storiesNow(key, state)
+  return stories.map(k => ({ key: k, summary: scope.find(t => t.key === k)?.summary ?? state.summary ?? "" }))
+}
+// Add one, or change or delete one not in the test yet. Never while a stage runs.
+export const saveFinding = (key: string, id: string | null, input: unknown) => locked(key, async () => {
+  const state = await stateOf(key)
+  if (!state) throw new Error("Not a ticket of the pipeline")
+  const finding = findingIn(input, (await storiesNow(key, state)).stories)
+  const found = await readFound(dirOf(key))
+  if (!id) {
+    const taken = [...found.map(f => f.id), ...(state.results ?? []).map(r => r.id)]
+    return writeFound(dirOf(key), [...found, { ...finding, id: nextId(finding.story, taken), at: Date.now() }])
+  }
+  if (!drafts(found, state.results).some(f => f.id === id)) throw new Error(`${id} is in the test already: it can no longer change`)
+  await writeFound(dirOf(key), found.map(f => (f.id === id ? { ...f, ...finding } : f)))
+})
+export const deleteFinding = (key: string, id: string) => locked(key, async () => {
+  const state = await stateOf(key)
+  const found = await readFound(dirOf(key))
+  if (!drafts(found, state?.results).some(f => f.id === id)) throw new Error(`${id} is in the test already: it can no longer go`)
+  await writeFound(dirOf(key), found.filter(f => f.id !== id))
+})
+export async function findingImage(key: string, type: string, body: ArrayBuffer) {
+  if (!isKey(key) || !(await stateOf(key))) throw new Error("Not a ticket of the pipeline")
+  return saveImage(dirOf(key), type, body)
+}
+// Fix with build: the findings you chose go into the test as criteria that fail; in Jira, a [Fix]
+// under each one's story (with its images) and the story reopened; then a build fixes them.
+export async function fixFindings(key: string, ids: string[]) {
+  await fileFindings(key, ids)
+  await startPipeline(key, false, "build", ids)
+}
+const fileFindings = (key: string, ids: string[]) => locked(key, async () => {
+  const state = await stateOf(key)
+  if (!state) throw new Error("Not a ticket of the pipeline")
+  const refusal = canFix(state)
+  if (refusal) throw new Error(refusal)
+  const chosen = (await readFound(dirOf(key))).filter(f => ids.includes(f.id))
+  if (!chosen.length) throw new Error("No finding chosen")
+  const fails = chosen.map(asResult)
+  const { scope } = await storiesNow(key, state)
+  const filed: PipelineState = { ...state, scope, results: withEarlier(state.results ?? [], fails) }
+  const jira = state.local ? {} : await inJira("tested", { ...filed, results: fails })
+  const attached = await attachFindings(key, chosen, jira.fixOf ?? {})
+  await save({ ...filed, ...jira, checks: withJira([...(jira.checks ?? filed.checks ?? []), ...attached], []) })
+})
+// Each finding's images, on its [Fix]; what Jira refuses, a warning.
+async function attachFindings(key: string, found: PersonFinding[], fixOf: Record<string, string>): Promise<Check[]> {
+  const checks: Check[] = []
+  for (const f of found.filter(f => fixOf[f.id] && f.images.length)) {
+    try {
+      await attachTo(fixOf[f.id]!, f.images.map(n => join(dirOf(key), "evidence", n)))
+    } catch (err) {
+      checks.push({ id: `jira-found-${f.id}`, label: `The images of ${f.id} did not go to Jira`, status: "warn", detail: String((err as Error)?.message ?? err) })
+    }
+  }
+  return checks
+}
 
 // ---------- sending it back ----------
 
@@ -2043,7 +2135,7 @@ async function runCleanup(picked: Leftover[], found: Found): Promise<string[]> {
 export async function pipelines(): Promise<PipelineState[]> {
   const paths = await Array.fromAsync(new Bun.Glob("*/state.json").scan({ cwd: ROOT })).catch(() => [] as string[])
   const states = await Promise.all(paths.map(p => p.split("/")[0]!).filter(isKey).map(stateOf))
-  return Promise.all(states.filter((s): s is PipelineState => !!s).sort((a, b) => b.startedAt - a.startedAt).map(withSpend))
+  return Promise.all(states.filter((s): s is PipelineState => !!s).sort((a, b) => b.startedAt - a.startedAt).map(forBoard))
 }
 
 // Answers written in Jira (by you or anyone): the stage goes on with them. On a ticket

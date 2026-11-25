@@ -168,4 +168,10 @@ describe("a ticket that takes in several stories (scope.ts)", () => {
     await followInJira("tested", epic({ results: [{ id: "C1", status: "fail", ticket: "PP-40" }, { id: "C2", status: "fail" }] }), flow, jira)
     expect(parents).toEqual(["PP-40", "PP-30"])
   })
+  it("a [Fix] says what was found and its proof", async () => {
+    const said: (string | undefined)[] = []
+    const jira = { issue: async () => ({ status: "x", mine: true }), assign: async () => {}, open: async () => [], move: async () => {}, comment: async () => {}, createSubtask: async (_p: string, _s: string, _t: string, description?: string) => (said.push(description), "PP-91") }
+    await followInJira("tested", epic({ results: [{ id: "PP-40-H1", status: "fail", ticket: "PP-40", summary: "Píldoras\nDebería: subrayado", evidence: "https://www.figma.com/design/x" }] }), flow, jira)
+    expect(said).toEqual(["Píldoras\nDebería: subrayado\n\nhttps://www.figma.com/design/x"])
+  })
 })

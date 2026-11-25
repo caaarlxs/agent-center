@@ -38,6 +38,7 @@ import { PipelineMark, headline, liveLine, startText, startingText } from "./Pip
 import { STAGES, STAGE_KEYS, releasePasses, releaseShown, costOf, dollars, failed, isJob, isRelease, nextStage, nodeOf, passesOf, stageAt, toFix, tokens, tonesOf } from "./pipeline-board"
 import { SkipFailed, type StepAction } from "./Release"
 import { StageTabs, type Tab } from "./StageTabs"
+import { FindingsPanel } from "./Findings"
 import { AskedList, BuildPanel, Checklist, PlanPanel, Summary, RefinePanel, ReleasePanel, ReviewPanel, TestPanel, afterOf, subtasksOf } from "./StagePanels"
 import { Details, FoldButton } from "./Fold"
 import { PassPicker, type Pass } from "./PassPicker"
@@ -378,7 +379,14 @@ function Checks({ checks }: { checks: BoardCheck[] }) {
 }
 
 // A stage's pass in its own shape (StagePanels.tsx); all: every unit of the ticket, for a build's pass.
-function StagePanel({ stage, state, preview, all, onRun, onStep }: { stage: Stage; state: PipelineState; preview: Release | null; all?: Unit[]; onRun: (stage?: Stage, fix?: string[]) => void; onStep: OnStep }) {
+// Staging and Prod, once the ticket got there, also take what a person finds trying it (Findings.tsx).
+function StagePanel(props: { stage: Stage; state: PipelineState; preview: Release | null; all?: Unit[]; onRun: (stage?: Stage, fix?: string[]) => void; onStep: OnStep }) {
+  const { stage, state } = props
+  const body = <StageOwn {...props} />
+  if (!isRelease(stage) || isJob(state) || STAGE_KEYS.indexOf(stage) > stageAt(state)) return body
+  return <div className="flex flex-col gap-4">{body}<FindingsPanel state={state} env={stage} /></div>
+}
+function StageOwn({ stage, state, preview, all, onRun, onStep }: { stage: Stage; state: PipelineState; preview: Release | null; all?: Unit[]; onRun: (stage?: Stage, fix?: string[]) => void; onStep: OnStep }) {
   const at = stageAt(state)
   const i = STAGE_KEYS.indexOf(stage)
   const release = releaseShown(state, preview, stage)

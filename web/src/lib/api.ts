@@ -24,6 +24,11 @@ export async function post<T = { ok: boolean }>(path: string, body: unknown = {}
   return answer<T>(await fetch(path, { method: "POST", headers: { "content-type": "application/json", "x-agent-center": "1" }, body: JSON.stringify(body) }))
 }
 
+// A file's bytes as the body (an image, a recording): its type says what it is.
+export async function postFile<T = { ok: boolean }>(path: string, file: Blob): Promise<T> {
+  return answer<T>(await fetch(path, { method: "POST", headers: { "content-type": file.type || "application/octet-stream", "x-agent-center": "1" }, body: file }))
+}
+
 // A session's file as the server gives it: what it is (fileinfo), its bytes
 // to show (file, filepreview) or to save (download).
 export const sessionFileUrl = (id: string, what: string, path: string) => `/api/sessions/${encodeURIComponent(id)}/${what}?path=${encodeURIComponent(path)}`

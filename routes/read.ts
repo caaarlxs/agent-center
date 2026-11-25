@@ -3,7 +3,7 @@
 // the person decided.
 
 import { jiraSetup, projectComponents, searchTickets, ticket, ticketRows, transitionsOf } from "../lib/jira"
-import { closedTickets, debtRegister, pipelineFile, leftovers, pipelineActivity, pipelineEvidence, pipelineOf, pipelineReport, runDoc } from "../lib/pipeline"
+import { closedTickets, debtRegister, pipelineFile, leftovers, pipelineActivity, pipelineEvidence, pipelineOf, pipelineReport, runDoc, findingStories } from "../lib/pipeline"
 import { jobActivity, jobOf, resolveJob } from "../lib/jobs"
 import { reportOf } from "../lib/release"
 import { namedBy, repoPage, sessionCommits, sessionRepos } from "../lib/session-commits"
@@ -354,6 +354,7 @@ export async function handleRead(url: URL): Promise<Response | null> {
       (err: Error) => json({ error: err.message }, 400))
   }
   // What a ticket leaves once out of the pipeline, to clean up.
+  if (path === "/api/pipeline/finding-stories") return await findingStories(url.searchParams.get("key") ?? "").then(stories => json({ stories }), (err: Error) => json({ error: err.message }, 400))
   if (path === "/api/pipeline/leftovers") return await leftovers(url.searchParams.get("key") ?? "").then(items => json({ items }), (err: Error) => json({ error: err.message }, 400))
   if (path === "/api/pipeline") return await pipelineOf(url.searchParams.get("key") ?? "").then(r => json(r), (err: Error) => json({ error: err.message }, 400))
   if (path === "/api/jira/ticket") return await ticket(url.searchParams.get("key") ?? "").then(t => json(t), (err: Error) => json({ error: err.message }, 400))
