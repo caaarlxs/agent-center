@@ -47,12 +47,11 @@ import { debtIn, merged as debtMerged, ticketOf as debtTicket, type DebtEntry, t
 import { claudeBinary, running } from "./launch"
 import { claudeEnv } from "./proc"
 import { applyAction } from "./board"
-import { sessionSpend, type Spend } from "./usage"
-import { transcriptPath } from "./transcript"
+import { sessionContext, sessionSpend, type Spend } from "./usage"
 import { sentBackSince } from "./sent-back"
 import { questionAbout } from "./ask-about"
 export { sentBackSince }
-import { activityOf } from "./activity"
+import { activityOf, timeSpent, type SlowStep } from "./activity"
 import { existsSync, readdirSync, readFileSync } from "node:fs"
 import { exec } from "./proc"
 import { overLimits, prChecks, reposClean, type Check } from "./checks"
@@ -100,7 +99,7 @@ export type PipelineStatus = "running" | "needs-info" | "ready" | "failed"
 // kept: what the run left, to see each pass of a stage apart (a plan's or a build's units, a review's findings, a test's results).
 // asked: the questions a run left for you, each with your answer once you gave it (none: its proposal, taken).
 export type Asked = Question & { answer?: string; isProposal?: boolean }
-export type Kept = { units?: Unit[]; checklist?: ChecklistItem[]; findings?: Finding[]; results?: TestResult[]; release?: Release; asked?: Asked[]; fixing?: Fixing }
+export type Kept = { units?: Unit[]; checklist?: ChecklistItem[]; findings?: Finding[]; results?: TestResult[]; release?: Release; asked?: Asked[]; fixing?: Fixing; time?: SlowStep[] }
 // cause: why it ran, in a word or two (Sent back, Your answers…); base: what its session had spent
 // before it (a stage's session goes on run after run: a run's spend is what it added).
 export type Run = { n: number; stage: Stage; sessionId: string | null; startedAt: number; endedAt: number | null; status: PipelineStatus; questions: number; units: number; findings?: number; error: string | null; spend?: Spend | null; kept?: Kept; cause?: string | null; base?: Spend | null }
@@ -149,6 +148,7 @@ export type PipelineState = {
   news?: News | null // what people wrote in Jira since then, for you to send it back with
   autoFixes?: number // the fixes a pipeline on its own started since the plan (a few, then it waits for you)
   backNote?: string | null // what you wrote when you sent it back: what the stages after it work on, not the plan's list
+  time?: SlowStep[] // where this run's time went: its steps of a minute or more (activity.ts), once it ended
   found?: PersonFinding[] // what people found in staging or prod (findings.ts): read from found.json for the board, never saved here
 }
 export type Fixing = { from: "review" | "test"; ids: string[] }
@@ -542,7 +542,9 @@ const leftBy = (s: PipelineState): Kept | undefined => {
 // And the questions it asked you, whatever its stage.
 const keptOf = (s: PipelineState): Kept | undefined => {
   const left = leftBy(s)
-  return s.status === "needs-info" && s.questions.length ? { ...left, asked: s.questions } : left
+  const time = s.time?.length ? { time: s.time } : {}
+  const kept = left || s.time?.length ? { ...left, ...time } : undefined
+  return s.status === "needs-info" && s.questions.length ? { ...kept, asked: s.questions } : kept
 }
 // Your answers, kept in the run that asked: a question left blank took its proposal.
 export const withAnswers = (history: Run[], n: number, questions: Question[], answers: Record<string, string>): Run[] =>
@@ -622,7 +624,7 @@ export async function pipelineActivity(key: string) {
   if (!isKey(key)) throw new Error("Not a ticket key")
   const state = await stateOf(key)
   if (state?.status !== "running" || !state.sessionId) return { steps: [], helpers: [], units: [], checked: [] }
-  return { ...(await activityOf(state.sessionId)), ...(await buildProgress(dirOf(key))) }
+  return { ...(await activityOf(state.sessionId, state.startedAt)), ...(await buildProgress(dirOf(key))) }
 }
 
 // How far a build got: each unit (build.progress.json) and the to-dos it marked done.
@@ -748,10 +750,14 @@ const scopeSection = (t: Ticket, scope: TreeTicket[], deeper: Ticket[]) =>
 
 // Why a run: a word or two for the runs list, and what the agent is told.
 export type Why = { cause: string; text: string | null }
-// The session a stage goes on in: its own, else (a ticket from before) its last run's; only one whose transcript is there.
-export async function sessionToResume(state: Pick<PipelineState, "sessions" | "history"> | null, stage: AgentStage): Promise<string | null> {
+// The session a stage goes on in: its own, else (a ticket from before) its last run's; only one whose
+// transcript is there. Past MAX_CONTEXT it starts anew: every step re-reads all of it (slower, and
+// dearer), and what is done is in the ticket's files (build.json, build.progress.json, the plan).
+const MAX_CONTEXT = 300_000
+export async function sessionToResume(state: Pick<PipelineState, "sessions" | "history"> | null, stage: AgentStage, sizeOf: (id: string) => Promise<number | null> = sessionContext): Promise<string | null> {
   const id = state?.sessions?.[stage] ?? [...(state?.history ?? [])].reverse().find(r => r.stage === stage && r.sessionId)?.sessionId ?? null
-  return id && (await transcriptPath(id)) ? id : null
+  const size = id ? await sizeOf(id).catch(() => null) : null
+  return id && size !== null && size < MAX_CONTEXT ? id : null
 }
 async function runStage(key: string, runs: number, stage: AgentStage, auto?: boolean, why?: Why) {
   const dir = dirOf(key)
@@ -834,6 +840,8 @@ async function finish(key: string) {
   if (!text) throw new Error(`The agent left no ${state.stage}.json`)
   const result = parseResult(text, state.stage)
   await keepDoc(dir, state)
+  // Where its time went, read once now: the transcripts' tails move on with the next pass.
+  const time = state.sessionId ? await timeSpent(state.sessionId, state.startedAt, Date.now()).catch(() => []) : []
   if (result.verdict === "needs-info") {
     // The questions are the reporter's to answer: Jira tells them.
     const reporter = state.local ? null : await ticket(key).then(t => t.reporterId, () => null)
@@ -842,7 +850,7 @@ async function finish(key: string) {
       await save({ ...state, publishedRun: state.runs })
     }
     if (!state.local) await labelTicket(key, [LABELS.needsInfo], [stage.label])
-    await save({ ...state, publishedRun: state.runs, status: "needs-info", questions: result.questions, proposals: withProposals(state.proposals, proposalsIn(result.tickets, state.runs, state.stage), state.stage), askedAt: Date.now(), endedAt: Date.now() })
+    await save({ ...state, publishedRun: state.runs, status: "needs-info", questions: result.questions, proposals: withProposals(state.proposals, proposalsIn(result.tickets, state.runs, state.stage), state.stage), askedAt: Date.now(), endedAt: Date.now(), time })
     return
   }
   const checks = await checksAfter(state, result)
@@ -876,7 +884,7 @@ async function finish(key: string) {
   const tested = state.stage === "test" || state.stage === "smoke" ? { results: keepFound(earlierResults(state), byPerson(state.results), shown.results) } : {}
   const context = state.stage === "refine" ? { contextImpact: result.contextImpact } : {}
   const proposals = withProposals(state.proposals, proposalsIn(result.tickets, state.runs, state.stage), state.stage)
-  const done: PipelineState = { ...state, publishedRun: state.runs, status: "ready", questions: [], proposals, units, checklist, checked, scripts, order, ...(state.stage === "smoke" ? { backNote: null } : {}), ...found, ...tested, ...context, checks: withJira([...checks, ...attached.checks], state.checks), endedAt: Date.now() }
+  const done: PipelineState = { ...state, publishedRun: state.runs, status: "ready", questions: [], proposals, units, checklist, checked, scripts, order, ...(state.stage === "smoke" ? { backNote: null } : {}), ...found, ...tested, ...context, checks: withJira([...checks, ...attached.checks], state.checks), endedAt: Date.now(), time }
   await recordDebt(key, result.debt)
   await settle({ ...done, checks: withJira([...(done.checks ?? []), ...graveDebt(result.debt)], []) })
   if (state.stage === "smoke" && !failing(done.results).length && !untried(done.results).length) void closePipeline(key).catch(err => console.error(`close ${key}:`, err))

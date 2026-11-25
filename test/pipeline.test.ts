@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { isStuck, releasedUnits, retestOf, sessionOf, shippedWith, unitsNow, withUnits, testedIn, askPrompt, askRefusal, fixesNow, isAbout, testFix, unshipped, blocking, checkedByHand, checkedIn, isAdopted, toFixNow, MARK, answeredAfter, answersComment, argsFor, parseResult, pipelineKeyOf, stageToRun, unbuilt, withRun, withAnswers, earlierResults, closingOf, pipelineFile, questionsComment, snapshotOf, prodWarning, autoNext, linksFigma, impactRepos, checkIn, groupedResults, groupPrompt, laterItems, answersWhy } from "../lib/pipeline"
+import { isStuck, releasedUnits, retestOf, sessionOf, shippedWith, unitsNow, withUnits, testedIn, askPrompt, askRefusal, fixesNow, isAbout, testFix, unshipped, blocking, checkedByHand, checkedIn, isAdopted, toFixNow, MARK, answeredAfter, answersComment, argsFor, parseResult, pipelineKeyOf, stageToRun, unbuilt, withRun, withAnswers, earlierResults, closingOf, pipelineFile, questionsComment, snapshotOf, prodWarning, autoNext, linksFigma, impactRepos, checkIn, groupedResults, groupPrompt, laterItems, answersWhy, sessionToResume } from "../lib/pipeline"
 import { questionAbout } from "../lib/ask-about"
 
 const questions = [
@@ -423,6 +423,27 @@ describe("asking the agent about what it left", () => {
     expect(isAbout("result:CA3")).toBe(true)
     expect(isAbout("step:M2")).toBe(true)
     expect(isAbout("plan")).toBe(false)
+  })
+})
+
+describe("the session a stage goes on in", () => {
+  const state = { sessions: { build: "b1" }, history: [] }
+  it("its own, while its context is not too big; past 300k tokens, a new one (it reads what is done in the ticket's files)", async () => {
+    expect(await sessionToResume(state, "build", async () => 120_000)).toBe("b1")
+    expect(await sessionToResume(state, "build", async () => 390_000)).toBeNull()
+  })
+  it("none when its transcript is gone", async () => {
+    expect(await sessionToResume(state, "build", async () => null)).toBeNull()
+  })
+})
+
+describe("where a pass's time went", () => {
+  const time = [{ who: "F39 in user-service", tool: "Bash", text: "Run the whole suite", ms: 240_000 }]
+  const base = { key: "PP-1", runs: 3, sessionId: "s", startedAt: 1, endedAt: 2, askedAt: null, error: null, history: [] }
+  it("stays with the pass once it ends, also one that asks or leaves nothing else", () => {
+    expect(withRun({ ...base, stage: "build", status: "ready", questions: [], units: [], time } as never).history!.at(-1)!.kept!.time).toEqual(time)
+    expect(withRun({ ...base, stage: "refine", status: "ready", questions: [], time } as never).history!.at(-1)!.kept!.time).toEqual(time)
+    expect(withRun({ ...base, stage: "build", status: "needs-info", questions: [{ id: "Q1", question: "¿?", proposal: "" }], time } as never).history!.at(-1)!.kept).toMatchObject({ time, asked: [{ id: "Q1" }] })
   })
 })
 

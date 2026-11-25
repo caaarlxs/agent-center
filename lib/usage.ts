@@ -192,6 +192,12 @@ export async function sessionSpend(id: string): Promise<Spend | null> {
   return spendOf(scans.flatMap(s => [...s.messages.values()]))
 }
 
+// How big a session's context is now (its last answer's), or null when its transcript is gone.
+export async function sessionContext(id: string): Promise<number | null> {
+  const path = await transcriptPath(id)
+  return path ? (await scannedAt(path)).lastContext : null
+}
+
 // recentCost: what it spent in the last 5 hours, the plan's short window.
 // stepCost: what one more step costs it, its context read again from the cache.
 // wakeCost: what the first step costs once the cache has expired (an hour

@@ -28,7 +28,7 @@ import { Markdown, TicketDocsOf } from "@/features/conversation/Markdown"
 import { doingText } from "@/features/conversation/session-events"
 import { ago } from "@/features/session/state"
 import { repoDot } from "@/features/session/state"
-import type { Helper, Step } from "@server/activity"
+import type { Helper, SlowStep, Step } from "@server/activity"
 import { sentBackSince } from "@server/sent-back"
 import { questionAbout } from "@server/ask-about"
 import type { PipelineState, PrFix, Run, Stage, Unit } from "@server/pipeline"
@@ -149,6 +149,8 @@ export function useActivity(key: string, isOn = true, isOfJob = false) {
 }
 
 const stepText = (s: Step) => `${s.tool} · ${s.text}`
+// How long a step took, or has taken so far; nothing under a minute.
+const tookText = (from: number, to: number | null, now: number) => (from && (to ?? now) - from >= 60_000 ? hours((to ?? now) - from) : null)
 
 function Steps({ steps }: { steps: Step[] }) {
   return (
@@ -157,7 +159,8 @@ function Steps({ steps }: { steps: Step[] }) {
         <li key={`${s.at}${i}`} className={cn("relative flex min-w-0 items-baseline gap-2 py-[3px] text-xs", i > 2 && "opacity-60")}>
           <i className={cn("absolute top-[9px] -left-[16px] size-[7px] rounded-full", s.isOpen ? "run-dot bg-work" : "bg-line-strong")} />
           <span className="w-11 shrink-0 font-mono text-[11px] text-faint">{s.tool}</span>
-          <span className={cn("min-w-0 truncate", s.isOpen ? "text-text" : "text-text-muted")}>{s.text}</span>
+          <span className={cn("min-w-0 flex-1 truncate", s.isOpen ? "text-text" : "text-text-muted")}>{s.text}</span>
+          <span className="shrink-0 tabular-nums text-faint">{tookText(s.at, s.endedAt, Date.now())}</span>
         </li>
       ))}
     </ol>
@@ -170,8 +173,8 @@ function Helpers({ helpers }: { helpers: Helper[] }) {
       {helpers.map((h, i) => (
         <li key={i} className="grid grid-cols-[14px_minmax(0,1fr)] items-baseline gap-x-2 text-xs">
           {h.isDone ? <Check size={12} className="text-work" /> : <i className="run-dot size-[7px] translate-y-[-1px] rounded-full bg-work" />}
-          <span className="truncate font-semibold">{h.description}</span>
-          {!h.isDone && h.step && <span className="col-start-2 truncate text-[11.5px] text-faint">{stepText(h.step)}</span>}
+          <span className="flex min-w-0 items-baseline gap-2"><span className="min-w-0 truncate font-semibold">{h.description}</span><span className="shrink-0 tabular-nums font-normal text-faint">{tookText(h.startedAt, h.endedAt, Date.now())}</span></span>
+          {!h.isDone && h.step && <span className="col-start-2 truncate text-[11.5px] text-faint">{stepText(h.step)}{h.step.isOpen && tookText(h.step.at, null, Date.now()) ? ` · ${tookText(h.step.at, null, Date.now())}` : ""}</span>}
         </li>
       ))}
     </ul>
@@ -572,7 +575,24 @@ function StagePasses({ docs, ...props }: PassProps & { docs: number[] }) {
       {latest && <Passes passes={passes.map(r => ({ key: r.n, at: r.startedAt, isFailed: r.status === "failed", why: r.status === "failed" ? r.error : r.cause }))}
         picked={isPast ? run.n : latest.n} onPick={n => setPicked(n === latest.n ? null : n)} />}
       {isPast ? <PastPass run={run} {...props} /> : <>{summary && <Summary text={summary} />}<StagePanel {...props} all={props.state.units} state={latestPass(props.state, passes)} />{doc && <Doc text={doc} />}</>}
+      {(isPast ? run : latest)?.kept?.time?.length ? <TimeSpent time={(isPast ? run : latest)!.kept!.time!} /> : null}
     </div>
+  )
+}
+
+// Where a pass's time went: its steps of a minute or more, longest first, each with who took it.
+function TimeSpent({ time }: { time: SlowStep[] }) {
+  return (
+    <Details label={`Where the time went · ${hours(time.reduce((n, s) => n + s.ms, 0))} in ${time.length} slow step${time.length === 1 ? "" : "s"}`}>
+      <ol className="m-0 flex list-none flex-col gap-1 p-0">
+        {time.map((s, i) => (
+          <li key={i} className="grid grid-cols-[3.5rem_minmax(0,1fr)] items-baseline gap-x-2 text-xs">
+            <span className="text-right tabular-nums font-semibold text-text">{hours(s.ms)}</span>
+            <span className="min-w-0 truncate text-text-muted">{s.text}{s.who && <span className="text-faint"> · {s.who}</span>}</span>
+          </li>
+        ))}
+      </ol>
+    </Details>
   )
 }
 
@@ -597,12 +617,12 @@ function PastPass({ stage, run, state, preview, onStep }: PassProps & { run: Run
   const [doc, setDoc] = useState<string | null>(null)
   useEffect(() => void get<{ doc: string | null }>(`/api/pipeline/run-doc?key=${encodeURIComponent(state.key)}&n=${run.n}`).then(r => setDoc(r.doc), () => {}), [state.key, run.n])
   // As that pass left it; "failed" keeps every button of the panels away. One that left nothing shows no panel (it would show today's).
-  const past: PipelineState = { ...state, ...run.kept, stage: run.stage, status: "failed", threads: {} }
+  const past: PipelineState = { ...state, ...run.kept, time: run.kept?.time, stage: run.stage, status: "failed", threads: {} }
   return (
     <div className="flex flex-col gap-3">
       {run.status === "failed" && <Failed run={run} />}
       {run.kept?.asked?.length ? <AskedList asked={run.kept.asked} /> : null}
-      {run.kept && !(run.kept.asked && Object.keys(run.kept).length === 1) && <StagePanel stage={stage} state={past} preview={preview} all={state.units} onRun={() => {}} onStep={onStep} />}
+      {Object.keys(run.kept ?? {}).some(k => k !== "asked" && k !== "time") && <StagePanel stage={stage} state={past} preview={preview} all={state.units} onRun={() => {}} onStep={onStep} />}
       {doc && <Doc text={doc} />}
     </div>
   )

@@ -167,7 +167,7 @@ export async function jobOf(id: string) {
 export async function jobActivity(id: string) {
   const job = isJobId(id) ? await stateOf(id) : null
   if (job?.status !== "running" || !job.sessionId) return { steps: [], helpers: [], units: [], checked: [] }
-  return { ...(await activityOf(job.sessionId)), ...(await buildProgress(dirOf(id))) }
+  return { ...(await activityOf(job.sessionId, job.startedAt)), ...(await buildProgress(dirOf(id))) }
 }
 
 // ---------- GitHub ----------
