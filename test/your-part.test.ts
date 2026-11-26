@@ -60,3 +60,16 @@ describe("chatPrompt", () => {
     expect(text).toContain("/d/PP-1/your-part.json (sección del paso M1)")
   })
 })
+
+describe("the guide's steps, as done as they can be", () => {
+  const prompt = partPrompt("[Pipeline]", "PP-1", "/d/PP-1", [{ id: "M1", text: "Crear la fila en el Finder", envs: ["prod"], note: null }] as never, "/d/PP-1/your-part.draft.json", null)
+  it("asks for commands ready to paste and the whole text of a message; a step the build scripted is the board's to run", () => {
+    expect(prompt).toContain("comando listo para pegar")
+    expect(prompt).toContain("/d/PP-1/steps/<id del paso>.sh, ese paso lo hace el board")
+    expect(prompt).toContain("el texto entero del mensaje")
+  })
+  it("still lets it write only the guide, and run nothing", () => {
+    expect(prompt).toContain("Solo lee: no cambies nada más que /d/PP-1/your-part.draft.json. Nunca ejecutes nada contra un entorno.")
+  })
+})
+

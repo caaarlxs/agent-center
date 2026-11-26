@@ -204,7 +204,7 @@ export async function handleWrite(path: string, body: Record<string, unknown>): 
       return await answerPipeline(String(body.key ?? ""), (body.answers ?? {}) as Record<string, string>).then(() => json({ ok: true }), (err: Error) => json({ error: err.message }, 400))
     // A release's step at hand: go on (with a tag of your own), or past it.
     case "/api/pipeline/step":
-      return await stepPipeline(String(body.key ?? ""), String(body.step ?? ""), (["skip", "unskip", "address", "relook"] as const).find(a => a === body.action) ?? "approve", typeof body.value === "string" ? body.value : undefined).then(() => (refreshSoon(), json({ ok: true })), (err: Error) => json({ error: err.message }, 400))
+      return await stepPipeline(String(body.key ?? ""), String(body.step ?? ""), (["only", "skip", "unskip", "address", "relook"] as const).find(a => a === body.action) ?? "approve", typeof body.value === "string" ? body.value : undefined).then(() => (refreshSoon(), json({ ok: true })), (err: Error) => json({ error: err.message }, 400))
     // A PR of the ticket with conflicts: an agent resolves them and pushes, or says why not.
     case "/api/pipeline/conflicts":
       return await resolvePr(String(body.key ?? ""), String(body.url ?? "")).then(() => json({ ok: true }), (err: Error) => json({ error: err.message }, 400))

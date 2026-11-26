@@ -11,6 +11,7 @@ import { AlertTriangle, Bot, Check, History, SquareTerminal, Undo2, ChevronRight
 import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Shimmer } from "@/components/ai-elements/shimmer"
+import { CodeBlock, CodeBlockCopyButton } from "@/components/ai-elements/code-block"
 import { get } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import type { Release, ReleaseStep, StepKind, StepNote } from "@server/release"
@@ -23,6 +24,7 @@ import { Section } from "./kinds"
 import { useStageData } from "./stage-data"
 import { ConflictFix } from "./ConflictFix"
 import { useConfirm } from "./confirm"
+import { stepCommands } from "./step-commands"
 
 type Report = { head: string[]; total: number; rows: string[][]; text: string }
 const reportUrl = (key: string, file: string) => `/api/pipeline/report?key=${encodeURIComponent(key)}&file=${encodeURIComponent(file)}`
@@ -54,6 +56,32 @@ function ReportView({ ticketKey, file }: { ticketKey: string; file: string }) {
       </span>
     </div>
   )
+}
+
+// A person's step that a script does: the commands to run it by hand (simulate first), and the script, folded.
+function StepScript({ id, env }: { id: string; env: string }) {
+  const { steps } = useStageData()
+  const [isOpen, setOpen] = useState(false)
+  const script = steps?.scripts[id]
+  if (!steps || !script) return null
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-xs font-semibold text-text">Script · steps/{id}.sh</span>
+      <CodeBlock code={stepCommands(steps.dir, id, env)} language="bash" className="text-[11.5px]"><CodeBlockCopyButton className="absolute top-1.5 right-1.5 z-10 size-7" /></CodeBlock>
+      <button className="flex items-center gap-1 self-start text-xs font-semibold text-faint hover:text-text" onClick={() => setOpen(o => !o)} aria-expanded={isOpen}>
+        <ChevronRight size={12} className={cn("transition-transform duration-150", isOpen && "rotate-90")} />What it does
+      </button>
+      {isOpen && <CodeBlock code={script.trim()} language="bash" className="max-h-[320px] overflow-auto text-[11.5px]"><CodeBlockCopyButton className="absolute top-1.5 right-1.5 z-10 size-7" /></CodeBlock>}
+    </div>
+  )
+}
+
+// What a person's step's script said (its simulation, or its run for real): the whole of it.
+function LogView({ ticketKey, file }: { ticketKey: string; file: string }) {
+  const [text, setText] = useState<string | null>(null)
+  useEffect(() => void fetch(reportUrl(ticketKey, file)).then(r => (r.ok ? r.text() : null)).then(setText, () => setText(null)), [ticketKey, file])
+  if (!text) return null
+  return <pre className="m-0 max-h-[260px] overflow-auto rounded-[8px] border border-line bg-surface px-3 py-2 font-mono text-[11px] leading-[1.5] whitespace-pre-wrap text-text-muted">{text.trim()}</pre>
 }
 
 // What goes with a step (the changes to prod, what to test): folded past a few.
@@ -102,20 +130,28 @@ const KIND: Record<StepKind, { icon: LucideIcon; name: string }> = {
 }
 const ASKS_TWICE: StepKind[] = ["merge", "promote", "tag", "execute", "revert", "redeploy"]
 
+// What the step's button says: go on past a deploy nobody saw, merge past comments, run a script, or the kind's own.
+const goLabel = (step: ReleaseStep) =>
+  step.phase === "deploy" ? "Go on" : step.feedback?.state === "act" ? "Merge anyway" : step.feedback?.state === "addressed" ? "Looks right: merge" : step.action ? "Run for real" : GO[step.kind]
+
 function Waiting({ step, onAct }: { step: ReleaseStep; onAct: (action: StepAction, value?: string) => void }) {
   const [value, setValue] = useState(step.value ?? "")
-  const [asking, setAsking] = useState<"approve" | "skip" | null>(null)
+  const [asking, setAsking] = useState<"approve" | "only" | "skip" | null>(null)
   useEffect(() => {
     if (!asking) return
     const timer = setTimeout(() => setAsking(null), 4000)
     return () => clearTimeout(timer)
   }, [asking])
-  const press = (action: "approve" | "skip") => (action === "skip" || ASKS_TWICE.includes(step.kind)) && asking !== action ? setAsking(action) : (setAsking(null), onAct(action, step.kind === "tag" ? value : undefined))
+  const press = (action: "approve" | "only" | "skip") => (action === "skip" || ASKS_TWICE.includes(step.kind) || !!step.action) && asking !== action ? setAsking(action) : (setAsking(null), onAct(action, step.kind === "tag" ? value : undefined))
+  // A tag that also takes other tickets' changes: all of them, or only the ticket's on top of prod.
+  const others = step.kind === "tag" && step.phase !== "deploy" ? (step.others ?? []) : []
+  const ours = step.ours?.length ?? 0
   // A deploy that never showed up: you checked it. Comments on its PR: merge as it is, or once you looked at the changes.
-  const label = step.phase === "deploy" ? "Go on" : step.feedback?.state === "act" ? "Merge anyway" : step.feedback?.state === "addressed" ? "Looks right: merge" : GO[step.kind]
+  const label = goLabel(step)
   return (
     <div className="flex flex-col gap-2">
     {step.advice && <AdviceLine advice={step.advice} />}
+    {others.length > 0 && <OtherChanges others={others} />}
     <div className="flex flex-wrap items-center gap-2">
       {step.kind === "tag" && step.phase !== "deploy" && (
         <input value={value} onChange={e => setValue(e.target.value)} spellCheck={false} aria-label="Tag"
@@ -123,9 +159,20 @@ function Waiting({ step, onAct }: { step: ReleaseStep; onAct: (action: StepActio
       )}
       {step.feedback?.state === "act" && <Button className="h-7 text-xs" onClick={() => onAct("address")}>Address the comments</Button>}
       {(step.feedback?.state === "act" || step.feedback?.state === "addressed") && <button className="text-xs font-semibold text-faint hover:text-text" onClick={() => onAct("relook")}>Look at the comments again</button>}
-      <Button variant={asking === "approve" || step.feedback?.state === "act" ? (asking === "approve" ? "destructive" : "outline") : "default"} className="h-7 text-xs" onClick={() => press("approve")}>{asking === "approve" ? `Sure? ${label}` : label}</Button>
+      <Button variant={asking === "approve" || step.feedback?.state === "act" ? (asking === "approve" ? "destructive" : "outline") : "default"} className="h-7 text-xs" onClick={() => press("approve")}>{asking === "approve" ? `Sure? ${others.length ? `Deploy all · ${ours + others.length}` : label}` : others.length ? `Deploy all · ${ours + others.length}` : label}</Button>
+      {others.length > 0 && ours > 0 && <Button variant={asking === "only" ? "destructive" : "outline"} className="h-7 text-xs" onClick={() => press("only")}>{asking === "only" ? `Sure? Only this ticket's · ${ours}` : `Only this ticket's · ${ours}`}</Button>}
       <button className={cn("text-xs font-semibold transition-colors duration-120", asking === "skip" ? "text-bad" : "text-faint hover:text-text")} onClick={() => press("skip")}>{asking === "skip" ? "Sure? Skip it" : "Skip"}</button>
     </div>
+    </div>
+  )
+}
+
+// A tag that also takes other tickets' changes: which ones.
+function OtherChanges({ others }: { others: string[] }) {
+  return (
+    <div className="flex flex-col gap-0.5 text-xs">
+      <span className="font-semibold text-ask">Also takes {others.length} change{others.length === 1 ? "" : "s"} of other tickets</span>
+      {others.map(o => <span key={o} className="truncate text-text-muted">{o}</span>)}
     </div>
   )
 }
@@ -224,8 +271,8 @@ function Skipped({ canUndo, onUndo }: { canUndo: boolean; onUndo: () => void }) 
 
 // A merge whose PR's comments ask for changes, or got them: shown a comment a line.
 const hasFeedback = (step: ReleaseStep) => step.feedback?.state === "act" || step.feedback?.state === "addressed"
-export type StepAction = "approve" | "skip" | "unskip" | "address" | "relook"
-function StepRow({ step, ticketKey, isAtHand, isAhead, isLive, threads, onAct }: { step: ReleaseStep; ticketKey: string; isAtHand: boolean; isAhead: boolean; isLive: boolean; threads?: Record<string, Turn[]>; onAct: (action: StepAction, value?: string) => void }) {
+export type StepAction = "approve" | "only" | "skip" | "unskip" | "address" | "relook"
+function StepRow({ step, env, ticketKey, isAtHand, isAhead, isLive, threads, onAct }: { step: ReleaseStep; env: string; ticketKey: string; isAtHand: boolean; isAhead: boolean; isLive: boolean; threads?: Record<string, Turn[]>; onAct: (action: StepAction, value?: string) => void }) {
   const isFaint = step.status === "pending" || step.status === "skipped"
   const { icon: Icon, name } = kindOf(step)
   return (
@@ -243,6 +290,7 @@ function StepRow({ step, ticketKey, isAtHand, isAhead, isLive, threads, onAct }:
       {step.note && isYours(step) && (
         <div className="col-start-2 flex min-w-0 flex-col gap-2 pl-[55px]">
           <NoteView note={step.note} isOpen={step.status === "waiting"} />
+          <StepScript id={step.note.id} env={env} />
           {threads && <Ask ticketKey={ticketKey} about={`step:${step.note.id}`} turns={threads[`step:${step.note.id}`]} />}
           {threads && <ChatButton ticketKey={ticketKey} step={step.note.id} />}
         </div>
@@ -250,7 +298,7 @@ function StepRow({ step, ticketKey, isAtHand, isAhead, isLive, threads, onAct }:
       {(step.items.length > 0 || step.report || hasFeedback(step)) && (
         <div className="col-start-2 flex min-w-0 flex-col gap-2 pl-[55px]">
           {hasFeedback(step) ? <FeedbackList ticketKey={ticketKey} step={step} /> : <Items items={step.items} isOpen={step.status === "waiting" && step.kind === "check"} />}
-          {step.report && (step.status !== "pending") && <ReportView ticketKey={ticketKey} file={step.report} />}
+          {step.report && (step.status !== "pending") && (step.report.endsWith(".log") ? <LogView ticketKey={ticketKey} file={step.report} /> : <ReportView ticketKey={ticketKey} file={step.report} />)}
         </div>
       )}
       {isAtHand && (step.status === "waiting" || step.status === "failed") && (
@@ -269,7 +317,7 @@ export function ReleaseSteps({ ticketKey, release, after, isPreview = false, thr
   return (
     <Section title="Deploy" extra={isPreview ? release.steps.length : `${release.steps.filter(s => s.status === "done" || s.status === "skipped").length} of ${release.steps.length}`}>
       <ol className="m-0 list-none p-0">
-        {release.steps.map((s, i) => <StepRow key={s.id} step={s} ticketKey={ticketKey} isAtHand={s.id === atHand?.id} isAhead={i > at} isLive={!!onAct} threads={threads} onAct={(action, value) => onAct?.(s.id, action, value)} />)}
+        {release.steps.map((s, i) => <StepRow key={s.id} step={s} env={release.env} ticketKey={ticketKey} isAtHand={s.id === atHand?.id} isAhead={i > at} isLive={!!onAct} threads={threads} onAct={(action, value) => onAct?.(s.id, action, value)} />)}
         {after && <AfterRow after={after} />}
       </ol>
     </Section>

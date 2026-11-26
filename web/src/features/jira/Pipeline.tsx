@@ -31,7 +31,7 @@ import { repoDot } from "@/features/session/state"
 import type { Helper, SlowStep, Step } from "@server/activity"
 import { sentBackSince } from "@server/sent-back"
 import { questionAbout } from "@server/ask-about"
-import type { PipelineState, PrFix, Run, Stage, Unit } from "@server/pipeline"
+import type { PipelineState, PrFix, Run, Stage, StepScripts, Unit } from "@server/pipeline"
 import type { Check as BoardCheck } from "@server/checks"
 import { deliverablesOf } from "@server/scope"
 import { MODELS } from "@/features/prompt/Settings"
@@ -60,7 +60,7 @@ import { LeftForLater } from "./Later"
 import { YourPartRow } from "./YourPart"
 import { DocViewer } from "./DocViewer"
 
-type Data = { putAside: number; docs: number[]; files: string[]; summaries: Partial<Record<Stage, string | null>>; prs: Record<string, PrState>; fixes: Record<string, PrFix>; scenario: Scenario | null; state: PipelineState | null; refine: string | null; plan: string | null; build: string | null; review: string | null; test: string | null; smoke: string | null; preview: Release | null; yourPart: YourPartInfo; later: Later }
+type Data = { putAside: number; docs: number[]; files: string[]; summaries: Partial<Record<Stage, string | null>>; prs: Record<string, PrState>; fixes: Record<string, PrFix>; scenario: Scenario | null; state: PipelineState | null; refine: string | null; plan: string | null; build: string | null; review: string | null; test: string | null; smoke: string | null; preview: Release | null; yourPart: YourPartInfo; later: Later; steps?: StepScripts }
 type OnStep = (step: string, action: StepAction, value?: string) => void
 const FOLLOW_MS = 5_000
 const IDLE_MS = 30_000
@@ -702,7 +702,7 @@ export function Pipeline({ ticket, details, onTaken }: { ticket: Ticket; details
   return (
     <TicketDocsOf.Provider value={{ key: ticket.key, names: data.files ?? [], open: setDoc }}>
     <StageDataContext.Provider value={{ prs: data.prs ?? {}, fixes: data.fixes ?? {}, onResolve: url => void act("/api/pipeline/conflicts", { key: ticket.key, url }, "An agent resolves the conflicts").then(ok => ok && loadSoon()),
-      onReady: url => void act("/api/pipeline/ready", { key: ticket.key, url }, "Ready for review").then(ok => ok && loadSoon()), scenario: data.scenario ?? null, comments: ticket.comments, debt, yourPart: data.yourPart ?? null, reload: loadSoon, later: data.later ?? null,
+      onReady: url => void act("/api/pipeline/ready", { key: ticket.key, url }, "Ready for review").then(ok => ok && loadSoon()), scenario: data.scenario ?? null, comments: ticket.comments, debt, yourPart: data.yourPart ?? null, reload: loadSoon, later: data.later ?? null, steps: data.steps ?? null,
       onLater: (env, keys, action) => void act("/api/pipeline/later", { key: ticket.key, env, keys, action }, action === "deploy" ? `Deploying to ${env}` : `Left out of ${env}`).then(ok => ok && loadSoon()) }}>
     <div className="flex flex-col gap-3">
       <Now state={state} preview={data.preview} now={now} putAside={data.putAside} onRun={stage => void start(stage)} onStep={step} onChanged={() => void load()} />

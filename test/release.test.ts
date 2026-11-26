@@ -141,7 +141,7 @@ function fake(answers: Record<string, string>) {
     agent: async () => 4343,
     isAlive: () => true,
     readText: async () => null,
-    exists: () => true,
+    exists: path => !path.includes("/steps/"), // no person's step has a script here
     secret: async () => null,
   }
   return { calls, ops }
@@ -184,12 +184,73 @@ describe("advanceRelease", () => {
     expect(r.release.steps[0]).toMatchObject({ status: "running", phase: "deploy" })
   })
   it("a tag taken meanwhile is chosen again on Retry: the next one, waiting for you", async () => {
-    const { ops } = fake({ "tag --list": "v0.17.0\nv0.16.1", "rev-parse": "abc123", "rev-list -n 1 v0.17.0": "other" })
+    const { ops } = fake({ "tag --list": "v0.17.0\nv0.16.1", "rev-parse": "abc123", "rev-list -n 1 v0.17.0": "other", "log --first-parent": "c1\tfix: x" })
     const release: Release = { env: "prod", steps: [{ ...releaseSteps(state({ units: [units[0]], scripts: [] }), "prod", config)[0]!, status: "pending", isApproved: true, value: "v0.17.0", sha: "abc123" }] }
     let r = await advanceRelease(release, ctx, ops)
     expect(r.release.steps[0]).toMatchObject({ status: "failed", error: "v0.17.0 is already there, on another commit" })
     r = await advanceRelease(retryStep(r.release, "R1"), ctx, ops)
     expect(r.release.steps[0]).toMatchObject({ status: "waiting", value: "v0.18.0" })
+  })
+  const prodRelease = (): Release => ({ env: "prod", steps: releaseSteps(state({ units: [units[0]], scripts: [] }), "prod", config) })
+  it("a commit prod already runs (a later version has it) is not tagged again: it would take prod back", async () => {
+    const { calls, ops } = fake({ "tag --list": "v0.16.1\nv0.16.0", "rev-parse": "abc123", "--is-ancestor v0.16.1 abc123": "!", "rev-list --count abc123..v0.16.1": "11" })
+    const r = await advanceRelease(prodRelease(), ctx, ops)
+    expect(r.release.steps[0]).toMatchObject({ kind: "tag", status: "done", value: null, detail: "Already in prod: v0.16.1 has it, with 11 changes more" })
+    expect(calls.some(c => c.includes("push"))).toBe(false)
+    expect(rollbackSteps(r.release, config)).toEqual([])
+  })
+  it("prod running changes the default branch lacks (a hotfix) stops it, and says which", async () => {
+    const { calls, ops } = fake({ "tag --list": "v0.16.1", "rev-parse": "abc123", "--is-ancestor": "!", "log --cherry-mark": "=\tPicked from the default branch\n+\tHotfix: login" })
+    const r = await advanceRelease(prodRelease(), ctx, ops)
+    expect(r.release.steps[0]).toMatchObject({ status: "failed" })
+    expect(r.release.steps[0]!.error).toContain("Hotfix: login")
+    expect(r.release.steps[0]!.error).not.toContain("Picked")
+    expect(calls.some(c => c.includes("push"))).toBe(false)
+  })
+  it("prod as a release line of picked changes goes on: what it already runs does not go again, the rest is the ticket's or other tickets'", async () => {
+    const log = "c3\tMerge pull request #31 from acme/feat/other\nc2\tMerge pull request #7 from acme/feat/PP-1-x\nc1\tMerge pull request #5 from acme/fix/picked"
+    const { ops } = fake({ "tag --list": "v0.16.1", "merge-base v0.16.1 abc123": "base0", "rev-parse": "abc123", "--is-ancestor": "!", "log --cherry-mark": "=\tfix: picked", "log --first-parent": log,
+      "rev-list --parents -n 1 c1": "c1 b1 p1", "cherry v0.16.1 p1 b1": "- p1", "rev-list --parents -n 1 c2": "c2 c1 p2", "cherry v0.16.1 p2 c1": "+ p2", "rev-list --parents -n 1 c3": "c3 c2 p3", "cherry v0.16.1 p3 c2": "+ p3" })
+    const r = await advanceRelease(prodRelease(), ctx, ops)
+    expect(r.release.steps[0]).toMatchObject({ status: "waiting", ours: ["c2"], others: ["Merge pull request #31 from acme/feat/other"], items: ["Merge pull request #31 from acme/feat/other", "Merge pull request #7 from acme/feat/PP-1-x"] })
+  })
+  it("changes none of which reads as the ticket's still wait for you: never taken as already in prod", async () => {
+    const { ops } = fake({ "tag --list": "v0.16.1", "rev-parse": "abc123", "log --first-parent": "c9\tsquashed without a name" })
+    const r = await advanceRelease(prodRelease(), ctx, ops)
+    expect(r.release.steps[0]).toMatchObject({ status: "waiting", ours: [], others: ["squashed without a name"] })
+  })
+  it("tells the ticket's changes from other tickets' ones, and on «only the ticket's» tags them alone on top of prod", async () => {
+    const log = "c3\tMerge pull request #31 from acme/feat/other-thing\nc2\tMerge pull request #7 from acme/feat/PP-1-x\nc1\tfix: typo"
+    const { calls, ops } = fake({ "tag --list": "v0.16.1", "rev-parse --verify HEAD": "new777", "rev-parse": "abc123", "log --first-parent --format=%H%x09%s v0.16.1..abc123": log, "rev-list --parents -n 1 c2": "c2 p1 p2" })
+    let r = await advanceRelease(prodRelease(), ctx, ops)
+    expect(r.release.steps[0]).toMatchObject({ status: "waiting", ours: ["c2"], others: ["Merge pull request #31 from acme/feat/other-thing", "fix: typo"] })
+    r = await advanceRelease(approveStep(r.release, "R1", "v0.17.0", "ticket"), ctx, ops)
+    expect(calls.some(c => c.includes("worktree add --detach") && c.endsWith("v0.16.1"))).toBe(true)
+    expect(calls.some(c => c.endsWith("cherry-pick -m 1 c2"))).toBe(true)
+    expect(calls).toContain("git -C /d/repos/api-service tag v0.17.0 new777")
+    expect(r.release.steps[0]).toMatchObject({ status: "running", phase: "deploy", sha: "new777" })
+  })
+  it("a person's step with its script (steps/<id>.sh) simulates by itself, waits for you with what it would do, and runs for real once you approve", async () => {
+    const order = [{ kind: "manual", id: null, text: "Create the Finder row", envs: ["prod"], note: { why: "", how: [], done: "" } }] as never
+    const files: Record<string, string> = {}
+    const spawned: { cwd: string; line: string; env: Record<string, string> }[] = []
+    const { ops: base } = fake({})
+    const ops: Ops = { ...base, exists: p => p === "/d/PP-1/steps/M1.sh", readText: async p => files[p] ?? null,
+      spawn: async (cwd, line, env, log, exit) => (spawned.push({ cwd, line, env }), (files[log] = env.DRY_RUN === "1" ? "Would put label|NDA_SIGNED\nWould create 1 row" : "Created 1 row"), (files[exit] = "0"), 77) }
+    let r = await advanceRelease({ env: "prod", steps: releaseSteps(state({ order, units: [], scripts: [] }), "prod", config) }, ctx, ops)
+    expect(spawned).toEqual([{ cwd: "/d/PP-1", line: "bash steps/M1.sh", env: { STAGE: "prod", DRY_RUN: "1" } }])
+    r = await advanceRelease(r.release, ctx, ops)
+    expect(r.release.steps[0]).toMatchObject({ kind: "manual", status: "waiting", action: "M1.sh", simulated: true, detail: "Would create 1 row", report: "M1-prod-simulate.log" })
+    r = await advanceRelease(approveStep(r.release, "R1"), ctx, ops)
+    expect(spawned.at(-1)!.env).toEqual({ STAGE: "prod", DRY_RUN: "0" })
+    r = await advanceRelease(r.release, ctx, ops)
+    expect(r.release.steps[0]).toMatchObject({ status: "done", detail: "Created 1 row", report: "M1-prod-execute.log" })
+  })
+  it("a person's step without a script waits for you as always", async () => {
+    const order = [{ kind: "manual", id: null, text: "Tell marketing", envs: ["prod"], note: { why: "", how: [], done: "" } }] as never
+    const { ops } = fake({})
+    const r = await advanceRelease({ env: "prod", steps: releaseSteps(state({ order, units: [], scripts: [] }), "prod", config) }, ctx, { ...ops, exists: () => false })
+    expect(r.release.steps[0]).toMatchObject({ status: "waiting", action: null })
   })
   it("a tag already there on its own commit goes on to its deploy, without pushing again", async () => {
     const { calls, ops } = fake({ "tag --list": "v0.17.0", "rev-list -n 1 v0.17.0": "abc123" })

@@ -50,10 +50,16 @@ ${steps.map(s => `   - ${s.id ?? "—"} [${s.envs.join(", ")}] «${s.text}».${n
    - context: qué es y por qué el ticket lo necesita, sin jerga. Markdown.
    - where: los enlaces exactos (consola, repo, tabla, ticket). Solo URLs que existen.
    - steps: los pasos en orden, en markdown. Lo que la persona copia va entero en un bloque de código: textos, variables, JSON, comandos. Nunca "con los textos de PP-…": el texto entero.
+     Déjale el trabajo lo más hecho posible:
+     · Lo que se hace con una herramienta (AWS CLI, gh, git, curl, un script del repo) va como comando listo para pegar, con todos los valores: entorno, tabla, clave e item enteros. Las tablas de DynamoDB llevan el entorno en el nombre (environment.md). Si no sabes el perfil o la región de AWS, deja \`--profile <perfil del entorno>\` y dilo en el paso.
+     · En orden: un comando que mira cómo está ahora (get-item, query, describe), el que lo cambia y el que comprueba que quedó bien.
+     · Si existe ${join(dir, "steps")}/<id del paso>.sh, ese paso lo hace el board: al llegar a él lo simula y lo ejecuta cuando la persona lo aprueba. La sección dice qué hace el script, qué verá en la simulación y qué aprueba; los comandos sueltos solo para hacerlo a mano si el script falla.
+     · Un mensaje a otra persona (marketing, el owner de un área): el texto entero del mensaje, listo para enviar, y a quién.
+     · A mano, explicado, solo lo que no tiene herramienta: una aprobación de fuera, publicar en las stores.
    - done: cómo sabe que está hecho.
    - unlocks: qué desbloquea, y qué pasa si no se hace.
 
-Español claro: frases cortas, voz activa, un término para cada cosa. Lo que no sepas, dilo en su paso. Solo lee: no cambies nada más que ${out}.`
+Español claro: frases cortas, voz activa, un término para cada cosa. Lo que no sepas, dilo en su paso. Solo lee: no cambies nada más que ${out}. Nunca ejecutes nada contra un entorno.`
 
 const text = (v: unknown) => (typeof v === "string" ? v.trim() : "")
 const list = (v: unknown): any[] => (Array.isArray(v) ? v : [])

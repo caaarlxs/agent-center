@@ -47,7 +47,7 @@ export type ReleaseStep = {
   value: string | null // the tag (proposed, then pushed), or the branch a promote goes to
   sha: string | null // the commit it deploys
   since: number | null // when it started: the runs and deployments since then are its own
-  phase: "checks" | "deploy" | "script" | "rerun" | "conflicts" | "feedback" | "addressing" | null
+  phase: "checks" | "deploy" | "script" | "action" | "rerun" | "conflicts" | "feedback" | "addressing" | null
   pid: number | null
   report: string | null // a script's report, in <ticket>/scripts
   error: string | null
@@ -58,6 +58,11 @@ export type ReleaseStep = {
   note?: StepNote | null // a person's step: the plan's why, how and done
   feedback?: Feedback | null // a merge's: what people said on its PR, and what came of it
   seenAt?: number | null // a person's step with a check: when the board last looked
+  ours?: string[] // a tag's: the ticket's own changes since prod's version (their commits, oldest first)
+  others?: string[] // a tag's: the changes of other tickets it would take to prod too
+  action?: string | null // a person's step a script does: its file in <ticket>/steps (written by the build)
+  simulated?: boolean // that script's simulation ended well: the step waits for you to run it for real
+  scope?: "all" | "ticket" | null // a tag's, as you approved it: all it takes, or only the ticket's changes on top of prod
 }
 // What people said on a PR before its merge: being judged by an agent; nothing that asks for a change
 // (clear); some that do (act: it waits for you); an agent making those changes; made, for you to look at.
@@ -227,6 +232,8 @@ export function rollbackSteps(release: Release, config: DeployConfig): ReleaseSt
   const undo = (s: ReleaseStep): Omit<ReleaseStep, "id">[] => {
     const base = { unit: s.unit, repo: s.repo, links: s.links }
     if (s.kind === "merge") return [blank("revert", `${s.repo}: revert ${s.links[0]?.label ?? "its merge"}`, { ...base, sha: s.sha, value: s.value })]
+    // A tag the board did not push (the commit was already in prod): nothing to undo.
+    if (s.kind === "tag" && !s.value) return []
     if (s.kind === "tag") return [s.previous ? blank("redeploy", `${s.repo}: deploy ${s.previous} again`, { ...base, value: s.previous }) : blank("manual", `${s.repo}: deploy the version before ${s.value} again, by hand`, base)]
     if (s.kind === "promote") return [blank("manual", `${s.repo}: roll ${s.value} back by hand (promote its deployment before)`, base)]
     if (s.kind === "execute" && s.script) return [blank("manual", `${s.title}: its data stays changed; undo it by hand if it must be (every record is in ${s.report})`, base)]
@@ -378,19 +385,112 @@ async function prepare(step: ReleaseStep, release: Release, ctx: Ctx, ops: Ops):
     const sim = release.steps.find(s => s.kind === "simulate" && s.script === step.script)
     return { detail: sim?.detail ? `Simulation: ${sim.detail}` : null, report: sim?.report ?? null }
   }
-  if (step.kind === "tag") {
-    const clone = cloneOf(step, ctx)
-    await ops.sh(["git", "-C", clone, "fetch", "-q", "--tags", "origin"], { timeoutMs: 60_000 })
-    const tag = nextTag(lines((await ops.sh(["git", "-C", clone, "tag", "--list", "v*"])).out), ctx.config.tag.bump)
-    // What staging tested goes to prod, not what the default branch has now (other tickets may have merged since).
-    const tested = ctx.tested?.[step.repo ?? ""]
-    const sha = tested ?? (await must(ops, ["git", "-C", clone, "rev-parse", "origin/HEAD"]))
-    if (!tag) return { sha, detail: "No vX.Y.Z tag yet: write the first one" }
-    const items = lines((await ops.sh(["git", "-C", clone, "log", "--first-parent", "--format=%s", `${tag.latest}..${sha}`, "-n", "30"])).out)
-    return { sha, value: step.value ?? tag.next, previous: tag.latest, items, detail: `${items.length} change${items.length === 1 ? "" : "s"} since ${tag.latest} go to prod${tested ? "" : " (staging's commit unknown: the default branch's head)"}` }
-  }
+  if (step.kind === "tag") return prepareTag(step, ctx, ops)
+  if (step.kind === "manual") return prepareManual(step, release, ctx, ops)
   if (step.kind === "promote") return preparePromote(step, ctx, ops)
   return {}
+}
+
+// A tag: what staging tested goes to prod, not what the default branch has now (other tickets may have
+// merged since). Never a commit prod already runs (a later version has it: tagging it takes prod back),
+// and never over changes prod runs that the default branch lacks (a hotfix): those go to the default
+// branch first, so staging tests them with the rest. The changes it takes are the ticket's or other
+// tickets'; you choose to take all, or only the ticket's on top of prod's version.
+const commitsIn = (out: string) => lines(out).map(l => (l.includes("\t") ? { sha: l.slice(0, l.indexOf("\t")), subject: l.slice(l.indexOf("\t") + 1) } : { sha: "", subject: l }))
+export const isTicketChange = (subject: string, key: string, prs: number[]) =>
+  subject.includes(key) || prs.includes(Number(subject.match(/#(\d+)/)?.[1] ?? NaN))
+async function prepareTag(step: ReleaseStep, ctx: Ctx, ops: Ops): Promise<Patch> {
+  const clone = cloneOf(step, ctx)
+  const git = (...args: string[]) => ops.sh(["git", "-C", clone, ...args])
+  await ops.sh(["git", "-C", clone, "fetch", "-q", "--tags", "origin"], { timeoutMs: 60_000 })
+  const tag = nextTag(lines((await git("tag", "--list", "v*")).out), ctx.config.tag.bump)
+  const tested = ctx.tested?.[step.repo ?? ""]
+  const sha = tested ?? (await must(ops, ["git", "-C", clone, "rev-parse", "origin/HEAD"]))
+  if (!tag) return { sha, detail: "No vX.Y.Z tag yet: write the first one" }
+  const isOnLine = (await git("merge-base", "--is-ancestor", tag.latest, sha)).ok
+  const stop = isOnLine ? null : await offTheLine(sha, tag.latest, git)
+  if (stop) return { sha, ...stop }
+  const base = isOnLine ? tag.latest : (await must(ops, ["git", "-C", clone, "merge-base", tag.latest, sha]))
+  const all = commitsIn((await git("log", "--first-parent", "--format=%H%x09%s", `${base}..${sha}`, "-n", "50")).out)
+  // A change prod already runs (picked into its release line) does not go again.
+  const commits: typeof all = []
+  for (const c of all) if (!(await isInProd(c.sha, tag.latest, git))) commits.push(c)
+  const prs = ctx.units.filter(u => u.repo === step.repo && u.pr).map(u => Number(u.pr!.split("/").pop()))
+  const isOurs = (c: { subject: string }) => isTicketChange(c.subject, ctx.key, prs)
+  const others = commits.filter(c => !isOurs(c)).map(c => c.subject)
+  const ours = commits.filter(isOurs).map(c => c.sha).reverse()
+  // Nothing prod lacks: done. Changes none of which reads as the ticket's still wait for you (never taken as done).
+  if (!commits.length) return { sha, value: null, status: "done", detail: `Already in prod: ${tag.latest} has every change` }
+  const line = isOnLine ? "" : ` (prod is a release line of picked changes: only ${ctx.key}'s is how it goes)`
+  const what = others.length ? `: ${ours.length} of ${ctx.key}, ${others.length} of other tickets` : ""
+  return { sha, value: step.value ?? tag.next, previous: tag.latest, items: commits.map(c => c.subject), ours, others,
+    detail: `${commits.length} change${commits.length === 1 ? "" : "s"} not in ${tag.latest} go to prod${what}${line}${tested ? "" : " (staging's commit unknown: the default branch's head)"}` }
+}
+// Prod off the default branch's line: it already has the commit (a later version does), or it runs
+// changes the default branch lacks (a hotfix), or it is a release line of picked changes (each also on it: go on).
+async function offTheLine(sha: string, latest: string, git: (...args: string[]) => Promise<{ ok: boolean; out: string }>): Promise<Patch | null> {
+  if ((await git("merge-base", "--is-ancestor", sha, latest)).ok) {
+    const more = Number((await git("rev-list", "--count", `${sha}..${latest}`)).out) || 0
+    return { value: null, status: "done", detail: `Already in prod: ${latest} has it, with ${more} change${more === 1 ? "" : "s"} more` }
+  }
+  const hotfix = lines((await git("log", "--cherry-mark", "--right-only", "--no-merges", "--format=%m%x09%s", `${sha}...${latest}`, "-n", "50")).out)
+    .filter(l => l.startsWith("+")).map(l => l.slice(2))
+  return hotfix.length ? { status: "failed", error: `Prod runs ${latest}, with changes the default branch lacks (${hotfix.join("; ")}). Merge them into the default branch first, so staging tests them with the rest; then Retry` } : null
+}
+// Whether prod's version already has a change: every commit of it (a PR's, for a merge) has its copy there.
+async function isInProd(sha: string, latest: string, git: (...args: string[]) => Promise<{ ok: boolean; out: string }>) {
+  if (!sha) return false
+  const parents = (await git("rev-list", "--parents", "-n", "1", sha)).out.trim().split(/\s+/)
+  const [head, limit] = parents.length > 2 ? [parents[2]!, parents[1]!] : [sha, `${sha}^`]
+  const marks = lines((await git("cherry", latest, head, limit)).out)
+  return marks.length > 0 && marks.every(m => m.startsWith("-"))
+}
+
+// Only the ticket's changes, on top of prod's version, in a worktree of their own: the commit to tag.
+async function ticketOnly(step: ReleaseStep, ctx: Ctx, ops: Ops): Promise<string> {
+  const clone = cloneOf(step, ctx)
+  const dir = `${ctx.dir}/release/${step.repo}-${step.value}`
+  await ops.sh(["git", "-C", clone, "worktree", "remove", "--force", dir])
+  await must(ops, ["git", "-C", clone, "worktree", "add", "--detach", dir, step.previous!])
+  try {
+    for (const c of step.ours ?? []) {
+      const isMerge = (await ops.sh(["git", "-C", clone, "rev-list", "--parents", "-n", "1", c])).out.trim().split(/\s+/).length > 2
+      const picked = await ops.sh(["git", "-C", dir, "cherry-pick", ...(isMerge ? ["-m", "1"] : []), c])
+      if (!picked.ok) {
+        await ops.sh(["git", "-C", dir, "cherry-pick", "--abort"])
+        throw new Error(`${ctx.key}'s changes do not go on ${step.previous} by themselves (${c.slice(0, 8)} conflicts): deploy all, or do it by hand`)
+      }
+    }
+    return await must(ops, ["git", "-C", dir, "rev-parse", "--verify", "HEAD"])
+  } finally {
+    await ops.sh(["git", "-C", clone, "worktree", "remove", "--force", dir])
+  }
+}
+
+// A person's step a script does (<ticket>/steps/<id>.sh, written by the build as build.md says): the
+// board simulates it when the step comes (DRY_RUN=1: it only reads, and says what it would do), and
+// runs it for real once you approve (DRY_RUN=0). What has no tool (an approval of Meta, the stores)
+// stays a person's, with the plan's note.
+const actionOf = (step: ReleaseStep, ctx: Ctx, ops: Ops) => (step.note?.id && ops.exists(`${ctx.dir}/steps/${step.note.id}.sh`) ? `${step.note.id}.sh` : null)
+// Its script, if the build left one: simulated now, once.
+async function prepareManual(step: ReleaseStep, release: Release, ctx: Ctx, ops: Ops): Promise<Patch> {
+  const action = actionOf(step, ctx, ops)
+  return action && !step.simulated ? { action, ...(await startAction({ ...step, action }, release, ctx, ops, "simulate")) } : { action }
+}
+async function startAction(step: ReleaseStep, release: Release, ctx: Ctx, ops: Ops, mode: "simulate" | "execute"): Promise<Patch> {
+  const name = `${step.action!.replace(/\.sh$/, "")}-${release.env}-${mode}`
+  const base = `${ctx.dir}/scripts/${name}`
+  const pid = await ops.spawn(ctx.dir, `bash steps/${step.action}`, { STAGE: release.env, DRY_RUN: mode === "simulate" ? "1" : "0" }, `${base}.log`, `${base}.exit`)
+  return { status: "running", phase: "action", pid, report: `${name}.log`, since: ops.now(), detail: mode === "simulate" ? "Simulating" : "Running for real" }
+}
+async function checkAction(step: ReleaseStep, ctx: Ctx, ops: Ops): Promise<Patch> {
+  const base = `${ctx.dir}/scripts/${step.report!.replace(/\.log$/, "")}`
+  const exit = await ops.readText(`${base}.exit`)
+  if (exit === null) return ops.isAlive(step.pid ?? 0) ? {} : { status: "failed", phase: null, error: "The script stopped before it ended" }
+  const log = lines((await ops.readText(`${base}.log`)) ?? "")
+  const detail = log.at(-1) ?? "Done"
+  if (exit.trim() !== "0") return { status: "failed", phase: null, pid: null, detail, error: `Exit ${exit.trim()}: ${log.slice(-3).join(" · ")}` }
+  return step.report!.endsWith("-simulate.log") ? { status: "waiting", phase: null, pid: null, simulated: true, detail } : { status: "done", phase: null, pid: null, detail }
 }
 
 // A release PR: the commits it takes to the target, and how many of them staging did not test.
@@ -665,9 +765,11 @@ async function tag(step: ReleaseStep, ctx: Ctx, ops: Ops): Promise<Patch> {
     if (at !== step.sha) throw new Error(`${name} is already there, on another commit`)
     return { status: "running", phase: "deploy", since: ops.now(), detail: `${name} was there already, on this commit: waiting for the deploy` }
   }
-  await must(ops, ["git", "-C", clone, "tag", name, step.sha])
+  const isAlone = step.scope === "ticket" && !!step.others?.length && !!step.ours?.length
+  const sha = isAlone ? await ticketOnly(step, ctx, ops) : step.sha
+  await must(ops, ["git", "-C", clone, "tag", name, sha])
   await must(ops, ["git", "-C", clone, "push", "origin", name], { timeoutMs: 60_000 })
-  return { status: "running", phase: "deploy", since: ops.now(), detail: `${name} pushed: waiting for the deploy` }
+  return { sha, status: "running", phase: "deploy", since: ops.now(), detail: isAlone ? `${name} pushed with only ${ctx.key}'s ${step.ours!.length} change${step.ours!.length === 1 ? "" : "s"}: waiting for the deploy` : `${name} pushed: waiting for the deploy` }
 }
 
 // A promote: a PR from the default branch to the target (the one there, or a new one).
@@ -738,10 +840,12 @@ function start(step: ReleaseStep, release: Release, ctx: Ctx, ops: Ops): Promise
   if (step.kind === "tag") return tag(step, ctx, ops)
   if (step.kind === "promote") return promote(step, ctx, ops)
   if (step.kind === "simulate" || step.kind === "execute") return startScript(step, release, ctx, ops)
+  if (step.kind === "manual" && step.action) return startAction(step, release, ctx, ops, "execute")
   return Promise.resolve({ status: "done" })
 }
 
 function check(step: ReleaseStep, ctx: Ctx, ops: Ops): Promise<Patch> {
+  if (step.phase === "action") return checkAction(step, ctx, ops)
   if (step.phase === "script") return checkScript(step, ctx, ops)
   if (step.phase === "checks") return checkPromote(step, ops)
   if (step.phase === "rerun") return checkRerun(step, ctx, ops)
@@ -796,7 +900,7 @@ export async function advanceRelease(release: Release, ctx: Ctx, ops: Ops): Prom
     let patch: Patch
     try {
       patch = step.status === "pending" && isGated(step, release.env, release.steps) && !step.isApproved
-        ? { ...(await prepare(step, release, ctx, ops)), status: "waiting" }
+        ? { status: "waiting", ...(await prepare(step, release, ctx, ops)) }
         : step.status === "pending" ? await start(step, release, ctx, ops) : await check(step, ctx, ops)
     } catch (err) {
       patch = { status: "failed", error: (err as Error).message }
@@ -810,14 +914,14 @@ export async function advanceRelease(release: Release, ctx: Ctx, ops: Ops): Prom
 
 // Your answers to a step: go on (with the tag you chose), again, or past it.
 const current = (release: Release, id: string) => release.steps.find(s => !isOver(s))?.id === id
-export function approveStep(release: Release, id: string, value?: string): Release {
+export function approveStep(release: Release, id: string, value?: string, scope: "all" | "ticket" = "all"): Release {
   if (!current(release, id)) throw new Error("That step does not wait for you")
   const step = release.steps.find(s => s.id === id)!
   if (step.status !== "waiting" && step.status !== "pending") throw new Error("That step does not wait for you")
   // "Go on" past a deploy nobody saw: you checked it. A simulation you looked at is done.
   if (step.phase === "deploy") return withStep(release, id, { status: "done", detail: "Checked by you" })
   if (step.phase === "script" && step.status === "waiting") return withStep(release, id, { status: "done" })
-  return withStep(release, id, { status: "pending", isApproved: true, ...(value?.trim() ? { value: value.trim() } : {}) })
+  return withStep(release, id, { status: "pending", isApproved: true, ...(value?.trim() ? { value: value.trim() } : {}), ...(step.kind === "tag" ? { scope } : {}) })
 }
 export function retryStep(release: Release, id: string): Release {
   const step = release.steps.find(s => s.id === id)

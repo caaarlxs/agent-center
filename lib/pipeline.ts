@@ -612,11 +612,19 @@ export async function pipelineOf(key: string) {
   const prs = await prStates(urls, releaseOps.sh)
   const scenario = state ? scenarioOf(jsonOf(await readText(join(dirOf(key), "scenario.json")))) : null
   const stageDocs = Object.assign({}, ...(await Promise.all(SUMMED.map(docOf))))
-  return { putAside, docs: await runDocs(key), files: await ticketFiles(key), state: state && (await forBoard(state)), ...stageDocs, summaries, prs, fixes, scenario, preview: await previewOf(state), yourPart: await yourPartOf(state), later: await laterOf(state) }
+  return { putAside, docs: await runDocs(key), files: await ticketFiles(key), state: state && (await forBoard(state)), ...stageDocs, summaries, prs, fixes, scenario, preview: await previewOf(state), yourPart: await yourPartOf(state), later: await laterOf(state), steps: await stepScriptsOf(key) }
 }
 
 // A state as the board shows it: with what each run spent and what people found (found.json).
 const forBoard = async (s: PipelineState): Promise<PipelineState> => ({ ...(await withSpend(s)), found: await readFound(dirOf(s.key)) })
+
+// The scripts of a person's steps the build left (<ticket>/steps/<id>.sh, lib/release.ts), by step id:
+// the board shows them with the commands to run them by hand.
+export type StepScripts = { dir: string; scripts: Record<string, string> }
+export async function stepScriptsOf(key: string): Promise<StepScripts> {
+  const names = (await readdir(join(dirOf(key), "steps")).catch(() => [] as string[])).filter(n => /^M\d+\.sh$/.test(n))
+  return { dir: dirOf(key), scripts: Object.fromEntries(await Promise.all(names.map(async n => [n.replace(/\.sh$/, ""), (await readText(join(dirOf(key), "steps", n))) ?? ""] as const))) }
+}
 
 // What the running stage does now: its session's steps and subagents, and,
 // while it builds, how far each unit got (build.progress.json).
@@ -1814,11 +1822,12 @@ export async function rereviewPipeline(key: string, id: string) {
   return who
 }
 
-export async function stepPipeline(key: string, id: string, action: "approve" | "skip" | "unskip" | "address" | "relook", value?: string) {
+// only: approve a tag with only the ticket's changes on top of prod (lib/release.ts).
+export async function stepPipeline(key: string, id: string, action: "approve" | "only" | "skip" | "unskip" | "address" | "relook", value?: string) {
   await locked(key, async () => {
     const state = await stateOf(key)
     if (!state?.release || !isRelease(state.stage)) throw new Error("No release on this ticket")
-    const release = action === "approve" ? approveStep(state.release, id, value) : action === "unskip" ? unskipStep(state.release, id) : action === "address" ? addressStep(state.release, id) : action === "relook" ? relookStep(state.release, id) : skipStep(state.release, id)
+    const release = action === "approve" || action === "only" ? approveStep(state.release, id, value, action === "only" ? "ticket" : "all") : action === "unskip" ? unskipStep(state.release, id) : action === "address" ? addressStep(state.release, id) : action === "relook" ? relookStep(state.release, id) : skipStep(state.release, id)
     await save({ ...state, release, status: "running", error: null, endedAt: null })
   })
   void tickRelease(key)
